@@ -196,7 +196,20 @@ export function planSite(input: SiteInput): SiteOutput {
   }
   if (gardenPortico) {
     for (const c of gardenPortico.columns) {
-      lights.push({ id: `lx${lid++}`, kind: 'uplight', scope: 'exterior', x: c.x, y: gardenPortico.baseY + 0.15, z: c.z + gardenPortico.columnRadius + 0.35, color: warm(0.5), intensity: 120, range: 12 });
+      // Floodlights a little in front of each column: they wash the shaft, not the paving.
+      lights.push({
+        id: `lx${lid++}`,
+        kind: 'uplight',
+        scope: 'exterior',
+        x: c.x,
+        y: gardenPortico.baseY + 0.25,
+        z: c.z + gardenPortico.columnRadius + 0.7,
+        color: warm(0.5),
+        intensity: 140,
+        range: 14,
+        dir: [0, 0.94, -0.34],
+        cone: 0.9,
+      });
     }
   }
   lights.push({ id: `lx${lid++}`, kind: 'uplight', scope: 'exterior', x: 0, y: 0.6, z: fountainZ, color: [1, 0.86, 0.66], intensity: 90, range: fountainR + 8 });

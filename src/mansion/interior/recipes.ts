@@ -5,8 +5,8 @@
 import type { PoiType, Prop, RoomType } from '../core/types';
 import { SIDES, type Placer, type Side } from './placer';
 
-export const TUNGSTEN: [number, number, number] = [1.0, 0.66, 0.36];
-export const WARM: [number, number, number] = [1.0, 0.58, 0.28];
+export const TUNGSTEN: [number, number, number] = [1.0, 0.6, 0.3];
+export const WARM: [number, number, number] = [1.0, 0.54, 0.24];
 export const CANDLE: [number, number, number] = [1.0, 0.48, 0.17];
 export const FIRE: [number, number, number] = [1.0, 0.36, 0.09];
 

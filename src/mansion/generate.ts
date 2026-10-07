@@ -432,20 +432,50 @@ function disambiguateLabels(rooms: Room[]): void {
   }
 }
 
-/** Lanterns flanking the entrance and the central garden doors. */
+/** Lanterns flanking the entrance and garden doors, and warm spill from lit windows. */
 function facadeLights(walls: MansionBlueprint['walls'], levels: LevelSpec[], rooms: Room[]): LightSpec[] {
   const out: LightSpec[] = [];
   let n = 0;
   const y = levels[0]!.floorY + 2.7;
+  const byId = new Map(rooms.map((r) => [r.id, r]));
   for (const w of walls) {
-    if (!w.exterior || w.level !== 0 || (w.side !== 'garden' && w.side !== 'entrance')) continue;
-    const room = rooms.find((r) => r.id === (w.neg ?? w.pos));
-    if (!room || (room.type !== 'ballroom' && room.type !== 'entrance-hall')) continue;
-    const out1 = w.side === 'garden' ? 0.45 : -0.45;
+    if (!w.exterior || w.level !== 0) continue;
+    const room = byId.get((w.neg ?? w.pos)!);
+    if (!room) continue;
+    const sgn = w.neg ? 1 : -1;
+    const nx = w.axis === 'z' ? sgn : 0;
+    const nz = w.axis === 'x' ? sgn : 0;
+    const face = (w.axis === 'x' ? w.a.z : w.a.x) + sgn * (w.thickness / 2);
+    const base = w.axis === 'x' ? w.a.x : w.a.z;
+    // Spill: a downward-outward spot just outside each lit window paints the paving, not the wall.
+    if (room.lit >= 0.5) {
+      for (const o of w.openings) {
+        if (!o.glazed || o.frosted || o.curtain === 'drawn') continue;
+        const t = base + (o.u0 + o.u1) / 2;
+        const out1 = face + sgn * 0.35;
+        const k = o.kind === 'french-window' ? 1.0 : 0.6;
+        const d = [nx * 0.62, -0.78, nz * 0.62] as [number, number, number];
+        out.push({
+          id: `lw${n++}`,
+          kind: 'spill',
+          scope: 'exterior',
+          x: w.axis === 'x' ? t : out1,
+          y: o.y0 + Math.min(2.4, (o.y1 - o.y0) * 0.7),
+          z: w.axis === 'x' ? out1 : t,
+          color: [1, 0.56, 0.26],
+          intensity: 70 * room.lit * k * (o.curtain === 'sheer' ? 0.5 : 1),
+          range: 9,
+          dir: d,
+          cone: 0.35,
+        });
+      }
+    }
+    if ((w.side !== 'garden' && w.side !== 'entrance') || (room.type !== 'ballroom' && room.type !== 'entrance-hall')) continue;
+    const off = w.side === 'garden' ? 0.45 : -0.45;
     const main = w.openings.filter((o) => o.passable && Math.abs(w.a.x + (o.u0 + o.u1) / 2) < 2.5);
     for (const o of main) {
       for (const u of [o.u0 - 0.55, o.u1 + 0.55]) {
-        out.push({ id: `lf${n++}`, kind: 'lantern', scope: 'exterior', x: w.a.x + u, y, z: w.a.z + out1, color: [1, 0.64, 0.34], intensity: 70, range: 9 });
+        out.push({ id: `lf${n++}`, kind: 'lantern', scope: 'exterior', x: w.a.x + u, y, z: w.a.z + off * 1.4, color: [1, 0.6, 0.3], intensity: 35, range: 9, dir: [0, -0.8, Math.sign(off) * 0.6], cone: 0.15 });
       }
     }
   }

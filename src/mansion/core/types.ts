@@ -305,7 +305,7 @@ export interface Poi {
 
 export interface LightSpec {
   id: string;
-  kind: 'chandelier' | 'sconce' | 'lamp' | 'candles' | 'fire' | 'lantern' | 'lamppost' | 'uplight' | 'bounce';
+  kind: 'chandelier' | 'sconce' | 'lamp' | 'candles' | 'fire' | 'lantern' | 'lamppost' | 'uplight' | 'spill' | 'bounce';
   /** Lighting scope: a room id, or 'exterior'. Lights never leak across scopes. */
   scope: string;
   x: number;
@@ -317,6 +317,9 @@ export interface LightSpec {
   intensity: number;
   /** Soft cutoff distance (m). */
   range: number;
+  /** Spot lights only: unit aim direction and cosine of the cone half-angle. */
+  dir?: [number, number, number];
+  cone?: number;
 }
 
 export interface Tree {

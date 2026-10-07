@@ -17,6 +17,8 @@ const out = get('out', 'renders');
 const w = get('w', '1280');
 const h = get('h', '720');
 const extra = get('params', '');
+const format = get('format', 'png') as 'png' | 'jpeg';
+const name = get('name', '');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ configFile: 'vite.config.ts', logLevel: 'error', server: { port: 5199, host: '127.0.0.1' } });
@@ -40,8 +42,9 @@ try {
         console.log('timeout', seed, view, logs.join('\n'));
         throw e;
       }
-      const file = `${out}/${seed}-${view}${extra ? '-' + extra.replace(/[^a-z0-9]+/gi, '_') : ''}.png`;
-      await page.screenshot({ path: file });
+      const ext = format === 'jpeg' ? 'jpg' : 'png';
+      const file = name ? `${out}/${name}.${ext}` : `${out}/${seed}-${view}${extra ? '-' + extra.replace(/[^a-z0-9]+/gi, '_') : ''}.${ext}`;
+      await page.screenshot({ path: file, type: format, quality: format === 'jpeg' ? 86 : undefined });
       const stats = await page.evaluate(() => (window as unknown as { __stats: () => unknown }).__stats());
       console.log(`${file}  ${((Date.now() - t0) / 1000).toFixed(1)}s  ${JSON.stringify(stats)}`);
       for (const l of logs.slice(0, 12)) console.log('   ', l.slice(0, 400));

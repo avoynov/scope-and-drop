@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "render": "node scripts/render.mjs"
+    "render": "node scripts/render.mjs",
+    "build:artifact": "vite build --config vite.artifact.config.ts"
   },
   "dependencies": {
     "three": "^0.186.1"

@@ -1,0 +1,143 @@
+<title>Scope &amp; Drop Mansions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500;6..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+<style>
+  /* Layout: the estate fills the screen; a dossier card floats top-left, the view bar sits bottom-centre. One night look, no light theme. */
+  :root {
+    color-scheme: dark;
+    --night: #0a0d15;
+    --panel: rgba(12, 15, 24, 0.82);
+    --line: rgba(236, 229, 214, 0.13);
+    --fg: #ece5d6;
+    --muted: #a39d91;
+    --brass: #d9a75c;
+    --dusk: #9aaee6;
+    --ok: #86cfa1;
+    --bad: #ff7466;
+    --signal: #ff4848;
+    --scope-edge: rgba(4, 5, 8, 0.96);
+    --display: 'Bodoni Moda', 'Didot', 'Bodoni 72', Georgia, serif;
+    --sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: var(--night); color: var(--fg); font: 14px/1.45 var(--sans); }
+  #stage { position: fixed; inset: 0; touch-action: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+
+  .dossier {
+    position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
+    width: min(330px, calc(100vw - 32px)); box-sizing: border-box;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    padding: 16px 16px 12px; display: grid; gap: 12px; max-height: calc(100% - 120px); overflow: auto;
+  }
+  .eyebrow { font: 500 10.5px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); margin: 0; }
+  h1 { font: 700 26px/1.05 var(--display); letter-spacing: 0.005em; margin: 4px 0 0; text-wrap: balance; }
+  .head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+  #fold { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; flex: none; font: 14px var(--mono); }
+  .controls { display: grid; gap: 8px; }
+  .row { display: flex; gap: 6px; min-width: 0; }
+  .row > * { min-width: 0; }
+  input, select, button.btn {
+    font: 13px var(--sans); color: var(--fg); background: rgba(236, 229, 214, 0.06);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; height: 34px; box-sizing: border-box;
+  }
+  input#seed { flex: 1; font-family: var(--mono); }
+  select { flex: 1; }
+  button.btn { cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--brass); color: #16110a; border-color: var(--brass); font-weight: 600; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--dusk); outline-offset: 1px; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+  .status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .status.bad::before { background: var(--bad); }
+  .missions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font: 11px/1 var(--mono); padding: 5px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .chip b { color: var(--fg); font-weight: 500; }
+  .note { font-size: 12px; color: var(--muted); margin: 0; }
+  .dossier.folded .controls, .dossier.folded .facts, .dossier.folded .missions, .dossier.folded .note { display: none; }
+
+  .bar {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: calc(100vw - 32px);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .bar button { font: 500 12.5px var(--sans); color: var(--muted); background: none; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  .bar button.on { color: #16110a; background: var(--fg); }
+  .bar .sep { width: 1px; background: var(--line); margin: 4px 2px; }
+  .bar button.toggle.on { background: rgba(217, 167, 92, 0.18); color: var(--brass); }
+
+  /* Scope: circular field, mil-dot reticle, range card. */
+  #scope { position: fixed; inset: 0; pointer-events: none; --r: 36vmin; }
+  #scope .field { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0 calc(var(--r) - 1px), var(--scope-edge) var(--r)); }
+  #scope svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--r) * 2); height: calc(var(--r) * 2); overflow: visible; }
+  #scope .readout { position: absolute; left: 50%; top: calc(50% + var(--r) + 14px); transform: translateX(-50%); font: 12px var(--mono); color: var(--muted); letter-spacing: 0.08em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #scope .readout b { color: var(--fg); font-weight: 500; }
+
+  #veil { position: fixed; inset: 0; display: grid; place-items: center; background: var(--night); transition: opacity 0.6s ease; }
+  #veil.gone { opacity: 0; pointer-events: none; }
+  #veil p { font: 500 12px var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 12px 0 0; text-align: center; }
+  #veil h2 { font: 700 30px/1.1 var(--display); margin: 0; text-align: center; color: var(--fg); }
+  #error { position: fixed; inset: auto 16px 90px; color: var(--bad); font: 12px var(--mono); text-align: center; }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 22px; }
+    .dossier { max-height: calc(100% - 150px); }
+    .bar button { padding: 7px 9px; font-size: 12px; }
+    .bar .sep { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { #veil { transition: none; } }
+</style>
+
+<div id="stage"></div>
+
+<div id="scope" hidden>
+  <div class="field"></div>
+  <svg viewBox="-100 -100 200 200" aria-hidden="true">
+    <g stroke="var(--scope-edge)" stroke-width="0.45" fill="none">
+      <line x1="-100" y1="0" x2="-6" y2="0" /><line x1="6" y1="0" x2="100" y2="0" />
+      <line x1="0" y1="-100" x2="0" y2="-6" /><line x1="0" y1="6" x2="0" y2="100" />
+      <line x1="-100" y1="0" x2="-62" y2="0" stroke-width="2.2" /><line x1="62" y1="0" x2="100" y2="0" stroke-width="2.2" />
+      <line x1="0" y1="62" x2="0" y2="100" stroke-width="2.2" />
+    </g>
+    <g fill="var(--scope-edge)" id="mils"></g>
+    <circle r="0.9" fill="var(--signal)" />
+  </svg>
+  <div class="readout" id="readout"></div>
+</div>
+
+<aside class="dossier" id="dossier">
+  <div class="head">
+    <div>
+      <p class="eyebrow">Field dossier · blue hour</p>
+      <h1 id="title">Scope &amp; Drop Mansions</h1>
+    </div>
+    <button id="fold" aria-label="Collapse dossier" aria-expanded="true">–</button>
+  </div>
+  <div class="controls">
+    <div class="row">
+      <input id="seed" aria-label="Seed" spellcheck="false" autocomplete="off" value="gala-night" />
+      <button class="btn primary" id="survey">Survey</button>
+      <button class="btn" id="random" aria-label="Random seed">Random</button>
+    </div>
+    <div class="row">
+      <select id="style" aria-label="Architectural style"><option value="">Any style</option><option value="palladian">Palladian</option><option value="georgian">Georgian</option><option value="beauxarts">Beaux-Arts</option></select>
+      <select id="massing" aria-label="Plan"><option value="">Any plan</option><option value="block">Block</option><option value="u-garden">U, garden court</option><option value="u-entrance">U, entrance court</option><option value="h">H-plan</option></select>
+      <select id="size" aria-label="Size"><option value="grand">Grand</option><option value="compact">Compact</option><option value="palatial">Palatial</option></select>
+    </div>
+  </div>
+  <dl class="facts" id="facts"></dl>
+  <div class="missions" id="missions"></div>
+  <p class="note" id="note">Drag to aim, scroll or pinch to zoom. Same seed, same house, every time.</p>
+</aside>
+
+<nav class="bar" id="bar" aria-label="Views"></nav>
+<div id="veil"><div><h2 id="veil-title">Surveying the grounds</h2><p id="veil-sub">generating · lighting · furnishing</p></div></div>
+<div id="error" hidden></div>
+
+<script type="module" src="app.js"></script>

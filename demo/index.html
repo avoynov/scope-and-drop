@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mansion Generator</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --ink: #e9e4d8;
+        --muted: #9a9486;
+        --line: rgba(233, 228, 216, 0.14);
+        --panel: rgba(12, 14, 20, 0.72);
+        --accent: #e0b56a;
+      }
+      html, body { margin: 0; height: 100%; background: #07080c; color: var(--ink); font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; overflow: hidden; }
+      canvas { display: block; }
+      #panel { position: fixed; top: 16px; left: 16px; width: 300px; max-width: calc(100vw - 32px); background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; box-sizing: border-box; }
+      #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; color: var(--accent); }
+      .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+      input, select, button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+      input { flex: 1; min-width: 0; }
+      button { cursor: pointer; }
+      button.on { border-color: var(--accent); color: var(--accent); }
+      #stats { color: var(--muted); white-space: pre-wrap; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; max-height: 40vh; overflow: auto; }
+      #reticle { position: fixed; inset: 0; pointer-events: none; display: none; }
+      #reticle.on { display: block; }
+      #reticle::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0 34vmin, rgba(0, 0, 0, 0.94) 35vmin); }
+      #reticle .h, #reticle .v { position: absolute; background: rgba(10, 10, 10, 0.85); }
+      #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
+      #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
+      body.shot #panel { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="reticle"><div class="h"></div><div class="v"></div></div>
+    <div id="panel">
+      <h1>Mansion · twilight</h1>
+      <div class="row"><input id="seed" spellcheck="false" /><button id="go">Build</button><button id="rnd">⟳</button></div>
+      <div class="row">
+        <select id="style"><option value="">any style</option><option>palladian</option><option>georgian</option><option>beauxarts</option></select>
+        <select id="massing"><option value="">any plan</option><option>block</option><option>u-garden</option><option>u-entrance</option><option>h</option></select>
+        <select id="size"><option>grand</option><option>compact</option><option>palatial</option></select>
+      </div>
+      <div class="row" id="views"></div>
+      <div class="row" id="overlays"></div>
+      <div id="stats"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

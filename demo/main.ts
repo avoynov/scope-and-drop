@@ -30,6 +30,11 @@ document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(10, W / H, 0.5, 9000);
 const ortho = new THREE.OrthographicCamera(-50, 50, 30, -30, 0.5, 2000);
+// Flat work light for the plan view only: upstairs rooms are dark at party time, and a plan has to be readable.
+// It stays in the scene at zero intensity elsewhere, so switching views never recompiles shaders.
+const planLight = new THREE.AmbientLight(0xfff1dc, 0);
+scene.add(planLight);
+const PLAN_LIGHT = Number(params.get('planlight') ?? 0.6);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false;
 controls.enableDamping = true;
@@ -49,6 +54,9 @@ let view: View = (params.get('view') as View) ?? 'scope';
 let aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
 const overlays = { sight: params.has('sight'), pois: params.has('pois') };
 const overlayGroup = new THREE.Group();
+/** Storey shown by the plan view (0 = ground floor). */
+let planLevel = Math.max(0, Math.floor(Number(params.get('level') ?? 0)) || 0);
+const LEVEL_NAMES = ['ground', 'first', 'second', 'third'];
 
 const $ = (id: string) => document.getElementById(id)!;
 const seedInput = $('seed') as HTMLInputElement;
@@ -83,6 +91,8 @@ function build(): void {
   scene.add(built.root);
   scene.fog = built.fog;
   scene.environment = null;
+  planLevel = Math.min(planLevel, bp.levels.length - 1);
+  buildFloorButtons();
   buildOverlays();
   aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
   setView(view);
@@ -97,14 +107,50 @@ function build(): void {
   ].join('\n');
   const url = new URL(location.href);
   url.searchParams.set('seed', opts.seed as string);
+  if (url.searchParams.has('level')) url.searchParams.set('level', String(planLevel));
   history.replaceState(null, '', url);
 }
 
-/** Sightline heat map on the ground floor + POI markers. */
+/** One button per storey; rebuilt per house because storey counts differ. */
+function buildFloorButtons(): void {
+  const row = $('floors');
+  row.replaceChildren();
+  for (const lv of bp.levels) {
+    const b = document.createElement('button');
+    const name = LEVEL_NAMES[lv.index] ?? `level ${lv.index}`;
+    // Short labels so three storeys fit on one row of the panel.
+    b.textContent = name;
+    b.title = `${name} floor, +${lv.floorY.toFixed(2)} m`;
+    b.dataset.level = String(lv.index);
+    b.classList.toggle('on', lv.index === planLevel);
+    b.onclick = () => setPlanLevel(lv.index);
+    row.appendChild(b);
+  }
+}
+
+function setPlanLevel(level: number): void {
+  planLevel = Math.max(0, Math.min(bp.levels.length - 1, level));
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#floors button')) b.classList.toggle('on', Number(b.dataset.level) === planLevel);
+  buildOverlays();
+  setView(view);
+  if (!shot) {
+    const url = new URL(location.href);
+    url.searchParams.set('level', String(planLevel));
+    history.replaceState(null, '', url);
+  }
+}
+
+/** Storey the overlays describe: the chosen one in the plan view, the ground floor (where the party is) elsewhere. */
+function overlayLevel(): number {
+  return view === 'plan' ? planLevel : 0;
+}
+
+/** Sightline heat map of one storey + POI markers. */
 function buildOverlays(): void {
   overlayGroup.clear();
   scene.add(overlayGroup);
-  const n = bp.nav.levels[0]!;
+  const level = overlayLevel();
+  const n = bp.nav.levels.find((l) => l.level === level) ?? bp.nav.levels[0]!;
   const data = new Uint8Array(n.cols * n.rows * 4);
   for (let k = 0; k < n.walk.length; k++) {
     if (!n.walk[k]) continue;
@@ -138,7 +184,9 @@ function buildOverlays(): void {
     const floor = bp.levels[p.level]?.floorY ?? 0;
     m.position.set(p.stand.x, floor + 1.7, p.stand.z);
     m.name = 'poi';
-    m.visible = overlays.pois;
+    // Markers draw through walls and floors, so the plan view keeps only its own storey's.
+    m.userData.level = p.level;
+    m.visible = overlays.pois && (view !== 'plan' || p.level === planLevel);
     m.renderOrder = 6;
     overlayGroup.add(m);
   }
@@ -153,8 +201,13 @@ function buildOverlays(): void {
 }
 
 function setView(v: View): void {
+  const overlaysStale = (v === 'plan') !== (view === 'plan') && planLevel !== 0;
   view = v;
+  document.body.classList.toggle('plan', v === 'plan');
   if (!built) return;
+  // The overlays follow the plan view's storey; entering or leaving it swaps them back to the ground floor.
+  if (overlaysStale) buildOverlays();
+  for (const c of overlayGroup.children) if (c.name === 'poi') c.visible = overlays.pois && (v !== 'plan' || c.userData.level === planLevel);
   const fp = bp.stats.footprint;
   const cx = (fp.x0 + fp.x1) / 2;
   const cz = (fp.z0 + fp.z1) / 2;
@@ -162,7 +215,10 @@ function setView(v: View): void {
   // Fog is tuned for the perch distance; orthographic views sit at arbitrary range.
   scene.fog = v === 'iso' || v === 'plan' ? null : built.fog;
   $('reticle').classList.toggle('on', v === 'scope' && !params.has('noreticle'));
-  renderer.clippingPlanes = v === 'plan' ? [new THREE.Plane(new THREE.Vector3(0, -1, 0), bp.levels[0]!.floorY + 2.6)] : [];
+  // Plan = horizontal cut through the chosen storey, a little above head height.
+  planLight.intensity = v === 'plan' ? PLAN_LIGHT : 0;
+  const cut = bp.levels[planLevel]!;
+  renderer.clippingPlanes = v === 'plan' ? [new THREE.Plane(new THREE.Vector3(0, -1, 0), cut.floorY + Math.min(2.6, cut.height * 0.75))] : [];
   overlayGroup.getObjectByName('sniper')!.visible = v !== 'scope' && v !== 'wide';
   if (v === 'scope' || v === 'wide') {
     renderPass.camera = camera;
@@ -236,7 +292,8 @@ for (const [k, label] of [
     overlays[k] = !overlays[k];
     b.classList.toggle('on', overlays[k]);
     overlayGroup.children.forEach((c) => {
-      if ((k === 'sight' && c.name === 'sight') || (k === 'pois' && c.name === 'poi')) c.visible = overlays[k];
+      if (k === 'sight' && c.name === 'sight') c.visible = overlays.sight;
+      if (k === 'pois' && c.name === 'poi') c.visible = overlays.pois && (view !== 'plan' || c.userData.level === planLevel);
     });
   };
   $('overlays').appendChild(b);

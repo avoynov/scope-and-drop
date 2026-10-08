@@ -12,11 +12,16 @@ This repository currently holds the **mansion generation module**: a seeded gene
 | **Estate** | **Sightlines from the perch** (green = watchable) |
 | ![estate](docs/images/orbit-estate.jpg) | ![plan](docs/images/plan-sightlines.jpg) |
 
+**Live demo:** <https://avoynov.github.io/scope-and-drop/demo/> (scope, wide, orbit, iso and plan views; drag to aim, scroll to zoom the scope; sightline and mission overlays).
+
+The demo is TypeScript, so GitHub Pages serves a Vite build of it, not the repository files. `.github/workflows/pages.yml` rebuilds and deploys it on every push to `main`; Pages must be set to **Settings → Pages → Source: GitHub Actions**.
+
 ## Quick start
 
 ```bash
 npm install
 npm run dev          # demo viewer at http://127.0.0.1:5173 (scope / wide / orbit / iso / plan)
+npm run build        # static demo in dist/ (what GitHub Pages serves at /demo/)
 npm test             # determinism, validity across seeds, nav, sightlines, geometry
 npx tsx scripts/gen.ts --seed match-42 --plan          # print a blueprint summary
 npx tsx scripts/render.ts --seed match-42 --views scope,wide   # headless renders

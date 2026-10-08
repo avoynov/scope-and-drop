@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: 'demo',
+  // Relative asset URLs, so the built demo works from any path (GitHub Pages serves it under /scope-and-drop/demo/).
+  base: './',
   publicDir: false,
   build: {
     outDir: '../dist',

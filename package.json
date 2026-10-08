@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "render": "node scripts/render.mjs",
+    "render": "tsx scripts/render.ts",
+    "gen": "tsx scripts/gen.ts",
+    "stress": "tsx scripts/stress.ts",
     "build:artifact": "vite build --config vite.artifact.config.ts"
   },
   "dependencies": {

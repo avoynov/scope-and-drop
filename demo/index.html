@@ -30,6 +30,9 @@
       #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
       #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
       body.shot #panel { display: none; }
+      /* Storey switch: only meaningful in the plan view. */
+      #floors { display: none; }
+      body.plan #floors { display: flex; }
     </style>
   </head>
   <body>
@@ -43,6 +46,7 @@
         <select id="size"><option>grand</option><option>compact</option><option>palatial</option></select>
       </div>
       <div class="row" id="views"></div>
+      <div class="row" id="floors"></div>
       <div class="row" id="overlays"></div>
       <div id="stats"></div>
     </div>

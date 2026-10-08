@@ -9,6 +9,11 @@
 import { rect, type Rect } from '../core/geom';
 import { snap, type Rng } from '../core/rng';
 import type { LevelSpec, MansionSize, MassingType, StyleDef } from '../core/types';
+import { atriumFits } from './atrium';
+
+// Wall thicknesses (kept here so the massing can size rooms; walls.ts re-exports them).
+export const EXTERIOR_T = 0.6;
+export const INTERIOR_T = 0.25;
 
 export interface WingSpec {
   id: string;
@@ -55,10 +60,8 @@ export interface MassingPlan {
   entrancePortico: { depth: number } | null;
   wings: WingSpec[];
   conservatory: { side: 'west' | 'east'; rect: Rect } | null;
-  /** Side of the back pile carrying the service stair; the grand stair goes on `grandStairSide`. */
+  /** Side of the back pile carrying the service stair. The grand stair is inside the dome hall. */
   serviceSide: 'west' | 'east';
-  grandStairSide: 'west' | 'east';
-  ballroomDoubleHeight: boolean;
 }
 
 const SIZE_BAYS: Record<MansionSize, number[]> = {
@@ -92,20 +95,14 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   // Piles. A corridor-less double pile needs a deeper back pile so an upper
   // corridor can be carved from it.
   const dc = rng.chance(0.45) ? snap(rng.range(2.4, 3.0), 0.1) : 0;
-  const df = snap(rng.range(8.0, 10.2), 0.1);
+  let df = snap(rng.range(8.0, 10.2), 0.1);
   const db = snap(dc > 0 ? rng.range(5.6, 7.4) : rng.range(6.4, 7.8), 0.1);
-  const D = snap(df + dc + db, 0.01);
-  const zGarden = snap(D / 2, 0.01);
-  const zEntrance = snap(-D / 2, 0.01);
-  const zFrontInner = snap(zGarden - df, 0.01);
-  const zBackInner = snap(zFrontInner - dc, 0.01);
-  const upperCorridor: [number, number] = dc > 0 ? [zBackInner, zFrontInner] : [snap(zFrontInner - 2.2, 0.01), zFrontInner];
 
-  // Central rooms: the ballroom straddles the axis; so does the entrance hall.
+  // Central rooms: the dome hall straddles the axis; so does the entrance hall.
   const centerFront = bays >= 11 ? rng.pick([3, 5, 5]) : 3;
   const centerBack = bays <= 7 ? 1 : bays >= 13 ? rng.pick([3, 3, 1]) : rng.pick([1, 3]);
 
-  const gardenPavilion = rng.chance(style.pavilionChance)
+  let gardenPavilion = rng.chance(style.pavilionChance)
     ? { bays: centerFront, depth: snap(rng.range(1.2, 2.4), 0.1) }
     : null;
   // Pavilions only ever widen the central room, so they always cover whole rooms.
@@ -116,6 +113,31 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   const entrancePortico = rng.chance(0.6) ? { depth: snap(rng.range(2.6, 3.2), 0.1) } : null;
   // A portico is at least three bays wide; never stand one in front of a narrower frontispiece.
   const entrancePav = entrancePortico && entrancePavilion && entrancePavilion.bays < 3 ? null : entrancePavilion;
+
+  // The dome hall has to be deep enough for its stair to sweep up to the gallery. A shallow hall
+  // first grows a (deeper) garden pavilion, the classic frontispiece under a dome, then a deeper front pile.
+  if (mainLevels >= 2) {
+    const clearW = centerFront * bay - INTERIOR_T;
+    const shell = INTERIOR_T / 2 + EXTERIOR_T / 2;
+    let need = df + (gardenPavilion?.depth ?? 0);
+    while (need < 18 && !atriumFits(clearW, need - shell, levels[0]!.height)) need += 0.1;
+    need = snap(need, 0.1);
+    const short = need - df - (gardenPavilion?.depth ?? 0);
+    if (short > 1e-6) {
+      const depth = snap(Math.min(2.8, Math.max(1.2, need - df)), 0.1);
+      gardenPavilion = { bays: centerFront, depth };
+      if (df + depth < need) df = snap(need - depth, 0.1);
+    }
+  }
+
+  // Piles. A corridor-less double pile needs a deeper back pile so an upper
+  // corridor can be carved from it.
+  const D = snap(df + dc + db, 0.01);
+  const zGarden = snap(D / 2, 0.01);
+  const zEntrance = snap(-D / 2, 0.01);
+  const zFrontInner = snap(zGarden - df, 0.01);
+  const zBackInner = snap(zFrontInner - dc, 0.01);
+  const upperCorridor: [number, number] = dc > 0 ? [zBackInner, zFrontInner] : [snap(zFrontInner - 2.2, 0.01), zFrontInner];
 
   // Wings: two bays wide, aligned with the main grid so walls stack and
   // window rhythm carries round the corner.
@@ -151,8 +173,6 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   }
 
   const serviceSide = rng.pick(['west', 'east'] as const);
-  const grandStairSide = rng.pick(['west', 'east'] as const);
-  const ballroomDoubleHeight = mainLevels >= 2 && rng.chance(0.55);
 
   return {
     type,
@@ -181,8 +201,6 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
     wings,
     conservatory,
     serviceSide,
-    grandStairSide,
-    ballroomDoubleHeight,
   };
 }
 

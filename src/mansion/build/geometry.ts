@@ -352,6 +352,128 @@ export class GeometryBuilder {
     bk.idx.push(i0, i0 + 1, i0 + 2);
   }
 
+  /** Horizontal polygon at height y (local x,z), facing up or down, with optional holes. */
+  flatPoly(key: string, pts: [number, number][], y: number, up: boolean, holes: [number, number][][] = []): void {
+    const bk = this.bucket(key);
+    const all = [...pts, ...holes.flat()];
+    const tri = THREE.ShapeUtils.triangulateShape(
+      pts.map(([x, z]) => new THREE.Vector2(x, z)),
+      holes.map((h) => h.map(([x, z]) => new THREE.Vector2(x, z))),
+    );
+    const nn = this.tn(0, up ? 1 : -1, 0);
+    const base = bk.vertexCount;
+    for (const [x, z] of all) {
+      const p = this.tp(x, y, z);
+      this.vertex(bk, p, nn, [p[0], p[2]]);
+    }
+    for (const [a, b, c] of tri) {
+      const [ax, az] = all[a!]!;
+      const [bx, bz] = all[b!]!;
+      const [cx, cz] = all[c!]!;
+      // y component of (b-a)×(c-a) for points in the xz plane.
+      const facesUp = (bz - az) * (cx - ax) - (bx - ax) * (cz - az) > 0;
+      if (facesUp === up) bk.idx.push(base + a!, base + b!, base + c!);
+      else bk.idx.push(base + a!, base + c!, base + b!);
+    }
+  }
+
+  /** Square-section bar between two points (rails, ribs, chains). */
+  beam(key: string, a: V3, b: V3, w: number, h = w): void {
+    const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const len = Math.hypot(...d);
+    if (len < 1e-6) return;
+    // Side vector: horizontal and perpendicular to the bar (any horizontal for a vertical bar).
+    let sx = -d[2];
+    let sz = d[0];
+    const sl = Math.hypot(sx, sz);
+    if (sl < 1e-6) {
+      sx = 1;
+      sz = 0;
+    } else {
+      sx /= sl;
+      sz /= sl;
+    }
+    // Up vector: perpendicular to both.
+    const ux = (d[1] * sz) / len;
+    const uy = (d[2] * sx - d[0] * sz) / len;
+    const uz = (-d[1] * sx) / len;
+    const sgn = uy < 0 ? -1 : 1;
+    const U: V3 = [ux * sgn * (h / 2), uy * sgn * (h / 2), uz * sgn * (h / 2)];
+    const S: V3 = [sx * (w / 2), 0, sz * (w / 2)];
+    const c = (p: V3, i: number, j: number): V3 => [p[0] + i * S[0] + j * U[0], p[1] + j * U[1], p[2] + i * S[2] + j * U[2]];
+    this.quadFacing(key, c(a, -1, 1), c(a, 1, 1), c(b, 1, 1), c(b, -1, 1), U[0], U[1], U[2]);
+    this.quadFacing(key, c(a, -1, -1), c(a, 1, -1), c(b, 1, -1), c(b, -1, -1), -U[0], -U[1], -U[2]);
+    this.quadFacing(key, c(a, 1, -1), c(a, 1, 1), c(b, 1, 1), c(b, 1, -1), S[0], 0, S[2]);
+    this.quadFacing(key, c(a, -1, -1), c(a, -1, 1), c(b, -1, 1), c(b, -1, -1), -S[0], 0, -S[2]);
+  }
+
+  /** Index counts per bucket, to pass to `cutRectHole` later. */
+  mark(): Map<string, number> {
+    return new Map([...this.buckets].map(([k, b]) => [k, b.idx.length]));
+  }
+
+  /**
+   * Cut a plan rectangle out of every triangle added since `mark` to buckets whose key
+   * passes `match` (used to open the roof where the dome's drum comes through).
+   */
+  cutRectHole(mark: Map<string, number>, match: (key: string) => boolean, hole: { x0: number; z0: number; x1: number; z1: number }): void {
+    type Vx = number[]; // x y z nx ny nz u v r g b scope
+    const lerp = (a: Vx, b: Vx, t: number): Vx => a.map((v, i) => v + (b[i]! - v) * t);
+    // Keep the part of a convex polygon where sign * (p[axis] - at) >= 0.
+    const clip = (poly: Vx[], axis: 0 | 2, at: number, sign: 1 | -1): Vx[] => {
+      const out: Vx[] = [];
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]!;
+        const b = poly[(i + 1) % poly.length]!;
+        const da = sign * (a[axis]! - at);
+        const db = sign * (b[axis]! - at);
+        if (da >= 0) out.push(a);
+        if (da >= 0 !== db >= 0) out.push(lerp(a, b, da / (da - db)));
+      }
+      return out;
+    };
+    for (const [key, bk] of this.buckets) {
+      if (!match(key)) continue;
+      const from = mark.get(key) ?? 0;
+      if (from >= bk.idx.length) continue;
+      const old = bk.idx.data.slice(from, bk.idx.length);
+      bk.idx.length = from;
+      const read = (i: number): Vx => [
+        bk.pos.data[i * 3]!, bk.pos.data[i * 3 + 1]!, bk.pos.data[i * 3 + 2]!,
+        bk.nor.data[i * 3]!, bk.nor.data[i * 3 + 1]!, bk.nor.data[i * 3 + 2]!,
+        bk.uv.data[i * 2]!, bk.uv.data[i * 2 + 1]!,
+        bk.col.data[i * 3]!, bk.col.data[i * 3 + 1]!, bk.col.data[i * 3 + 2]!,
+        bk.scope.data[i]!,
+      ];
+      const write = (v: Vx): number => {
+        const i = bk.vertexCount;
+        bk.pos.push(v[0]!, v[1]!, v[2]!);
+        bk.nor.push(v[3]!, v[4]!, v[5]!);
+        bk.uv.push(v[6]!, v[7]!);
+        bk.col.push(v[8]!, v[9]!, v[10]!);
+        bk.scope.push(v[11]!);
+        return i;
+      };
+      for (let t = 0; t + 2 < old.length; t += 3) {
+        const ids = [old[t]!, old[t + 1]!, old[t + 2]!];
+        const tri = ids.map(read);
+        const xs = tri.map((v) => v[0]!);
+        const zs = tri.map((v) => v[2]!);
+        if (Math.max(...xs) <= hole.x0 || Math.min(...xs) >= hole.x1 || Math.max(...zs) <= hole.z0 || Math.min(...zs) >= hole.z1) {
+          bk.idx.push(ids[0]!, ids[1]!, ids[2]!);
+          continue;
+        }
+        const mid = clip(clip(tri, 0, hole.x0, 1), 0, hole.x1, -1);
+        const pieces = [clip(tri, 0, hole.x0, -1), clip(tri, 0, hole.x1, 1), clip(mid, 2, hole.z0, -1), clip(mid, 2, hole.z1, 1)];
+        for (const piece of pieces) {
+          if (piece.length < 3) continue;
+          const vi = piece.map(write);
+          for (let k = 1; k + 1 < vi.length; k++) bk.idx.push(vi[0]!, vi[k]!, vi[k + 1]!);
+        }
+      }
+    }
+  }
+
   /** Finish: one BufferGeometry per bucket key. */
   build(): Map<string, THREE.BufferGeometry> {
     const out = new Map<string, THREE.BufferGeometry>();

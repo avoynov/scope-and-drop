@@ -88,18 +88,24 @@ export function wallMaterialKey(style: StyleDef): string {
 
 export function buildInteriors(ctx: ArchContext): void {
   const { bp, g } = ctx;
+  // The dome hall's galleries and ceilings are curved; the atrium mesher builds them.
+  const galleryIds = new Set(bp.atrium?.galleries.map((q) => q.roomId) ?? []);
   for (const room of bp.rooms) {
     g.scope = room.index;
     g.vOffset = 0;
     const f = room.finish;
+    const gallery = galleryIds.has(room.id);
+    const openAbove = gallery || room.id === bp.atrium?.roomId || room.type === 'roof-terrace';
     // Floor (minus stairwell holes).
     g.setTint(f.floorColor);
+    // (A roof terrace's deck is the wing roof itself.)
+    if (!gallery && room.type !== 'roof-terrace')
     for (const [x0, x1, z0, z1] of rectsMinusHoles(room.rect.x0, room.rect.x1, room.rect.z0, room.rect.z1, room.floorHoles.map((h) => ({ t0: h.x0, t1: h.x1, y0: h.z0, y1: h.z1 })))) {
       g.quad(`floor-${f.floor}`, [x0, room.floorY, z1], [x1, room.floorY, z1], [x1, room.floorY, z0], [x0, room.floorY, z0]);
     }
     // Slab edge around holes in this floor.
     g.setTint(f.ceilingColor);
-    for (const h of room.floorHoles) {
+    for (const h of gallery ? [] : room.floorHoles) {
       const y0 = room.floorY - 0.4;
       const y1 = room.floorY;
       g.quad('ceiling', [h.x0, y0, h.z0], [h.x1, y0, h.z0], [h.x1, y1, h.z0], [h.x0, y1, h.z0]);
@@ -110,7 +116,7 @@ export function buildInteriors(ctx: ArchContext): void {
     // Ceiling, minus holes in the storey above that open into this room.
     const above = bp.rooms.filter((r) => r.level === room.level + (room.doubleHeight ? 2 : 1));
     const ceilHoles = above.flatMap((r) => r.floorHoles).map((h) => ({ t0: h.x0, t1: h.x1, y0: h.z0, y1: h.z1 }));
-    for (const [x0, x1, z0, z1] of rectsMinusHoles(room.rect.x0, room.rect.x1, room.rect.z0, room.rect.z1, ceilHoles)) {
+    for (const [x0, x1, z0, z1] of openAbove ? [] : rectsMinusHoles(room.rect.x0, room.rect.x1, room.rect.z0, room.rect.z1, ceilHoles)) {
       g.quad('ceiling', [x0, room.ceilingY, z0], [x1, room.ceilingY, z0], [x1, room.ceilingY, z1], [x0, room.ceilingY, z1]);
     }
 

@@ -10,8 +10,9 @@ import { containsPoint, near, type Rect } from '../core/geom';
 import type { FacadeSide, LevelSpec, Mass, Wall } from '../core/types';
 import type { RoomDraft } from './rooms';
 
-export const EXTERIOR_T = 0.6;
-export const INTERIOR_T = 0.25;
+import { EXTERIOR_T, INTERIOR_T } from './massing';
+
+export { EXTERIOR_T, INTERIOR_T };
 export const MASS_JOINT_T = 0.5;
 export const GLASS_T = 0.16;
 

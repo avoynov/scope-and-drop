@@ -6,6 +6,7 @@ import { expand, type Rect } from '../core/geom';
 import type { Mass, Portico } from '../core/types';
 import type { ArchContext } from './arch';
 import { baluster } from './arch';
+import { domeBase } from './atrium';
 import type { V3 } from './geometry';
 
 const DEG = Math.PI / 180;
@@ -87,7 +88,11 @@ export function buildRoofs(ctx: ArchContext): void {
     }
     switch (m.roof.kind) {
       case 'flat': {
-        g.box('roof-lead', r.x0, yb - 0.05, r.z0, r.x1, yb + 0.05, r.z1);
+        // A roof guests walk on is paved; any other flat roof is leaded.
+        const paved = bp.roofTerraces.some((t) => t.massId === m.id);
+        if (paved) g.setTint('#d9d2c2');
+        g.box(paved ? 'terrace' : 'roof-lead', r.x0, yb - 0.05, r.z0, r.x1, yb + 0.05, r.z1);
+        g.setTint('#ffffff');
         break;
       }
       case 'glass': {
@@ -141,6 +146,14 @@ export function buildRoofs(ctx: ArchContext): void {
       }
     }
   }
+}
+
+/** Is a roof feature at (x, z) in the way of the dome's base? */
+function nearDome(ctx: ArchContext, x: number, z: number, margin: number): boolean {
+  const a = ctx.bp.atrium;
+  if (!a) return false;
+  const b = domeBase(a);
+  return x > b.x0 - margin && x < b.x1 + margin && z > b.z0 - margin - 1.6 && z < b.z1 + margin + 1.6;
 }
 
 function rib(ctx: ArchContext, a: V3, b: V3): void {
@@ -213,6 +226,7 @@ function hipDormers(ctx: ArchContext, m: Mass, r: Rect, yb: number, pitch: numbe
     for (let i = 0; i < bp.bays; i += 2) {
       const x = -halfWidth(ctx) + (i + 0.5) * bp.bay;
       if (x - dw / 2 < r.x0 + D / 2 + 0.4 || x + dw / 2 > r.x1 - D / 2 - 0.4) continue;
+      if (nearDome(ctx, x, zf, dw / 2 + 0.5)) continue;
       const depth = (h + 0.3) / t + 0.3;
       const zb = zf - side * depth;
       const y0 = yb + rise;
@@ -242,6 +256,7 @@ function mansardDormers(ctx: ArchContext, m: Mass, r: Rect, inset: number, yb: n
       const x = -halfWidth(ctx) + (i + 0.5) * bp.bay;
       if (x - dw / 2 < r.x0 + 1.2 || x + dw / 2 > r.x1 - 1.2) continue;
       if (m.rect.x0 > x || m.rect.x1 < x) continue;
+      if (nearDome(ctx, x, zf, dw / 2 + 0.5)) continue;
       const y0 = yb + 0.35;
       const zb = zf - side * 1.6;
       g.setTint(style.trimColor);
@@ -286,6 +301,7 @@ function chimneys(ctx: ArchContext, m: Mass, roof: { ridgeY: number; alongX: boo
   }
   const zm = (r.z0 + r.z1) / 2;
   for (const x of xs) {
+    if (nearDome(ctx, x, zm, 1.4)) continue;
     const y0 = roof.ridgeY - 2.2;
     const y1 = roof.ridgeY + 2.0;
     g.setTint(brick ? '#ffffff' : style.wallColor);

@@ -38,6 +38,8 @@ export const ROLE: Record<RoomType, RoomRole> = {
   'stair-hall': 'circulation',
   corridor: 'circulation',
   landing: 'circulation',
+  'hall-gallery': 'circulation',
+  'roof-terrace': 'party',
   'service-stair': 'circulation',
   study: 'private',
   bedroom: 'private',
@@ -196,14 +198,13 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
       massId: 'main',
       rect: rect(x0, m.zFrontInner, x1, isCenter ? m.zGarden + pz : m.zGarden),
       zone: 'front',
-      doubleHeight: isCenter && m.ballroomDoubleHeight,
+      doubleHeight: false,
       floorHoles: [],
     });
   });
 
   const backTypes: RoomType[] = new Array(backRanges.length);
   backTypes[centerIndexB] = 'entrance-hall';
-  const stairWest = m.grandStairSide === 'west';
   const serviceWest = m.serviceSide === 'west';
   const backPool: RoomType[] = typeRng.shuffle(['billiard-room', 'card-room', 'study', 'cloakroom', 'morning-room', 'music-room'] as RoomType[]);
   for (let j = 0; j < backSide.length; j++) {
@@ -211,8 +212,10 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
     const east = centerIndexB + 1 + j;
     const outermost = j === backSide.length - 1;
     if (j === 0) {
-      backTypes[stairWest ? west : east] = 'stair-hall';
-      backTypes[stairWest ? east : west] = typeRng.pick(['study', 'morning-room', 'card-room'] as RoomType[]);
+      // Either side of the entrance hall. (The grand stair used to live here; it is in the dome hall now.)
+      const pair = typeRng.shuffle(['study', 'morning-room', 'card-room', 'cloakroom'] as RoomType[]);
+      backTypes[west] = pair[0]!;
+      backTypes[east] = pair[1]!;
     } else if (outermost) {
       backTypes[serviceWest ? west : east] = 'service-stair';
       backTypes[serviceWest ? east : west] = typeRng.pick(['cloakroom', 'pantry'] as RoomType[]);
@@ -310,16 +313,27 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
     const attic = L >= 2;
     frontRanges.forEach((r, i) => {
       const isCenter = i === centerIndexF;
-      if (isCenter && m.ballroomDoubleHeight && L === 1) return; // ballroom void
       const [x0, x1] = xr(r);
+      if (isCenter) {
+        // Over the ball room: the hall stays open, ringed by a gallery on this floor.
+        rooms.push({
+          id: `${L}:G`,
+          type: 'hall-gallery',
+          level: L,
+          massId: 'main',
+          rect: rect(x0, m.zFrontInner, x1, m.zGarden + pz),
+          zone: 'front',
+          doubleHeight: false,
+          floorHoles: [],
+        });
+        return;
+      }
       const bays = r[1] - r[0];
       const type: RoomType = attic
         ? bays >= 2
           ? 'bedroom'
           : upRng.pick(['dressing-room', 'bathroom'] as RoomType[])
-        : isCenter
-          ? upRng.pick(['sitting-room', 'bedroom'] as RoomType[])
-          : bays >= 2
+        : bays >= 2
             ? upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[])
             : upRng.pick(['dressing-room', 'bathroom', 'sitting-room'] as RoomType[]);
       rooms.push({
@@ -327,7 +341,7 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
         type,
         level: L,
         massId: 'main',
-        rect: rect(x0, m.zFrontInner, x1, isCenter ? m.zGarden + pz : m.zGarden),
+        rect: rect(x0, m.zFrontInner, x1, m.zGarden),
         zone: 'front',
         doubleHeight: false,
         floorHoles: [],
@@ -359,10 +373,8 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
         });
         return;
       }
-      const below = backTypes[i]!;
       let type: RoomType;
-      if (below === 'stair-hall' && L === 1) type = 'landing';
-      else if (attic) type = r[1] - r[0] >= 2 ? 'bedroom' : upRng.pick(['bathroom', 'dressing-room'] as RoomType[]);
+      if (attic) type = r[1] - r[0] >= 2 ? 'bedroom' : upRng.pick(['bathroom', 'dressing-room'] as RoomType[]);
       else type = r[1] - r[0] >= 2 ? upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[]) : upRng.pick(['bathroom', 'dressing-room'] as RoomType[]);
       rooms.push({
         id: `${L}:B${i}`,

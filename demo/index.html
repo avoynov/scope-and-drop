@@ -30,6 +30,28 @@
       #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
       #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
       body.shot #panel { display: none; }
+      /* Pre-mission briefing: floor plan on the left, bearing and numbers on the right. */
+      #brief { position: fixed; inset: 0; display: none; background: rgba(7, 8, 12, 0.94); z-index: 5; padding: 20px; box-sizing: border-box; gap: 20px; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto minmax(0, 1fr); }
+      #brief.on { display: grid; }
+      #brief header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+      #brief h2 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0; color: var(--accent); }
+      #brief-title { color: var(--muted); }
+      #brief-plan { width: 100%; height: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: #0b0d13; }
+      #brief aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+      #brief-dial { width: 100%; height: 230px; touch-action: none; cursor: grab; flex: none; }
+      #brief-az { width: 100%; padding: 0; margin: 0; border: 0; box-sizing: border-box; flex: none; accent-color: var(--accent); }
+      #brief dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+      #brief dt { color: var(--muted); }
+      #brief dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+      #brief-bearing { color: var(--ink); text-align: center; }
+      #brief .key { color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      #brief .key i { display: inline-block; width: 90px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, rgb(34, 40, 54), rgb(255, 190, 84)); }
+      #brief-deploy { background: var(--accent); color: #16110a; border-color: var(--accent); font-weight: 600; padding: 9px 10px; }
+      body.shot.briefshot #panel { display: none; }
+      @media (max-width: 760px) {
+        #brief { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(220px, 1fr) auto; padding: 12px; gap: 12px; }
+        #brief-dial { height: 170px; }
+      }
       /* Storey switch: only meaningful in the plan view. */
       #floors { display: none; }
       body.plan #floors { display: flex; }
@@ -45,11 +67,40 @@
         <select id="massing"><option value="">any plan</option><option>block</option><option>u-garden</option><option>u-entrance</option><option>h</option></select>
         <select id="size"><option>grand</option><option>compact</option><option>palatial</option></select>
       </div>
+      <div class="row">
+        <select id="hall" title="Shape of the dome hall, chosen before the house is generated">
+          <option value="gallery">dome hall: curved galleries</option>
+          <option value="rotunda">dome hall: rotunda</option>
+        </select>
+        <button id="rebrief" title="Back to the floor plan to choose another bearing">briefing</button>
+      </div>
       <div class="row" id="views"></div>
       <div class="row" id="floors"></div>
       <div class="row" id="overlays"></div>
       <div id="stats"></div>
     </div>
+    <section id="brief" aria-label="Mission briefing">
+      <header>
+        <h2>Briefing · choose your bearing</h2>
+        <span id="brief-title"></span>
+      </header>
+      <canvas id="brief-plan"></canvas>
+      <aside>
+        <div class="row" id="brief-floors"></div>
+        <canvas id="brief-dial" aria-label="Bearing dial: drag the red marker along the treeline"></canvas>
+        <div id="brief-bearing"></div>
+        <input id="brief-az" type="range" step="1" aria-label="Bearing off the garden axis, degrees" />
+        <button id="brief-deploy">Deploy here</button>
+        <dl>
+          <dt>Indoor party floor in view</dt><dd id="brief-party"></dd>
+          <dt>Terrace in view</dt><dd id="brief-terrace"></dd>
+          <dt>Ground floor out of sight</dt><dd id="brief-hidden"></dd>
+          <dt>Mission objects you can watch</dt><dd id="brief-pois"></dd>
+        </dl>
+        <div class="key">unseen <i></i> in view</div>
+        <div class="key">Bars on the dial show how much of the party each bearing sees. Dots are mission objects: white when you can watch them.</div>
+      </aside>
+    </section>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

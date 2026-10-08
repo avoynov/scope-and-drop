@@ -1,5 +1,5 @@
 /** Collect sightline occluders from the blueprint parts. */
-import type { LevelSpec, Mass, Portico, Prop, Room, Site, Wall } from '../core/types';
+import type { Atrium, LevelSpec, Mass, Portico, Prop, RoofTerrace, Room, Site, Stair, Wall } from '../core/types';
 import type { BoxOccluder, CylOccluder, OccluderSet, SlabOccluder, WallOccluder } from './sightlines';
 
 export interface OccluderInput {
@@ -10,6 +10,12 @@ export interface OccluderInput {
   porticos: Portico[];
   props: Prop[];
   site: Site | null;
+  /** Dome hall: its gallery columns stand in the sniper's way. */
+  atrium?: Atrium | null;
+  /** Stairs with curved arms (the dome hall's) hide whoever stands behind them. */
+  stairs?: Stair[];
+  /** Roof terraces: their parapets hide the legs of whoever stands on them. */
+  roofTerraces?: RoofTerrace[];
   /** Include furniture (second pass) or only architecture (first pass). */
   withProps: boolean;
 }
@@ -74,6 +80,51 @@ export function collectOccluders(input: OccluderInput): OccluderSet {
   for (const p of input.porticos) {
     for (const c of p.columns) cyls.push({ x: c.x, z: c.z, r: p.columnRadius, y0: p.baseY, y1: p.topY, transmit: 0 });
     boxes.push({ x0: p.rect.x0, z0: p.rect.z0, x1: p.rect.x1, z1: p.rect.z1, y0: p.topY - 0.9, y1: p.topY + 0.4, transmit: 0 });
+  }
+  if (input.atrium) {
+    const a = input.atrium;
+    const top = input.levels[input.levels.length - 1]!;
+    for (const c of a.columns) cyls.push({ x: c.x, z: c.z, r: a.columnRadius, y0: input.levels[0]!.floorY, y1: top.ceilingY, transmit: 0 });
+  }
+  for (const t of input.roofTerraces ?? []) {
+    const edges: ['x' | 'z', number, number, number][] = [
+      ['x', t.rect.z0, t.rect.x0, t.rect.x1],
+      ['x', t.rect.z1, t.rect.x0, t.rect.x1],
+      ['z', t.rect.x0, t.rect.z0, t.rect.z1],
+      ['z', t.rect.x1, t.rect.z0, t.rect.z1],
+    ];
+    for (const [axis, line, t0, t1] of edges) {
+      walls.push({ axis, line, t0, t1, y0: t.y - 0.5, y1: t.y + 1.1, holes: [{ t0: -1e9, t1: 1e9, y0: t.y + 0.4, y1: t.y + 0.96, transmit: 0.5 }] });
+    }
+  }
+  for (const st of input.stairs ?? []) {
+    for (const arm of st.arms ?? []) {
+      // The flight as a run of short boxes: the stone below the treads is solid, the balustrade half open.
+      const cum = [0];
+      for (let i = 1; i < arm.path.length; i++) cum.push(cum[i - 1]! + Math.hypot(arm.path[i]!.x - arm.path[i - 1]!.x, arm.path[i]!.z - arm.path[i - 1]!.z));
+      const total = cum[cum.length - 1]!;
+      const at = (s: number) => {
+        let i = 1;
+        while (i < cum.length - 1 && cum[i]! < s) i++;
+        const k = (s - cum[i - 1]!) / (cum[i]! - cum[i - 1]! || 1);
+        const a = arm.path[i - 1]!;
+        const b = arm.path[i]!;
+        return { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k };
+      };
+      const riser = arm.rise / arm.steps;
+      const hw = arm.width / 2;
+      for (let i = 0; i < arm.steps; i += 2) {
+        const p = at((total * i) / arm.steps);
+        const q = at((total * Math.min(arm.steps, i + 2)) / arm.steps);
+        const x0 = Math.min(p.x, q.x) - hw * 0.75;
+        const x1 = Math.max(p.x, q.x) + hw * 0.75;
+        const z0 = Math.min(p.z, q.z) - hw * 0.75;
+        const z1 = Math.max(p.z, q.z) + hw * 0.75;
+        const yTop = arm.y0 + Math.min(arm.steps, i + 2) * riser;
+        boxes.push({ x0, z0, x1, z1, y0: Math.max(arm.y0, arm.y0 + i * riser - 0.3), y1: yTop, transmit: 0 });
+        boxes.push({ x0, z0, x1, z1, y0: yTop, y1: yTop + 0.95, transmit: 0.6 });
+      }
+    }
   }
   if (input.withProps) {
     for (const p of input.props) {

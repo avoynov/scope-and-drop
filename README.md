@@ -4,6 +4,8 @@ A sniper spy-deduction game. You lie in the shadows of a treeline at twilight, w
 
 This repository holds the game's **mansion generation module**: a seeded, deterministic generator that builds a different, always-valid country house for every match, and a three.js renderer that shows it the way the sniper sees it, at blue hour from 130–210 m away. The look aims for about 70% realism and 30% appeal.
 
+Every house is built to be seen into: a mostly glazed garden front, party rooms that open into each other, and at the centre a ball room that rises through every storey to a glass dome, ringed by galleries and climbed by a curved split stair. Before the mission the sniper studies the floor plan and chooses the bearing to shoot from.
+
 **Live viewer:** https://claude.ai/artifact/6H4rPLDQAAUj5CUFkrxm6c. The link is private; the owner shares it from the page's Share menu.
 
 | Sniper scope | Inside at full zoom |
@@ -13,6 +15,10 @@ This repository holds the game's **mansion generation module**: a seeded, determ
 | ![beaux-arts](docs/images/wide-beauxarts.jpg) | ![georgian](docs/images/wide-georgian.jpg) |
 | **The estate** | **Sightlines from the perch** (green = watchable, red = blind spot) |
 | ![estate](docs/images/orbit-estate.jpg) | ![plan](docs/images/plan-sightlines.jpg) |
+| **Dome hall: split stair, ring galleries** | **Glass dome over the garden front** |
+| ![dome hall](docs/images/dome-hall.jpg) | ![dome](docs/images/dome-exterior.jpg) |
+| **Briefing: pick the bearing to shoot from** | **Roof terraces on flat-roofed wings** |
+| ![briefing](docs/images/briefing.jpg) | ![roof terraces](docs/images/roof-terraces.jpg) |
 
 ---
 
@@ -42,7 +48,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 58 tests: determinism, validity, nav, sightlines, geometry
+npm test                 # 75 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -51,7 +57,9 @@ npm run build:artifact   # bundle the published viewer into dist-artifact/app.js
 
 ### Demo viewer
 
-The demo has five views:
+The demo opens on the **mission briefing**: the floor plan of each storey shaded by what the sniper would see, and a dial to choose the bearing to shoot from (drag the marker, use the slider, or the arrow keys). The bars on the dial show how much of the party each bearing sees. *Deploy here* moves the sniper there; the *briefing* button brings the plan back. The shape of the dome hall (curved galleries or rotunda) is chosen in the panel before the house is generated.
+
+After deploying, the demo has five views:
 
 | View | What it shows |
 |---|---|
@@ -65,8 +73,9 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 
 | Parameter | Effect |
 |---|---|
-| `seed`, `style`, `massing`, `size` | Select the house. |
-| `view`, `fov` | Choose the view and scope zoom. |
+| `seed`, `style`, `massing`, `size`, `hall=gallery\|rotunda` | Select the house and the dome hall's shape. |
+| `az` | Sniper bearing in degrees off the garden axis (skips the briefing). `nobrief=1` skips it at the generated bearing; `brief=1` forces it. |
+| `view`, `fov`, `level` | Choose the view, the scope zoom and the storey the plan view cuts. `view=free&cam=x,y,z&look=x,y,z` is a debug camera. |
 | `sight=1`, `pois=1` | Turn the overlays on. |
 | `quality=low\|medium\|high` | Render quality. |
 | `light`, `sky`, `exposure` | Lighting balance. |
@@ -78,7 +87,7 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 ## Using the module
 
 ```ts
-import { generateMansion } from './src/mansion';
+import { generateMansion, movePerch } from './src/mansion';
 import { buildMansion } from './src/mansion/build';
 import { createGradePass } from './src/mansion/build/grade';
 
@@ -89,10 +98,15 @@ bp.rooms;                  // typed rooms with role, finish, lighting level
 bp.pois;                   // mission objects + NPC stand points + perch visibility
 bp.nav.levels[0].walk;     // walkable grid (0.25 m), per storey
 bp.nav.levels[0].vis;      // per-cell visibility from the sniper (0..255)
-bp.site.perch;             // sniper eye, aim target, zoom range
+bp.site.perch;             // sniper eye, aim target, zoom range, the arc of bearings on offer
+bp.atrium;                 // the dome hall: void, galleries, columns, dome
+
+// 1b. Briefing: the sniper picks a bearing. Same house; only what depends on the eye is recomputed.
+const chosen = movePerch(bp, -20);      // 20° west of the garden axis (clamped to bp.site.perch.arcDeg)
+chosen.sightlines.partyVisible;         // share of the indoor party floor in view from there
 
 // 2. Build: a three.js scene graph, lit for blue hour.
-const mansion = buildMansion(bp, { renderer, quality: 'high' });
+const mansion = buildMansion(chosen, { renderer, quality: 'high' });
 scene.add(mansion.root);
 scene.fog = mansion.fog;
 camera.position.copy(mansion.perch.position);
@@ -120,9 +134,12 @@ tracer.person(x, z, floorY); // 0..1 visibility of a standing person
 "Diffusion" was taken to mean **an algorithm that generates random but valid maps**, not a neural model. The module is a constrained generative grammar plus repair passes plus a validator. Any house that fails validation is regenerated from a derived seed (`seed#attempt`), so output stays deterministic.
 
 ```
-seed ─► style ─► massing grammar ─► room partitions ─► walls ─► stairs
-     ─► windows ─► door graph ─► site + perch ─► sightlines (pass 1)
-     ─► furnishing + mission POIs ─► nav grids + sightlines (pass 2) ─► validate ─► (retry)
+seed ─► style ─► massing grammar ─► room partitions ─► walls ─► dome hall + stairs
+     ─► windows ─► roof-terrace doors ─► door graph + column screens ─► site + perch arc
+     ─► sightlines (pass 1) ─► furnishing + mission POIs
+     ─► nav grids + sightlines (pass 2) ─► validate ─► (retry)
+
+movePerch(blueprint, bearing) ─► same house, sightlines recomputed for the chosen bearing
 ```
 
 Every stage draws from its own forked RNG stream (`rng.fork('rooms')`), so changing one stage never reshuffles another. `Math.random` is never used.
@@ -130,13 +147,14 @@ Every stage draws from its own forked RNG stream (`rng.fork('rooms')`), so chang
 | # | Stage | File | What happens |
 |---|---|---|---|
 | 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), or **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order). Each sets proportions, ornament and interior palettes. |
-| 2 | Massing | `layout/massing.ts` | Odd number of bays (3.6–4.5 m) on a grid mirrored about the garden axis, after Stiny & Mitchell's Palladian grammar. Double pile with an optional spine corridor. Plan type `block`, `u-garden`, `u-entrance` or `h`. Optional garden/entrance pavilions, giant or single-storey porticos, two-bay wings, and a glass conservatory. 2–3 storeys on a raised plinth (piano nobile). |
-| 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, sometimes double height. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis with the grand stair hall beside it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. |
+| 2 | Massing | `layout/massing.ts` | Odd number of bays (3.6–4.5 m) on a grid mirrored about the garden axis, after Stiny & Mitchell's Palladian grammar. Double pile with an optional spine corridor. Plan type `block`, `u-garden`, `u-entrance` or `h`. Optional garden/entrance pavilions, giant or single-storey porticos, two-bay wings, and a glass conservatory. 2–3 storeys on a raised plinth (piano nobile). The central hall is sized so its stair fits: a shallow one grows a deeper garden pavilion, then a deeper front pile. |
+| 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, with a gallery room over it on every upper floor. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis behind it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. |
 | 4 | Walls | `layout/walls.ts` | Derived, not authored. Room edges on each line are swept; each run with a constant (room on −side, room on +side) pair becomes a wall. A null side means façade. |
-| 5 | Stairs | `layout/stairs.ts` | U-return stairs fitted inside stair rooms (riser/tread search, approach zone, stairwell hole cut in the floor above). |
-| 6 | Windows | `layout/openings.ts` | One window per bay per storey on the main fronts and wing bays, centred on end walls. French windows to the terrace, frosted glass for bathrooms. Style dressing (pediments, keystones, surrounds, balconettes) and curtain state (open, sheer or drawn). |
-| 7 | Doors | `layout/openings.ts` | Solved as a graph problem. First the mandatory doors: grand axis, enfilade near the windows, hall↔stair arch, wing chains, every room onto its corridor or landing. Then connectivity growth from the entrance or landing. Then a **pass-through repair** so a private room is never the only way in; the blocker is promoted to a landing or morning room. |
-| 8 | Site and perch | `site/site.ts`, `site/terrain.ts` | Raised balustraded terrace with steps, gravel walks, box-hedged parterres, fountain, topiary and lamp posts. Poisson-disc tree belts keep the cone from perch to façade clear. Terrain height field with a wooded rise for the sniper, whose eye is lifted onto a mound if the brow would cut the sightline. Sky: sun 3–6.5° below the horizon behind the house, young crescent moon, cirrus. |
+| 5 | Dome hall | `layout/atrium.ts` | The ball room is open through every storey to a glass dome. One outline, the *void edge* (a U open to the garden windows with rounded back corners), drives it all. Offset inward it gives the two arms of the **split stair**, which sweep from the back of the dance floor round both sides up to the first gallery. Offset outward it gives the **ring gallery** on each upper floor: left, back and right, with doors into the rooms there; the garden side stays glass. `hall: 'rotunda'` makes the back of the hall a true apse with a curved wall; `'gallery'` (default) keeps a rectangular room with curved galleries. Curved shapes reach the rest of the generator as thin rectangular strips, so walls, nav and sightlines stay rectangular. |
+| 5b | Stairs | `layout/stairs.ts` | U-return service stairs stacked in the service column (riser/tread search, approach zone, stairwell hole cut in the floor above). The grand stair is the dome hall's. |
+| 6 | Windows | `layout/openings.ts` | One window per bay per storey on the main fronts and wing bays, centred on end walls. **Wide French windows to the terrace: about 70% of each garden-front bay is glass.** Frosted glass for bathrooms. Style dressing (pediments, keystones, surrounds, balconettes) and curtain state (open, sheer or drawn). A lower wing whose roof is *already* flat becomes a walkable **roof terrace** with a glazed door from the storey beside it; no roof is flattened for this. |
+| 7 | Doors | `layout/openings.ts` | Solved as a graph problem. First the mandatory doors: grand axis, enfilade near the windows, wing chains, every room onto its corridor, the hall galleries into the rooms beside and behind them. **Column screens:** a wall between two party rooms that sit one behind the other is opened bay by bay, leaving piers, so the view from the garden front carries through; halls, corridors, service and private rooms keep solid walls. Then connectivity growth from the entrance or gallery. Then a **pass-through repair** so a private room is never the only way in; the blocker is promoted to a landing or morning room. |
+| 8 | Site and perch | `site/site.ts`, `site/perch.ts`, `site/terrain.ts` | Raised balustraded terrace with steps, gravel walks, box-hedged parterres, fountain, topiary and lamp posts. The sniper may lie anywhere on a **perch arc** of ±38° off the garden axis: Poisson-disc tree belts are kept out of the cone from every bearing on it, and a wooded ridge follows it. The eye is lifted onto a mound if the brow would cut the sightline. Sky: sun 3–6.5° below the horizon behind the house, young crescent moon, cirrus. |
 | 9 | Sightlines, pass 1 | `analysis/sightlines.ts` | Architecture-only visibility per room, used to steer where mission props go. |
 | 10 | Furnishing | `interior/*` | Per-room recipes run through a constraint-checked placer. Props stay inside the clear interior, off door clearances and stairs, and out of the way of windows they would block. A flood fill after each placement keeps every door and stand point reachable. About 40 prop kinds; every room also gets its lights. |
 | 11 | Mission POIs | `interior/furnish.ts` | Bar, statues, paintings, bookshelves, piano, fireplaces, guest ledger, clocks, safe, globe and window spots, each with an NPC stand point and facing. A **visibility-aware repair** tops up required types in places the sniper can see; if no wall spot is watchable, it places an island bar facing the windows. |
@@ -153,10 +171,11 @@ A blueprint passes (`validation.ok === true`) only if all of these hold:
 2. Every room is reachable on its storey, storeys are linked by stairs, and the grand and service stairs fit.
 3. Each storey's walkable floor is one connected component containing every room and every POI stand point.
 4. The party floor is at least 180 m².
-5. **Fair to watch:** party visibility (ground-floor party rooms plus terrace) sits within `partyVisibility` (default **28–85%**), and at least two garden-front party rooms are watchable (≥20%). The spy needs places to hide; the sniper needs something to watch.
-6. **Missions exist:** required POIs exist, and enough are visible from the perch. Defaults: 3 statues (1 visible), 1 bar (visible), 6 paintings (2 visible), plus a piano, a fireplace and a guest ledger.
+5. **Fair to watch:** *indoor* party visibility (ground-floor party rooms) sits within `partyVisibility` (default **30–80%**), and at least two garden-front party rooms are watchable (≥20%). The terrace is reported separately: it is always in plain view, and counting it used to hide how opaque the house itself was.
+6. **Somewhere to hide:** at least **15%** of the ground floor guests use (party rooms, halls, corridors) is out of the sniper's sight (`sightlines.hiddenShare`).
+7. **Missions exist:** required POIs exist, and enough are visible from the perch. Defaults: 3 statues (1 visible), 1 bar (visible), 6 paintings (2 visible), plus a piano, a fireplace and a guest ledger.
 
-Warnings (never fatal) cover a house with no blind spots, a party room with a façade but no window, and pass-through violations that survived repair.
+Warnings (never fatal) cover a bearing on the perch arc that sees very little, a party room with a façade but no window, and pass-through violations that survived repair.
 
 ---
 
@@ -171,13 +190,15 @@ Defined in `src/mansion/core/types.ts`. Everything is plain, JSON-serialisable d
 | `masses` | Main block, pavilions, wings, conservatory with roof specs |
 | `rooms` | id, dense `index`, type, role (`party`/`circulation`/`private`/`service`), label, level, rects (`rect`, clear `inner`), floor/ceiling, holes, `lit` (0..1), `finish` (wall/floor/drapery colours), `stage`, `passThrough` |
 | `walls` | Centreline, thickness, height, exterior side, room on each side, `openings` (windows/doors with sill/head, glazing, panes, dressing, curtain state) |
-| `stairs`, `porticos` | Flights and landings; column positions, order, pediment |
+| `stairs`, `porticos` | Flights and landings (the dome hall's stair has curved `arms` instead of flights); column positions, order, pediment |
+| `atrium` | The dome hall: void outline, gallery floor and balustrade runs per storey, columns, curved walls (rotunda), dome |
+| `roofTerraces` | Walkable flat wing roofs, each with the door that leads onto it |
 | `props` | Furniture and fittings: kind, room, transform, size, nav blocking, sightline occlusion, optional `poi` |
 | `pois` | Mission objects: type, prop, room, `stand` point + facing, `visibility` from the perch |
 | `lights` | Every static light: scope (room id or `exterior`), candela, colour, range, optional spot `dir`/`cone` |
 | `site` | Terrace, lawn, paths, parterres, fountain, topiary, trees, terrain spec, `perch`, `sky` |
 | `nav` | `levels[]` (grids `walk`, `room`, `vis`; origin, cell, cols, rows) and `links` (doors, French windows, stairs) |
-| `sightlines` | Per-room visibility, terrace visibility, overall party visibility |
+| `sightlines` | Per-room visibility, terrace visibility, indoor party visibility, share of the ground floor out of sight |
 | `validation`, `stats` | Issues, metrics, counts, footprint, generation time |
 
 ### For gameplay
@@ -185,6 +206,7 @@ Defined in `src/mansion/core/types.ts`. Everything is plain, JSON-serialisable d
 - **Spy and NPC AI:** route on `nav.levels[*].walk` plus `nav.links`. `vis` tells an AI where it is watched, so low-visibility rooms are the blind spots that make "time out of sight" a tell.
 - **Missions:** `pois` are the interaction points. Their `visibility` lets mission design mix observable and hidden actions.
 - **Sniper:** `site.perch` gives camera pose and zoom range, and `SightlineTracer` answers visibility at runtime.
+- **Briefing:** `movePerch(bp, azimuthDeg)` returns the same house seen from another bearing on the arc, with visibility grids, per-room figures and mission-object visibility recomputed (about 30 ms). `site.perch.options` is a coarse sample of what each bearing sees, for the picker. Head-on sees deepest; an oblique bearing sees less, but different rooms.
 - **NPC lighting:** `mansion.lighting.ambient[room.index]` gives the room's bounce colour; add the room's lights from `bp.lights`.
 - **Multiplayer:** send seed + options (generation is deterministic), or send the blueprint JSON from the server.
 
@@ -202,6 +224,7 @@ All renderer code is in `src/mansion/build/`. `buildMansion(bp, opts)` returns `
   - Façades get outer faces mitred at convex and concave corners, with plinth and water table, string courses, stepped cornices, balustraded parapets, quoins, pavilion pilasters, window surrounds, triangular and segmental pediments, keystones and iron balconettes.
   - Windows get sash and French-window joinery with glazing bars, Fresnel glass, double-sided pleated drapes, pelmets and sheers.
 - **Roofs and porticos** (`roofs.ts`): hipped (slope-aligned slate UVs), mansard with dormers (some warmly lit), flat with balustrade, and glass conservatory roofs. Also pavilion pediment gables, chimney stacks with pots, and porticos in Doric, Ionic and Corinthian orders with entablature and pediment.
+- **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the oculus ceiling. Outside, a square base, a round drum and a ribbed glass dome; the roof is cut open where the base stands.
 - **Also:** `stairs.ts` (stone or timber U-stairs with balusters); `props.ts` (furniture, chandeliers with glowing candles, bar with bottles, grand piano with raised lid, statues, paintings from the atlas, lamps, lanterns); `site.ts` (terrain, terrace, steps, gardens, fountain, instanced LOD trees and a far tree line).
 - **Sky** (`sky.ts`): lavender haze to deep-blue zenith, a warm sunset glow on one side and the rosy Belt of Venus opposite. Cirrus is lit from below, there are stars, and the crescent moon is shaded by the real sun vector. It is baked into a PMREM environment map for façade, glass and water reflections.
 - **Post** (`grade.ts`): ACES tone mapping, bloom on bulbs, then a split-tone grade (cool shadows, warm highlights, +12% saturation, soft vignette).
@@ -236,9 +259,10 @@ generateMansion({
   size: 'grand',                    // 'compact' (7–9 bays) | 'grand' (9–13) | 'palatial' (13–15)
   style: 'palladian',               // 'palladian' | 'georgian' | 'beauxarts' (default: random)
   massing: 'u-garden',              // 'block' | 'u-garden' | 'u-entrance' | 'h' (default: weighted by style)
+  hall: 'gallery',                  // 'gallery' | 'rotunda': shape of the dome hall (default 'gallery')
   perchDistance: 180,               // metres from the garden façade (default 135–205)
-  perchAzimuthDeg: -12,             // degrees off the garden axis (default ±24)
-  partyVisibility: [0.28, 0.85],    // acceptable share of the party in view
+  perchAzimuthDeg: -12,             // degrees off the garden axis (default ±24; movePerch() changes it later)
+  partyVisibility: [0.3, 0.8],      // acceptable share of the indoor party floor in view
   requiredPois: { statue: { min: 4, visible: 2 } }, // merged over defaults
   maxAttempts: 16,
   navCell: 0.25,                    // nav/visibility grid resolution (m)
@@ -261,14 +285,14 @@ buildMansion(bp, {
 src/mansion/
   index.ts              public API
   generate.ts           pipeline orchestrator, retry loop, room finalisation
-  core/                 rng (forkable sfc32), geom, styles, types (the blueprint schema)
-  layout/               massing, rooms, walls, stairs, openings (windows + door graph), porticos
-  site/                 site plan (terrace, gardens, trees, perch, sky), terrain height field
+  core/                 rng (forkable sfc32), geom, styles, roofs (roof height maths), types (the blueprint schema)
+  layout/               massing, rooms, walls, atrium (dome hall), stairs, openings (windows + door graph), porticos
+  site/                 site plan (terrace, gardens, trees, sky), perch (arc + eye), terrain height field
   interior/             placer (constraints + flood fill), recipes (per room type), furnish (POIs)
   analysis/             sightlines tracer, occluders, nav grids, validation
   build/                three.js renderer: textures, lighting, materials, geometry,
-                        arch, roofs, stairs, props, site, sky, grade, index (buildMansion)
-demo/                   dev viewer (Vite)
+                        arch, atrium, roofs, stairs, props, site, sky, grade, index (buildMansion)
+demo/                   dev viewer (Vite) with the mission briefing
 artifact/               published viewer page (field-dossier UI, mil-dot scope)
 scripts/                gen, batch, stress, debug, render, texsheet, png
 tests/                  generator.test.ts, builder.test.ts
@@ -281,7 +305,7 @@ docs/                   mansion-generation.md (design doc), images/
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 58 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 36 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
+| `npm test` | 75 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 36 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |
@@ -297,14 +321,16 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 
 | Metric | Value |
 |---|---|
-| Validity, all 36 combinations × 5 seeds | 180 / 180 (mean 1.06 attempts) |
-| Validity, 100 random seeds | 99 first try, 100 / 100 overall |
-| Generation time | ~65–70 ms per house |
+| Validity, all 36 combinations × 5 seeds × both hall shapes | 360 / 360 (mean 1.1 attempts) |
+| Validity, 100 random seeds | 95 first try, 100 / 100 overall |
+| Indoor party floor the sniper sees | 44% on average (29% before the wide glazing, column screens and dome hall) |
+| Ground floor out of the sniper's sight | 54% on average |
+| Generation time | ~135–170 ms per attempt |
 | Typical grand house | ~30–50 rooms, ~370 props, ~100–400 lights, ~60 POIs, ~600 trees |
-| Static mesh triangles | ~240–300k |
-| Rendered per frame (incl. shadows, trees) | ~1.3M triangles, ~180 draw calls |
+| Static mesh triangles | ~290–460k |
+| Rendered per frame (incl. shadows, trees) | ~1.5–1.8M triangles, ~180 draw calls |
 | Build time | ~2.5–4 s, mostly texture synthesis |
-| Published viewer bundle | 935 kB (228 kB gzip) |
+| Published viewer bundle | 972 kB (240 kB gzip) |
 
 ---
 
@@ -314,7 +340,9 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 - **Why not Wave Function Collapse?** It guarantees local tile adjacency but not global properties: connectivity, symmetry, room programme and sightline fairness.
 - **Why scoped lights instead of three.js point lights?** Hundreds of lights, no light leaking through walls, a handful of shader programs and merged draw calls.
 - **Why faces instead of wall boxes?** Each room can carry its own finish and light scope, and corners join cleanly without z-fighting.
-- **Fixed perch:** the sniper sits on one wooded rise facing the garden (stage) front, which gets the most glazing. Perch distance and bearing are randomised per seed within fair limits.
+- **A perch the sniper chooses:** the sniper lies on a wooded ridge facing the garden (stage) front, which gets the most glazing. Distance is randomised per seed; the bearing is the sniper's choice within ±38°, and the house does not change with it.
+- **Why a hall rather than more windows?** Glass alone cannot show what is behind the front rooms. One tall hall on the axis puts the stair, the galleries and the people on them in a single view through the central windows.
+- **Why keep rectangles under the curves?** Walls, navigation and sightlines all assume axis-aligned rooms. The dome hall's curves are geometry inside one rectangular room, passed to those systems as strips, so nothing else had to change.
 - **Engine:** Three.js + TypeScript. The blueprint is engine-agnostic, so another engine could consume it.
 
 ---
@@ -325,6 +353,9 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 - Texture synthesis and geometry run on the main thread. Moving them to a Web Worker and caching textures in IndexedDB would cut build time.
 - Interactive state (curtains drawn, lights switched off, doors closed) is per opening and per light in the data but not yet toggleable at runtime.
 - More parti: bow-fronted salons, quadrant links to pavilions, courtyard plans, a modernist villa style.
+- Roof terraces exist only where a roof is already flat, which today means some Palladian wings. No style has a flat main roof yet, so the main roof is never a terrace.
+- The rotunda is an apse: the back of the hall is curved, the garden front stays flat so the façade and its windows are unchanged.
+- In a three-bay hall the stair arms run the length of both side walls, so the hall's two outer windows look onto the stair more than the dance floor.
 - LOD for façade ornament and props at wide zoom.
 - Exterior light clusters cap at 8 lights per 8 m cell; very dense lantern layouts are merged.
 

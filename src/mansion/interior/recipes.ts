@@ -271,8 +271,16 @@ function bookcases(p: Placer, sides: Side[], maxPoi: number): number {
 
 type Recipe = (p: Placer, o: RecipeOptions) => void;
 
+/** The great chandelier under the dome: one fitting, lighting the hall and every gallery round it. */
+function domeChandelier(p: Placer, fitting: boolean): void {
+  const d = p.dome!;
+  if (fitting) p.add('chandelier', d.x, d.z, 0, 2.8, 2.8, 3.2, { y: d.y - 1.6, blocks: false, mount: 'ceiling', variant: 0 });
+  if (p.room.lit > 0) p.light('chandelier', d.x, d.y, d.z, TUNGSTEN, (fitting ? 760 : 520) * p.room.lit, 22);
+}
+
 const ballroom: Recipe = (p, o) => {
-  chandeliers(p, 40, 4);
+  if (p.dome) domeChandelier(p, true);
+  else chandeliers(p, 40, 4);
   const back = backSide(p);
   // Band corner: piano and stands at one end of the back wall.
   const ends = perpendicularSides(back);
@@ -610,6 +618,34 @@ const corridor: Recipe = (p) => {
   if (long > 6) p.add('rug', p.cx, p.cz, along === 'x' ? Math.PI / 2 : 0, Math.min(p.width, p.depth) * 0.55, long - 1.2, 0.012, { blocks: false, variant: 4 });
 };
 
+/** Ring gallery round the dome hall: kept clear to walk, lit by the chandelier and wall lights. */
+const hallGallery: Recipe = (p) => {
+  if (p.dome) domeChandelier(p, false);
+  sconces(p, 3.2);
+  paintings(p, 3, { poi: true });
+};
+
+/** Roof terrace: open air, a few tables and planters; the lanterns are exterior lights. */
+const roofTerrace: Recipe = (p) => {
+  const long = Math.max(p.width, p.depth);
+  const n = Math.max(1, Math.round(long / 6));
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const x = p.longAxis === 'x' ? p.inner.x0 + t * p.width : p.cx;
+    const z = p.longAxis === 'z' ? p.inner.z0 + t * p.depth : p.cz;
+    p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+  }
+  const i = p.inner;
+  for (const [x, z] of [
+    [i.x0 + 0.5, i.z0 + 0.5],
+    [i.x1 - 0.5, i.z0 + 0.5],
+    [i.x0 + 0.5, i.z1 - 0.5],
+    [i.x1 - 0.5, i.z1 - 0.5],
+  ] as const) {
+    p.add('plant', x, z, 0, 0.6, 0.6, 1.4, { occludes: true });
+  }
+};
+
 const landing: Recipe = (p) => {
   chandeliers(p, 60, 1);
   p.againstWall(p.solidSides()[0]!, 'console', 1.4, 0.45, 0.85);
@@ -713,6 +749,8 @@ export const RECIPES: Record<RoomType, Recipe> = {
   'stair-hall': stairHall,
   corridor,
   landing,
+  'hall-gallery': hallGallery,
+  'roof-terrace': roofTerrace,
   'service-stair': none,
   study,
   cloakroom: service,

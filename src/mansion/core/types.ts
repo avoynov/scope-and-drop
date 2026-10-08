@@ -33,6 +33,8 @@ export type RoomType =
   | 'pantry'
   | 'service-stair'
   | 'landing'
+  | 'hall-gallery'
+  | 'roof-terrace'
   | 'bedroom'
   | 'sitting-room'
   | 'dressing-room'
@@ -185,6 +187,16 @@ export interface StairFlight {
   steps: number;
 }
 
+/** One curved arm of the split stair in the dome hall. */
+export interface StairArm {
+  /** Centreline in plan, from the first riser to the gallery. Treads are equal divisions of its length. */
+  path: Vec2[];
+  width: number;
+  y0: number;
+  rise: number;
+  steps: number;
+}
+
 export interface Stair {
   id: string;
   kind: 'grand' | 'service';
@@ -193,8 +205,60 @@ export interface Stair {
   bottomRoom: string;
   topRoom: string;
   rect: Rect;
+  /** Straight flights (service stairs). Empty for the dome hall's curved stair, which uses `arms`. */
   flights: StairFlight[];
   landings: { rect: Rect; y: number }[];
+  arms?: StairArm[];
+}
+
+/** A flat wing roof used as a terrace, reached by a glazed door from the storey beside it. */
+export interface RoofTerrace {
+  roomId: string;
+  massId: string;
+  /** Storey whose floor the deck is level with. */
+  level: number;
+  rect: Rect;
+  /** Deck height. */
+  y: number;
+  /** The door onto it: plan position and the room it opens from. */
+  door: { x: number; z: number; from: string; openingId: string };
+}
+
+/** Shape of the dome hall: a rectangular room with curved galleries, or a true apse with curved walls. */
+export type HallShape = 'gallery' | 'rotunda';
+
+/**
+ * The dome hall: the ball room open through every storey to a glass dome,
+ * with ring galleries on its left, back and right on each upper floor.
+ */
+export interface Atrium {
+  /** The ball room (ground floor). */
+  roomId: string;
+  shape: HallShape;
+  /** Clear interior of the hall's rectangle. */
+  inner: Rect;
+  galleryWidth: number;
+  /** Outline of the open void above the dance floor (closed along the garden wall). */
+  void: Vec2[];
+  /** Hall outline at floor level: the rectangle, or the rotunda's curve. */
+  footprint: Vec2[];
+  /** Rotunda only: curved wall runs, full height. */
+  curvedWalls: Vec2[][];
+  galleries: {
+    level: number;
+    roomId: string;
+    y: number;
+    /** Walkable floor. */
+    outline: Vec2[];
+    /** Balustrade runs along the edge. */
+    rails: Vec2[][];
+  }[];
+  /** Columns under the gallery edge, one stack through every storey. */
+  columns: Vec2[];
+  columnRadius: number;
+  stairId: string;
+  /** Glass dome on a drum above the roof. `baseY` is the hall ceiling (the oculus), `springY` where the glass starts. */
+  dome: { x: number; z: number; radius: number; baseY: number; springY: number; height: number };
 }
 
 export interface Portico {
@@ -349,6 +413,10 @@ export interface Perch {
   azimuthDeg: number;
   fovMinDeg: number;
   fovMaxDeg: number;
+  /** Bearings the sniper may choose before the mission (deg off the garden axis). The vista is clear along all of it. */
+  arcDeg: [number, number];
+  /** Indoor party visibility sampled along the arc, for the briefing. */
+  options: { azimuthDeg: number; partyVisible: number }[];
 }
 
 export interface SkySpec {
@@ -366,8 +434,10 @@ export interface TerrainSpec {
   flatRadius: number;
   /** Height of the wooded rise the perch sits on. */
   perchRise: number;
-  /** Plan position of the rise crest. */
+  /** Plan position of the rise crest behind the default perch. */
   crest: Vec2;
+  /** The rise is a ridge along the perch arc: centre z on the garden axis, radius, and half-angle (rad). */
+  ridge: { cz: number; radius: number; halfAngle: number };
   undulation: number;
   seed: number;
 }
@@ -422,8 +492,10 @@ export interface Sightlines {
   /** Mean visibility per room id (0..1), person-height samples. */
   rooms: Record<string, number>;
   terrace: number;
-  /** Share of party floor area (incl. terrace) visible from the perch. */
+  /** Share of indoor party floor (ground-floor party rooms) visible from the perch. The terrace is reported separately. */
   partyVisible: number;
+  /** Share of the ground floor guests use (party rooms, halls, corridors) that the sniper cannot see at all: the spy's cover. */
+  hiddenShare: number;
 }
 
 export interface ValidationIssue {
@@ -449,11 +521,13 @@ export interface MansionOptions {
   perchAzimuthDeg?: number;
   /** Mission objects that must exist, with minimum counts and how many must be visible. */
   requiredPois?: Partial<Record<PoiType, { min: number; visible: number }>>;
-  /** Acceptable share of party floor visible from the perch. */
+  /** Acceptable share of indoor party floor visible from the perch. */
   partyVisibility?: [number, number];
   maxAttempts?: number;
   /** Nav/visibility grid resolution (m). */
   navCell?: number;
+  /** Dome hall shape. Default 'gallery'. */
+  hall?: HallShape;
 }
 
 export interface StyleDef {
@@ -483,7 +557,7 @@ export interface StyleDef {
 }
 
 export interface MansionBlueprint {
-  schema: 'scope-and-drop/mansion@1';
+  schema: 'scope-and-drop/mansion@2';
   seed: string;
   /** Generation attempt that passed validation (0 = first try). */
   attempt: number;
@@ -500,6 +574,9 @@ export interface MansionBlueprint {
   rooms: Room[];
   walls: Wall[];
   stairs: Stair[];
+  atrium: Atrium | null;
+  /** Flat roofs of lower wings that guests can walk out onto. */
+  roofTerraces: RoofTerrace[];
   porticos: Portico[];
   props: Prop[];
   pois: Poi[];

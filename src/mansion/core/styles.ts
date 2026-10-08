@@ -123,6 +123,7 @@ function wallKey(type: RoomType): string {
   switch (type) {
     case 'ballroom':
     case 'grand-salon':
+    case 'hall-gallery':
       return 'ballroom';
     case 'drawing-room':
     case 'morning-room':
@@ -197,6 +198,8 @@ function floorFinishFor(type: RoomType, rng: Rng): FloorFinish {
       return rng.pick<FloorFinish>(['checker', 'marble', 'stone']);
     case 'conservatory':
       return rng.pick<FloorFinish>(['checker', 'stone']);
+    case 'roof-terrace':
+      return 'stone';
     case 'corridor':
     case 'landing':
       return rng.pick<FloorFinish>(['parquet', 'boards', 'stone']);
@@ -263,6 +266,8 @@ export const ROOM_LABELS: Record<RoomType, string> = {
   pantry: "Butler's Pantry",
   'service-stair': 'Service Stair',
   landing: 'Landing',
+  'hall-gallery': 'Hall Gallery',
+  'roof-terrace': 'Roof Terrace',
   bedroom: 'Bedroom',
   'sitting-room': 'Sitting Room',
   'dressing-room': 'Dressing Room',

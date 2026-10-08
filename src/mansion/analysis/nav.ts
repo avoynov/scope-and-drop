@@ -22,7 +22,7 @@ export interface NavInput {
 /** Looser than the furniture placer's 0.28 m so placer-connected rooms stay connected here. */
 const AGENT = 0.12;
 /** Visibility is sampled on 2×2 cell blocks (rays are the expensive part). */
-const VIS_BLOCK = 2;
+export const VIS_BLOCK = 2;
 
 export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
   const out: NavLevel[] = [];
@@ -147,7 +147,12 @@ export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
     const sizes = new Map<number, number>();
     comp.forEach((q) => q >= 0 && sizes.set(q, (sizes.get(q) ?? 0) + 1));
     const main = [...sizes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    for (let k = 0; k < walk.length; k++) if (walk[k] && comp[k] !== main) walk[k] = 0;
+    for (let k = 0; k < walk.length; k++) {
+      if (walk[k] && comp[k] !== main) {
+        walk[k] = 0;
+        vis[k] = 0;
+      }
+    }
     out.push(n);
   }
   return out;

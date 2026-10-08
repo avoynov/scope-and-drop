@@ -17,6 +17,9 @@ export const DEFAULT_REQUIRED_POIS: Partial<Record<PoiType, { min: number; visib
   ledger: { min: 1, visible: 0 },
 };
 
+/** At least this share of the guests' ground floor must be out of the sniper's sight. */
+export const MIN_HIDDEN = 0.15;
+
 /** A POI counts as visible from the perch above this person-visibility. */
 export const POI_VISIBLE = 0.35;
 
@@ -76,7 +79,15 @@ export function validate(bp: Omit<MansionBlueprint, 'validation' | 'stats'>, ext
   if (watchable.length < Math.min(2, stageRooms.length)) err('stage-blind', `Only ${watchable.length} garden-front party rooms can be watched`);
   const hidden = bp.rooms.filter((r) => r.level === 0 && (r.role === 'party' || r.role === 'circulation') && (bp.sightlines.rooms[r.id] ?? 0) < 0.05);
   metrics.blindSpots = hidden.length;
-  if (hidden.length === 0) warn('no-blind-spots', 'Every ground-floor room is visible: the spy has nowhere to hide');
+  // The cap on openness: the spy must always have somewhere to go that the sniper cannot watch.
+  metrics.hiddenShare = round(bp.sightlines.hiddenShare);
+  if (bp.sightlines.hiddenShare < MIN_HIDDEN) err('no-blind-spots', `Only ${(bp.sightlines.hiddenShare * 100).toFixed(0)}% of the ground floor is out of sight: the spy has nowhere to hide`);
+  // Fairness along the arc: no bearing the sniper may choose should be hopeless.
+  const worst = Math.min(...bp.site.perch.options.map((o) => o.partyVisible));
+  if (Number.isFinite(worst)) {
+    metrics.worstBearingVisible = round(worst);
+    if (worst < lo * 0.6) warn('weak-bearing', `One bearing on the perch arc sees only ${(worst * 100).toFixed(0)}% of the party`);
+  }
 
   // Mission objects.
   const req = bp.options.requiredPois;

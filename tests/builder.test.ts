@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateMansion } from '../src/mansion';
 import type { MansionSize, MassingType, StyleId } from '../src/mansion';
 import { buildFacades, buildInteriors, buildReveals, type ArchContext } from '../src/mansion/build/arch';
+import { buildAtrium, buildDome } from '../src/mansion/build/atrium';
 import { GeometryBuilder } from '../src/mansion/build/geometry';
 import { RECIPES } from '../src/mansion/build/materials';
 import { buildLanterns, buildProps } from '../src/mansion/build/props';
@@ -18,9 +19,12 @@ function mesh(style: StyleId, massing: MassingType, size: MansionSize, seed: str
   const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const ctx: ArchContext = { bp, g, rooms: new Map(bp.rooms.map((r) => [r.id, r])), style: bp.style, rand };
   buildInteriors(ctx);
+  buildAtrium(ctx);
   buildReveals(ctx);
   buildFacades(ctx);
+  const roofMark = g.mark();
   buildRoofs(ctx);
+  buildDome(ctx, roofMark);
   buildPorticos(ctx);
   buildStairs(ctx);
   buildProps(bp, g, rand);
@@ -59,6 +63,35 @@ describe('renderer geometry', () => {
     expect(Math.max(...sc)).toBeLessThan(bp.rooms.length);
     const ext = geos.get(`ext-wall-${bp.style.wallMaterial}`) ?? geos.get('ext-rustic')!;
     expect(Array.from(ext.getAttribute('aScope').array as Float32Array).every((v) => v === -1)).toBe(true);
+  });
+
+  it('the roof is opened where the dome stands, and the hall has its stair, galleries and glass', () => {
+    for (const hall of ['gallery', 'rotunda'] as const) {
+      const bp = generateMansion({ seed: `dome-mesh-${hall}`, hall });
+      const g = new GeometryBuilder();
+      const ctx: ArchContext = { bp, g, rooms: new Map(bp.rooms.map((r) => [r.id, r])), style: bp.style, rand: () => 0.5 };
+      buildInteriors(ctx);
+      const before = g.mark();
+      buildAtrium(ctx);
+      // The hall mesher adds marble (stair, columns), gallery floors and balustrades.
+      expect((g.buckets.get('marble')?.idx.length ?? 0) - (before.get('marble') ?? 0)).toBeGreaterThan(3000);
+      const roofMark = g.mark();
+      buildRoofs(ctx);
+      buildDome(ctx, roofMark);
+      const d = bp.atrium!.dome;
+      const half = d.radius + 0.5;
+      const roof = g.buckets.get(`roof-${bp.style.roofMaterial}`)!;
+      for (let t = roofMark.get(`roof-${bp.style.roofMaterial}`) ?? 0; t < roof.idx.length; t += 3) {
+        let cx = 0;
+        let cz = 0;
+        for (let k = 0; k < 3; k++) {
+          cx += roof.pos.data[roof.idx.data[t + k]! * 3]! / 3;
+          cz += roof.pos.data[roof.idx.data[t + k]! * 3 + 2]! / 3;
+        }
+        expect(Math.abs(cx - d.x) < half && Math.abs(cz - d.z) < half, `${hall}: roof triangle inside the dome base`).toBe(false);
+      }
+      expect(g.buckets.get('glass')!.idx.length).toBeGreaterThan(0);
+    }
   });
 
   it('terrain is finite and covers the perch', () => {

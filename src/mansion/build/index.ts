@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import type { LightSpec, MansionBlueprint } from '../core/types';
 import { buildFacades, buildInteriors, buildReveals, type ArchContext } from './arch';
+import { buildAtrium, buildDome } from './atrium';
 import { GeometryBuilder } from './geometry';
 import { ScopedLighting } from './lighting';
 import { MaterialLibrary, RECIPES } from './materials';
@@ -80,9 +81,12 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   const rand = mulberry(bp.seed.length * 7919 + bp.attempt);
   const ctx: ArchContext = { bp, g, rooms: new Map(bp.rooms.map((r) => [r.id, r])), style: bp.style, rand };
   buildInteriors(ctx);
+  buildAtrium(ctx);
   buildReveals(ctx);
   buildFacades(ctx);
+  const roofMark = g.mark();
   buildRoofs(ctx);
+  buildDome(ctx, roofMark);
   buildPorticos(ctx);
   buildStairs(ctx);
   buildProps(bp, g, rand);

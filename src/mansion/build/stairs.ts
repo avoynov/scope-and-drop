@@ -18,6 +18,8 @@ function dirVec(d: StairFlight['dir']): [number, number] {
 export function buildStairs(ctx: ArchContext): void {
   const { bp, g, rooms } = ctx;
   for (const s of bp.stairs) {
+    // The dome hall's curved stair is built by the atrium mesher.
+    if (s.arms) continue;
     const room = rooms.get(s.bottomRoom)!;
     g.scope = room.index;
     const grand = s.kind === 'grand';

@@ -9,7 +9,7 @@
 import { rect, type Rect, type Vec3 } from './core/geom';
 import { Rng, snap } from './core/rng';
 import { ROOM_LABELS, roomFinish, STYLE_IDS, STYLES } from './core/styles';
-import { roofSurfaceY } from './core/roofs';
+import { PAVILION_PITCH } from './core/roofs';
 import type { Atrium, LevelSpec, LightSpec, MansionBlueprint, MansionOptions, Mass, NavLevel, NavLink, Poi, Prop, RoofTerrace, Room, Sightlines, Site, Stair, StyleDef } from './core/types';
 import { collectOccluders } from './analysis/occluders';
 import { buildNav, VIS_BLOCK } from './analysis/nav';
@@ -23,7 +23,7 @@ import { planPorticos } from './layout/porticos';
 import { isPassThrough, planRooms, ROLE, type RoomDraft } from './layout/rooms';
 import { fitStairBetween } from './layout/stairs';
 import { deriveWalls, innerRect } from './layout/walls';
-import { perchEye } from './site/perch';
+import { perchEyeAt } from './site/perch';
 import { planSite } from './site/site';
 
 export const SCHEMA = 'scope-and-drop/mansion@2' as const;
@@ -39,12 +39,21 @@ export function resolveOptions(o: MansionOptions): Resolved {
     massing: o.massing,
     perchDistance: o.perchDistance,
     perchAzimuthDeg: o.perchAzimuthDeg,
+    perchElevationDeg: o.perchElevationDeg,
     requiredPois: { ...DEFAULT_REQUIRED_POIS, ...(o.requiredPois ?? {}) },
-    partyVisibility: o.partyVisibility ?? [0.3, 0.8],
-    maxAttempts: o.maxAttempts ?? 16,
+    partyVisibility: visibilityBand(o),
+    maxAttempts: o.maxAttempts ?? (o.minVisible !== undefined ? 32 : 16),
     navCell: o.navCell ?? 0.25,
     hall: o.hall ?? 'gallery',
   };
+}
+
+/** `minVisible` raises the floor of the band; the ceiling moves up with it so the band never closes. */
+function visibilityBand(o: MansionOptions): [number, number] {
+  const [lo, hi] = o.partyVisibility ?? [0.3, 0.8];
+  if (o.minVisible === undefined) return [lo, hi];
+  const min = Math.max(0, Math.min(0.95, o.minVisible));
+  return [min, Math.max(hi, Math.min(1, min + 0.25))];
 }
 
 export function generateMansion(options: MansionOptions): MansionBlueprint {
@@ -53,8 +62,10 @@ export function generateMansion(options: MansionOptions): MansionBlueprint {
   let best: MansionBlueprint | null = null;
   for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
     const bp = generateOnce(opts, attempt);
+    // Keep the house with the fewest faults; between equals, the one the sniper sees most of.
     const errors = bp.validation.issues.filter((i) => i.severity === 'error').length;
-    if (!best || errors < best.validation.issues.filter((i) => i.severity === 'error').length) best = bp;
+    const bestErrors = best ? best.validation.issues.filter((i) => i.severity === 'error').length : Infinity;
+    if (!best || errors < bestErrors || (errors === bestErrors && bp.sightlines.partyVisible > best.sightlines.partyVisible)) best = bp;
     if (bp.validation.ok) break;
   }
   best!.stats.generationMs = Math.round(now() - t0);
@@ -92,7 +103,7 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
       kind: 'pavilion',
       rect: rect(-half, m.zGarden, half, snap(m.zGarden + m.gardenPavilion.depth, 0.01)),
       levels: m.mainLevels,
-      roof: { kind: 'hipped', eaveY: eave, pitchDeg: 22.5, balustrade: false, pediment: 'garden', dormers: false },
+      roof: { kind: 'hipped', eaveY: eave, pitchDeg: PAVILION_PITCH, balustrade: false, pediment: 'garden', dormers: false },
       exposed: [],
     });
   }
@@ -103,7 +114,7 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
       kind: 'pavilion',
       rect: rect(-half, snap(m.zEntrance - m.entrancePavilion.depth, 0.01), half, m.zEntrance),
       levels: m.mainLevels,
-      roof: { kind: 'hipped', eaveY: eave, pitchDeg: 22.5, balustrade: false, pediment: 'entrance', dormers: false },
+      roof: { kind: 'hipped', eaveY: eave, pitchDeg: PAVILION_PITCH, balustrade: false, pediment: 'entrance', dormers: false },
       exposed: [],
     });
   }
@@ -214,13 +225,9 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         landings: geo.landings.map((r) => ({ rect: r, y: levels[1]!.floorY })),
         arms: geo.arms,
       });
-      // The drum carries the dome clear of whatever roof it stands in.
+      // The dome springs from a low curb at the eaves: a tall drum would wall off the sniper's view down.
       const top = levels[levels.length - 1]!;
-      const reach = geo.dome.radius + 0.6;
-      let roofY = top.floorY + top.height;
-      for (let i = -2; i <= 2; i++) {
-        for (let j = -2; j <= 2; j++) roofY = Math.max(roofY, roofSurfaceY(masses, geo.dome.x + (i / 2) * reach, geo.dome.z + (j / 2) * reach));
-      }
+      const eave = top.floorY + top.height;
       atrium = {
         roomId: hall.id,
         shape: geo.shape,
@@ -233,7 +240,7 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         columns: geo.columns,
         columnRadius: geo.columnRadius,
         stairId: 'stair-grand',
-        dome: { ...geo.dome, baseY: top.ceilingY, springY: snap(roofY + 1.7, 0.01), height: snap(geo.dome.radius * 0.62, 0.01) },
+        dome: { ...geo.dome, baseY: top.ceilingY, springY: snap(eave + 1.0, 0.01), height: snap(geo.dome.radius * 0.58, 0.01) },
       };
     } else missingStairs.push('grand');
     for (let L = 0; L + 1 < levels.length; L++) {
@@ -323,7 +330,7 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
 
   // Site + perch.
   const footprint = boundsOf([...masses.map((q) => q.rect), ...porticos.map((p) => p.rect)]);
-  const siteOut = planSite({ rng: rng.fork('site'), m, style, porticos, footprint, perchDistance: opts.perchDistance, perchAzimuthDeg: opts.perchAzimuthDeg });
+  const siteOut = planSite({ rng: rng.fork('site'), m, style, porticos, footprint, perchDistance: opts.perchDistance, perchAzimuthDeg: opts.perchAzimuthDeg, perchElevationDeg: opts.perchElevationDeg });
   const site = siteOut.site;
 
   // First-pass sightlines (architecture only) steer where the bar and mission props go.
@@ -416,8 +423,14 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
   const [arcLo, arcHi] = site.perch.arcDeg;
   for (let i = 0; i <= 8; i++) {
     const az = snap(arcLo + ((arcHi - arcLo) * i) / 8, 0.1);
-    const eye = perchEye(site.terrain, m.zGarden, m.groundFloorY, az, site.perch.distance);
+    const eye = perchEyeAt(site.terrain, m.zGarden, m.groundFloorY, az, site.perch.elevationDeg, site.perch.distance);
     site.perch.options.push({ azimuthDeg: az, partyVisible: coarsePartyVisible(new SightlineTracer(eye, occluders), rooms) });
+  }
+  const [elLo, elHi] = site.perch.elevationRangeDeg;
+  for (let i = 0; i <= 6; i++) {
+    const el = snap(elLo + ((elHi - elLo) * i) / 6, 0.1);
+    const eye = perchEyeAt(site.terrain, m.zGarden, m.groundFloorY, site.perch.azimuthDeg, el, site.perch.distance);
+    site.perch.elevationOptions.push({ elevationDeg: el, partyVisible: coarsePartyVisible(new SightlineTracer(eye, occluders), rooms) });
   }
 
   const partial = {
@@ -490,11 +503,12 @@ function summariseSightlines(navLevels: NavLevel[], rooms: Room[], eye: Vec3): S
         s[1]++;
         sums.set(ri, s);
         const r = byIndex.get(ri)!;
-        if (r.role === 'party' && r.level === 0) {
+        const party = r.role === 'party' && r.type !== 'roof-terrace';
+        if (party) {
           partySum += v;
           partyN++;
         }
-        if (r.level === 0 && (r.role === 'party' || r.role === 'circulation')) {
+        if (party || (r.level === 0 && r.role === 'circulation')) {
           publicN++;
           if (v < 0.1) hiddenN++;
         }
@@ -519,7 +533,7 @@ function coarsePartyVisible(tracer: SightlineTracer, rooms: Room[]): number {
   let sum = 0;
   let n = 0;
   for (const r of rooms) {
-    if (r.level !== 0 || r.role !== 'party') continue;
+    if (r.role !== 'party' || r.type === 'roof-terrace') continue;
     for (let x = r.inner.x0 + 0.5; x < r.inner.x1; x += 1) {
       for (let z = r.inner.z0 + 0.5; z < r.inner.z1; z += 1) {
         sum += tracer.person(x, z, r.floorY);
@@ -531,17 +545,19 @@ function coarsePartyVisible(tracer: SightlineTracer, rooms: Room[]): number {
 }
 
 /**
- * Move the sniper to another bearing on the perch arc. The house, furniture and
- * mission objects are untouched; only what depends on the eye is recomputed
- * (visibility grids, per-room and party visibility, mission-object visibility).
+ * Move the sniper to another bearing on the perch arc and, optionally, another elevation.
+ * The house, furniture and mission objects are untouched; only what depends on the eye is
+ * recomputed (visibility grids, per-room and party visibility, mission-object visibility).
  * Pure: returns a new blueprint.
  */
-export function movePerch(bp: MansionBlueprint, azimuthDeg: number): MansionBlueprint {
+export function movePerch(bp: MansionBlueprint, azimuthDeg: number, elevationDeg: number = bp.site.perch.elevationDeg): MansionBlueprint {
   const [lo, hi] = bp.site.perch.arcDeg;
+  const [elLo, elHi] = bp.site.perch.elevationRangeDeg;
   const az = snap(Math.max(lo, Math.min(hi, azimuthDeg)), 0.1);
+  const el = snap(Math.max(elLo, Math.min(elHi, elevationDeg)), 0.1);
   const zGarden = bp.site.perch.target.z;
-  const eye = perchEye(bp.site.terrain, zGarden, bp.groundFloorY, az, bp.site.perch.distance);
-  const site: Site = { ...bp.site, perch: { ...bp.site.perch, eye, azimuthDeg: az } };
+  const eye = perchEyeAt(bp.site.terrain, zGarden, bp.groundFloorY, az, el, bp.site.perch.distance);
+  const site: Site = { ...bp.site, perch: { ...bp.site.perch, eye, azimuthDeg: az, elevationDeg: el } };
   const tracer = new SightlineTracer(eye, collectOccluders({ walls: bp.walls, rooms: bp.rooms, levels: bp.levels, masses: bp.masses, porticos: bp.porticos, props: bp.props, site, atrium: bp.atrium, stairs: bp.stairs, roofTerraces: bp.roofTerraces, withProps: true }));
   const levels = bp.nav.levels.map((n) => {
     const vis = new Uint8Array(n.vis.length);

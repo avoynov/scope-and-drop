@@ -1,6 +1,6 @@
 /**
- * Pre-mission briefing: the floor plan with what the sniper would see, and a
- * dial to choose the bearing to shoot from. Nothing here changes the house;
+ * Pre-mission briefing: the floor plan with what the sniper would see, a dial
+ * to choose the bearing to shoot from and a slider for the elevation. Nothing here changes the house;
  * moving the dial calls movePerch(), which only recomputes sightlines.
  */
 import { movePerch, POI_VISIBLE, type MansionBlueprint } from '../src/mansion';
@@ -251,6 +251,8 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
   const plan = $<HTMLCanvasElement>('brief-plan');
   const dial = $<HTMLCanvasElement>('brief-dial');
   const slider = $<HTMLInputElement>('brief-az');
+  const elSlider = $<HTMLInputElement>('brief-el');
+  const elBars = $('brief-elbars');
   let base: MansionBlueprint | null = null;
   let shown: MansionBlueprint | null = null;
   let level = 0;
@@ -266,6 +268,28 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     const az = shown.site.perch.azimuthDeg;
     $('brief-title').textContent = `${shown.style.name} · ${shown.atrium?.shape === 'rotunda' ? 'rotunda' : 'galleried'} dome hall · ${shown.levels.length} storeys`;
     $('brief-bearing').textContent = `${az > 0 ? '+' : ''}${az.toFixed(0)}° ${Math.abs(az) < 0.5 ? 'dead centre' : az > 0 ? 'east of the axis' : 'west of the axis'} · ${shown.site.perch.distance.toFixed(0)} m`;
+    const el = shown.site.perch.elevationDeg;
+    const above = shown.site.perch.eye.y - shown.groundFloorY;
+    $('brief-elevation').textContent = `elevation ${el.toFixed(0)}° · eye ${above.toFixed(0)} m above the ground floor${el < 0.5 ? ' · from the treeline' : ''}`;
+    const opts = shown.site.perch.elevationOptions;
+    const top = Math.max(...opts.map((o) => o.partyVisible), 0.01);
+    let nearest = 0;
+    opts.forEach((o, i) => {
+      if (Math.abs(o.elevationDeg - el) < Math.abs(opts[nearest]!.elevationDeg - el)) nearest = i;
+    });
+    elBars.replaceChildren(
+      ...opts.map((o, i) => {
+        const b = document.createElement('i');
+        b.style.height = `${Math.max(6, (o.partyVisible / top) * 100)}%`;
+        b.classList.toggle('on', i === nearest);
+        b.title = `${o.elevationDeg.toFixed(0)}°: ${Math.round(o.partyVisible * 100)}% of the party floor`;
+        return b;
+      }),
+    );
+    const a = shown.atrium;
+    const hallIds = a ? [a.roomId, ...a.galleries.map((q) => q.roomId)] : [];
+    const hallSeen = hallIds.length ? hallIds.reduce((t, id) => t + (sl.rooms[id] ?? 0), 0) / hallIds.length : 0;
+    $('brief-hall').textContent = a ? `${Math.round(hallSeen * 100)}%` : 'none';
     $('brief-party').textContent = `${Math.round(sl.partyVisible * 100)}%`;
     $('brief-terrace').textContent = `${Math.round(sl.terrace * 100)}%`;
     $('brief-hidden').textContent = `${Math.round(sl.hiddenShare * 100)}%`;
@@ -273,19 +297,25 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     for (const b of document.querySelectorAll<HTMLButtonElement>('#brief-floors button')) b.classList.toggle('on', Number(b.dataset.level) === level);
   };
 
-  const setAz = (deg: number) => {
+  const setPerch = (deg: number, elevation: number) => {
     if (!base) return;
     const [lo, hi] = base.site.perch.arcDeg;
+    const [elLo, elHi] = base.site.perch.elevationRangeDeg;
     const az = Math.max(lo, Math.min(hi, Math.round(deg)));
+    const el = Math.max(elLo, Math.min(elHi, Math.round(elevation)));
     slider.value = String(az);
+    elSlider.value = String(el);
     // Recomputing sightlines takes a few tens of milliseconds: do it once per frame at most.
     cancelAnimationFrame(pending);
     pending = requestAnimationFrame(() => {
-      shown = movePerch(base!, az);
+      shown = movePerch(base!, az, el);
       render();
     });
   };
+  const setAz = (deg: number) => setPerch(deg, Number(elSlider.value));
+  const setEl = (deg: number) => setPerch(Number(slider.value), deg);
 
+  elSlider.addEventListener('input', () => setEl(Number(elSlider.value)));
   slider.addEventListener('input', () => setAz(Number(slider.value)));
   const fromPointer = (e: PointerEvent) => {
     const r = dial.getBoundingClientRect();
@@ -305,6 +335,8 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     if (!root.classList.contains('on') || (e.target as HTMLElement).tagName === 'INPUT') return;
     if (e.key === 'ArrowLeft') setAz(Number(slider.value) - 2);
     else if (e.key === 'ArrowRight') setAz(Number(slider.value) + 2);
+    else if (e.key === 'ArrowUp') setEl(Number(elSlider.value) + 3);
+    else if (e.key === 'ArrowDown') setEl(Number(elSlider.value) - 3);
     else if (e.key === 'Enter') $('brief-deploy').click();
   });
 
@@ -317,6 +349,10 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
       slider.min = String(lo);
       slider.max = String(hi);
       slider.value = String(Math.round(bp.site.perch.azimuthDeg));
+      const [elLo, elHi] = bp.site.perch.elevationRangeDeg;
+      elSlider.min = String(elLo);
+      elSlider.max = String(elHi);
+      elSlider.value = String(Math.round(bp.site.perch.elevationDeg));
       const floors = $('brief-floors');
       floors.replaceChildren();
       for (const lv of bp.levels) {

@@ -68,6 +68,8 @@ const massSel = $('massing') as HTMLSelectElement;
 const sizeSel = $('size') as HTMLSelectElement;
 const hallSel = $('hall') as HTMLSelectElement;
 hallSel.value = params.get('hall') ?? 'gallery';
+const minVisInput = $('minvis') as HTMLInputElement;
+minVisInput.value = params.get('minvis') ?? '30';
 seedInput.value = params.get('seed') ?? 'gala-night';
 styleSel.value = params.get('style') ?? '';
 massSel.value = params.get('massing') ?? '';
@@ -81,10 +83,11 @@ function build(): void {
     massing: (massSel.value || undefined) as MansionOptions['massing'],
     size: sizeSel.value as MansionOptions['size'],
     hall: hallSel.value as MansionOptions['hall'],
+    minVisible: Math.max(0, Math.min(70, Number(minVisInput.value) || 0)) / 100,
   };
   bp = generateMansion(opts);
   // A bearing in the URL skips the choice (used by the render scripts and shared links).
-  if (params.has('az')) bp = movePerch(bp, Number(params.get('az')));
+  if (params.has('az') || params.has('el')) bp = movePerch(bp, Number(params.get('az') ?? bp.site.perch.azimuthDeg), Number(params.get('el') ?? bp.site.perch.elevationDeg));
   const genMs = performance.now() - t0;
   if (built) {
     scene.remove(built.root);
@@ -108,10 +111,11 @@ function build(): void {
   const url = new URL(location.href);
   url.searchParams.set('seed', opts.seed as string);
   url.searchParams.set('hall', hallSel.value);
+  url.searchParams.set('minvis', minVisInput.value || '0');
   if (url.searchParams.has('level')) url.searchParams.set('level', String(planLevel));
   history.replaceState(null, '', url);
   // Before the mission: show the plan and let the sniper pick a bearing.
-  if ((!shot && !params.has('az') && !params.has('nobrief')) || params.has('brief')) briefing.open(bp);
+  if ((!shot && !params.has('az') && !params.has('el') && !params.has('nobrief')) || params.has('brief')) briefing.open(bp);
 }
 
 function showStats(genMs?: number): void {
@@ -122,9 +126,9 @@ function showStats(genMs?: number): void {
   $('stats').textContent = [
     `${bp.style.name} · ${bp.massing} · ${bp.bays} bays × ${bp.bay} m · ${bp.levels.length} storeys`,
     `rooms ${bp.stats.rooms} (party ${bp.stats.partyRooms}) · props ${bp.stats.props} · lights ${bp.stats.lights} · POIs ${bp.pois.length}`,
-    `perch ${bp.site.perch.distance} m @ ${bp.site.perch.azimuthDeg}° · indoor party in view ${(bp.sightlines.partyVisible * 100).toFixed(0)}% · terrace ${(bp.sightlines.terrace * 100).toFixed(0)}%`,
+    `perch ${bp.site.perch.distance} m @ ${bp.site.perch.azimuthDeg}°, up ${bp.site.perch.elevationDeg}° · indoor party in view ${(bp.sightlines.partyVisible * 100).toFixed(0)}% · terrace ${(bp.sightlines.terrace * 100).toFixed(0)}%`,
     `out of sight ${(bp.sightlines.hiddenShare * 100).toFixed(0)}% of the ground floor · ${bp.atrium ? `${bp.atrium.shape} dome hall` : 'no dome hall'}${bp.roofTerraces.length ? ` · ${bp.roofTerraces.length} roof terrace${bp.roofTerraces.length > 1 ? 's' : ''}` : ''}`,
-    `valid ${v.ok ? 'yes' : 'NO'} (attempt ${bp.attempt})${errors.length ? '\n' + errors.map((e) => '× ' + e.message).join('\n') : ''}`,
+    `valid ${v.ok ? 'yes' : `NO: closest of ${bp.options.maxAttempts} tries`} (attempt ${bp.attempt}) · minimum in view ${(bp.options.partyVisibility[0] * 100).toFixed(0)}%${errors.length ? '\n' + errors.map((e) => '× ' + e.message).join('\n') : ''}`,
     `generate ${lastGenMs.toFixed(0)} ms · build ${built.stats.buildMs} ms · ${(built.stats.triangles / 1000).toFixed(0)}k tris · ${built.stats.meshes} meshes`,
   ].join('\n');
 }
@@ -340,6 +344,7 @@ for (const [k, label] of [
 }
 $('go').onclick = build;
 hallSel.onchange = build;
+minVisInput.onchange = build;
 $('rebrief').onclick = () => briefing.open(bp);
 $('rnd').onclick = () => {
   seedInput.value = Math.random().toString(36).slice(2, 8);

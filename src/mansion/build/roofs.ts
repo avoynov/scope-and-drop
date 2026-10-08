@@ -3,6 +3,7 @@
  * pediments; dormers; chimney stacks; columns with entablature and pediment.
  */
 import { expand, type Rect } from '../core/geom';
+import { HIP_MAX_RISE, PAVILION_PITCH, hipParams } from '../core/roofs';
 import type { Mass, Portico } from '../core/types';
 import type { ArchContext } from './arch';
 import { baluster } from './arch';
@@ -138,9 +139,27 @@ export function buildRoofs(ctx: ArchContext): void {
         break;
       }
       default: {
-        const res = hipRoof(ctx, key, r, m.roof.balustrade ? yb + 0.2 : yb, m.roof.balustrade ? Math.min(m.roof.pitchDeg, 24) : m.roof.pitchDeg);
+        const hp = hipParams(m);
+        const base = yb + hp.lift;
+        if (Number.isFinite(hp.inset)) {
+          // Deep block: slopes up to a leaded flat instead of a ridge.
+          const inner = frustum(ctx, key, r, hp.inset, base, HIP_MAX_RISE);
+          g.box('roof-lead', inner.x0, base + HIP_MAX_RISE - 0.06, inner.z0, inner.x1, base + HIP_MAX_RISE + 0.04, inner.z1);
+          g.setTint(ctx.style.trimColor);
+          g.box('ext-trim', inner.x0 - 0.1, base + HIP_MAX_RISE - 0.08, inner.z1 - 0.06, inner.x1 + 0.1, base + HIP_MAX_RISE + 0.1, inner.z1 + 0.1);
+          g.box('ext-trim', inner.x0 - 0.1, base + HIP_MAX_RISE - 0.08, inner.z0 - 0.1, inner.x1 + 0.1, base + HIP_MAX_RISE + 0.1, inner.z0 + 0.06);
+          g.box('ext-trim', inner.x0 - 0.1, base + HIP_MAX_RISE - 0.08, inner.z0, inner.x0 + 0.06, base + HIP_MAX_RISE + 0.1, inner.z1);
+          g.box('ext-trim', inner.x1 - 0.06, base + HIP_MAX_RISE - 0.08, inner.z0, inner.x1 + 0.1, base + HIP_MAX_RISE + 0.1, inner.z1);
+          g.setTint('#ffffff');
+          if (m.kind === 'main') {
+            if (m.roof.dormers && !m.roof.balustrade) hipDormers(ctx, m, r, yb, hp.pitchDeg);
+            chimneys(ctx, m, { ridgeY: base + HIP_MAX_RISE, alongX: true, ridge: [inner.x0, inner.x1] }, r);
+          }
+          break;
+        }
+        const res = hipRoof(ctx, key, r, base, hp.pitchDeg);
         if (m.kind === 'main') {
-          if (m.roof.dormers && !m.roof.balustrade) hipDormers(ctx, m, r, yb, m.roof.pitchDeg);
+          if (m.roof.dormers && !m.roof.balustrade) hipDormers(ctx, m, r, yb, hp.pitchDeg);
           chimneys(ctx, m, res, r);
         }
       }
@@ -178,7 +197,7 @@ function pavilionRoof(ctx: ArchContext, m: Mass, key: string, yb: number): void 
   const back = side === 'garden' ? main.rect.z1 - 2.5 : main.rect.z0 + 2.5;
   const half = (x1 - x0) / 2;
   const xm = (x0 + x1) / 2;
-  const pitch = 22.5;
+  const pitch = PAVILION_PITCH;
   const yr = yb + half * Math.tan(pitch * DEG);
   const s = Math.sin(pitch * DEG);
   g.setTint('#ffffff');

@@ -4,9 +4,11 @@
  * the drum and glass dome standing through the roof.
  */
 import type { Rect, Vec2 } from '../core/geom';
+import { roofSurfaceY } from '../core/roofs';
 import type { Atrium, Room, StairArm, Wall } from '../core/types';
 import { wallMaterialKey, type ArchContext } from './arch';
-import { NX, NZ, PX, PZ, type GeometryBuilder, type V3 } from './geometry';
+import { pointInPoly } from '../layout/atrium';
+import { type GeometryBuilder, type V3 } from './geometry';
 
 const tup = (p: Vec2): [number, number] => [p.x, p.z];
 const STONE = '#ece6da';
@@ -265,36 +267,9 @@ export function buildAtrium(ctx: ArchContext): void {
   const stair = bp.stairs.find((s) => s.id === a.stairId);
   for (const arm of stair?.arms ?? []) stairArm(g, arm);
 
-  // Ceiling over the whole hall, open at the oculus.
+  // No ceiling: the hall is roofed in glass from wall to wall (see buildDome).
   const topRoom = roomAt(top.index);
-  g.scope = topRoom.index;
-  g.setTint(f.ceilingColor);
-  const seg = 40;
-  const circle = (r: number): [number, number][] => Array.from({ length: seg }, (_, i) => [cx + Math.cos((i / seg) * Math.PI * 2) * r, cz + Math.sin((i / seg) * Math.PI * 2) * r]);
-  g.flatPoly('ceiling', a.footprint.map(tup), top.ceilingY, false, [circle(a.dome.radius)]);
-  // Inside of the drum, up to where the glass starts.
-  g.setTint(f.trimColor);
-  for (let i = 0; i < seg; i++) {
-    const a0 = (i / seg) * Math.PI * 2;
-    const a1 = ((i + 1) / seg) * Math.PI * 2;
-    const p: [number, number] = [cx + Math.cos(a0) * a.dome.radius, cz + Math.sin(a0) * a.dome.radius];
-    const q: [number, number] = [cx + Math.cos(a1) * a.dome.radius, cz + Math.sin(a1) * a.dome.radius];
-    g.quadFacing('int-trim', [p[0], top.ceilingY, p[1]], [q[0], top.ceilingY, q[1]], [q[0], a.dome.springY, q[1]], [p[0], a.dome.springY, p[1]], -Math.cos((a0 + a1) / 2), 0, -Math.sin((a0 + a1) / 2));
-  }
-  // Moulded rim of the oculus.
-  g.lathe(
-    'int-trim',
-    cx,
-    cz,
-    [
-      [a.dome.radius + 0.35, top.ceilingY - 0.02],
-      [a.dome.radius + 0.3, top.ceilingY - 0.12],
-      [a.dome.radius + 0.1, top.ceilingY - 0.18],
-      [a.dome.radius - 0.02, top.ceilingY - 0.02],
-    ],
-    seg,
-    false,
-  );
+  void topRoom;
 
   // Rotunda: the curved wall, full height, and the dead corners behind it.
   for (const run of a.curvedWalls) {
@@ -321,13 +296,12 @@ export function buildAtrium(ctx: ArchContext): void {
   g.scope = -1;
 }
 
-/** Plan square the dome's base occupies; the roof is opened here. */
+/** Plan rectangle of the hall's glass roof; the house roof is opened here. */
 export function domeBase(a: Atrium): Rect {
-  const half = a.dome.radius + 0.6;
-  return { x0: a.dome.x - half, z0: a.dome.z - half, x1: a.dome.x + half, z1: a.dome.z + half };
+  return { x0: a.inner.x0 - 0.15, z0: a.inner.z0 - 0.15, x1: a.inner.x1 + 0.15, z1: a.inner.z1 + 0.15 };
 }
 
-/** Outside: a square base clear of the roof, a round drum, and the glass dome. Call after the roofs. */
+/** Outside: a low curb in a well cut through the roof, and the glass dome on it. Call after the roofs. */
 export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void {
   const { bp, g, style } = ctx;
   const a = bp.atrium;
@@ -337,65 +311,107 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   g.cutRectHole(roofMark, (k) => k.startsWith('roof-'), { x0: base.x0 + 0.06, z0: base.z0 + 0.06, x1: base.x1 - 0.06, z1: base.z1 - 0.06 });
   const main = bp.masses.find((m) => m.kind === 'main')!;
   const y0 = main.roof.eaveY - 0.3;
-  const baseTop = d.springY - 1.35;
+  const deck = d.springY - 0.3;
   const R = d.radius;
   g.scope = -1;
-  g.setTint(style.wallMaterial === 'brick' ? '#ffffff' : style.wallColor);
-  g.box(wallMaterialKey(style), base.x0, y0, base.z0, base.x1, baseTop, base.z1, PX | NX | PZ | NZ);
-  g.setTint(style.trimColor);
-  // Base cornice and the deck round the drum.
-  for (const [x0, z0, x1, z1] of [
-    [base.x0 - 0.14, base.z1 - 0.02, base.x1 + 0.14, base.z1 + 0.14],
-    [base.x0 - 0.14, base.z0 - 0.14, base.x1 + 0.14, base.z0 + 0.02],
-    [base.x0 - 0.14, base.z0, base.x0 + 0.02, base.z1],
-    [base.x1 - 0.02, base.z0, base.x1 + 0.14, base.z1],
-  ] as const) {
-    g.box('ext-trim', x0, baseTop - 0.26, z0, x1, baseTop + 0.04, z1);
+  // Well walls: they follow the roof where it stands higher than the curb, so nothing rises above the roof line.
+  const wallKey = wallMaterialKey(style);
+  const topGallery = a.galleries[a.galleries.length - 1];
+  const inside = bp.rooms.find((r) => r.id === (topGallery?.roomId ?? a.roomId))?.index ?? -1;
+  const corners: [number, number][] = [
+    [base.x0, base.z0],
+    [base.x1, base.z0],
+    [base.x1, base.z1],
+    [base.x0, base.z1],
+  ];
+  const mx = (base.x0 + base.x1) / 2;
+  const mz = (base.z0 + base.z1) / 2;
+  for (let e = 0; e < 4; e++) {
+    const p = corners[e]!;
+    const q = corners[(e + 1) % 4]!;
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    const n = Math.max(2, Math.round(len / 0.6));
+    // Outward normal of this edge.
+    const ex = (p[0] + q[0]) / 2 - mx;
+    const ez = (p[1] + q[1]) / 2 - mz;
+    const nx = Math.abs(ex) > Math.abs(ez) ? Math.sign(ex) : 0;
+    const nz = nx ? 0 : Math.sign(ez);
+    const topAt = (t: number): [number, number, number] => {
+      const x = p[0] + (q[0] - p[0]) * t;
+      const z = p[1] + (q[1] - p[1]) * t;
+      const roof = roofSurfaceY(bp.masses, x + nx * 0.12, z + nz * 0.12);
+      return [x, Math.max(deck + 0.12, Number.isFinite(roof) ? roof + 0.1 : -Infinity), z];
+    };
+    for (let i = 0; i < n; i++) {
+      const A = topAt(i / n);
+      const B = topAt((i + 1) / n);
+      g.setTint(style.wallMaterial === 'brick' ? '#ffffff' : style.wallColor);
+      g.quadFacing(wallKey, [A[0], y0, A[2]], [B[0], y0, B[2]], B, A, nx, 0, nz);
+      // Seen from the hall, the well is plastered and lit like the top gallery.
+      g.scope = inside;
+      g.setTint(STONE);
+      g.quadFacing('int-trim', [A[0], y0, A[2]], [B[0], y0, B[2]], B, A, -nx, 0, -nz);
+      g.scope = -1;
+      g.setTint(style.trimColor);
+      g.beam('ext-trim', A, B, 0.22, 0.12);
+    }
   }
-  const seg = 40;
+  const seg = 56;
   const circle = (r: number): [number, number][] => Array.from({ length: seg }, (_, i) => [d.x + Math.cos((i / seg) * Math.PI * 2) * r, d.z + Math.sin((i / seg) * Math.PI * 2) * r]);
   g.setTint('#ffffff');
-  g.flatPoly(
-    'roof-lead',
-    [
-      [base.x0, base.z0],
-      [base.x1, base.z0],
-      [base.x1, base.z1],
-      [base.x0, base.z1],
-    ],
-    baseTop,
-    true,
-    [circle(R + 0.3)],
-  );
-  // Drum.
+  // The roof of the hall: glass from wall to wall, the dome rising from the middle of it.
+  const foot = a.footprint.map(tup);
+  g.flatPoly('roof-lead', corners, deck, true, [foot]);
+  g.flatPoly('glass', foot, deck, true, [circle(R + 0.3)]);
+  g.setTint('#e9e5db');
+  const inFoot = (x: number, z: number) => pointInPoly(a.footprint, x, z);
+  const bar = (x0: number, z0: number, x1: number, z1: number) => {
+    // Glazing bar, drawn only where it runs over glass outside the dome.
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / 0.5));
+    let from: [number, number] | null = null;
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      const z = z0 + ((z1 - z0) * i) / n;
+      const on = Math.hypot(x - d.x, z - d.z) > R + 0.3 && inFoot(x, z);
+      if (on && !from) from = [x, z];
+      if (from && (!on || i === n)) {
+        const to: [number, number] = on ? [x, z] : [x0 + ((x1 - x0) * (i - 1)) / n, z0 + ((z1 - z0) * (i - 1)) / n];
+        if (Math.hypot(to[0] - from[0], to[1] - from[1]) > 0.3) g.beam('frame', [from[0], deck + 0.03, from[1]], [to[0], deck + 0.03, to[1]], 0.08, 0.06);
+        from = null;
+      }
+    }
+  };
+  const nxBars = Math.max(2, Math.round((base.x1 - base.x0) / 1.4));
+  for (let i = 1; i < nxBars; i++) {
+    const x = base.x0 + ((base.x1 - base.x0) * i) / nxBars;
+    bar(x, base.z0, x, base.z1);
+  }
+  const nzBars = Math.max(2, Math.round((base.z1 - base.z0) / 4.2));
+  for (let i = 1; i < nzBars; i++) {
+    const z = base.z0 + ((base.z1 - base.z0) * i) / nzBars;
+    bar(base.x0, z, base.x1, z);
+  }
+  // Curb ring the glass stands on.
   g.setTint(style.trimColor);
   g.lathe(
     'ext-trim',
     d.x,
     d.z,
     [
-      [R + 0.44, baseTop],
-      [R + 0.44, baseTop + 0.16],
-      [R + 0.32, baseTop + 0.22],
-      [R + 0.32, d.springY - 0.3],
-      [R + 0.4, d.springY - 0.24],
-      [R + 0.5, d.springY - 0.08],
-      [R + 0.5, d.springY],
-      [R + 0.1, d.springY],
+      [R + 0.46, deck],
+      [R + 0.46, deck + 0.14],
+      [R + 0.36, deck + 0.2],
+      [R + 0.4, d.springY - 0.06],
+      [R + 0.44, d.springY],
+      [R + 0.08, d.springY],
     ],
     seg,
     false,
   );
-  for (let i = 0; i < 12; i++) {
-    const t = ((i + 0.5) / 12) * Math.PI * 2;
-    const x = d.x + Math.cos(t) * (R + 0.36);
-    const z = d.z + Math.sin(t) * (R + 0.36);
-    g.beam('ext-trim', [x, baseTop + 0.2, z], [x, d.springY - 0.28, z], 0.28);
-  }
   // Glass shell and its ribs.
   const rg = R + 0.12;
   const profile: [number, number][] = [];
-  const stepsUp = 9;
+  const stepsUp = 12;
   for (let k = 0; k <= stepsUp; k++) {
     const phi = (k / stepsUp) * (Math.PI / 2) * 0.93;
     profile.push([rg * Math.cos(phi), d.springY + d.height * Math.sin(phi)]);
@@ -403,15 +419,16 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   g.setTint('#ffffff');
   g.lathe('glass', d.x, d.z, profile, seg, false);
   g.setTint('#e9e5db');
-  for (let i = 0; i < 16; i++) {
-    const t = (i / 16) * Math.PI * 2;
+  const ribs = R > 6 ? 24 : 16;
+  for (let i = 0; i < ribs; i++) {
+    const t = (i / ribs) * Math.PI * 2;
     for (let k = 0; k + 1 < profile.length; k++) {
       const [r0, ya] = profile[k]!;
       const [r1, yb] = profile[k + 1]!;
-      g.beam('frame', [d.x + Math.cos(t) * r0, ya, d.z + Math.sin(t) * r0], [d.x + Math.cos(t) * r1, yb, d.z + Math.sin(t) * r1], 0.08);
+      g.beam('frame', [d.x + Math.cos(t) * r0, ya, d.z + Math.sin(t) * r0], [d.x + Math.cos(t) * r1, yb, d.z + Math.sin(t) * r1], 0.1);
     }
   }
-  for (const k of [3, 6]) {
+  for (const k of [3, 6, 9]) {
     const [r, y] = profile[k]!;
     g.lathe('frame', d.x, d.z, [[r - 0.01, y - 0.04], [r + 0.05, y], [r - 0.01, y + 0.04]], seg, false);
   }

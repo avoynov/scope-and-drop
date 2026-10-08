@@ -4,7 +4,7 @@ A sniper spy-deduction game. You lie in the shadows of a treeline at twilight, w
 
 This repository holds the game's **mansion generation module**: a seeded, deterministic generator that builds a different, always-valid country house for every match, and a three.js renderer that shows it the way the sniper sees it, at blue hour from 130–210 m away. The look aims for about 70% realism and 30% appeal.
 
-Every house is built to be seen into: a mostly glazed garden front, party rooms that open into each other, and at the centre a ball room that rises through every storey to a glass dome, ringed by galleries and climbed by a curved split stair. Before the mission the sniper studies the floor plan and chooses the bearing to shoot from.
+Every house is built to be seen into: a mostly glazed garden front, party rooms that open into each other, and at the centre a ball room that rises through every storey to a glass dome, ringed by galleries and climbed by a curved split stair. The hall is roofed in glass from wall to wall, so a sniper who climbs can look straight down into it. Before the mission the sniper studies the floor plan and chooses the bearing and the elevation to shoot from.
 
 **Live viewer:** https://claude.ai/artifact/6H4rPLDQAAUj5CUFkrxm6c. The link is private; the owner shares it from the page's Share menu.
 
@@ -15,9 +15,9 @@ Every house is built to be seen into: a mostly glazed garden front, party rooms 
 | ![beaux-arts](docs/images/wide-beauxarts.jpg) | ![georgian](docs/images/wide-georgian.jpg) |
 | **The estate** | **Sightlines from the perch** (green = watchable, red = blind spot) |
 | ![estate](docs/images/orbit-estate.jpg) | ![plan](docs/images/plan-sightlines.jpg) |
-| **Dome hall: split stair, ring galleries** | **Glass dome over the garden front** |
+| **Dome hall: split stair, ring galleries** | **From 45° up: down through the glass roof** |
 | ![dome hall](docs/images/dome-hall.jpg) | ![dome](docs/images/dome-exterior.jpg) |
-| **Briefing: pick the bearing to shoot from** | **Roof terraces on flat-roofed wings** |
+| **Briefing: pick the bearing and elevation** | **Roof terraces on flat-roofed wings** |
 | ![briefing](docs/images/briefing.jpg) | ![roof terraces](docs/images/roof-terraces.jpg) |
 
 ---
@@ -48,7 +48,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 75 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
+npm test                 # 84 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -57,7 +57,7 @@ npm run build:artifact   # bundle the published viewer into dist-artifact/app.js
 
 ### Demo viewer
 
-The demo opens on the **mission briefing**: the floor plan of each storey shaded by what the sniper would see, and a dial to choose the bearing to shoot from (drag the marker, use the slider, or the arrow keys). The bars on the dial show how much of the party each bearing sees. *Deploy here* moves the sniper there; the *briefing* button brings the plan back. The shape of the dome hall (curved galleries or rotunda) is chosen in the panel before the house is generated.
+The demo opens on the **mission briefing**: the floor plan of each storey shaded by what the sniper would see, and a dial to choose the bearing to shoot from (drag the marker, use the slider, or the arrow keys). The bars on the dial show how much of the party each bearing sees. Below it, a second slider sets the **elevation**, 0–60° at the same range (up and down arrow keys): low looks through the windows, high looks down through the hall's glass roof onto the galleries, the stair and the dance floor. *Deploy here* moves the sniper there; the *briefing* button brings the plan back. The shape of the dome hall (curved galleries or rotunda) is chosen in the panel before the house is generated. **min visible %** in the panel is the least share of the indoor party floor the sniper must see from the default perch: a house below it fails the validity check and is regenerated, and if no attempt reaches it the panel says so and shows the closest.
 
 After deploying, the demo has five views:
 
@@ -74,7 +74,8 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 | Parameter | Effect |
 |---|---|
 | `seed`, `style`, `massing`, `size`, `hall=gallery\|rotunda` | Select the house and the dome hall's shape. |
-| `az` | Sniper bearing in degrees off the garden axis (skips the briefing). `nobrief=1` skips it at the generated bearing; `brief=1` forces it. |
+| `az`, `el` | Sniper bearing in degrees off the garden axis, and elevation in degrees above the horizon (either skips the briefing). `nobrief=1` skips it at the generated bearing; `brief=1` forces it. |
+| `minvis` | Minimum share of the indoor party floor in view, in percent (default 30). |
 | `view`, `fov`, `level` | Choose the view, the scope zoom and the storey the plan view cuts. `view=free&cam=x,y,z&look=x,y,z` is a debug camera. |
 | `sight=1`, `pois=1` | Turn the overlays on. |
 | `quality=low\|medium\|high` | Render quality. |
@@ -98,11 +99,11 @@ bp.rooms;                  // typed rooms with role, finish, lighting level
 bp.pois;                   // mission objects + NPC stand points + perch visibility
 bp.nav.levels[0].walk;     // walkable grid (0.25 m), per storey
 bp.nav.levels[0].vis;      // per-cell visibility from the sniper (0..255)
-bp.site.perch;             // sniper eye, aim target, zoom range, the arc of bearings on offer
+bp.site.perch;             // sniper eye, aim target, zoom range, the bearings and elevations on offer
 bp.atrium;                 // the dome hall: void, galleries, columns, dome
 
-// 1b. Briefing: the sniper picks a bearing. Same house; only what depends on the eye is recomputed.
-const chosen = movePerch(bp, -20);      // 20° west of the garden axis (clamped to bp.site.perch.arcDeg)
+// 1b. Briefing: the sniper picks a bearing and an elevation. Same house; only what depends on the eye is recomputed.
+const chosen = movePerch(bp, -20, 35);  // 20° west of the garden axis, 35° up (clamped to perch.arcDeg and perch.elevationRangeDeg)
 chosen.sightlines.partyVisible;         // share of the indoor party floor in view from there
 
 // 2. Build: a three.js scene graph, lit for blue hour.
@@ -148,9 +149,9 @@ Every stage draws from its own forked RNG stream (`rng.fork('rooms')`), so chang
 |---|---|---|---|
 | 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), or **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order). Each sets proportions, ornament and interior palettes. |
 | 2 | Massing | `layout/massing.ts` | Odd number of bays (3.6–4.5 m) on a grid mirrored about the garden axis, after Stiny & Mitchell's Palladian grammar. Double pile with an optional spine corridor. Plan type `block`, `u-garden`, `u-entrance` or `h`. Optional garden/entrance pavilions, giant or single-storey porticos, two-bay wings, and a glass conservatory. 2–3 storeys on a raised plinth (piano nobile). The central hall is sized so its stair fits: a shallow one grows a deeper garden pavilion, then a deeper front pile. |
-| 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, with a gallery room over it on every upper floor. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis behind it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. |
+| 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, with a gallery room over it on every upper floor. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis behind it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. No reception room is narrower than 5 m (a narrower bay becomes a study or a passage), corridors are 2.8–3.6 m wide, and when the ground floor has fewer than seven party rooms the first-floor rooms beside the gallery become party rooms (salon, music, card, drawing) reached from the gallery. |
 | 4 | Walls | `layout/walls.ts` | Derived, not authored. Room edges on each line are swept; each run with a constant (room on −side, room on +side) pair becomes a wall. A null side means façade. |
-| 5 | Dome hall | `layout/atrium.ts` | The ball room is open through every storey to a glass dome. One outline, the *void edge* (a U open to the garden windows with rounded back corners), drives it all. Offset inward it gives the two arms of the **split stair**, which sweep from the back of the dance floor round both sides up to the first gallery. Offset outward it gives the **ring gallery** on each upper floor: left, back and right, with doors into the rooms there; the garden side stays glass. `hall: 'rotunda'` makes the back of the hall a true apse with a curved wall; `'gallery'` (default) keeps a rectangular room with curved galleries. Curved shapes reach the rest of the generator as thin rectangular strips, so walls, nav and sightlines stay rectangular. |
+| 5 | Dome hall | `layout/atrium.ts` | The ball room is open through every storey to a glass dome. One outline, the *void edge* (a U open to the garden windows with rounded back corners), drives it all. Offset inward it gives the two arms of the **split stair**, which sweep from the back of the dance floor round both sides up to the first gallery. Offset outward it gives the **ring gallery** on each upper floor: left, back and right, with doors into the rooms there; the garden side stays glass. `hall: 'rotunda'` makes the back of the hall a true apse with a curved wall; `'gallery'` (default) keeps a rectangular room with curved galleries. Proportions are those of a great house: the hall is five bays wide (seven when palatial), about 20 × 17 m on average; galleries are 3–4.2 m wide and each stair arm 2.6–3.6 m. The **dome** is the largest circle that fits the hall (8 m radius on average) and stands on a low curb in a glass roof that covers the whole hall. Curved shapes reach the rest of the generator as thin rectangular strips, so walls, nav and sightlines stay rectangular. |
 | 5b | Stairs | `layout/stairs.ts` | U-return service stairs stacked in the service column (riser/tread search, approach zone, stairwell hole cut in the floor above). The grand stair is the dome hall's. |
 | 6 | Windows | `layout/openings.ts` | One window per bay per storey on the main fronts and wing bays, centred on end walls. **Wide French windows to the terrace: about 70% of each garden-front bay is glass.** Frosted glass for bathrooms. Style dressing (pediments, keystones, surrounds, balconettes) and curtain state (open, sheer or drawn). A lower wing whose roof is *already* flat becomes a walkable **roof terrace** with a glazed door from the storey beside it; no roof is flattened for this. |
 | 7 | Doors | `layout/openings.ts` | Solved as a graph problem. First the mandatory doors: grand axis, enfilade near the windows, wing chains, every room onto its corridor, the hall galleries into the rooms beside and behind them. **Column screens:** a wall between two party rooms that sit one behind the other is opened bay by bay, leaving piers, so the view from the garden front carries through; halls, corridors, service and private rooms keep solid walls. Then connectivity growth from the entrance or gallery. Then a **pass-through repair** so a private room is never the only way in; the blocker is promoted to a landing or morning room. |
@@ -206,7 +207,7 @@ Defined in `src/mansion/core/types.ts`. Everything is plain, JSON-serialisable d
 - **Spy and NPC AI:** route on `nav.levels[*].walk` plus `nav.links`. `vis` tells an AI where it is watched, so low-visibility rooms are the blind spots that make "time out of sight" a tell.
 - **Missions:** `pois` are the interaction points. Their `visibility` lets mission design mix observable and hidden actions.
 - **Sniper:** `site.perch` gives camera pose and zoom range, and `SightlineTracer` answers visibility at runtime.
-- **Briefing:** `movePerch(bp, azimuthDeg)` returns the same house seen from another bearing on the arc, with visibility grids, per-room figures and mission-object visibility recomputed (about 30 ms). `site.perch.options` is a coarse sample of what each bearing sees, for the picker. Head-on sees deepest; an oblique bearing sees less, but different rooms.
+- **Briefing:** `movePerch(bp, azimuthDeg, elevationDeg?)` returns the same house seen from another bearing on the arc and another elevation (0–60° at the same range; a high eye has no ground under it, the game decides what carries the sniper), with visibility grids, per-room figures and mission-object visibility recomputed (about 30 ms). `site.perch.options` is a coarse sample of what each bearing sees, for the picker. `site.perch.elevationOptions` is the same for elevation. Head-on sees deepest; an oblique bearing sees less, but different rooms. Climbing trades breadth for depth: at 55° the windows show little (party floor in view falls from 44% to about 15%) but the glass roof shows what no window does: 73% of the top gallery, the stair, and about a quarter of the hall floor (the far half of the void; the near half and the floor under the galleries stay hidden).
 - **NPC lighting:** `mansion.lighting.ambient[room.index]` gives the room's bounce colour; add the room's lights from `bp.lights`.
 - **Multiplayer:** send seed + options (generation is deterministic), or send the blueprint JSON from the server.
 
@@ -224,7 +225,7 @@ All renderer code is in `src/mansion/build/`. `buildMansion(bp, opts)` returns `
   - Façades get outer faces mitred at convex and concave corners, with plinth and water table, string courses, stepped cornices, balustraded parapets, quoins, pavilion pilasters, window surrounds, triangular and segmental pediments, keystones and iron balconettes.
   - Windows get sash and French-window joinery with glazing bars, Fresnel glass, double-sided pleated drapes, pelmets and sheers.
 - **Roofs and porticos** (`roofs.ts`): hipped (slope-aligned slate UVs), mansard with dormers (some warmly lit), flat with balustrade, and glass conservatory roofs. Also pavilion pediment gables, chimney stacks with pots, and porticos in Doric, Ionic and Corinthian orders with entablature and pediment.
-- **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the oculus ceiling. Outside, a square base, a round drum and a ribbed glass dome; the roof is cut open where the base stands.
+- **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the chandelier's chain. Outside, the hall's glass roof with its glazing bars and, on a low curb, the ribbed glass dome; the house roof is cut open over the hall and the well walls follow the roof slope, so nothing stands higher than the roof between the sniper and the glass.
 - **Also:** `stairs.ts` (stone or timber U-stairs with balusters); `props.ts` (furniture, chandeliers with glowing candles, bar with bottles, grand piano with raised lid, statues, paintings from the atlas, lamps, lanterns); `site.ts` (terrain, terrace, steps, gardens, fountain, instanced LOD trees and a far tree line).
 - **Sky** (`sky.ts`): lavender haze to deep-blue zenith, a warm sunset glow on one side and the rosy Belt of Venus opposite. Cirrus is lit from below, there are stars, and the crescent moon is shaded by the real sun vector. It is baked into a PMREM environment map for façade, glass and water reflections.
 - **Post** (`grade.ts`): ACES tone mapping, bloom on bulbs, then a split-tone grade (cool shadows, warm highlights, +12% saturation, soft vignette).
@@ -256,13 +257,15 @@ The target is about 70% realistic and 30% appealing: real proportions, materials
 ```ts
 generateMansion({
   seed: 'match-42',                 // string or number
-  size: 'grand',                    // 'compact' (7–9 bays) | 'grand' (9–13) | 'palatial' (13–15)
+  size: 'grand',                    // 'compact' (9–11 bays) | 'grand' (11–13) | 'palatial' (15–17)
   style: 'palladian',               // 'palladian' | 'georgian' | 'beauxarts' (default: random)
   massing: 'u-garden',              // 'block' | 'u-garden' | 'u-entrance' | 'h' (default: weighted by style)
   hall: 'gallery',                  // 'gallery' | 'rotunda': shape of the dome hall (default 'gallery')
   perchDistance: 180,               // metres from the garden façade (default 135–205)
   perchAzimuthDeg: -12,             // degrees off the garden axis (default ±24; movePerch() changes it later)
+  perchElevationDeg: 0,             // degrees above the horizon, 0–60 (default 0, the treeline)
   partyVisibility: [0.3, 0.8],      // acceptable share of the indoor party floor in view
+  minVisible: 0.45,                 // shorthand: raise the lower bound; houses below it are regenerated (32 attempts)
   requiredPois: { statue: { min: 4, visible: 2 } }, // merged over defaults
   maxAttempts: 16,
   navCell: 0.25,                    // nav/visibility grid resolution (m)
@@ -305,7 +308,7 @@ docs/                   mansion-generation.md (design doc), images/
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 75 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 36 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
+| `npm test` | 84 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 36 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |
@@ -322,10 +325,13 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 | Metric | Value |
 |---|---|
 | Validity, all 36 combinations × 5 seeds × both hall shapes | 360 / 360 (mean 1.1 attempts) |
-| Validity, 100 random seeds | 95 first try, 100 / 100 overall |
+| Dome hall | 20 × 17 m on average, dome radius 8 m |
+| From 55° up | 73% of the top gallery and 27% of the hall floor in view; indoor party floor 15% |
+| Houses with party rooms upstairs | 31 of 100 |
+| Validity, 100 random seeds | 96 first try, 100 / 100 overall |
 | Indoor party floor the sniper sees | 44% on average (29% before the wide glazing, column screens and dome hall) |
 | Ground floor out of the sniper's sight | 54% on average |
-| Generation time | ~135–170 ms per attempt |
+| Generation time | ~240–290 ms per attempt |
 | Typical grand house | ~30–50 rooms, ~370 props, ~100–400 lights, ~60 POIs, ~600 trees |
 | Static mesh triangles | ~290–460k |
 | Rendered per frame (incl. shadows, trees) | ~1.5–1.8M triangles, ~180 draw calls |
@@ -340,7 +346,7 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 - **Why not Wave Function Collapse?** It guarantees local tile adjacency but not global properties: connectivity, symmetry, room programme and sightline fairness.
 - **Why scoped lights instead of three.js point lights?** Hundreds of lights, no light leaking through walls, a handful of shader programs and merged draw calls.
 - **Why faces instead of wall boxes?** Each room can carry its own finish and light scope, and corners join cleanly without z-fighting.
-- **A perch the sniper chooses:** the sniper lies on a wooded ridge facing the garden (stage) front, which gets the most glazing. Distance is randomised per seed; the bearing is the sniper's choice within ±38°, and the house does not change with it.
+- **A perch the sniper chooses:** the sniper lies on a wooded ridge facing the garden (stage) front, which gets the most glazing. Distance is randomised per seed; the bearing is the sniper's choice within ±38° and the elevation within 0–60°, and the house does not change with either.
 - **Why a hall rather than more windows?** Glass alone cannot show what is behind the front rooms. One tall hall on the axis puts the stair, the galleries and the people on them in a single view through the central windows.
 - **Why keep rectangles under the curves?** Walls, navigation and sightlines all assume axis-aligned rooms. The dome hall's curves are geometry inside one rectangular room, passed to those systems as strips, so nothing else had to change.
 - **Engine:** Three.js + TypeScript. The blueprint is engine-agnostic, so another engine could consume it.

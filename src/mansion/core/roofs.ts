@@ -9,7 +9,8 @@ const DEG = Math.PI / 180;
 export const ROOF_BASE = 0.06;
 /** Eaves overhang of roofs without a parapet. */
 export const EAVE_OVERHANG = 0.62;
-export const PAVILION_PITCH = 22.5;
+/** Low, as on a temple front: a steep pediment would stand between the sniper and the hall's glass roof. */
+export const PAVILION_PITCH = 15;
 
 /** Plan rectangle a mass's roof covers. */
 export function roofRect(m: Mass): { x0: number; z0: number; x1: number; z1: number } {
@@ -24,9 +25,19 @@ export function mansardBreak(m: Mass): { height: number; inset: number } {
   return { height, inset: height / Math.tan(70 * DEG) };
 }
 
-/** Pitch and base lift the renderer uses for a hipped roof. */
-export function hipParams(m: Mass): { pitchDeg: number; lift: number } {
-  return m.roof.balustrade ? { pitchDeg: Math.min(m.roof.pitchDeg, 24), lift: 0.2 } : { pitchDeg: m.roof.pitchDeg, lift: 0 };
+/**
+ * A hipped roof over a deep block does not run up to a ridge: it stops at this rise and is
+ * leaded flat on top, as on real double-pile houses. It also keeps the dome's base low.
+ */
+export const HIP_MAX_RISE = 3.6;
+
+/** Pitch and base lift the renderer uses for a hipped roof, and how far in the slopes run before the flat top (Infinity: to the ridge). */
+export function hipParams(m: Mass): { pitchDeg: number; lift: number; inset: number } {
+  const p = m.roof.balustrade ? { pitchDeg: Math.min(m.roof.pitchDeg, 24), lift: 0.2 } : { pitchDeg: m.roof.pitchDeg, lift: 0 };
+  const r = roofRect(m);
+  const t = Math.tan(p.pitchDeg * DEG);
+  const full = (Math.min(r.x1 - r.x0, r.z1 - r.z0) / 2) * t;
+  return { ...p, inset: full > HIP_MAX_RISE + 0.4 ? HIP_MAX_RISE / t : Infinity };
 }
 
 /**
@@ -66,8 +77,8 @@ export function roofSurfaceY(masses: Mass[], x: number, z: number): number {
         break;
       }
       default: {
-        const { pitchDeg, lift } = hipParams(m);
-        best = Math.max(best, yb + lift + d * Math.tan(pitchDeg * DEG));
+        const { pitchDeg, lift, inset } = hipParams(m);
+        best = Math.max(best, yb + lift + Math.min(d, inset) * Math.tan(pitchDeg * DEG));
       }
     }
   }

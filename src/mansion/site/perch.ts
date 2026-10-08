@@ -31,3 +31,22 @@ export function perchEye(terrain: TerrainSpec, zGarden: number, groundFloorY: nu
   eyeY += Math.min(2.5, Math.max(0, lift) * 1.15);
   return { x: px, y: snap(eyeY, 0.01), z: pz };
 }
+
+/** Highest the sniper may go: looking down at 60° is enough to see the dance floor through the dome. */
+export const PERCH_MAX_ELEVATION_DEG = 60;
+
+/**
+ * Eye position at a bearing and an elevation (degrees above the horizon, seen from the garden front).
+ * Elevation keeps the range: the eye moves up and in along a sphere centred on the front of the house.
+ * At 0, or below what the treeline already gives, the sniper is prone on the ground. Higher positions
+ * have no ground under them; they are an aerial vantage.
+ */
+export function perchEyeAt(terrain: TerrainSpec, zGarden: number, groundFloorY: number, azimuthDeg: number, elevationDeg: number, distance: number): Vec3 {
+  const ground = perchEye(terrain, zGarden, groundFloorY, azimuthDeg, distance);
+  if (elevationDeg <= 0) return ground;
+  const el = (Math.min(PERCH_MAX_ELEVATION_DEG, elevationDeg) * Math.PI) / 180;
+  const y = groundFloorY + 3 + distance * Math.sin(el);
+  if (y <= ground.y) return ground;
+  const p = perchPlan(zGarden, azimuthDeg, distance * Math.cos(el));
+  return { x: p.x, y: snap(y, 0.01), z: p.z };
+}

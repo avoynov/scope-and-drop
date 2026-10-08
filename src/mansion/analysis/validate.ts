@@ -130,7 +130,7 @@ export function validate(bp: Omit<MansionBlueprint, 'validation' | 'stats'>, ext
   }
 
   // Party capacity.
-  const partyArea = bp.rooms.filter((r) => r.level === 0 && r.role === 'party').reduce((a, r) => a + (r.inner.x1 - r.inner.x0) * (r.inner.z1 - r.inner.z0), 0);
+  const partyArea = bp.rooms.filter((r) => r.role === 'party' && r.type !== 'roof-terrace').reduce((a, r) => a + (r.inner.x1 - r.inner.x0) * (r.inner.z1 - r.inner.z0), 0);
   metrics.partyArea = round(partyArea);
   if (partyArea < 180) err('party-too-small', `Party floor only ${partyArea.toFixed(0)} m²`);
 

@@ -417,6 +417,12 @@ export interface Perch {
   arcDeg: [number, number];
   /** Indoor party visibility sampled along the arc, for the briefing. */
   options: { azimuthDeg: number; partyVisible: number }[];
+  /** Elevation above the horizon (deg). 0 = prone in the treeline; higher is an aerial vantage at the same range. */
+  elevationDeg: number;
+  /** Elevations the sniper may choose. */
+  elevationRangeDeg: [number, number];
+  /** Indoor party visibility sampled up the elevation range (at the generated bearing), for the briefing. */
+  elevationOptions: { elevationDeg: number; partyVisible: number }[];
 }
 
 export interface SkySpec {
@@ -492,9 +498,9 @@ export interface Sightlines {
   /** Mean visibility per room id (0..1), person-height samples. */
   rooms: Record<string, number>;
   terrace: number;
-  /** Share of indoor party floor (ground-floor party rooms) visible from the perch. The terrace is reported separately. */
+  /** Share of indoor party floor (party rooms on any storey) visible from the perch. Terraces are reported separately. */
   partyVisible: number;
-  /** Share of the ground floor guests use (party rooms, halls, corridors) that the sniper cannot see at all: the spy's cover. */
+  /** Share of the floor guests use (party rooms, ground-floor halls and corridors) that the sniper cannot see at all: the spy's cover. */
   hiddenShare: number;
 }
 
@@ -519,6 +525,10 @@ export interface MansionOptions {
   /** Override perch distance (m) and azimuth off the garden axis (deg). */
   perchDistance?: number;
   perchAzimuthDeg?: number;
+  /** Elevation of the perch above the horizon (deg, 0-60). Default 0: on the ground in the treeline. */
+  perchElevationDeg?: number;
+  /** Shorthand for the lower bound of `partyVisibility` (0..1): houses that show the sniper less are regenerated. */
+  minVisible?: number;
   /** Mission objects that must exist, with minimum counts and how many must be visible. */
   requiredPois?: Partial<Record<PoiType, { min: number; visible: number }>>;
   /** Acceptable share of indoor party floor visible from the perch. */
@@ -561,8 +571,8 @@ export interface MansionBlueprint {
   seed: string;
   /** Generation attempt that passed validation (0 = first try). */
   attempt: number;
-  options: Required<Omit<MansionOptions, 'seed' | 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg'>> &
-    Pick<MansionOptions, 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg'> & { seed: string };
+  options: Required<Omit<MansionOptions, 'seed' | 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg' | 'perchElevationDeg' | 'minVisible'>> &
+    Pick<MansionOptions, 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg' | 'perchElevationDeg'> & { seed: string };
   style: StyleDef;
   massing: MassingType;
   bay: number;

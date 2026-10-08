@@ -7,7 +7,7 @@ import { rect, type Rect, type Vec2 } from '../core/geom';
 import { snap, type Rng } from '../core/rng';
 import type { LightSpec, Perch, Portico, Prop, Site, SkySpec, StyleDef, Terrace, TerrainSpec, Tree } from '../core/types';
 import type { MassingPlan } from '../layout/massing';
-import { PERCH_ARC_DEG, perchEye, perchPlan } from './perch';
+import { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEyeAt, perchPlan } from './perch';
 import { terrainHeight } from './terrain';
 
 export interface SiteInput {
@@ -19,6 +19,7 @@ export interface SiteInput {
   footprint: Rect;
   perchDistance?: number;
   perchAzimuthDeg?: number;
+  perchElevationDeg?: number;
 }
 
 export interface SiteOutput {
@@ -221,6 +222,7 @@ export function planSite(input: SiteInput): SiteOutput {
   const drawnAz = rng.range(-24, 24);
   const dist = snap(input.perchDistance ?? drawnDist, 0.1);
   const az = snap(Math.max(-PERCH_ARC_DEG, Math.min(PERCH_ARC_DEG, input.perchAzimuthDeg ?? drawnAz)), 0.1);
+  const elevation = snap(Math.max(0, Math.min(PERCH_MAX_ELEVATION_DEG, input.perchElevationDeg ?? 0)), 0.1);
   const azr = (az * Math.PI) / 180;
   const { x: px, z: pz } = perchPlan(m.zGarden, az, dist);
   const fountainReach = Math.hypot(fountainR + 20, gardenEnd);
@@ -234,7 +236,7 @@ export function planSite(input: SiteInput): SiteOutput {
   };
   const target = { x: 0, y: snap(m.groundFloorY + 3.0, 0.01), z: m.zGarden };
   const perch: Perch = {
-    eye: perchEye(terrain, m.zGarden, m.groundFloorY, az, dist),
+    eye: perchEyeAt(terrain, m.zGarden, m.groundFloorY, az, elevation, dist),
     target,
     distance: dist,
     azimuthDeg: az,
@@ -242,6 +244,9 @@ export function planSite(input: SiteInput): SiteOutput {
     fovMaxDeg: 24,
     arcDeg: [-PERCH_ARC_DEG, PERCH_ARC_DEG],
     options: [],
+    elevationDeg: elevation,
+    elevationRangeDeg: [0, PERCH_MAX_ELEVATION_DEG],
+    elevationOptions: [],
   };
   const sunSide = rng.chance(0.5) ? 1 : -1;
   const sunAz = snap(180 + sunSide * rng.range(22, 60), 0.1);

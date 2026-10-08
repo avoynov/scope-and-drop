@@ -156,15 +156,16 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
   const A = (inner.x1 - inner.x0) / 2;
   const zB = inner.z0;
   const zF = inner.z1;
-  const gw = Math.min(2.2, Math.max(1.7, 0.32 * A));
-  const sw = Math.min(1.8, Math.max(1.35, 0.27 * A));
+  // Generous by rule: a gallery two couples can pass on, a stair four can climb abreast.
+  const gw = Math.min(4.2, Math.max(3.0, 0.33 * A));
+  const sw = Math.min(3.6, Math.max(2.6, 0.29 * A));
   const vw = A - gw;
   const zV = zB + gw;
   const dv = zF - zV;
-  const minRadius = sw + 0.35;
-  // The stair lands on the straight run beside the garden windows; keep that run long enough for the landing.
-  const zMax = dv - 2.6;
-  if (vw < sw + 1.2 || zMax < minRadius) return null;
+  const minRadius = sw + 0.4;
+  // The stair lands on the straight run of the side gallery; keep that run long enough for the landing.
+  const zMax = dv - 3.4;
+  if (vw < sw + 2.0 || zMax < minRadius) return null;
   let rx: number;
   let rz: number;
   if (shape === 'rotunda') {
@@ -172,7 +173,7 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
     rz = Math.min(vw, zMax);
     rx = Math.min(vw, (rz * rz) / minRadius);
   } else {
-    rx = rz = Math.max(minRadius, Math.min(0.7 * vw, 0.42 * dv, 3.4, zMax));
+    rx = rz = Math.max(minRadius, Math.min(0.7 * vw, 0.42 * dv, 5.0, zMax));
   }
   if (rx < minRadius - 1e-6) return null;
 
@@ -188,11 +189,12 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
         ];
   if (shape === 'rotunda' && outerE[0]!.x > cx + 1e-6) outerE.unshift({ x: cx, z: zB });
 
-  // Stair arm centreline, east side.
+  // Stair arm centreline, east side: from beside the axis door, round the back corner, up the side.
   const centre = offset(edge, -sw / 2);
   const cum = lengths(centre);
   const total = cum[cum.length - 1]!;
-  const halfGap = 1.25;
+  const sSide = cum[cum.length - 2]!;
+  const halfGap = 2.0;
   let s0 = 0;
   for (let s = 0; s < total; s += 0.05) {
     if (pointAt(centre, cum, s).x - cx >= halfGap) {
@@ -202,73 +204,88 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
   }
   const avail = total - s0;
   let fit: { n: number; tread: number } | null = null;
-  for (const maxRiser of [0.17, 0.18, 0.19]) {
+  for (const maxRiser of [0.15, 0.16, 0.17, 0.18, 0.19]) {
     const n = Math.ceil(rise / maxRiser);
-    const tread = Math.min(0.34, (avail - 1.1) / n);
-    if (tread >= 0.255 && (!fit || fit.tread < 0.27)) fit = { n, tread: snap(tread, 0.001) };
+    const tread = Math.min(0.36, (avail - 1.6) / n);
+    if (tread >= 0.255 && (!fit || fit.tread < 0.3)) fit = { n, tread: snap(tread, 0.001) };
   }
   if (!fit) return null;
   const flight = fit.n * fit.tread;
-  const landing = Math.min(2.2, avail - flight);
-  const sFoot = s0 + (avail - flight - landing);
+  // Land where the side gallery runs straight, as near the back as the climb allows: that keeps the
+  // garden end of the hall, and its windows, clear of the stair.
+  let sFoot = Math.max(s0, sSide - (fit.n - 1) * fit.tread);
+  if (sFoot + flight + 1.6 > total) sFoot = total - flight - 1.6;
+  if (sFoot < s0 - 1e-6) return null;
+  const landing = Math.min(3.0, total - sFoot - flight);
   // The last tread is at gallery height: it and the run beyond it are the landing.
   const sTop = sFoot + (fit.n - 1) * fit.tread;
-  const zLand = round(zF - (total - sTop));
-  if (zLand < zV + rz - 1e-3) return null;
+  if (sTop < sSide - 1e-3) return null;
+  const zLand0 = round(pointAt(centre, cum, sTop).z);
+  const zLand1 = round(Math.min(zF, pointAt(centre, cum, sFoot + flight + landing).z));
+  const toWall = zF - zLand1 < 0.6;
+  const zEnd = toWall ? round(zF) : zLand1;
   const armPath = slice(centre, cum, sFoot, sFoot + flight).map((p) => ({ x: round(p.x), z: round(p.z) }));
   const arms: StairArm[] = [
     { path: armPath, width: round(sw), y0: floorY, rise, steps: fit.n },
     { path: mirror(armPath, cx).map((p) => ({ x: round(p.x), z: p.z })), width: round(sw), y0: floorY, rise, steps: fit.n },
   ];
-  const landE = rect(round(cx + vw - sw), zLand, round(cx + vw), round(zF));
-  const landW = rect(round(cx - vw), zLand, round(cx - vw + sw), round(zF));
+  const landE = rect(round(cx + vw - sw), zLand0, round(cx + vw), zEnd);
+  const landW = rect(round(cx - vw), zLand0, round(cx - vw + sw), zEnd);
 
-  // Gallery floor outlines (counter-clockwise from the west garden corner).
+  // Gallery floor outlines (from the west garden corner, round the walls, back along the void edge).
   const outerW = mirror(outerE, cx).reverse();
   const outer = [...outerW, ...outerE.slice(1)];
   const voidW = mirror(voidE, cx);
-  const inside = (withLandings: boolean): Vec2[] => {
-    const e = voidE.slice();
-    const w = voidW.slice();
-    if (!withLandings) return [...e.reverse(), ...w.slice(1)];
-    e[e.length - 1] = { x: cx + vw, z: zLand };
-    w[w.length - 1] = { x: cx - vw, z: zLand };
-    return [{ x: landE.x0, z: zF }, { x: landE.x0, z: zLand }, ...e.reverse(), ...w.slice(1), { x: landW.x1, z: zLand }, { x: landW.x1, z: zF }];
-  };
   const clean = (pts: Vec2[]): Vec2[] => pts.map((p) => ({ x: round(p.x), z: round(p.z) })).filter((p, i, a) => i === 0 || Math.hypot(p.x - a[i - 1]!.x, p.z - a[i - 1]!.z) > 1e-3);
+  // East void edge walked from the garden wall to the back centre, with the landing as a step out into the void.
+  const eastIn = (withLandings: boolean): Vec2[] => {
+    const back = voidE.slice(0, -1).reverse();
+    if (!withLandings) return [{ x: cx + vw, z: zF }, ...back];
+    const bump: Vec2[] = [
+      { x: landE.x0, z: zEnd },
+      { x: landE.x0, z: zLand0 },
+      { x: cx + vw, z: zLand0 },
+    ];
+    return toWall ? [...bump, ...back] : [{ x: cx + vw, z: zF }, { x: cx + vw, z: zEnd }, ...bump, ...back];
+  };
+  const inside = (withLandings: boolean): Vec2[] => {
+    const e = eastIn(withLandings);
+    return [...e, ...mirror(e, cx).reverse().slice(1)];
+  };
   const outlineWithLandings = clean([...outer, ...inside(true)]);
   const outlinePlain = clean([...outer, ...inside(false)]);
   const voidPoly = clean([...voidW.slice().reverse(), ...voidE.slice(1)]);
   const footprint = clean(outer);
   const edgeAll = clean([...voidW.slice().reverse(), ...voidE.slice(1)]);
-  const railCut = edgeAll.slice();
-  railCut[0] = { x: round(cx - vw), z: zLand };
-  railCut[railCut.length - 1] = { x: round(cx + vw), z: zLand };
-  const railsWithLandings: Vec2[][] = [
-    railCut,
-    [
-      { x: landE.x0, z: zLand },
-      { x: landE.x0, z: round(zF) },
-    ],
-    [
-      { x: landW.x1, z: zLand },
-      { x: landW.x1, z: round(zF) },
-    ],
-  ];
+  // Balustrades: round the back between the two landings, then round each landing to the garden wall.
+  const backRail = clean([{ x: cx - vw, z: zLand0 }, ...voidW.slice(0, -1).reverse(), ...voidE.slice(1, -1), { x: cx + vw, z: zLand0 }]);
+  const landRail = (x0: number, xEdge: number): Vec2[] =>
+    toWall
+      ? [
+          { x: x0, z: zLand0 },
+          { x: x0, z: zEnd },
+        ]
+      : [
+          { x: x0, z: zLand0 },
+          { x: x0, z: zEnd },
+          { x: xEdge, z: zEnd },
+          { x: xEdge, z: round(zF) },
+        ];
+  const railsWithLandings: Vec2[][] = [backRail, landRail(landE.x0, round(cx + vw)), landRail(landW.x1, round(cx - vw))];
 
   // Columns carry the gallery edge, standing just behind it.
-  const colLine = offset(edge, 0.32);
+  const colLine = offset(edge, 0.5);
   const colCum = lengths(colLine);
-  const colLen = colCum[colCum.length - 1]! - 0.5;
-  const nCol = Math.max(2, Math.round(colLen / 3.3));
+  const colLen = colCum[colCum.length - 1]! - 0.6;
+  const nCol = Math.max(2, Math.round(colLen / 4.4));
   const columns: Vec2[] = [];
   for (let k = 0; k < nCol; k++) {
     const p = pointAt(colLine, colCum, (colLen * (k + 0.5)) / nCol);
-    if (p.x - cx < 1.9) continue;
+    if (p.x - cx < 2.8) continue;
     columns.push({ x: round(p.x), z: round(p.z) }, { x: round(2 * cx - p.x), z: round(p.z) });
   }
-  const columnRadius = 0.2;
-  const colBlocks = columns.map((c) => rect(round(c.x - 0.26), round(c.z - 0.26), round(c.x + 0.26), round(c.z + 0.26)));
+  const columnRadius = 0.3;
+  const colBlocks = columns.map((c) => rect(round(c.x - 0.38), round(c.z - 0.38), round(c.x + 0.38), round(c.z + 0.38)));
 
   // Ground floor: you cannot walk where the stair is lower than head height.
   const lowTo = sFoot + flight * Math.min(1, 2.5 / rise);
@@ -328,8 +345,35 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
       { x: round(footPoint.x), z: round(footPoint.z) },
       { x: round(2 * cx - footPoint.x), z: round(footPoint.z) },
     ],
-    dome: { x: round(cx), z: round((zV + zF) / 2), radius: round(Math.min(5, Math.max(2.2, Math.min(vw, dv / 2) - 0.35))) },
+    dome: inscribedDome(footprint, cx, zB, zF),
   };
+}
+
+/**
+ * The largest dome the hall carries: a circle on the hall's axis, inscribed in its footprint.
+ * It roofs the whole hall, galleries included; it is the sniper's window from above.
+ */
+function inscribedDome(footprint: Vec2[], cx: number, zB: number, zF: number): { x: number; z: number; radius: number } {
+  const clear = (z: number): number => {
+    let d = Infinity;
+    for (let i = 0; i < footprint.length; i++) {
+      const a = footprint[i]!;
+      const b = footprint[(i + 1) % footprint.length]!;
+      const ex = b.x - a.x;
+      const ez = b.z - a.z;
+      const len2 = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((cx - a.x) * ex + (z - a.z) * ez) / len2));
+      d = Math.min(d, Math.hypot(cx - a.x - ex * t, z - a.z - ez * t));
+    }
+    return d;
+  };
+  const mid = (zB + zF) / 2;
+  let best = { z: mid, r: clear(mid) };
+  for (let z = zB + 2; z <= zF - 2; z += 0.1) {
+    const r = clear(z);
+    if (r > best.r + 0.05) best = { z, r };
+  }
+  return { x: round(cx), z: round(best.z), radius: round(Math.min(12, Math.max(3, best.r - 0.45))) };
 }
 
 /** Does a hall of this clear size take the stair in both hall shapes? Used by the massing to size the hall. */

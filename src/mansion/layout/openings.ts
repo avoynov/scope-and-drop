@@ -83,6 +83,12 @@ function windowSpec(ctx: OpeningContext, w: Wall, room: PlacedRoom, terraceFacin
     const sill = lv.floorY + 0.75;
     return { kind: 'window', width, sill, head: sill + Math.min(2.95, lv.height - 1.85), panes: [3, 4], leaves: 1, passable: false };
   }
+  if (w.level >= 1 && ROLE[room.type] === 'party' && terraceFacing) {
+    // Upstairs reception rooms get tall, wide sashes: guests there should be seen too.
+    const width = Math.min(2.6, Math.max(1.9, 0.56 * b));
+    const sill = lv.floorY + 0.45;
+    return { kind: 'window', width, sill, head: sill + Math.min(3.0, lv.height - 1.15), panes: [4, 4], leaves: 1, passable: false };
+  }
   if (w.level === 1) {
     const width = Math.min(1.6, Math.max(1.25, 0.36 * b));
     const sill = lv.floorY + 0.65;
@@ -456,13 +462,7 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
       const axisAt = (w: Wall) => uOf(w, 0, 0);
       const hall = roomsL.find((r) => r.type === 'entrance-hall');
       const ball = roomsL.find((r) => r.type === 'ballroom');
-      const corr = roomsL.find((r) => r.type === 'corridor' && r.zone === 'corridor');
-      if (hall && ball) {
-        if (corr) {
-          tryPair(hall.id, corr.id, 'double-door', axisAt);
-          tryPair(corr.id, ball.id, 'double-door', axisAt);
-        } else tryPair(hall.id, ball.id, 'double-door', axisAt);
-      }
+      if (hall && ball) tryPair(hall.id, ball.id, 'double-door', axisAt);
       // 3. Enfilade along the garden front, near the windows.
       const front = roomsL.filter((r) => r.zone === 'front').sort((p, q) => p.rect.x0 - q.rect.x0);
       const zEnf = m.zGarden - 0.3 - 1.25 - 0.9;
@@ -606,7 +606,9 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
         const blocker = neighboursWithDoor(v.id).find((x) => ok.has(x) && !isPassThrough(typeOf(x)));
         if (blocker) {
           const br = ctx.rooms.get(blocker)!;
-          const to: RoomType = L === 0 ? 'morning-room' : 'landing';
+          // A wide room becomes a morning room the party walks through; a narrow one is just a passage.
+          const narrow = Math.min(br.rect.x1 - br.rect.x0, br.rect.z1 - br.rect.z0) < 5;
+          const to: RoomType = L === 0 ? (narrow ? 'corridor' : 'morning-room') : 'landing';
           retyped.push({ id: br.id, from: br.type, to });
           br.type = to;
           progressed = true;

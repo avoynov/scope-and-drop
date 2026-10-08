@@ -43,7 +43,13 @@
       #brief dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; border-top: 1px solid var(--line); padding-top: 10px; }
       #brief dt { color: var(--muted); }
       #brief dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-      #brief-bearing { color: var(--ink); text-align: center; }
+      #brief-bearing, #brief-elevation { color: var(--ink); text-align: center; }
+      #brief-az, #brief-el { width: 100%; padding: 0; margin: 0; border: 0; box-sizing: border-box; flex: none; accent-color: var(--accent); }
+      #brief-elbars { display: flex; align-items: flex-end; gap: 3px; height: 34px; flex: none; }
+      #brief-elbars i { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; min-height: 2px; }
+      #brief-elbars i.on { background: var(--accent); }
+      #panel label { color: var(--muted); align-self: center; flex: 1; }
+      #minvis { width: 64px; flex: none; }
       #brief .key { color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       #brief .key i { display: inline-block; width: 90px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, rgb(34, 40, 54), rgb(255, 190, 84)); }
       #brief-deploy { background: var(--accent); color: #16110a; border-color: var(--accent); font-weight: 600; padding: 9px 10px; }
@@ -72,7 +78,11 @@
           <option value="gallery">dome hall: curved galleries</option>
           <option value="rotunda">dome hall: rotunda</option>
         </select>
-        <button id="rebrief" title="Back to the floor plan to choose another bearing">briefing</button>
+        <button id="rebrief" title="Back to the floor plan to choose another position">briefing</button>
+      </div>
+      <div class="row">
+        <label for="minvis" title="Houses whose indoor party floor is less visible than this from the default perch fail the validity check and are regenerated">min visible %</label>
+        <input id="minvis" type="number" min="0" max="70" step="5" />
       </div>
       <div class="row" id="views"></div>
       <div class="row" id="floors"></div>
@@ -81,7 +91,7 @@
     </div>
     <section id="brief" aria-label="Mission briefing">
       <header>
-        <h2>Briefing · choose your bearing</h2>
+        <h2>Briefing · choose your position</h2>
         <span id="brief-title"></span>
       </header>
       <canvas id="brief-plan"></canvas>
@@ -90,15 +100,19 @@
         <canvas id="brief-dial" aria-label="Bearing dial: drag the red marker along the treeline"></canvas>
         <div id="brief-bearing"></div>
         <input id="brief-az" type="range" step="1" aria-label="Bearing off the garden axis, degrees" />
+        <div id="brief-elevation"></div>
+        <div id="brief-elbars" aria-hidden="true"></div>
+        <input id="brief-el" type="range" step="1" aria-label="Elevation above the horizon, degrees" />
         <button id="brief-deploy">Deploy here</button>
         <dl>
           <dt>Indoor party floor in view</dt><dd id="brief-party"></dd>
+          <dt>Dome hall, stair and galleries in view</dt><dd id="brief-hall"></dd>
           <dt>Terrace in view</dt><dd id="brief-terrace"></dd>
           <dt>Ground floor out of sight</dt><dd id="brief-hidden"></dd>
           <dt>Mission objects you can watch</dt><dd id="brief-pois"></dd>
         </dl>
         <div class="key">unseen <i></i> in view</div>
-        <div class="key">Bars on the dial show how much of the party each bearing sees. Dots are mission objects: white when you can watch them.</div>
+        <div class="key">Bars show how much of the party each bearing or elevation sees. Low looks through the windows; high looks down through the glass roof. Dots are mission objects: white when you can watch them.</div>
       </aside>
     </section>
     <script type="module" src="./main.ts"></script>

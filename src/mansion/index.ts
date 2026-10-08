@@ -5,7 +5,7 @@
  *   const built = buildMansion(bp, { renderer });        // three.js scene (browser)
  */
 export { generateMansion, movePerch, resolveOptions, SCHEMA } from './generate';
-export { PERCH_ARC_DEG, perchEye, perchPlan } from './site/perch';
+export { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEye, perchEyeAt, perchPlan } from './site/perch';
 export { STYLES, STYLE_IDS } from './core/styles';
 export { Rng } from './core/rng';
 export { terrainHeight } from './site/terrain';

@@ -8,7 +8,7 @@ import { roofSurfaceY } from '../core/roofs';
 import type { Atrium, Room, StairArm, Wall } from '../core/types';
 import { archFill, archSoffit, vquad, wallMaterialKey, wbox, type ArchContext } from './arch';
 import { pointInPoly } from '../layout/atrium';
-import { type GeometryBuilder, type V3 } from './geometry';
+import { ALL, PY, type GeometryBuilder, type V3 } from './geometry';
 
 const tup = (p: Vec2): [number, number] => [p.x, p.z];
 const STONE = '#ece6da';
@@ -120,7 +120,9 @@ function stairArm(g: GeometryBuilder, arm: StairArm): void {
     const yTop = arm.y0 + (i + 1) * riser;
     const uA = Math.max(arm.y0, yPrev - 0.3);
     const uB = Math.max(arm.y0, yTop - 0.3);
-    g.quadFacing(key, [A.L[0], yTop, A.L[1]], [A.R[0], yTop, A.R[1]], [B.R[0], yTop, B.R[1]], [B.L[0], yTop, B.L[1]], 0, 1, 0);
+    // The top tread is the gallery floor itself; its own surface sits a hair lower so the two never share a plane.
+    const yTread = i === arm.steps - 1 ? yTop - 0.012 : yTop;
+    g.quadFacing(key, [A.L[0], yTread, A.L[1]], [A.R[0], yTread, A.R[1]], [B.R[0], yTread, B.R[1]], [B.L[0], yTread, B.L[1]], 0, 1, 0);
     g.quadFacing(key, [A.L[0], yPrev, A.L[1]], [A.R[0], yPrev, A.R[1]], [A.R[0], yTop, A.R[1]], [A.L[0], yTop, A.L[1]], -A.p.tx, 0, -A.p.tz);
     if (uB > arm.y0 + 1e-3) g.quadFacing(key, [A.L[0], uA, A.L[1]], [A.R[0], uA, A.R[1]], [B.R[0], uB, B.R[1]], [B.L[0], uB, B.L[1]], 0, -1, 0);
     g.quadFacing(key, [A.L[0], uA, A.L[1]], [B.L[0], uB, B.L[1]], [B.L[0], yTop, B.L[1]], [A.L[0], yTop, A.L[1]], A.nx, 0, A.nz);
@@ -339,6 +341,8 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     const n = Math.max(2, Math.round((sd.t1 - sd.t0) / 2.3));
     const step = (sd.t1 - sd.t0) / n;
     const pier = 0.24;
+    // Corner piers are wider; every light starts where its piers end, so no glass is buried in stone.
+    const pierAt = (i: number) => (i === 0 || i === n ? pier + ATTIC_T : pier);
     const half = ATTIC_T / 2;
     const skins: { n0: number; n1: number; scope: number; stone: string; tint: string; trim: string; face: number; fsgn: 1 | -1 }[] = [
       { n0: half, n1: ATTIC_T, scope: -1, stone: wallKey, tint: wallTint, trim: 'ext-trim', face: ATTIC_T, fsgn: sd.sgn },
@@ -356,16 +360,16 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       g.scope = sk.scope;
       g.setTint(sk.tint);
       wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, sd.t0, sd.t1, sk.n0, sk.n1, y0, sill);
-      wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, sd.t0, sd.t1, sk.n0, sk.n1, head, d.deckY);
+      // No top face: the lead of the glass roof's border lies on this plane.
+      wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, sd.t0, sd.t1, sk.n0, sk.n1, head, d.deckY, ALL & ~PY);
       for (let i = 0; i <= n; i++) {
         const t = sd.t0 + i * step;
-        const w = i === 0 || i === n ? pier + ATTIC_T : pier;
-        wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, Math.max(sd.t0, t - w), Math.min(sd.t1, t + w), sk.n0, sk.n1, sill, head);
+        wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, Math.max(sd.t0, t - pierAt(i)), Math.min(sd.t1, t + pierAt(i)), sk.n0, sk.n1, sill, head);
       }
       const plane = sd.line + sd.sgn * sk.face;
       for (let i = 0; i < n; i++) {
-        const ta = sd.t0 + i * step + pier;
-        const tb = sd.t0 + (i + 1) * step - pier;
+        const ta = sd.t0 + i * step + pierAt(i);
+        const tb = sd.t0 + (i + 1) * step - pierAt(i + 1);
         const rise = Math.min((tb - ta) / 2, (head - sill) * 0.45);
         if (blind[i]! > head - rise - 0.5) {
           wbox(g, sk.stone, sd.axis, sd.line, sd.sgn, ta, tb, sk.n0, sk.n1, sill, head);
@@ -383,8 +387,8 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     g.scope = -1;
     const mid = sd.line + sd.sgn * half;
     for (let i = 0; i < n; i++) {
-      const ta = sd.t0 + i * step + pier;
-      const tb = sd.t0 + (i + 1) * step - pier;
+      const ta = sd.t0 + i * step + pierAt(i);
+      const tb = sd.t0 + (i + 1) * step - pierAt(i + 1);
       const rise = Math.min((tb - ta) / 2, (head - sill) * 0.45);
       const lo = blind[i]!;
       if (lo > head - rise - 0.5) continue;
@@ -431,7 +435,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       if (on && !from) from = [x, z];
       if (from && (!on || i === n)) {
         const to: [number, number] = on ? [x, z] : [x0 + ((x1 - x0) * (i - 1)) / n, z0 + ((z1 - z0) * (i - 1)) / n];
-        if (Math.hypot(to[0] - from[0], to[1] - from[1]) > 0.3) g.beam('frame', [from[0], deck + 0.04, from[1]], [to[0], deck + 0.04, to[1]], w, 0.08);
+        if (Math.hypot(to[0] - from[0], to[1] - from[1]) > 0.3) g.beam('frame', [from[0], deck + 0.075, from[1]], [to[0], deck + 0.075, to[1]], w, 0.08);
         from = null;
       }
     }
@@ -504,7 +508,8 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     g.beam('frame', [mx, dy0, mz], [mx, dy1 - 0.02, mz], 0.05);
   }
   g.setTint('#ffffff');
-  g.lathe('glass', d.x, d.z, [[R + 0.14, dy0], [R + 0.14, dy1]], seg, false);
+  // Inside every bar of the drum, clear of their faces.
+  g.lathe('glass', d.x, d.z, [[R + 0.09, dy0], [R + 0.09, dy1]], seg, false);
 
   // The dome: parabolic, as on the great iron conservatories, ribbed and hooped.
   const rg = R + 0.12;
@@ -522,12 +527,13 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     for (let k = 0; k + 1 < profile.length; k++) {
       const [r0, ya] = profile[k]!;
       const [r1, yb] = profile[k + 1]!;
-      g.beam('frame', [d.x + Math.cos(t) * r0, ya, d.z + Math.sin(t) * r0], [d.x + Math.cos(t) * r1, yb, d.z + Math.sin(t) * r1], i % 2 === 0 ? 0.12 : 0.06);
+      const o = 0.07;
+      g.beam('frame', [d.x + Math.cos(t) * (r0 + o), ya, d.z + Math.sin(t) * (r0 + o)], [d.x + Math.cos(t) * (r1 + o), yb, d.z + Math.sin(t) * (r1 + o)], i % 2 === 0 ? 0.12 : 0.06);
     }
   }
   for (const k of [2, 4, 6, 8, 10, 12]) {
     const [r, y] = profile[k]!;
-    g.lathe('frame', d.x, d.z, [[r - 0.01, y - 0.04], [r + 0.05, y], [r - 0.01, y + 0.04]], seg, false);
+    g.lathe('frame', d.x, d.z, [[r + 0.02, y - 0.05], [r + 0.1, y], [r + 0.02, y + 0.05]], seg, false);
   }
   // Crown: a small cupola and finial.
   const [rTop, yTop] = profile[profile.length - 1]!;

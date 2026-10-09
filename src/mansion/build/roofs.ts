@@ -8,7 +8,7 @@ import type { Mass, Portico } from '../core/types';
 import type { ArchContext } from './arch';
 import { baluster, vquad } from './arch';
 import { domeBase } from './atrium';
-import type { V3 } from './geometry';
+import { ALL, NX, NY, NZ, PX, PZ, type V3 } from './geometry';
 
 const DEG = Math.PI / 180;
 
@@ -93,7 +93,8 @@ export function buildRoofs(ctx: ArchContext): void {
         const paved = bp.roofTerraces.some((t) => t.massId === m.id);
         if (paved) g.setTint('#d9d2c2');
         const mark = g.mark();
-        g.box(paved ? 'terrace' : 'roof-lead', r.x0, yb - 0.05, r.z0, r.x1, yb + 0.05, r.z1);
+        // No underside: nothing looks up at it, and it would share a plane with the kerbs standing through it.
+        g.box(paved ? 'terrace' : 'roof-lead', r.x0, yb - 0.05, r.z0, r.x1, yb + 0.05, r.z1, ALL & ~NY);
         g.setTint('#ffffff');
         for (const l of m.roof.lanterns ?? []) roofLantern(ctx, mark, l.roomId, l.rect, yb);
         break;
@@ -185,7 +186,8 @@ function hipBars(ctx: ArchContext, r: Rect, base: number, pitchDeg: number, inse
   const W = r.x1 - r.x0;
   const D = r.z1 - r.z0;
   const reach = Math.min(W / 2, D / 2, inset);
-  const lift = 0.04;
+  // Clear of the glass: a bar whose underside lay in the glass plane would shimmer against it.
+  const lift = 0.075;
   const bar = (a: V3, b: V3, w: number) => g.beam(key, [a[0], a[1] + lift, a[2]], [b[0], b[1] + lift, b[2]], w, 0.08);
   // Each eave: rafters run straight in until they meet a hip or the top.
   const edges: { o: [number, number]; along: [number, number]; inward: [number, number]; len: number }[] = [
@@ -258,14 +260,15 @@ function roofLantern(ctx: ArchContext, mark: Map<string, number>, roomId: string
   const t = 0.18;
   g.scope = -1;
   g.setTint(style.trimColor);
-  // Kerb, with a small drip moulding.
-  for (const [x0, z0, x1, z1] of [
-    [q.x0 - t, q.z0 - t, q.x1 + t, q.z0],
-    [q.x0 - t, q.z1, q.x1 + t, q.z1 + t],
-    [q.x0 - t, q.z0, q.x0, q.z1],
-    [q.x1, q.z0, q.x1 + t, q.z1],
+  // Kerb, with a small drip moulding. Its inner faces are left out: the plastered well below is the
+  // one surface lining the opening, from the ceiling to the glass. Two skins in one plane would z-fight.
+  for (const [x0, z0, x1, z1, inner] of [
+    [q.x0 - t, q.z0 - t, q.x1 + t, q.z0, PZ],
+    [q.x0 - t, q.z1, q.x1 + t, q.z1 + t, NZ],
+    [q.x0 - t, q.z0, q.x0, q.z1, PX],
+    [q.x1, q.z0, q.x1 + t, q.z1, NX],
   ] as const) {
-    g.box('ext-trim', x0, yb - 0.05, z0, x1, top, z1);
+    g.box('ext-trim', x0, yb - 0.05, z0, x1, top, z1, ALL & ~NY & ~inner);
   }
   const o = t + 0.07;
   for (const [x0, z0, x1, z1] of [

@@ -82,6 +82,11 @@ export const RECIPES: Record<string, MaterialRecipe> = {
   fire: { color: '#ff7a1a', emissive: '#ff6a10', emissiveIntensity: 5, unlit: true },
   crystal: { color: '#ffffff', emissive: '#ffe2b0', emissiveIntensity: 1.6, roughness: 0.1, unlit: true },
   bottles: { color: '#3b5a3a', roughness: 0.15 },
+  // Lit dance-floor tiles.
+  'neon-0': { color: '#200814', emissive: '#ff3fa4', emissiveIntensity: 0.85, roughness: 0.3, unlit: true },
+  'neon-1': { color: '#061a20', emissive: '#35d6ff', emissiveIntensity: 0.85, roughness: 0.3, unlit: true },
+  'neon-2': { color: '#120a24', emissive: '#8a5cff', emissiveIntensity: 0.85, roughness: 0.3, unlit: true },
+  'neon-3': { color: '#201406', emissive: '#ffb23f', emissiveIntensity: 0.85, roughness: 0.3, unlit: true },
   // A cinema screen showing a picture, and a lit indoor pool.
   screen: { color: '#0a0e14', emissive: '#a9c8ff', emissiveIntensity: 1.5, roughness: 0.6, unlit: true },
   'pool-water': { color: '#0b2a33', emissive: '#2f9fb8', emissiveIntensity: 0.55, roughness: 0.08, envMapIntensity: 1.6 },

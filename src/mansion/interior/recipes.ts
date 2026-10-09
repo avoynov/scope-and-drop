@@ -2,6 +2,7 @@
  * Room recipes: what goes where, per room type. Recipes only describe intent;
  * the Placer enforces clearances, window rules and reachability.
  */
+import type { Rect } from '../core/geom';
 import type { PoiType, Prop, RoomType } from '../core/types';
 import { SIDES, type Placer, type Side } from './placer';
 
@@ -284,13 +285,30 @@ const ballroom: Recipe = (p, o) => {
   const back = backSide(p);
   // Band corner: piano and stands at one end of the back wall.
   const ends = perpendicularSides(back);
-  const end = p.rng.pick(ends);
+  const first = p.rng.pick(ends);
   const bi = p.sides[back];
-  const ei = p.sides[end];
-  const tEnd = end === 'e' || end === 'n' ? ei.line - 2.4 : ei.line + 2.4;
-  const pianoAt = p.at(back, back === 'n' || back === 's' ? tEnd : tEnd, 1.9);
-  const pianoYaw = sideYaw(back) + (end === 'e' || end === 'n' ? -0.35 : 0.35);
-  const piano = p.add('grand-piano', pianoAt.x, pianoAt.z, Math.round(pianoYaw / (Math.PI / 2)) * (Math.PI / 2), 1.55, 2.1, 1.0, { variant: 0 });
+  // Whichever end of the back wall has room; further from the wall, or along it, if the stair is in the way.
+  let end = first;
+  let pianoAt = { x: 0, z: 0 };
+  let pianoYaw = 0;
+  let piano: Prop | null = null;
+  search: for (const e of [first, ...ends.filter((q) => q !== first)]) {
+    const ei = p.sides[e];
+    for (const inset of [2.4, 3.6, 5.0]) {
+      for (const off of [1.9, 3.2]) {
+        const tEnd = e === 'e' || e === 'n' ? ei.line - inset : ei.line + inset;
+        const at = p.at(back, tEnd, off);
+        const yaw = sideYaw(back) + (e === 'e' || e === 'n' ? -0.35 : 0.35);
+        piano = p.add('grand-piano', at.x, at.z, Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2), 1.55, 2.1, 1.0, { variant: 0 });
+        if (piano) {
+          end = e;
+          pianoAt = at;
+          pianoYaw = yaw;
+          break search;
+        }
+      }
+    }
+  }
   if (piano) {
     piano.yaw = pianoYaw;
     piano.poi = 'piano';
@@ -303,7 +321,12 @@ const ballroom: Recipe = (p, o) => {
     }
   }
   void bi;
+  if (piano) {
+    const h = p.at(back, (back === 'n' || back === 's' ? pianoAt.x : pianoAt.z) + (end === 'e' || end === 'n' ? -4.6 : 4.6), 1.6);
+    p.add('harp', h.x, h.z, sideYaw(back), 0.6, 0.9, 1.7);
+  }
   if (o.wantBar) bar(p);
+  ballroomLife(p);
   cornerStatues(p, 4, true);
   for (const s of [...perpendicularSides(back), back]) chairsAlong(p, s, 1.0, 10);
   // Two cocktail tables near the windows for mingling groups.
@@ -319,6 +342,138 @@ const ballroom: Recipe = (p, o) => {
   for (const s of perpendicularSides(back)) p.onWall(s, 'mirror', 1.4, Math.min(2.6, p.ceilY - p.floorY - 1.6), p.floorY + 1.0 + Math.min(2.6, p.ceilY - p.floorY - 1.6) / 2, {});
   paintings(p, 2, { sides: [back], big: true, poi: true });
   sconces(p, 3.0);
+};
+
+/** Largest clear rectangle of floor about a point, up to a size: shrunk until it misses the stair, the columns and the furniture. */
+function clearFloor(p: Placer, cx: number, cz: number, maxW: number, maxD: number): Rect | null {
+  for (let k = 1; k > 0.35; k -= 0.08) {
+    const w = maxW * k;
+    const d = maxD * k;
+    const r = { x0: cx - w / 2, z0: cz - d / 2, x1: cx + w / 2, z1: cz + d / 2 };
+    if (r.x0 < p.inner.x0 + 0.8 || r.x1 > p.inner.x1 - 0.8 || r.z0 < p.inner.z0 + 0.8 || r.z1 > p.inner.z1 - 0.8) continue;
+    if (p.isFree({ x0: r.x0 - 0.5, z0: r.z0 - 0.5, x1: r.x1 + 0.5, z1: r.z1 + 0.5 }, true)) return r;
+  }
+  return null;
+}
+
+/**
+ * What makes a ballroom a place to spend a whole night: a dance floor kept clear in the middle,
+ * tables to stand at round its edge, a supper buffet, a harp beside the band, and sofas to
+ * retire to under the galleries. Run before the walls are dressed, so each claims its place.
+ */
+function ballroomLife(p: Placer): void {
+  const back = backSide(p);
+  const front = opposite[back];
+  const cx = p.dome?.x ?? p.cx;
+  // Toward the windows from the middle: the stair comes down at the back.
+  const cz0 = p.dome?.z ?? p.cz;
+  const towardFront = front === 'n' || front === 's' ? Math.sign(p.sides[front].line - p.cz) : 0;
+  // The stair comes down across the back of the hall, so the floor lies between it and the windows:
+  // the largest clear rectangle found on the axis.
+  let floor: Rect | null = null;
+  const areaOf = (r: Rect | null) => (r ? (r.x1 - r.x0) * (r.z1 - r.z0) : 0);
+  for (let shift = 0; shift <= p.depth / 2; shift += 0.5) {
+    const cand = clearFloor(p, cx, cz0 + towardFront * shift, Math.min(11, p.width * 0.4), Math.min(8, p.depth * 0.46));
+    if (areaOf(cand) > areaOf(floor) + 0.5) floor = cand;
+  }
+  if (floor) {
+    const w = floor.x1 - floor.x0;
+    const d = floor.z1 - floor.z0;
+    p.add('dance-floor', (floor.x0 + floor.x1) / 2, (floor.z0 + floor.z1) / 2, 0, w, d, 0.02, { blocks: false });
+    // Nothing stands on the dance floor.
+    p.keep.push(floor);
+    // Tables to stand at, round its edge.
+    for (const [x, z] of [
+      [floor.x0 - 1.0, floor.z0 + d * 0.2],
+      [floor.x1 + 1.0, floor.z0 + d * 0.2],
+      [floor.x0 - 1.0, floor.z0 + d * 0.8],
+      [floor.x1 + 1.0, floor.z0 + d * 0.8],
+      [floor.x0 + w * 0.25, floor.z1 + 1.0],
+      [floor.x0 + w * 0.75, floor.z1 + 1.0],
+    ] as const) {
+      p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+    }
+  }
+  // Supper: a long buffet against a side wall.
+  for (const side of perpendicularSides(back)) {
+    const info = p.sides[side];
+    // Toward the window end of the wall, clear of the stair.
+    const t = towardFront >= 0 ? info.t0 + (info.t1 - info.t0) * 0.7 : info.t0 + (info.t1 - info.t0) * 0.3;
+    const buffet = p.againstWall(side, 'buffet', 3.8, 0.95, 0.78, { prefer: t });
+    if (buffet) {
+      if (p.room.lit > 0) p.light('lamp', buffet.x, p.floorY + 2.2, buffet.z, WARM, 70 * p.room.lit, 5);
+      break;
+    }
+  }
+  // Sitting out: sofa groups down each side, under the galleries.
+  const i = p.inner;
+  for (const fz of [0.3, 0.62, 0.86]) {
+    for (const x of [i.x0 + 2.6, i.x1 - 2.6]) {
+      if (Math.abs(x - cx) < 4) continue;
+      conversation(p, x, i.z0 + p.depth * fz, 'z');
+    }
+  }
+  cornerStatues(p, 2, false, 'plant');
+}
+
+/** Dance room: a lit floor, a DJ at one end, a mirror ball, banquettes round the walls. Dark but for its colours. */
+const disco: Recipe = (p) => {
+  const back = backSide(p);
+  const fw = Math.min(8, p.width - 3.6);
+  const fd = Math.min(8, p.depth - 3.6);
+  let floor: Rect | null = null;
+  if (fw >= 2.7 && fd >= 2.7) floor = clearFloor(p, p.cx, p.cz, fw, fd);
+  if (floor) {
+    const fx = (floor.x0 + floor.x1) / 2;
+    const fz = (floor.z0 + floor.z1) / 2;
+    p.add('disco-floor', fx, fz, 0, floor.x1 - floor.x0, floor.z1 - floor.z0, 0.06, { blocks: false });
+    p.keep.push(floor);
+    p.add('mirror-ball', fx, fz, 0, 0.7, 0.7, 0.7, { y: p.ceilY - 1.9, blocks: false, mount: 'ceiling' });
+    const lit = Math.max(0.6, p.room.lit);
+    const cols: [number, number, number][] = [
+      [1.0, 0.25, 0.65],
+      [0.2, 0.85, 1.0],
+      [0.55, 0.35, 1.0],
+      [1.0, 0.7, 0.25],
+    ];
+    [
+      [floor.x0, floor.z0],
+      [floor.x1, floor.z0],
+      [floor.x1, floor.z1],
+      [floor.x0, floor.z1],
+    ].forEach(([x, z], k) => p.light('lamp', x!, p.floorY + 2.3, z!, cols[k]!, 60 * lit, 7));
+    p.light('lamp', fx, p.floorY + 0.5, fz, [0.7, 0.5, 1.0], 50 * lit, 6);
+  }
+  // The DJ, flanked by speakers.
+  for (const side of wallsBackFirst(p)) {
+    const info = p.sides[side];
+    const mid = (info.t0 + info.t1) / 2;
+    // Against the wall, or standing clear of it where windows or doors take the wall.
+    let booth = p.againstWall(side, 'dj-booth', 2.4, 0.95, 1.05);
+    for (const dt of [0, -1.5, 1.5, -3, 3]) {
+      if (booth) break;
+      const at = p.at(side, mid + dt, 1.3);
+      booth = p.add('dj-booth', at.x, at.z, sideYaw(side), 2.4, 0.95, 1.05);
+    }
+    if (!booth) continue;
+    const t = side === 'n' || side === 's' ? booth.x : booth.z;
+    for (const dt of [-2.0, 2.0]) p.againstWall(side, 'speaker', 0.65, 0.55, 1.7, { prefer: t + dt, sweep: false, occludes: true });
+    break;
+  }
+  // Banquettes and standing tables round the walls.
+  for (const side of [...perpendicularSides(back), opposite[back]]) {
+    const info = p.sides[side];
+    for (const f of [0.25, 0.75]) p.againstWall(side, 'sofa', 2.1, 0.9, 0.85, { prefer: info.t0 + (info.t1 - info.t0) * f, sweep: false, variant: 2 });
+  }
+  const i = p.inner;
+  for (const [x, z] of [
+    [i.x0 + 1.6, i.z0 + 1.6],
+    [i.x1 - 1.6, i.z0 + 1.6],
+    [i.x0 + 1.6, i.z1 - 1.6],
+    [i.x1 - 1.6, i.z1 - 1.6],
+  ] as const) {
+    p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+  }
 };
 
 const drawingRoom: Recipe = (p, o) => {
@@ -1043,6 +1198,7 @@ export const RECIPES: Record<RoomType, Recipe> = {
   spa,
   gym,
   theatre,
+  disco,
   bedroom,
   'sitting-room': sittingRoom,
   'dressing-room': dressingRoom,

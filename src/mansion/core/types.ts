@@ -30,6 +30,7 @@ export type RoomType =
   | 'cinema'
   | 'spa'
   | 'theatre'
+  | 'disco'
   | 'gym'
   | 'kitchen'
   | 'entrance-hall'
@@ -347,7 +348,13 @@ export type PropKind =
   | 'treadmill'
   | 'weights'
   | 'stage'
-  | 'bathtub';
+  | 'bathtub'
+  | 'dance-floor'
+  | 'disco-floor'
+  | 'dj-booth'
+  | 'speaker'
+  | 'mirror-ball'
+  | 'buffet';
 
 export type PoiType =
   | 'statue'

@@ -551,6 +551,25 @@ describe('the programme of rooms', () => {
     }
   });
 
+  it('the ballroom is furnished for a long night; the dance room has its floor and its DJ', () => {
+    for (const bp of houses) {
+      const hall = bp.rooms.find((r) => r.type === 'ballroom')!;
+      const kinds = new Set(bp.props.filter((p) => p.roomId === hall.id).map((p) => p.kind));
+      for (const k of ['dance-floor', 'grand-piano', 'buffet', 'cocktail-table', 'sofa']) expect(kinds.has(k as never), `${bp.seed}: ballroom without ${k}`).toBe(true);
+      // Nothing stands on the dance floor.
+      const f = bp.props.find((p) => p.roomId === hall.id && p.kind === 'dance-floor')!;
+      expect(f.w * f.d).toBeGreaterThan(14);
+      for (const p of bp.props) {
+        if (p.roomId !== hall.id || p === f || !p.blocksNav) continue;
+        expect(Math.abs(p.x - f.x) < f.w / 2 - 0.3 && Math.abs(p.z - f.z) < f.d / 2 - 0.3, `${bp.seed}: ${p.kind} on the dance floor`).toBe(false);
+      }
+      for (const d of bp.rooms.filter((r) => r.type === 'disco')) {
+        const dk = new Set(bp.props.filter((p) => p.roomId === d.id).map((p) => p.kind));
+        expect(dk.has('disco-floor') && dk.has('dj-booth') && dk.has('mirror-ball'), `${bp.seed}: dance room unfurnished`).toBe(true);
+      }
+    }
+  });
+
   it('optional rooms turn up about as often as asked', () => {
     expect(share('cinema')).toBeGreaterThan(0.45);
     expect(share('cinema')).toBeLessThan(0.75);
@@ -560,6 +579,8 @@ describe('the programme of rooms', () => {
     expect(share('gym')).toBeLessThan(0.65);
     expect(share('spa')).toBeGreaterThan(0.25);
     expect(share('spa')).toBeLessThan(0.55);
+    expect(share('disco')).toBeGreaterThan(0.65);
+    expect(share('disco')).toBeLessThan(0.92);
     expect(share('theatre')).toBeGreaterThan(0.15);
     expect(share('theatre')).toBeLessThan(0.45);
     expect(share('conservatory')).toBeGreaterThan(0.35);
@@ -568,7 +589,7 @@ describe('the programme of rooms', () => {
 
   it('no house has two music rooms, two billiard rooms, or two of any one-off room', () => {
     for (const bp of houses) {
-      for (const t of ['music-room', 'billiard-room', 'gallery', 'great-room', 'dining-room', 'kitchen', 'library', 'bar', 'cinema', 'spa', 'gym', 'theatre', 'grand-salon']) {
+      for (const t of ['music-room', 'billiard-room', 'gallery', 'great-room', 'dining-room', 'kitchen', 'library', 'bar', 'cinema', 'spa', 'gym', 'theatre', 'disco', 'grand-salon']) {
         expect(bp.rooms.filter((r) => r.type === t).length, `${bp.seed}: ${t}`).toBeLessThanOrEqual(1);
       }
     }

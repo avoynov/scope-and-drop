@@ -653,6 +653,88 @@ const BUILDERS: Partial<Record<Prop['kind'], Builder>> = {
     g.setTint('#5a3a22');
     g.box('wood-mid', p.w / 2 - 1.6, 0, p.d / 2, p.w / 2 - 0.6, p.h / 2, p.d / 2 + 0.6);
   },
+  'dance-floor': (c, p) => {
+    const { g } = c;
+    // A sprung floor let into the room: brass edge, a pale border, darker boards laid across, a centre roundel.
+    const y = 0.008;
+    const q = (key: string, x0: number, z0: number, x1: number, z1: number, yy: number) => g.quad(key, [x0, yy, z1], [x1, yy, z1], [x1, yy, z0], [x0, yy, z0]);
+    g.setTint('#ffffff');
+    q('brass', -p.w / 2, -p.d / 2, p.w / 2, p.d / 2, y);
+    g.setTint('#d9b98a');
+    q('floor-parquet', -p.w / 2 + 0.07, -p.d / 2 + 0.07, p.w / 2 - 0.07, p.d / 2 - 0.07, y + 0.003);
+    g.setTint('#8a5a34');
+    q('floor-herringbone', -p.w / 2 + 0.6, -p.d / 2 + 0.6, p.w / 2 - 0.6, p.d / 2 - 0.6, y + 0.006);
+    g.setTint('#e6d2a8');
+    g.disc('floor-parquet', 0, y + 0.009, 0, Math.min(p.w, p.d) * 0.16, 28, true);
+    g.setTint('#ffffff');
+    g.lathe('brass', 0, 0, [[Math.min(p.w, p.d) * 0.16, y + 0.011], [Math.min(p.w, p.d) * 0.16 + 0.06, y + 0.011]], 28, false);
+  },
+  'disco-floor': (c, p) => {
+    const { g } = c;
+    const n = Math.max(3, Math.round(p.w / 0.9));
+    const m = Math.max(3, Math.round(p.d / 0.9));
+    g.setTint('#0a0a0a');
+    g.box('lacquer', -p.w / 2 - 0.08, 0, -p.d / 2 - 0.08, p.w / 2 + 0.08, 0.05, p.d / 2 + 0.08, 0b111011);
+    g.setTint('#ffffff');
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < m; j++) {
+        const x0 = -p.w / 2 + (p.w * i) / n + 0.03;
+        const x1 = -p.w / 2 + (p.w * (i + 1)) / n - 0.03;
+        const z0 = -p.d / 2 + (p.d * j) / m + 0.03;
+        const z1 = -p.d / 2 + (p.d * (j + 1)) / m - 0.03;
+        g.quad(`neon-${Math.floor(c.rand() * 4)}`, [x0, 0.056, z1], [x1, 0.056, z1], [x1, 0.056, z0], [x0, 0.056, z0]);
+      }
+    }
+  },
+  'dj-booth': (c, p) => {
+    const { g } = c;
+    g.setTint('#121212');
+    g.box('lacquer', -p.w / 2, 0, -p.d / 2 + 0.25, p.w / 2, p.h, p.d / 2);
+    g.setTint('#ffffff');
+    g.box('neon-2', -p.w / 2 + 0.1, 0.25, p.d / 2, p.w / 2 - 0.1, 0.32, p.d / 2 + 0.01);
+    g.box('neon-0', -p.w / 2 + 0.1, 0.6, p.d / 2, p.w / 2 - 0.1, 0.67, p.d / 2 + 0.01);
+    // Decks and a mixer on top.
+    g.setTint('#2a2a2a');
+    for (const x of [-p.w / 4, p.w / 4]) {
+      g.box('iron', x - 0.28, p.h, -0.05, x + 0.28, p.h + 0.06, p.d / 2 - 0.1);
+      g.setTint('#0a0a0a');
+      g.disc('lacquer', x, p.h + 0.066, p.d / 4 - 0.08, 0.2, 16, true);
+      g.setTint('#2a2a2a');
+    }
+    g.box('iron', -0.16, p.h, 0, 0.16, p.h + 0.08, p.d / 2 - 0.12);
+  },
+  speaker: (c, p) => {
+    const { g } = c;
+    g.setTint('#0e0e0e');
+    g.box('lacquer', -p.w / 2, 0, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    g.setTint('#2c2c2c');
+    for (const y of [p.h * 0.3, p.h * 0.72]) g.disc('iron', 0, y, p.d / 2 + 0.004, p.w * 0.36, 14, true);
+  },
+  'mirror-ball': (c, p) => {
+    const { g } = c;
+    g.setTint('#ffffff');
+    g.sphere('mirror', 0, p.h / 2, 0, p.w / 2, p.h / 2, p.w / 2, 14, 10);
+    g.cylinder('iron', 0, p.h, 0, 0.012, 0.012, 1.2, 5, false);
+  },
+  buffet: (c, p) => {
+    const { g } = c;
+    // A long table under a white cloth: a tiered stand, dishes under covers, bottles and a punch bowl.
+    g.setTint('#f4f1ea');
+    g.box('fabric', -p.w / 2, 0.08, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    g.setTint('#ffffff');
+    for (let k = 0; k < 3; k++) g.cylinder('brass', -p.w / 2 + 0.55, p.h + k * 0.2, 0, 0.3 - k * 0.08, 0.3 - k * 0.08, 0.025, 14, true);
+    g.cylinder('brass', -p.w / 2 + 0.55, p.h, 0, 0.02, 0.02, 0.5, 6, false);
+    for (let x = -p.w / 2 + 1.3; x < p.w / 2 - 1.1; x += 0.62) {
+      g.setTint('#d9d9d9');
+      g.sphere('mirror', x, p.h + 0.02, c.rand() * 0.2 - 0.1, 0.2, 0.15, 0.2, 10, 6);
+    }
+    g.setTint('#c9dfe6');
+    g.sphere('crystal', p.w / 2 - 0.6, p.h + 0.16, 0, 0.26, 0.18, 0.26, 12, 6);
+    for (let k = 0; k < 5; k++) {
+      g.setTint(pick(['#2f5a2a', '#c9b07a', '#3a2a4a'], c.rand()));
+      g.cylinder('bottles', p.w / 2 - 1.15 - k * 0.11, p.h, -p.d / 2 + 0.18, 0.04, 0.03, 0.3, 6, true);
+    }
+  },
   bathtub: (c, p) => {
     const { g } = c;
     g.setTint('#f4f2ec');

@@ -46,6 +46,7 @@ export const ROLE: Record<RoomType, RoomRole> = {
   cinema: 'party',
   spa: 'party',
   theatre: 'party',
+  disco: 'party',
   gym: 'private',
   kitchen: 'service',
   study: 'private',
@@ -488,6 +489,7 @@ const REQUIRED: ProgrammeItem[] = [
 
 /** Rooms a house may have, each with its chance. */
 const OPTIONAL: (ProgrammeItem & { chance: number })[] = [
+  { type: 'disco', chance: 0.8, span: 6.5, area: 68, levels: [0, 1], zones: { wing: 0.9, back: 0.6, front: 0.3 }, size: 1 },
   { type: 'grand-salon', chance: 0.6, span: 6, area: 55, levels: [0, 1], zones: { front: 1 }, size: 1 },
   { type: 'cinema', chance: 0.6, span: 5, area: 36, levels: [0, 1], zones: { back: 1.2, wing: 0.4 }, size: -1 },
   { type: 'gym', chance: 0.62, span: 4.5, area: 30, levels: [0, 1], zones: { back: 1, wing: 0.8 }, size: -1 },

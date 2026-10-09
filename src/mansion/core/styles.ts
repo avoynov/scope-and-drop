@@ -167,6 +167,7 @@ function wallKey(type: RoomType): string {
     case 'bar':
     case 'cinema':
     case 'theatre':
+    case 'disco':
       return 'billiard';
     case 'spa':
       return 'conservatory';
@@ -269,6 +270,7 @@ function floorFinishFor(type: RoomType, rng: Rng): FloorFinish {
     case 'theatre':
       return 'carpet';
     case 'gym':
+    case 'disco':
       return 'boards';
     case 'bedroom':
     case 'dressing-room':
@@ -324,6 +326,7 @@ export const ROOM_LABELS: Record<RoomType, string> = {
   cinema: 'Home Cinema',
   spa: 'Spa & Pool',
   theatre: 'Theatre',
+  disco: 'Dance Room',
   gym: 'Gym',
   kitchen: 'Gourmet Kitchen',
   'entrance-hall': 'Entrance Hall',

@@ -357,6 +357,13 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         // As large as the room allows: the kerb stands just inside the walls.
         const q = rect(r.inner.x0 + LANTERN_MARGIN, r.inner.z0 + LANTERN_MARGIN, r.inner.x1 - LANTERN_MARGIN, r.inner.z1 - LANTERN_MARGIN);
         if (q.x1 - q.x0 < 1.2 || q.z1 - q.z0 < 1.2) continue;
+        // A part of the house with a roof of its own (the pedimented entrance or garden front) keeps
+        // that roof whole: a room that runs under it gets no lantern.
+        const others = masses.filter((o) => o.id !== ms.id);
+        const covered = [0, 0.25, 0.5, 0.75, 1].some((u) =>
+          [0, 0.25, 0.5, 0.75, 1].some((v) => Number.isFinite(roofSurfaceY(others, q.x0 + (q.x1 - q.x0) * u, q.z0 + (q.z1 - q.z0) * v, ms))),
+        );
+        if (covered) continue;
         r.skylit = true;
         r.skylight = q;
         lanterns.push({ roomId: r.id, rect: q });

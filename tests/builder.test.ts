@@ -30,7 +30,7 @@ function mesh(style: StyleId, massing: MassingType, size: MansionSize, seed: str
   buildProps(bp, g, rand);
   buildLanterns(bp.lights, g, (l) => (l.z > 0 ? 0 : Math.PI));
   buildGardens(ctx);
-  return { bp, geos: g.build() };
+  return { bp, g, geos: g.build() };
 }
 
 describe('renderer geometry', () => {
@@ -125,3 +125,105 @@ describe('renderer geometry', () => {
     }
   });
 });
+
+/**
+ * Z-fighting guard. Two surfaces of different materials in one plane, facing the same way and
+ * overlapping, flicker as the camera moves. Returns such overlaps (m2) by material pair, above `minY`.
+ */
+function coplanarOverlaps(g: GeometryBuilder, minY: number): Map<string, number> {
+  const TRANSPARENT = new Set(['glass', 'roof-glass', 'sheer']);
+  type Tri = { key: string; p: number[][]; n: number[]; d: number };
+  const groups = new Map<string, Tri[]>();
+  for (const [key, b] of g.buckets) {
+    // Drapes are double-sided cloth hung on the wall plane; their backs are never seen.
+    if (key === 'fabric') continue;
+    for (let i = 0; i + 2 < b.idx.length; i += 3) {
+      const p = [0, 1, 2].map((k) => {
+        const v = b.idx.data[i + k]!;
+        return [b.pos.data[v * 3]!, b.pos.data[v * 3 + 1]!, b.pos.data[v * 3 + 2]!];
+      });
+      if (Math.max(p[0]![1]!, p[1]![1]!, p[2]![1]!) < minY) continue;
+      const e1 = [0, 1, 2].map((k) => p[1]![k]! - p[0]![k]!);
+      const e2 = [0, 1, 2].map((k) => p[2]![k]! - p[0]![k]!);
+      const c = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+      const len = Math.hypot(c[0]!, c[1]!, c[2]!);
+      if (len < 1e-4) continue;
+      const n0 = c.map((v) => v / len);
+      // Glass is seen from both sides.
+      for (const sgn of TRANSPARENT.has(key) ? [1, -1] : [1]) {
+        const n = n0.map((v) => v * sgn);
+        const d = n[0]! * p[0]![0]! + n[1]! * p[0]![1]! + n[2]! * p[0]![2]!;
+        for (const off of [0, 0.5]) {
+          const gk = `${n.map((v) => Math.round(v * 40)).join(',')}|${Math.floor(d / 0.006 + off)}|${off}`;
+          let l = groups.get(gk);
+          if (!l) groups.set(gk, (l = []));
+          l.push({ key, p, n, d });
+        }
+      }
+    }
+  }
+  const area2 = (P: number[][]) => P.reduce((s, q, i) => s + q[0]! * P[(i + 1) % P.length]![1]! - P[(i + 1) % P.length]![0]! * q[1]!, 0) / 2;
+  const overlap = (a: Tri, b: Tri): number => {
+    const m = a.n.map(Math.abs);
+    const ax = m[0]! > m[1]! && m[0]! > m[2]! ? 0 : m[1]! > m[2]! ? 1 : 2;
+    const u = (ax + 1) % 3;
+    const v = (ax + 2) % 3;
+    let poly = a.p.map((q) => [q[u]!, q[v]!]);
+    const B = b.p.map((q) => [q[u]!, q[v]!]);
+    const sB = Math.sign(area2(B)) || 1;
+    for (let i = 0; i < 3 && poly.length; i++) {
+      const c0 = B[i]!;
+      const c1 = B[(i + 1) % 3]!;
+      const side = (q: number[]) => sB * ((c1[0]! - c0[0]!) * (q[1]! - c0[1]!) - (c1[1]! - c0[1]!) * (q[0]! - c0[0]!));
+      const out: number[][] = [];
+      poly.forEach((q, j) => {
+        const r = poly[(j + 1) % poly.length]!;
+        const sq = side(q);
+        const sr = side(r);
+        if (sq >= 0) out.push(q);
+        if (sq >= 0 !== sr >= 0) out.push([q[0]! + ((r[0]! - q[0]!) * sq) / (sq - sr), q[1]! + ((r[1]! - q[1]!) * sq) / (sq - sr)]);
+      });
+      poly = out;
+    }
+    return poly.length >= 3 ? Math.abs(area2(poly)) / Math.max(0.2, m[ax]!) : 0;
+  };
+  const found = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const l of groups.values()) {
+    for (let i = 0; i < l.length; i++) {
+      for (let j = i + 1; j < l.length; j++) {
+        const a = l[i]!;
+        const b = l[j]!;
+        if (a.key === b.key || (TRANSPARENT.has(a.key) && TRANSPARENT.has(b.key))) continue;
+        if (Math.abs(a.d - b.d) > 0.004 || a.n[0]! * b.n[0]! + a.n[1]! * b.n[1]! + a.n[2]! * b.n[2]! < 0.9995) continue;
+        const id = JSON.stringify([a.p, b.p]);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const ar = overlap(a, b);
+        if (ar < 0.004) continue;
+        const k = [a.key, b.key].sort().join(' x ');
+        found.set(k, (found.get(k) ?? 0) + ar);
+      }
+    }
+  }
+  return found;
+}
+
+describe('no z-fighting on the roofs', () => {
+  const cases: [StyleId, MassingType, string][] = [
+    ['orangery', 'u-garden', 'or-1'],
+    ['orangery', 'h', 'pv-1'],
+    ['orangery', 'block', 'c-1'],
+    ['georgian', 'block', 'e-1'],
+    ['beauxarts', 'h', 'opq-7'],
+    ['palladian', 'u-garden', 'e-5'],
+  ];
+  it.each(cases)('%s / %s: no two materials share a plane from the eaves up', (style, massing, seed) => {
+    const { bp, g } = mesh(style, massing, 'grand', seed);
+    const eave = bp.masses.find((m) => m.kind === 'main')!.roof.eaveY;
+    const found = coplanarOverlaps(g, eave - 0.7);
+    // Lanterns, the hall's attic and glass roof, glazing bars: nothing larger than a bar's end may coincide.
+    for (const [pair, area] of found) expect(area, `${pair} share a plane over ${area.toFixed(2)} m2`).toBeLessThan(0.3);
+  });
+});
+

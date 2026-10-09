@@ -67,14 +67,16 @@ export interface Eye {
 /**
  * Fraction of the eye pupil filled with light from one field direction.
  * Every field direction leaves the eyepiece as a bundle as wide as the exit pupil. The bundles cross at
- * the exit pupil plane; an eye `z` mm behind it sees the bundle for apparent direction `t` (tan) shifted
- * by z·t. Where the shifted bundle misses the eye pupil, that part of the field goes black: this is the
- * crescent "scope shadow". Too far back the visible disc follows the head; too close it moves against it.
+ * the exit pupil plane, so the bundle the eye sees in apparent direction `t` (tan) travels toward −t, and
+ * `z` mm behind that plane it sits at −z·t. Where it misses the eye pupil, that part of the field goes
+ * black: this is the crescent "scope shadow". Too far back, all the light still comes through the exit
+ * pupil, so the image survives on the side away from the head and the crescent falls on the head's side;
+ * too close, it flips.
  */
 export function eyeboxTransmission(s: ScopeSpec, mag: number, eye: Eye, tx: number, ty: number): number {
   const a = exitPupilMm(s, mag) / 2;
   const b = eye.pupilMm / 2;
-  const d = Math.hypot(eye.x - eye.z * tx, eye.y - eye.z * ty);
+  const d = Math.hypot(eye.x + eye.z * tx, eye.y + eye.z * ty);
   return circleOverlap(a, b, d) / (Math.PI * b * b);
 }
 

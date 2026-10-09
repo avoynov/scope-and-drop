@@ -26,14 +26,15 @@ describe('optics', () => {
     expect(eyeboxTransmission(SCOPE, 20, eye(4, 0, 0), 0, 0)).toBe(0);
   });
 
-  it('casts the crescent on the side away from the head when the eye is too far back', () => {
+  it('casts the crescent on the head side when the eye is too far back', () => {
+    // Eye right of the axis and behind the exit pupil: all its light comes through the exit pupil, on its left.
     const e = eye(1.5, 0, 15);
     const right = eyeboxTransmission(SCOPE, 16, e, 0.18, 0);
     const left = eyeboxTransmission(SCOPE, 16, e, -0.18, 0);
-    expect(right).toBeGreaterThan(left);
+    expect(left).toBeGreaterThan(right);
     // Too close: the visible disc moves the other way.
     const close = eye(1.5, 0, -15);
-    expect(eyeboxTransmission(SCOPE, 16, close, -0.18, 0)).toBeGreaterThan(eyeboxTransmission(SCOPE, 16, close, 0.18, 0));
+    expect(eyeboxTransmission(SCOPE, 16, close, 0.18, 0)).toBeGreaterThan(eyeboxTransmission(SCOPE, 16, close, -0.18, 0));
   });
 
   it('has no parallax when focused at the target range, and some when not', () => {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ROUNDS, at } from '../../src/scope/ballistics';
 import { SCOPE, exitPupilMm, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
-import { RECOIL, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
+import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
 import { createComposite } from './composite';
 import { EYE_HEIGHT, RANGE_M, buildRange, heightAt } from './scene';
@@ -24,6 +24,8 @@ const state = {
   sway: !params.has('nosway'),
   mirage: !params.has('nomirage'),
   drift: !params.has('nodrift'),
+  /** Pan shadow: how far the head trails a quick swing (0 = glued to the stock, 1 = a firm cheek weld, 2 = loose). */
+  pan: num('pan', 1),
   yaw: 0,
   pitch: 0,
 };
@@ -51,6 +53,16 @@ wideCam.position.copy(eyePos);
   state.yaw = Math.atan2(-d.x, -d.z);
   state.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
 }
+
+/**
+ * Panning. Prone, the rifle swings about its front support (bipod or bag) about 600 mm ahead of the eye,
+ * so the eyepiece moves the opposite way to the muzzle. The head rides along on the cheek weld but
+ * trails it by a moment, which leaves the eye off the exit pupil toward the way the muzzle is going: a
+ * crescent creeps in from that edge and clears once the swing stops. Pan shadow scales the lag.
+ */
+const PAN_LAG = 0.03; // s, at Pan shadow 1
+const SUPPORT_TO_EYE_MM = 600;
+const panHead = { yaw: state.yaw, pitch: state.pitch };
 
 let R = 0;
 let scopeRT: THREE.WebGLRenderTarget;
@@ -132,6 +144,7 @@ const parIn = $('par') as HTMLInputElement;
 const exIn = $('ex') as HTMLInputElement;
 const eyIn = $('ey') as HTMLInputElement;
 const ezIn = $('ez') as HTMLInputElement;
+const panIn = $('pan') as HTMLInputElement;
 
 // Parallax dial: 50 m … 1500 m on a log scale, then ∞ at the stop.
 const parToSlider = (m: number) => (Number.isFinite(m) ? (Math.log(m / 50) / Math.log(30)) * 100 : 105);
@@ -162,6 +175,7 @@ function syncUi(): void {
   exIn.value = String(state.eye.x);
   eyIn.value = String(state.eye.y);
   ezIn.value = String(state.eye.z);
+  panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
 }
@@ -170,6 +184,7 @@ parIn.oninput = () => (state.parallax = sliderToPar(Number(parIn.value)));
 exIn.oninput = () => (state.eye.x = Number(exIn.value));
 eyIn.oninput = () => (state.eye.y = Number(eyIn.value));
 ezIn.oninput = () => (state.eye.z = Number(ezIn.value));
+panIn.oninput = () => (state.pan = Number(panIn.value));
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.onclick = () => { state.reticle = b.dataset.ret as Reticle['id']; syncUi(); };
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.onclick = () => { const k = b.dataset.flag as 'illum'; state[k] = !state[k]; syncUi(); };
 $('center').onclick = () => { state.eye.x = state.eye.y = 0; state.eye.z = 0; syncUi(); };
@@ -186,7 +201,11 @@ const REST: RecoilState = { pitch: 0, yaw: 0, tiltPitch: 0, tiltYaw: 0, eye: { x
 /** A frame stands for a 1/60 s exposure: recoil moves far enough within one to smear. */
 const EXPOSURE = 1 / 60;
 function foldRecoil(r: RecoilState): void {
-  state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + r.pitch));
+  const pitch = Math.max(-0.3, Math.min(0.3, state.pitch + r.pitch));
+  // The head comes along, so folding the rise into the aim is not a swing.
+  panHead.pitch += pitch - state.pitch;
+  panHead.yaw -= r.yaw;
+  state.pitch = pitch;
   state.yaw -= r.yaw; // three.js yaw is positive to the left
 }
 function fire(): void {
@@ -286,6 +305,16 @@ function frame(t: number, dt: number): void {
   eye.x += rc.eye.x;
   eye.y += rc.eye.y;
   eye.z += rc.eye.z;
+  // How far a swing has carried the scope ahead of the head (up and right), and where that puts the eye.
+  const lag = PAN_LAG * state.pan;
+  panHead.yaw = followHead(panHead.yaw, state.yaw, dt, lag);
+  panHead.pitch = followHead(panHead.pitch, state.pitch, dt, lag);
+  const panPitch = state.pitch - panHead.pitch;
+  const panYaw = panHead.yaw - state.yaw;
+  eye.x += SUPPORT_TO_EYE_MM * panYaw;
+  eye.y += SUPPORT_TO_EYE_MM * panPitch;
+  const tiltPitch = rc.tiltPitch + panPitch;
+  const tiltYaw = rc.tiltYaw + panYaw;
 
   // Wobble: breathing (≈0.25 Hz figure-eight) plus heartbeat twitch, in object-space radians.
   let yaw = state.yaw;
@@ -300,7 +329,7 @@ function frame(t: number, dt: number): void {
   // The scope looks where the rifle points; the naked eye looks where the head points, which lags it.
   euler.set(pitch + rc.pitch, yaw - rc.yaw, 0);
   scopeCam.quaternion.setFromEuler(euler);
-  euler.set(pitch + rc.pitch - rc.tiltPitch, yaw - rc.yaw + rc.tiltYaw, 0);
+  euler.set(pitch + rc.pitch - tiltPitch, yaw - rc.yaw + tiltYaw, 0);
   wideCam.quaternion.setFromEuler(euler);
   scopeCam.fov = (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
   scopeCam.updateProjectionMatrix();
@@ -317,6 +346,7 @@ function frame(t: number, dt: number): void {
   u.uEyePupilR!.value = eye.pupilMm / 2;
   u.uEyeRelief!.value = SCOPE.eyeReliefMm;
   u.uHousing!.value = SCOPE.ocularHousingMm;
+  u.uSaep!.value = SCOPE.pupilAberrationMm;
   // Partial auto-exposure: a pupil-starved image is darker, but the eye/camera adapts some of it back.
   const centre = Math.min(ep / 2, eye.pupilMm / 2) ** 2 / (eye.pupilMm / 2) ** 2;
   u.uTnorm!.value = Math.sqrt(centre);
@@ -336,7 +366,7 @@ function frame(t: number, dt: number): void {
   // Recoil: the scope tilts against the eye. Across one exposure the whole picture swings in the eye's
   // view (apparent tan), the scene sweeps through it at the rifle's rate magnified (scope-canvas uv),
   // and the eye slides over the exit pupil (mm).
-  u.uTilt!.value.set(Math.tan(rc.tiltYaw), Math.tan(rc.tiltPitch));
+  u.uTilt!.value.set(Math.tan(tiltYaw), Math.tan(tiltPitch));
   u.uSweep!.value.set(Math.tan(rcB.tiltYaw) - Math.tan(rcA.tiltYaw), Math.tan(rcB.tiltPitch) - Math.tan(rcA.tiltPitch));
   u.uBlur!.value.set((rcB.yaw - rcA.yaw) * toUv, (rcB.pitch - rcA.pitch) * toUv);
   u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x, rcB.eye.y - rcA.eye.y, rcB.eye.z - rcA.eye.z);
@@ -380,6 +410,13 @@ if (shot) {
   const t = num('t', 2.4);
   // recoil=<s>: the still is taken that long after the trigger.
   if (params.has('recoil')) recoil = { start: t - num('recoil', 0), spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(0) };
+  // panrate=<right>,<up> (deg/s): the still is taken mid-swing, with the head trailing as it would.
+  if (params.has('panrate')) {
+    const [right = 0, up = 0] = params.get('panrate')!.split(',').map(Number);
+    const lag = PAN_LAG * state.pan;
+    panHead.yaw = state.yaw + ((right * Math.PI) / 180) * lag;
+    panHead.pitch = state.pitch - ((up * Math.PI) / 180) * lag;
+  }
   frame(t, 0);
   frame(t, 0);
   (window as unknown as { __ready: boolean }).__ready = true;

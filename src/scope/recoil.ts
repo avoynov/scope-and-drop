@@ -4,13 +4,14 @@
  * same frame as `Eye` in optics.ts (x right, y up, z behind the exit pupil).
  *
  * Three motions overlap:
- *  1. The rifle rotates muzzle-up (and a little right) about the shoulder. A fast kick peaks ~70 ms after
+ *  1. The rifle slams back into the shoulder within ~15 ms, so the scope sits ~2 cm closer to the eye
+ *     than its eye relief. The shoulder only pushes it forward again over a few tenths of a second, and
+ *     until then the picture is a tunnel inside a ring of black (see eyeboxTransmission).
+ *  2. The rifle rotates muzzle-up (and a little right) about the shoulder. A kick peaks ~90 ms after
  *     the shot and falls back to a smaller rise that stays: the shooter has to bring the rifle back down.
- *  2. It slides back into the shoulder, so for a few tens of milliseconds the scope sits ~2 cm closer
- *     to the eye than its eye relief, then springs forward a little past it. Too close shrinks the
- *     visible field to a tunnel with a ring of black (see eyeboxTransmission).
- *  3. The head rides the stock but lags the rifle. Until it catches up, the scope is tilted against the
- *     eye: the sight picture jumps in the eye's view and the eye drops below the exit pupil.
+ *  3. The head rides the stock but is jolted off the cheek weld and settles back over a few tenths of a
+ *     second. Until then the scope is tilted against the eye: the sight picture jumps in the eye's view
+ *     and the eye drops below the exit pupil, so the picture blacks out and comes back as a crescent.
  *
  * Free recoil (SAAMI: powder gas leaves at 1.75 × muzzle velocity):
  *  - SVD, 7N1: 9.8 g × 823 + 3.1 g × 1440 ≈ 12.5 N·s into 4.3 kg → 2.9 m/s, 18 J.
@@ -32,16 +33,15 @@ export interface RecoilSpec {
   kickPeak: number;
   /** How fast the lasting rise builds. */
   riseTime: number;
-  /** Scope travel toward the eye at its peak, when, and the forward rebound after. */
+  /** Scope travel toward the eye at its peak, how fast it arrives and how slowly the shoulder returns it. */
   travelMm: number;
-  travelPeak: number;
-  reboundMm: number;
-  reboundPeak: number;
+  travelOnset: number;
+  travelRecover: number;
   /** Scope tube ring-down after the impulse. */
   shake: number;
   shakeHz: number;
   shakeDecay: number;
-  /** The head follows the stock with this time constant. */
+  /** The jolted head settles back onto the stock with this time constant. */
   headLag: number;
   /** Shoulder pivot to eye, along the bore: turns a tilt into an eye offset at the exit pupil. */
   pivotToEyeMm: number;
@@ -52,17 +52,17 @@ export interface RecoilSpec {
 export const RECOIL = {
   svd: {
     impulseNs: 12.5, rifleKg: 4.3,
-    rise: 1.4 * DEG, drift: 0.35 * DEG, kick: 2.2 * DEG, kickPeak: 0.07, riseTime: 0.03,
-    travelMm: 24, travelPeak: 0.016, reboundMm: 5, reboundPeak: 0.15,
+    rise: 1.4 * DEG, drift: 0.35 * DEG, kick: 2.2 * DEG, kickPeak: 0.09, riseTime: 0.03,
+    travelMm: 24, travelOnset: 0.004, travelRecover: 0.45,
     shake: 0.07 * DEG, shakeHz: 26, shakeDecay: 0.05,
-    headLag: 0.12, pivotToEyeMm: 120, duration: 1.6,
+    headLag: 0.28, pivotToEyeMm: 120, duration: 3,
   },
   bolt: {
     impulseNs: 12.9, rifleKg: 6.8,
-    rise: 0.9 * DEG, drift: 0.25 * DEG, kick: 1.4 * DEG, kickPeak: 0.075, riseTime: 0.035,
-    travelMm: 17, travelPeak: 0.018, reboundMm: 4, reboundPeak: 0.16,
+    rise: 0.9 * DEG, drift: 0.25 * DEG, kick: 1.4 * DEG, kickPeak: 0.1, riseTime: 0.035,
+    travelMm: 17, travelOnset: 0.005, travelRecover: 0.38,
     shake: 0.05 * DEG, shakeHz: 22, shakeDecay: 0.05,
-    headLag: 0.12, pivotToEyeMm: 120, duration: 1.6,
+    headLag: 0.28, pivotToEyeMm: 120, duration: 3,
   },
 } as const satisfies Record<string, RecoilSpec>;
 
@@ -98,6 +98,21 @@ export interface RecoilState {
 /** x·e^(1−x): rises to 1 at x = 1 and dies away. */
 const pulse = (x: number) => (x <= 0 ? 0 : x * Math.exp(1 - x));
 
+/** Arrives within about `on` seconds, dies away over `off` (≫ on), and peaks at 1. */
+function surge(t: number, on: number, off: number): number {
+  if (t <= 0) return 0;
+  const f = (u: number) => Math.exp(-u / off) - Math.exp(-u / on);
+  return f(t) / f((Math.log(off / on) * on * off) / (off - on));
+}
+
+/**
+ * One step of a head that follows the rifle through the cheek weld with a first-order lag (exact for
+ * any step). With no lag it is glued to the rifle.
+ */
+export function followHead(head: number, rifle: number, dt: number, lag: number): number {
+  return lag > 0 ? head + (rifle - head) * (1 - Math.exp(-dt / lag)) : rifle;
+}
+
 function rifle(s: RecoilSpec, v: ShotVariation, t: number): [number, number] {
   if (t <= 0) return [0, 0];
   const settle = 1 - Math.exp(-t / s.riseTime);
@@ -111,7 +126,7 @@ function rifle(s: RecoilSpec, v: ShotVariation, t: number): [number, number] {
 /** The rifle and eye `t` seconds after the shot (t ≤ 0: before it). */
 export function recoilAt(s: RecoilSpec, v: ShotVariation, t: number): RecoilState {
   const [pitch, yaw] = rifle(s, v, t);
-  // Head orientation: the rifle's rotation low-passed by the cheek weld (exact exponential steps).
+  // Head orientation: the rifle's rotation low-passed by the cheek weld, in exact 1 ms followHead steps.
   let hp = 0;
   let hy = 0;
   const dt = 0.001;
@@ -132,7 +147,7 @@ export function recoilAt(s: RecoilSpec, v: ShotVariation, t: number): RecoilStat
       // The ocular swings up and right about the shoulder faster than the head follows.
       x: -s.pivotToEyeMm * tiltYaw,
       y: -s.pivotToEyeMm * tiltPitch,
-      z: -s.travelMm * pulse(t / s.travelPeak) + s.reboundMm * pulse(t / s.reboundPeak),
+      z: -s.travelMm * surge(t, s.travelOnset, s.travelRecover),
     },
   };
 }

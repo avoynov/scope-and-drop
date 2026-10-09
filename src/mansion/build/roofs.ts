@@ -70,7 +70,7 @@ function frustum(ctx: ArchContext, key: string, r: Rect, inset: number, yb: numb
 }
 
 function roofKey(ctx: ArchContext, m: Mass): string {
-  if (m.roof.kind === 'glass') return 'glass';
+  if (m.roof.kind === 'glass') return 'roof-glass';
   return `roof-${ctx.style.roofMaterial}`;
 }
 
@@ -97,7 +97,7 @@ export function buildRoofs(ctx: ArchContext): void {
         break;
       }
       case 'glass': {
-        const res = hipRoof(ctx, 'glass', expand(m.rect, 0.12), yb, 32);
+        const res = hipRoof(ctx, 'roof-glass', expand(m.rect, 0.12), yb, 32);
         g.setTint('#f4f2ec');
         // Glazing ribs.
         const rr = expand(m.rect, 0.12);
@@ -149,7 +149,7 @@ export function buildRoofs(ctx: ArchContext): void {
           g.setTint(ctx.style.windowFrameColor);
           hipBars(ctx, r, base, hp.pitchDeg, hp.inset);
           for (const q of glazed) {
-            g.splitRect(mark, (k) => k === key || k === 'roof-lead', q, () => 'glass');
+            g.splitRect(mark, (k) => k === key || k === 'roof-lead', q, () => 'roof-glass');
             g.splitRect(mark, (k) => k === BARS, q, () => 'frame');
           }
           g.discardSince(mark, BARS);

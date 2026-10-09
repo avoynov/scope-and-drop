@@ -25,6 +25,9 @@ export interface MaterialRecipe {
   flatRoughness?: boolean;
 }
 
+/** Default opacity of roof glazing, seen square-on. */
+export const ROOF_GLASS_OPACITY = 0.7;
+
 export const RECIPES: Record<string, MaterialRecipe> = {
   // Exterior masonry
   'ext-wall-limestone': { tex: 'ashlar', normalScale: 1 },
@@ -41,6 +44,8 @@ export const RECIPES: Record<string, MaterialRecipe> = {
   door: { tex: 'wood', roughness: 0.4, normalScale: 0.3 },
   iron: { color: '#1b1d1f', roughness: 0.45, metalness: 0.7 },
   glass: { color: '#0c1116', roughness: 0.03, metalness: 0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.6 },
+  // Roof glazing (not the dome): darker than window glass, blue-grey, lightly textured. Opacity is adjustable (BuildOptions.roofGlassOpacity).
+  'roof-glass': { tex: 'roofglass', color: '#4a5d70', normalScale: 0.6, transparent: true, opacity: ROOF_GLASS_OPACITY, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.3 },
   'glass-lit': { color: '#1a1206', emissive: '#ffb066', emissiveIntensity: 2.2, roughness: 0.1, unlit: true },
   sheer: { color: '#f2ede2', roughness: 0.9, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false },
   // Interior shells
@@ -138,7 +143,7 @@ export class MaterialLibrary {
       m.envMapIntensity = r.envMapIntensity ?? 1;
     }
     if (!r.unlit) this.lighting.patch(m);
-    if (key === 'glass') patchGlass(m);
+    if (key === 'glass' || key === 'roof-glass') patchGlass(m);
     this.cache.set(key, m);
     return m;
   }

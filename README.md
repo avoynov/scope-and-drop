@@ -78,6 +78,7 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 | `seed`, `style`, `massing`, `size`, `hall=gallery\|rotunda` | Select the house and the dome hall's shape. |
 | `az`, `el` | Sniper bearing in degrees off the garden axis, and elevation in degrees above the horizon (either skips the briefing). `nobrief=1` skips it at the generated bearing; `brief=1` forces it. |
 | `minvis` | Minimum share of the indoor party floor in view, in percent (default 30). |
+| `roofglass` | Opacity of the glass roofs in percent (default 70); the *roof glass opacity* slider sets it live. Looks only. |
 | `view`, `fov`, `level` | Choose the view, the scope zoom and the storey the plan view cuts. `view=free&cam=x,y,z&look=x,y,z` is a debug camera. |
 | `sight=1`, `pois=1` | Turn the overlays on. |
 | `quality=low\|medium\|high` | Render quality. |
@@ -228,6 +229,7 @@ All renderer code is in `src/mansion/build/`. `buildMansion(bp, opts)` returns `
   - Windows get sash and French-window joinery with glazing bars, Fresnel glass, double-sided pleated drapes, pelmets and sheers.
 - **Roofs and porticos** (`roofs.ts`): hipped (slope-aligned slate UVs), mansard with dormers (some warmly lit), flat with balustrade, and glass conservatory roofs. Also pavilion pediment gables, chimney stacks with pots, and porticos in Doric, Ionic and Corinthian orders with entablature and pediment.
 - **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the chandelier's chain. Outside, the lantern: the attic with its arched lights (blind where a roof stands against them), the hall's glass roof with its glazing bars, the drum and the ribbed parabolic dome. Everything the roofs put over the hall, ridge trims included, is cut away (`GeometryBuilder.splitRect`).
+- **Roof glass** (`roof-glass` material): every glass roof except the dome (orangery roofs, the conservatory, the flat glass round the drum) is a darker, blue-grey, lightly rippled glass. `buildMansion(bp, { roofGlassOpacity })` sets its opacity (default 0.7); it changes the look only, not the sightline figures.
 - **Glass roofs** (`roofs.ts`, Orangery): a hipped roof is built whole, with iron rafters, hips and purlins, and the parts over skylit rooms are moved to glass (`splitRect`). Under it a leaded deck at the eaves covers everything that is not glass, with a plastered well into each skylit room.
 - **Giant windows** (`arch.ts`): stacked openings are rectangles in the data; the mesher fills the corners of the top one back in as a round head with a fan of bars, and hides the floor edge between two behind an iron panel.
 - **Also:** `stairs.ts` (stone or timber U-stairs with balusters); `props.ts` (furniture, chandeliers with glowing candles, bar with bottles, grand piano with raised lid, statues, paintings from the atlas, lamps, lanterns); `site.ts` (terrain, terrace, steps, gardens, fountain, instanced LOD trees and a far tree line).

@@ -28,6 +28,8 @@ export interface BuildOptions {
   /** Multiplier on all scoped (room + exterior) light intensities. */
   lightScale?: number;
   skyIntensity?: number;
+  /** Opacity of roof glazing seen square-on, 0 (clear) to 1 (solid); default 0.7. The dome and windows are not affected. Also settable later: `materials.get('roof-glass').opacity`. */
+  roofGlassOpacity?: number;
   shadows?: boolean;
 }
 
@@ -76,6 +78,7 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   const lighting = new ScopedLighting(bp, opts.lightScale ?? 0.08);
   const textures = new TextureLibrary(Math.min(q.aniso, renderer.capabilities.getMaxAnisotropy()), q.tex);
   const materials = new MaterialLibrary(textures, lighting, envMap);
+  if (opts.roofGlassOpacity !== undefined) materials.get('roof-glass').opacity = Math.max(0, Math.min(1, opts.roofGlassOpacity));
 
   const g = new GeometryBuilder();
   const rand = mulberry(bp.seed.length * 7919 + bp.attempt);

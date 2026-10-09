@@ -97,26 +97,12 @@ export function buildRoofs(ctx: ArchContext): void {
         break;
       }
       case 'glass': {
-        const res = hipRoof(ctx, 'roof-glass', expand(m.rect, 0.12), yb, 32);
-        g.setTint('#f4f2ec');
-        // Glazing ribs.
+        // Rafters run square to each eave and stop at the hips, like any hipped roof's: they do not fan to the ridge.
         const rr = expand(m.rect, 0.12);
-        const W = rr.x1 - rr.x0;
-        const D = rr.z1 - rr.z0;
-        const n = Math.max(2, Math.round(Math.max(W, D) / 0.9));
-        for (let i = 0; i <= n; i++) {
-          if (res.alongX) {
-            const x = rr.x0 + (W * i) / n;
-            const xr = Math.min(Math.max(x, res.ridge[0]), res.ridge[1]);
-            rib(ctx, [x, yb, rr.z1], [xr, res.ridgeY, (rr.z0 + rr.z1) / 2]);
-            rib(ctx, [x, yb, rr.z0], [xr, res.ridgeY, (rr.z0 + rr.z1) / 2]);
-          } else {
-            const z = rr.z0 + (D * i) / n;
-            const zr = Math.min(Math.max(z, res.ridge[0]), res.ridge[1]);
-            rib(ctx, [rr.x1, yb, z], [(rr.x0 + rr.x1) / 2, res.ridgeY, zr]);
-            rib(ctx, [rr.x0, yb, z], [(rr.x0 + rr.x1) / 2, res.ridgeY, zr]);
-          }
-        }
+        hipRoof(ctx, 'roof-glass', rr, yb, 32);
+        g.setTint(ctx.style.windowFrameColor);
+        hipBars(ctx, rr, yb, 32, Infinity, 'frame');
+        g.setTint('#ffffff');
         break;
       }
       case 'mansard': {
@@ -191,14 +177,14 @@ const BARS = 'bars-tmp';
  * Rafters, hips, purlins and ridge of a hipped (or flat-topped) glass roof over rect r, as iron bars.
  * Drawn for the whole roof; the caller keeps the parts over glass.
  */
-function hipBars(ctx: ArchContext, r: Rect, base: number, pitchDeg: number, inset: number): void {
+function hipBars(ctx: ArchContext, r: Rect, base: number, pitchDeg: number, inset: number, key = BARS): void {
   const { g } = ctx;
   const t = Math.tan(pitchDeg * DEG);
   const W = r.x1 - r.x0;
   const D = r.z1 - r.z0;
   const reach = Math.min(W / 2, D / 2, inset);
   const lift = 0.04;
-  const bar = (a: V3, b: V3, w: number) => g.beam(BARS, [a[0], a[1] + lift, a[2]], [b[0], b[1] + lift, b[2]], w, 0.08);
+  const bar = (a: V3, b: V3, w: number) => g.beam(key, [a[0], a[1] + lift, a[2]], [b[0], b[1] + lift, b[2]], w, 0.08);
   // Each eave: rafters run straight in until they meet a hip or the top.
   const edges: { o: [number, number]; along: [number, number]; inward: [number, number]; len: number }[] = [
     { o: [r.x0, r.z1], along: [1, 0], inward: [0, -1], len: W },
@@ -291,9 +277,6 @@ function nearDome(ctx: ArchContext, x: number, z: number, margin: number): boole
   return x > b.x0 - margin && x < b.x1 + margin && z > b.z0 - margin - 1.6 && z < b.z1 + margin + 1.6;
 }
 
-function rib(ctx: ArchContext, a: V3, b: V3, w = 0.06): void {
-  ctx.g.beam('frame', [a[0], a[1] + 0.03, a[2]], [b[0], b[1] + 0.03, b[2]], w, 0.07);
-}
 
 function pavilionRoof(ctx: ArchContext, m: Mass, key: string, yb: number): void {
   const { g, style, bp } = ctx;

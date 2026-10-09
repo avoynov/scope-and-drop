@@ -81,8 +81,9 @@ const NOISE = /* glsl */ `
   float vn(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
     return mix(mix(h21(i),h21(i+vec2(1,0)),u.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),u.x), u.y); }
   // Band-limited fbm: octaves finer than a pixel fade out instead of shimmering.
+  // Once an octave is fully faded (w exactly 0) every finer one is too, so stop instead of adding zeros.
   float fbmAA(vec2 p, float px){ float s=0., a=.5, f=1.;
-    for(int i=0;i<7;i++){ float w = 1. - smoothstep(.25,.6, px*f); s += a*w*(vn(p*f)-.5); f*=2.07; a*=.5; }
+    for(int i=0;i<7;i++){ if (px*f >= .6) break; float w = 1. - smoothstep(.25,.6, px*f); s += a*w*(vn(p*f)-.5); f*=2.07; a*=.5; }
     return s; }
 `;
 

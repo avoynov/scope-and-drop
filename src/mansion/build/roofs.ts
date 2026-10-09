@@ -3,7 +3,7 @@
  * pediments; dormers; chimney stacks; columns with entablature and pediment.
  */
 import { expand, rectMinus, type Rect } from '../core/geom';
-import { HIP_MAX_RISE, MANSARD_TOP_PITCH, PAVILION_PITCH, hipParams } from '../core/roofs';
+import { HIP_MAX_RISE, LANTERN_KERB, MANSARD_TOP_PITCH, PAVILION_PITCH, hipParams, lanternPitch } from '../core/roofs';
 import type { Mass, Portico } from '../core/types';
 import type { ArchContext } from './arch';
 import { baluster, vquad } from './arch';
@@ -92,8 +92,10 @@ export function buildRoofs(ctx: ArchContext): void {
         // A roof guests walk on is paved; any other flat roof is leaded.
         const paved = bp.roofTerraces.some((t) => t.massId === m.id);
         if (paved) g.setTint('#d9d2c2');
+        const mark = g.mark();
         g.box(paved ? 'terrace' : 'roof-lead', r.x0, yb - 0.05, r.z0, r.x1, yb + 0.05, r.z1);
         g.setTint('#ffffff');
+        for (const l of m.roof.lanterns ?? []) roofLantern(ctx, mark, l.roomId, l.rect, yb);
         break;
       }
       case 'glass': {
@@ -244,15 +246,70 @@ function hipBars(ctx: ArchContext, r: Rect, base: number, pitchDeg: number, inse
 }
 
 /**
- * Under a part-glazed roof: a leaded deck at the eaves over everything that is not glass, with a
- * plastered well down into each skylit room. Without it one would look through the glass,
- * past the tops of the walls, into the rooms that are meant to be roofed over.
+ * A roof lantern: the flat roof is opened over the room, a stone kerb stands round the opening,
+ * and a hipped glass roof with iron bars sits on the kerb. Inside, a plastered well joins the
+ * room's ceiling to the glass. Glass and lead never share a surface.
+ */
+function roofLantern(ctx: ArchContext, mark: Map<string, number>, roomId: string, q: Rect, yb: number): void {
+  const { g, bp, style } = ctx;
+  const room = ctx.rooms.get(roomId);
+  g.splitRect(mark, (k) => k === 'roof-lead' || k === 'terrace', q, () => null);
+  const top = yb + LANTERN_KERB;
+  const t = 0.18;
+  g.scope = -1;
+  g.setTint(style.trimColor);
+  // Kerb, with a small drip moulding.
+  for (const [x0, z0, x1, z1] of [
+    [q.x0 - t, q.z0 - t, q.x1 + t, q.z0],
+    [q.x0 - t, q.z1, q.x1 + t, q.z1 + t],
+    [q.x0 - t, q.z0, q.x0, q.z1],
+    [q.x1, q.z0, q.x1 + t, q.z1],
+  ] as const) {
+    g.box('ext-trim', x0, yb - 0.05, z0, x1, top, z1);
+  }
+  const o = t + 0.07;
+  for (const [x0, z0, x1, z1] of [
+    [q.x0 - o, q.z0 - o, q.x1 + o, q.z0 - t],
+    [q.x0 - o, q.z1 + t, q.x1 + o, q.z1 + o],
+    [q.x0 - o, q.z0 - t, q.x0 - t, q.z1 + t],
+    [q.x1 + t, q.z0 - t, q.x1 + o, q.z1 + t],
+  ] as const) {
+    g.box('ext-trim', x0, top - 0.14, z0, x1, top - 0.02, z1);
+  }
+  const rr = expand(q, t);
+  const pitch = lanternPitch(rr);
+  g.setTint('#ffffff');
+  hipRoof(ctx, 'roof-glass', rr, top, pitch);
+  g.setTint(style.windowFrameColor);
+  hipBars(ctx, rr, top, pitch, Infinity, 'frame');
+  if (!room) return;
+  // The well, and a chain for any chandelier that hung from the ceiling here.
+  g.scope = room.index;
+  g.setTint(room.finish.ceilingColor);
+  vquad(g, 'int-trim', 'x', q.z0, 1, q.x0, q.x1, room.ceilingY, top);
+  vquad(g, 'int-trim', 'x', q.z1, -1, q.x0, q.x1, room.ceilingY, top);
+  vquad(g, 'int-trim', 'z', q.x0, 1, q.z0, q.z1, room.ceilingY, top);
+  vquad(g, 'int-trim', 'z', q.x1, -1, q.z0, q.z1, room.ceilingY, top);
+  const tan = Math.tan(pitch * DEG);
+  const reach = Math.min(rr.x1 - rr.x0, rr.z1 - rr.z0) / 2;
+  g.setTint('#ffffff');
+  for (const p of bp.props) {
+    if (p.roomId !== roomId || p.kind !== 'chandelier' || p.x <= q.x0 || p.x >= q.x1 || p.z <= q.z0 || p.z >= q.z1) continue;
+    const d = Math.min(p.x - rr.x0, rr.x1 - p.x, p.z - rr.z0, rr.z1 - p.z, reach);
+    g.beam('brass', [p.x, p.y + p.h - 0.05, p.z], [p.x, top + d * tan, p.z], 0.04);
+  }
+  g.scope = -1;
+}
+
+/**
+ * Under an all-glass pitched roof (an orangery wing): a leaded cap at the eaves over the tops of
+ * the walls, and a plastered rim from each room's ceiling line up to it.
  */
 function atticDeck(ctx: ArchContext, m: Mass): void {
   const { g, bp } = ctx;
   const y = m.roof.eaveY + 0.03;
-  const skylit = bp.rooms.filter((q) => q.skylit && q.massId === m.id);
-  const holes = skylit.map((q) => q.inner);
+  const skylit = bp.rooms.filter((q) => q.skylight && q.massId === m.id && q.level === m.levels - 1);
+  const holes = skylit.map((q) => q.skylight!);
   if (bp.atrium && m.kind === 'main') holes.push(domeBase(bp.atrium));
   g.scope = -1;
   g.setTint('#ffffff');
@@ -260,7 +317,7 @@ function atticDeck(ctx: ArchContext, m: Mass): void {
   for (const q of skylit) {
     g.scope = q.index;
     g.setTint(q.finish.ceilingColor);
-    const i = q.inner;
+    const i = q.skylight!;
     vquad(g, 'int-trim', 'x', i.z0, 1, i.x0, i.x1, q.ceilingY, y);
     vquad(g, 'int-trim', 'x', i.z1, -1, i.x0, i.x1, q.ceilingY, y);
     vquad(g, 'int-trim', 'z', i.x0, 1, i.z0, i.z1, q.ceilingY, y);

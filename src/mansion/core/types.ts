@@ -71,8 +71,10 @@ export interface RoofSpec {
   /** Top of the cornice / wall plate. */
   eaveY: number;
   pitchDeg: number;
-  /** Plan rectangles where the roof is glass (over the party rooms of a glass-roofed house). */
+  /** Plan rectangles where a pitched roof is glass (the whole roof of an orangery wing). */
   glazed?: Rect[];
+  /** Glass lanterns standing on a flat roof, one over each room below: plan rectangle of each kerb. */
+  lanterns?: { roomId: string; rect: Rect }[];
   /** Parapet with balustrade hiding the roof foot (Palladian). */
   balustrade: boolean;
   /** Pediment gable over this mass on the given side (central pavilions). */
@@ -171,8 +173,10 @@ export interface Room {
   ceilingY: number;
   /** Openings in this room's floor (stairwells, gallery voids). */
   floorHoles: Rect[];
-  /** Under a glass roof, with no ceiling: seen from above. */
+  /** Lit from above through glass: seen from above. */
   skylit?: boolean;
+  /** The opening in this room's ceiling under its glass: a roof lantern's well, or the whole room under an all-glass roof. */
+  skylight?: Rect;
   /** True when the room rises through the level above (ballroom, stair hall). */
   doubleHeight: boolean;
   /** May be walked through to reach other rooms (enfilade). */
@@ -563,7 +567,7 @@ export interface StyleDef {
   baseMaterial: 'rusticated' | 'limestone' | 'brick';
   roof: 'hipped' | 'mansard' | 'flat';
   roofMaterial: 'slate' | 'zinc' | 'lead';
-  /** Glass roofs over the top-storey party rooms and the wings; solid over everything else. */
+  /** A flat leaded main roof with a glass lantern over every top-storey room, and all-glass roofs on the wings. */
   glassRoofs?: boolean;
   /** Garden-front windows stacked into giant arched windows through every storey, between a giant order of pilasters. */
   giantWindows?: boolean;

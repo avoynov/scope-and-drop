@@ -12,6 +12,17 @@ export const EAVE_OVERHANG = 0.62;
 /** Low, as on a temple front: a steep pediment would stand between the sniper and the hall's glass roof. */
 export const PAVILION_PITCH = 15;
 
+/** A roof lantern: a kerb this high on the flat roof, then a hipped glass roof of at most LANTERN_RISE. */
+export const LANTERN_KERB = 0.55;
+export const LANTERN_RISE = 1.7;
+export const LANTERN_PITCH = 30;
+
+/** Pitch of a lantern over a rect: 30 degrees, flatter over a wide room so it never stands too tall. */
+export function lanternPitch(r: { x0: number; z0: number; x1: number; z1: number }): number {
+  const half = Math.min(r.x1 - r.x0, r.z1 - r.z0) / 2;
+  return Math.min(LANTERN_PITCH, Math.atan(LANTERN_RISE / half) / DEG);
+}
+
 /** Pitch of the shallow upper slopes of a mansard. */
 export const MANSARD_TOP_PITCH = 8;
 

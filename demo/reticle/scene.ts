@@ -100,9 +100,20 @@ function proceduralLambert(color: THREE.ColorRepresentation, body: string): THRE
   return m;
 }
 
+interface BushTile {
+  near: THREE.InstancedMesh;
+  far: THREE.InstancedMesh;
+  sphere: THREE.Sphere;
+  shadowed: boolean;
+}
+
+/** Worst offset of the far bush's surface from the full one: 10 % of the largest lobe at the largest bush. */
+const FAR_BUSH_ERROR_M = 0.1 * 0.67 * 0.62 * 1.5 * 1.15;
+
 export interface Range {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
+  bushLod: (cam: THREE.Camera, pxPerRad: number, tolPx: number) => void;
   targetHead: THREE.Vector3;
   targetFoot: THREE.Vector3;
 }
@@ -191,12 +202,35 @@ export function buildRange(): Range {
   }
   const sage = mergeVertices(mergeGeometries(lobes).deleteAttribute('normal'));
   const sp = sage.attributes.position as THREE.BufferAttribute;
+  const jitter = new Map<string, number>();
+  const at = (x: number, y: number, z: number) => `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
   for (let i = 0; i < sp.count; i++) {
     const x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i);
     const n = 0.85 + 0.3 * hash(i, 77);
+    jitter.set(at(x, y, z), n);
     sp.setXYZ(i, x * n, Math.max(y, -0.05) * n, z * n);
   }
   sage.computeVertexNormals();
+  // Far version, 140 triangles instead of 560: the same seven lobes as bare icosahedra. Their corners are the
+  // full bush's corner vertices, with the same jitter, pushed out 8 % about each lobe's centre so the facets
+  // straddle the round lobe instead of sitting inside it. Off by at most ~10 % of a lobe radius.
+  const farLobes: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 7; k++) {
+    const lobe = new THREE.IcosahedronGeometry(0.42 + hash(k, 41) * 0.25, 0).deleteAttribute('uv').deleteAttribute('normal');
+    const a = (k / 7) * Math.PI * 2;
+    const rr = k === 0 ? 0 : 0.45 + hash(k, 42) * 0.25;
+    const cx = Math.cos(a) * rr, cy = 0.15 + hash(k, 43) * 0.35 - rr * 0.25, cz = Math.sin(a) * rr;
+    const lp = lobe.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < lp.count; i++) {
+      const x = lp.getX(i) + cx, y = lp.getY(i) + cy, z = lp.getZ(i) + cz;
+      const n = jitter.get(at(x, y, z)) ?? 1;
+      const X = cx + (x - cx) * 1.08, Y = cy + (y - cy) * 1.08, Z = cz + (z - cz) * 1.08;
+      lp.setXYZ(i, X * n, Math.max(Y, -0.05) * n, Z * n);
+    }
+    farLobes.push(lobe);
+  }
+  const sageFar = mergeVertices(mergeGeometries(farLobes));
+  sageFar.computeVertexNormals();
   const sageMat = proceduralLambert(0xffffff, /* glsl */ `
     float px = length(fwidth(vWPos.xz));
     float n = fbmAA(vWPos.xz*9. + vWPos.y*7., px*9.);
@@ -233,6 +267,7 @@ export function buildRange(): Range {
   const BEARINGS = 24;
   const BANDS = [140, 260, 420, 640, 960, 1360, 1841];
   const tiles = new Map<number, number[]>();
+  const bushTiles: BushTile[] = [];
   const pos = new THREE.Vector3();
   for (let i = 0; i < placed; i++) {
     bushes.getMatrixAt(i, m);
@@ -259,6 +294,15 @@ export function buildRange(): Range {
     tile.receiveShadow = true;
     tile.computeBoundingSphere();
     scene.add(tile);
+    // Its far version: the same instances, never in the shadow map, swapped in per view by bushLod().
+    const far = new THREE.InstancedMesh(sageFar, sageMat, list.length);
+    far.instanceMatrix.copy(tile.instanceMatrix);
+    far.instanceColor = tile.instanceColor!.clone() as THREE.InstancedBufferAttribute;
+    far.receiveShadow = true;
+    far.boundingSphere = tile.boundingSphere!.clone();
+    far.visible = false;
+    scene.add(far);
+    bushTiles.push({ near: tile, far, sphere: tile.boundingSphere!, shadowed: false });
   }
   bushes.dispose();
 
@@ -362,10 +406,32 @@ export function buildRange(): Range {
   const toSun = new THREE.Vector3(-0.55, 0.62, 0.55).normalize();
   sun.target.position.copy(TARGET);
   sun.position.copy(TARGET).addScaledVector(toSun, 120);
+  // Tiles that reach into the sun's shadow box keep the full bush, so it always matches its own shadow.
+  sun.updateMatrixWorld();
+  sun.target.updateMatrixWorld();
+  sun.shadow.updateMatrices(sun);
+  const shadowBox = sun.shadow.getFrustum();
+  for (const b of bushTiles) b.shadowed = shadowBox.intersectsSphere(b.sphere);
+
+  const toCam = new THREE.Vector3();
+  /**
+   * Pick each bush tile's version for one view. `pxPerRad` is the view's pixels per radian at the centre;
+   * a tile goes far when the far bush's worst offset from the full one is under `tolPx` pixels at the
+   * tile's nearest point.
+   */
+  const bushLod = (cam: THREE.Camera, pxPerRad: number, tolPx: number) => {
+    for (const b of bushTiles) {
+      const d = Math.max(1, toCam.copy(b.sphere.center).sub(cam.position).length() - b.sphere.radius);
+      const far = !b.shadowed && (FAR_BUSH_ERROR_M * pxPerRad) / d < tolPx;
+      b.near.visible = !far;
+      b.far.visible = far;
+    }
+  };
 
   return {
     scene,
     sun,
+    bushLod,
     targetHead: new THREE.Vector3(TARGET.x, ty + 1.7, TARGET.z),
     targetFoot: new THREE.Vector3(TARGET.x, ty, TARGET.z),
   };

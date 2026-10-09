@@ -312,6 +312,23 @@ function lead(seed: number): TexSpec {
   };
 }
 
+/** Rolled roof glass: near-white (the tint comes from the material), faintly streaked down the slope, gently rippled. */
+function roofGlass(seed: number): TexSpec {
+  return {
+    size: [1.6, 1.6],
+    res: 256,
+    normalStrength: 1.2,
+    gen: (u, v, o) => {
+      const streak = fbm(u * 28, v * 3, 28, 3, seed);
+      const cloud = fbm(u * 5, v * 5, 5, 4, seed + 7);
+      const ripple = fbm(u * 9, v * 14, 9, 3, seed + 3);
+      grey(o, 0.82 + (streak - 0.5) * 0.22 + (cloud - 0.5) * 0.22);
+      o.h = 0.5 + (ripple - 0.5) * 0.5;
+      o.r = 0.14 + cloud * 0.16;
+    },
+  };
+}
+
 /** Point de Hongrie (chevron) parquet, luminance only. */
 function chevron(seed: number): TexSpec {
   const T = 1.2;
@@ -951,6 +968,7 @@ export type TextureKey =
   | 'slate'
   | 'zinc'
   | 'lead'
+  | 'roofglass'
   | 'herringbone'
   | 'parquet'
   | 'boards'
@@ -992,6 +1010,8 @@ function specFor(key: TextureKey): TexSpec {
       return zinc(16);
     case 'lead':
       return lead(17);
+    case 'roofglass':
+      return roofGlass(18);
     case 'herringbone':
       return chevron(18);
     case 'parquet':

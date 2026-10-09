@@ -70,6 +70,8 @@ const hallSel = $('hall') as HTMLSelectElement;
 hallSel.value = params.get('hall') ?? 'gallery';
 const minVisInput = $('minvis') as HTMLInputElement;
 minVisInput.value = params.get('minvis') ?? '30';
+const roofGlassInput = $('roofglass') as HTMLInputElement;
+roofGlassInput.value = params.get('roofglass') ?? '70';
 seedInput.value = params.get('seed') ?? 'gala-night';
 styleSel.value = params.get('style') ?? '';
 massSel.value = params.get('massing') ?? '';
@@ -98,6 +100,7 @@ function build(): void {
     quality: (params.get('quality') as Quality) ?? 'high',
     lightScale: params.has('light') ? Number(params.get('light')) : undefined,
     skyIntensity: params.has('sky') ? Number(params.get('sky')) : undefined,
+    roofGlassOpacity: Number(roofGlassInput.value) / 100,
   });
   scene.add(built.root);
   scene.fog = built.fog;
@@ -345,6 +348,13 @@ for (const [k, label] of [
 $('go').onclick = build;
 hallSel.onchange = build;
 minVisInput.onchange = build;
+// Looks only, so no rebuild: the material is shared by every glass roof.
+roofGlassInput.oninput = () => {
+  if (built) built.materials.get('roof-glass').opacity = Number(roofGlassInput.value) / 100;
+  const url = new URL(location.href);
+  url.searchParams.set('roofglass', roofGlassInput.value);
+  history.replaceState(null, '', url);
+};
 $('rebrief').onclick = () => briefing.open(bp);
 $('rnd').onclick = () => {
   seedInput.value = Math.random().toString(36).slice(2, 8);

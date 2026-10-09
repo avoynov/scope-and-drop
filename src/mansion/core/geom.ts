@@ -60,6 +60,32 @@ export function containsRect(outer: Rect, inner: Rect, tol = EPS): boolean {
   );
 }
 
+/** A rectangle with other rectangles cut out of it, as a list of rectangles. */
+export function rectMinus(r: Rect, holes: Rect[]): Rect[] {
+  let pieces: Rect[] = [r];
+  for (const h of holes) {
+    const next: Rect[] = [];
+    for (const p of pieces) {
+      if (h.x0 >= p.x1 - EPS || h.x1 <= p.x0 + EPS || h.z0 >= p.z1 - EPS || h.z1 <= p.z0 + EPS) {
+        next.push(p);
+        continue;
+      }
+      const cx0 = Math.max(p.x0, h.x0);
+      const cx1 = Math.min(p.x1, h.x1);
+      for (const q of [
+        { x0: p.x0, z0: p.z0, x1: cx0, z1: p.z1 },
+        { x0: cx1, z0: p.z0, x1: p.x1, z1: p.z1 },
+        { x0: cx0, z0: p.z0, x1: cx1, z1: Math.max(p.z0, h.z0) },
+        { x0: cx0, z0: Math.min(p.z1, h.z1), x1: cx1, z1: p.z1 },
+      ]) {
+        if (q.x1 - q.x0 > 0.02 && q.z1 - q.z0 > 0.02) next.push(q);
+      }
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 export function intersect(a: Rect, b: Rect): Rect | null {
   const r = { x0: Math.max(a.x0, b.x0), z0: Math.max(a.z0, b.z0), x1: Math.min(a.x1, b.x1), z1: Math.min(a.z1, b.z1) };
   return r.x1 > r.x0 + EPS && r.z1 > r.z0 + EPS ? r : null;

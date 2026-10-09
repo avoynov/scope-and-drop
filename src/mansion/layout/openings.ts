@@ -4,7 +4,7 @@
  * the only way through (cf. GFLAN's pass-through rule).
  */
 import { containsPoint, type Rect } from '../core/geom';
-import type { Rng } from '../core/rng';
+import { snap, type Rng } from '../core/rng';
 import type { LevelSpec, Mass, NavLink, Opening, OpeningDressing, OpeningKind, RoomType, StyleDef, Wall } from '../core/types';
 import type { MassingPlan } from './massing';
 import { isPassThrough, ROLE, type RoomDraft } from './rooms';
@@ -59,12 +59,36 @@ interface WindowSpec {
   panes: [number, number];
   leaves: 1 | 2;
   passable: boolean;
+  /** Overrides the style's usual dressing (giant windows). */
+  dressing?: OpeningDressing;
+  bare?: boolean;
 }
 
 function windowSpec(ctx: OpeningContext, w: Wall, room: PlacedRoom, terraceFacing: boolean): WindowSpec {
   const { m, levels } = ctx;
   const lv = levels[w.level]!;
   const b = m.bay;
+  if (ctx.style.giantWindows && terraceFacing && (ROLE[room.type] === 'party' || ROLE[room.type] === 'circulation')) {
+    // One giant arched window per bay through every storey: glass from the floor to just under the
+    // ceiling on each, the floor edge between them behind an iron panel, the top one arched.
+    const storeys = ctx.masses.find((ms) => ms.id === w.massId)?.levels ?? ctx.levels.length;
+    const topStorey = w.level >= storeys - 1;
+    const width = Math.min(3.4, 0.74 * b);
+    const sill = lv.floorY + (w.level === 0 ? 0 : 0.12);
+    const head = topStorey ? lv.ceilingY - 0.5 : lv.ceilingY - 0.04;
+    const next = ctx.levels[w.level + 1];
+    return {
+      kind: w.level === 0 ? 'french-window' : 'window',
+      width,
+      sill,
+      head,
+      panes: [4, w.level === 0 ? 5 : 3],
+      leaves: w.level === 0 ? 2 : 1,
+      passable: w.level === 0,
+      bare: true,
+      dressing: topStorey ? { giant: true, arch: Math.min(width / 2, 1.5) } : { giant: true, spandrel: next ? snap(next.floorY + 0.12 - head, 0.01) : 0 },
+    };
+  }
   if (w.level === 0 && terraceFacing && ROLE[room.type] !== 'service') {
     // Wide glazing on the stage front: about 70% of each bay is glass, so the sniper reads the room, not the piers.
     const width = Math.min(3.1, Math.max(2.4, 0.7 * b));
@@ -111,6 +135,9 @@ function dressingFor(style: StyleDef, level: number, side: Wall['side'], bayInde
       if (level === 0) return { surround: true, keystone: true };
       if (level === 1 && main) return { surround: true, balconette: true, pediment: 'segment' };
       return { surround: true };
+    case 'orangery':
+      // Round-headed windows throughout.
+      return { surround: true, arch: 0.55 };
   }
 }
 
@@ -202,8 +229,9 @@ export function placeWindows(ctx: OpeningContext): void {
         frosted: room.type === 'bathroom' || undefined,
         panes: spec.panes,
         leaves: spec.leaves,
-        dressing: dressingFor(style, w.level, w.side, c.bay),
-        curtain: curtainFor(rng, room),
+        dressing: spec.dressing ?? dressingFor(style, w.level, w.side, c.bay),
+        // A glasshouse front has no drapes.
+        curtain: spec.bare ? (rng.next(), 'open') : curtainFor(rng, room),
       });
     }
   }

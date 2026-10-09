@@ -8,7 +8,7 @@
  */
 import type { Rect, Vec2, Vec3 } from './geom';
 
-export type StyleId = 'palladian' | 'georgian' | 'beauxarts';
+export type StyleId = 'palladian' | 'georgian' | 'beauxarts' | 'orangery';
 export type MassingType = 'block' | 'u-garden' | 'u-entrance' | 'h';
 export type MansionSize = 'compact' | 'grand' | 'palatial';
 export type FacadeSide = 'garden' | 'entrance' | 'east' | 'west';
@@ -71,6 +71,8 @@ export interface RoofSpec {
   /** Top of the cornice / wall plate. */
   eaveY: number;
   pitchDeg: number;
+  /** Plan rectangles where the roof is glass (over the party rooms of a glass-roofed house). */
+  glazed?: Rect[];
   /** Parapet with balustrade hiding the roof foot (Palladian). */
   balustrade: boolean;
   /** Pediment gable over this mass on the given side (central pavilions). */
@@ -96,6 +98,12 @@ export interface OpeningDressing {
   keystone?: boolean;
   balconette?: boolean;
   surround?: boolean;
+  /** Arched head: the top `arch` metres of the opening are under a semi-elliptical arch (the data stays a rectangle). */
+  arch?: number;
+  /** One of a stack of windows read as a single giant window: no drapes, slender iron joinery. */
+  giant?: boolean;
+  /** Iron panel carried this far above the head, hiding the floor edge between this window and the one above. */
+  spandrel?: number;
 }
 
 export interface Opening {
@@ -163,6 +171,8 @@ export interface Room {
   ceilingY: number;
   /** Openings in this room's floor (stairwells, gallery voids). */
   floorHoles: Rect[];
+  /** Under a glass roof, with no ceiling: seen from above. */
+  skylit?: boolean;
   /** True when the room rises through the level above (ballroom, stair hall). */
   doubleHeight: boolean;
   /** May be walked through to reach other rooms (enfilade). */
@@ -257,8 +267,12 @@ export interface Atrium {
   columns: Vec2[];
   columnRadius: number;
   stairId: string;
-  /** Glass dome on a drum above the roof. `baseY` is the hall ceiling (the oculus), `springY` where the glass starts. */
-  dome: { x: number; z: number; radius: number; baseY: number; springY: number; height: number };
+  /**
+   * The hall's lantern. Above the eaves the hall's walls continue as a glazed attic up to `deckY`,
+   * where a glass roof spans the hall; from it a glazed drum rises to `springY` and carries the
+   * glass dome, `height` tall. `baseY` is the top storey's ceiling line.
+   */
+  dome: { x: number; z: number; radius: number; baseY: number; deckY: number; springY: number; height: number };
 }
 
 export interface Portico {
@@ -549,6 +563,10 @@ export interface StyleDef {
   baseMaterial: 'rusticated' | 'limestone' | 'brick';
   roof: 'hipped' | 'mansard' | 'flat';
   roofMaterial: 'slate' | 'zinc' | 'lead';
+  /** Glass roofs over the top-storey party rooms and the wings; solid over everything else. */
+  glassRoofs?: boolean;
+  /** Garden-front windows stacked into giant arched windows through every storey, between a giant order of pilasters. */
+  giantWindows?: boolean;
   roofPitchDeg: [number, number];
   bayWidth: [number, number];
   levelHeights: [[number, number], [number, number], [number, number]];

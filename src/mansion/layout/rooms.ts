@@ -336,8 +336,9 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
   /* ---------------- Upper floors ---------------- */
   const upRng = rng.fork('upper');
   const groundParty = rooms.filter((r) => r.level === 0 && ROLE[r.type] === 'party').length;
-  const partyUpstairs = groundParty < MIN_GROUND_PARTY_ROOMS;
+  const partyUpstairs = groundParty < MIN_GROUND_PARTY_ROOMS || m.partyUpstairs;
   const upstairsParty = upRng.shuffle(['grand-salon', 'music-room', 'card-room', 'drawing-room'] as RoomType[]);
+  const upstairsMore = upRng.shuffle(['gallery', 'morning-room', 'card-room', 'music-room', 'drawing-room', 'billiard-room'] as RoomType[]);
   const [uc0, uc1] = m.upperCorridor;
   for (let L = 1; L < m.mainLevels; L++) {
     const attic = L >= 2;
@@ -352,7 +353,16 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
       // When the hall has taken much of the ground floor, the party spills upstairs: the rooms either
       // side of the first gallery become reception rooms, reached straight off the stair.
       const besideGallery = L === 1 && Math.abs(i - centerIndexF) === 1;
-      const type: RoomType = besideGallery && partyUpstairs ? upstairsParty[i < centerIndexF ? 0 : 1]! : attic ? 'bedroom' : upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[]);
+      // Where the windows show both storeys, the whole first-floor garden front is the party's.
+      const wide = x1 - x0 >= MIN_PARTY_SPAN;
+      const type: RoomType =
+        besideGallery && partyUpstairs
+          ? upstairsParty[i < centerIndexF ? 0 : 1]!
+          : L === 1 && m.partyUpstairs && wide
+            ? upstairsMore[i % upstairsMore.length]!
+            : attic
+              ? 'bedroom'
+              : upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[]);
       rooms.push({
         id: `${L}:F${i}`,
         type,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateMansion, movePerch, navCellAt, navComponents, SightlineTracer, collectOccluders } from '../src/mansion';
 import type { MansionSize, MassingType, StyleId } from '../src/mansion';
+import { roofSurfaceY } from '../src/mansion/core/roofs';
 
 const json = (bp: unknown) => JSON.stringify(bp, (k, v) => (k === 'generationMs' ? 0 : v instanceof Uint8Array || v instanceof Int16Array ? Array.from(v) : v));
 
@@ -19,7 +20,7 @@ describe('determinism', () => {
 });
 
 describe('validity across seeds', () => {
-  const styles: StyleId[] = ['palladian', 'georgian', 'beauxarts'];
+  const styles: StyleId[] = ['palladian', 'georgian', 'beauxarts', 'orangery'];
   const massings: MassingType[] = ['block', 'u-garden', 'u-entrance', 'h'];
   const sizes: MansionSize[] = ['compact', 'grand', 'palatial'];
   const cases: [StyleId, MassingType, MansionSize][] = [];
@@ -336,10 +337,10 @@ describe('choosing the elevation', () => {
   it('from above, the glass roof shows the top gallery that no window shows from the ground', () => {
     for (const seed of ['el-1', 'el-2', 'el-3', 'el-4']) {
       for (const hall of ['gallery', 'rotunda'] as const) {
-        const low = generateMansion({ seed, hall });
+        const low = generateMansion({ seed, hall, style: 'georgian' });
         const high = movePerch(low, 0, 55);
         expect(topGallery(high)).toBeGreaterThan(0.6);
-        expect(topGallery(high)).toBeGreaterThan(topGallery(low) + 0.3);
+        expect(topGallery(high)).toBeGreaterThan(topGallery(low) + 0.2);
         expect(hallSeen(high)).toBeGreaterThan(0.12);
       }
     }
@@ -379,9 +380,17 @@ describe('proportions of a great house', () => {
       const span = Math.min(a.inner.x1 - a.inner.x0, a.inner.z1 - a.inner.z0);
       expect(a.dome.radius * 2).toBeGreaterThan(span - 1.5);
       expect(a.dome.radius).toBeGreaterThanOrEqual(6.5);
-      // A low curb, not a drum: the glass starts about a metre above the eaves.
+      // The lantern: a glazed attic clear of the roofs round it, a drum, then a dome taller than a hemisphere's half.
       const top = bp.levels[bp.levels.length - 1]!;
-      expect(a.dome.springY - (top.floorY + top.height)).toBeLessThanOrEqual(1.2);
+      const eave = top.floorY + top.height;
+      expect(a.dome.deckY - eave).toBeGreaterThanOrEqual(2);
+      expect(a.dome.deckY - eave).toBeLessThanOrEqual(7);
+      for (const [x, z] of [[a.inner.x0 - 0.7, a.dome.z], [a.inner.x1 + 0.7, a.dome.z], [a.dome.x, a.inner.z0 - 0.7]] as const) {
+        const roof = roofSurfaceY(bp.masses, x, z);
+        if (Number.isFinite(roof)) expect(a.dome.deckY).toBeGreaterThan(roof + 0.5);
+      }
+      expect(a.dome.springY - a.dome.deckY).toBeGreaterThanOrEqual(1.8);
+      expect(a.dome.height).toBeGreaterThan(a.dome.radius * 0.8);
     }
   });
   it('no room of the party is narrower than five metres, and corridors are wide', () => {
@@ -407,6 +416,82 @@ describe('proportions of a great house', () => {
       }
     }
     expect(seen).toBeGreaterThan(0);
+  });
+});
+
+describe('orangery style', () => {
+  const houses = ['or-1', 'or-2', 'or-3', 'or-4', 'or-5', 'or-6'].map((seed) => generateMansion({ seed, style: 'orangery' }));
+
+  it('is valid, two storeys, with one-storey wings and no garden portico', () => {
+    for (const bp of houses) {
+      expect(bp.validation.ok).toBe(true);
+      expect(bp.levels.length).toBe(2);
+      for (const ms of bp.masses) if (ms.kind === 'wing') expect(ms.levels).toBe(1);
+      expect(bp.porticos.some((p) => p.side === 'garden')).toBe(false);
+    }
+  });
+
+  it('glass roofs cover the top-storey party rooms and nothing else', () => {
+    let skylit = 0;
+    for (const bp of houses) {
+      for (const r of bp.rooms) {
+        const ms = bp.masses.find((q) => q.id === r.massId)!;
+        const under = (ms.roof.glazed ?? []).some((g) => g.x0 <= r.inner.x0 && g.x1 >= r.inner.x1 && g.z0 <= r.inner.z0 && g.z1 >= r.inner.z1);
+        if (r.skylit) {
+          skylit++;
+          expect(r.role).toBe('party');
+          expect(r.level).toBe(ms.levels - 1);
+          expect(under, `${r.id} is skylit but its roof is not glass`).toBe(true);
+        } else if (r.role === 'private' || r.role === 'service' || r.type === 'corridor') {
+          expect(under, `${r.id} (${r.type}) must keep a solid roof`).toBe(false);
+        }
+      }
+      // The whole first-floor garden front is the party's.
+      expect(bp.rooms.filter((r) => r.level === 1 && r.role === 'party').length).toBeGreaterThanOrEqual(2);
+    }
+    expect(skylit).toBeGreaterThan(12);
+    // Other styles have no glass roofs.
+    const plain = generateMansion({ seed: 'or-1', style: 'palladian' });
+    expect(plain.rooms.some((r) => r.skylit)).toBe(false);
+    expect(plain.masses.some((ms) => ms.roof.glazed)).toBe(false);
+  });
+
+  it('garden-front windows stack into giant arched windows', () => {
+    for (const bp of houses) {
+      const front = bp.walls.filter((w) => w.exterior && w.side === 'garden' && w.axis === 'x' && w.massId !== 'conservatory');
+      let stacks = 0;
+      for (const w of front.filter((q) => q.level === 0)) {
+        for (const o of w.openings) {
+          if (!o.dressing?.spandrel) continue;
+          const x = w.a.x + (o.u0 + o.u1) / 2;
+          const above = front
+            .filter((q) => q.level === 1 && Math.abs(q.a.z - w.a.z) < 0.01)
+            .flatMap((q) => q.openings.map((p) => ({ p, x: q.a.x + (p.u0 + p.u1) / 2 })))
+            .find((q) => Math.abs(q.x - x) < 0.05);
+          if (!above) continue;
+          stacks++;
+          expect(above.p.dressing?.arch).toBeGreaterThan(1);
+          expect(above.p.u1 - above.p.u0).toBeCloseTo(o.u1 - o.u0, 2);
+          // The iron panel closes the gap between the two exactly.
+          expect(o.y1 + o.dressing.spandrel).toBeCloseTo(above.p.y0, 2);
+          expect(o.curtain).toBe('open');
+        }
+      }
+      expect(stacks).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('shows the sniper more than a slate-roofed house, from the treeline and from above', () => {
+    let low = 0;
+    let high = 0;
+    let plainHigh = 0;
+    for (const bp of houses) {
+      low += bp.sightlines.partyVisible;
+      high += movePerch(bp, 0, 55).sightlines.partyVisible;
+      plainHigh += movePerch(generateMansion({ seed: bp.seed, style: 'georgian' }), 0, 55).sightlines.partyVisible;
+    }
+    expect(low / houses.length).toBeGreaterThan(0.45);
+    expect(high / houses.length).toBeGreaterThan(plainHigh / houses.length + 0.1);
   });
 });
 

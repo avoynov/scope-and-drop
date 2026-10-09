@@ -39,6 +39,8 @@ describe('renderer geometry', () => {
     ['georgian', 'u-garden', 'compact'],
     ['beauxarts', 'h', 'palatial'],
     ['palladian', 'u-entrance', 'grand'],
+    ['orangery', 'u-garden', 'grand'],
+    ['orangery', 'block', 'palatial'],
   ];
   it.each(cases)('%s / %s / %s meshes cleanly', (style, massing, size) => {
     const { geos } = mesh(style, massing, size, `mesh-${style}-${massing}`);

@@ -69,7 +69,7 @@ After deploying, the demo has five views:
 | `wide` | The perch view at 26° FOV. |
 | `orbit` | Free orbit around the estate. |
 | `iso` | Orthographic view along the perch bearing, looking 35° down. |
-| `plan` | Top-down, cut away above the ground floor. |
+| `plan` | Top-down, cut away above the storey shown, with room names. Scroll to zoom about the cursor, drag to move, double-click to reset; names shorten or drop out when a room is too small on screen. The briefing's plan zooms the same way. |
 
 It has two overlays: a sightline heat map and mission POI markers. It also takes URL parameters:
 

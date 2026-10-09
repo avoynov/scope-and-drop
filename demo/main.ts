@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { generateMansion, movePerch, type MansionBlueprint, type MansionOptions } from '../src/mansion';
 import { buildMansion, type BuiltMansion, type Quality } from '../src/mansion/build';
 import { createGradePass } from '../src/mansion/build/grade';
-import { createBriefing } from './briefing';
+import { createBriefing, labelForms } from './briefing';
 
 type View = 'scope' | 'wide' | 'orbit' | 'iso' | 'plan' | 'free';
 
@@ -16,6 +16,8 @@ const shot = params.has('shot');
 if (shot) document.body.classList.add('shot');
 const W = Number(params.get('w') ?? 0) || innerWidth;
 const H = Number(params.get('h') ?? 0) || innerHeight;
+/** Live size of the view: fixed for scripted stills, the window otherwise. */
+const viewSize = (): { w: number; h: number } => (params.has('w') ? { w: W, h: H } : { w: innerWidth, h: innerHeight });
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: shot });
 renderer.setPixelRatio(shot ? 1 : Math.min(devicePixelRatio, 2));
@@ -59,6 +61,10 @@ const overlays = { sight: params.has('sight'), pois: params.has('pois') };
 const overlayGroup = new THREE.Group();
 /** Storey shown by the plan view (0 = ground floor). */
 let planLevel = Math.max(0, Math.floor(Number(params.get('level') ?? 0)) || 0);
+/** Plan view zoom (1 = whole estate in view) and pan, in metres off the centre of the house. */
+let planZoom = Math.max(1, Math.min(14, Number(params.get('zoom') ?? 1) || 1));
+const planPan = { x: 0, z: 0 };
+const PLAN_ZOOM_MAX = 14;
 const LEVEL_NAMES = ['ground', 'first', 'second', 'third'];
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -106,6 +112,7 @@ function build(): void {
   scene.fog = built.fog;
   scene.environment = null;
   planLevel = Math.min(planLevel, bp.levels.length - 1);
+  planPan.x = planPan.z = 0;
   buildFloorButtons();
   buildOverlays();
   aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
@@ -286,7 +293,7 @@ function setView(v: View): void {
   } else {
     renderPass.camera = ortho;
     const span = Math.max(fp.x1 - fp.x0, fp.z1 - fp.z0) * 0.62 + 12;
-    const a = W / H;
+    const a = viewSize().w / viewSize().h;
     ortho.left = -span * a;
     ortho.right = span * a;
     ortho.top = span;
@@ -294,9 +301,15 @@ function setView(v: View): void {
     ortho.near = 1;
     ortho.far = 3000;
     if (v === 'plan') {
-      ortho.position.set(cx, 400, cz + 0.01);
+      // Zoomed and panned by the wheel and by dragging.
+      const half = span / planZoom;
+      ortho.left = -half * a;
+      ortho.right = half * a;
+      ortho.top = half;
+      ortho.bottom = -half;
+      ortho.position.set(cx + planPan.x, 400, cz + planPan.z + 0.01);
       ortho.up.set(0, 0, -1);
-      ortho.lookAt(cx, 0, cz);
+      ortho.lookAt(cx + planPan.x, 0, cz + planPan.z);
     } else {
       // Isometric-ish: from the perch bearing, 35° down.
       const dir = built.perch.position.clone().sub(new THREE.Vector3(cx, 0, cz)).setY(0).normalize();
@@ -307,6 +320,43 @@ function setView(v: View): void {
     ortho.updateProjectionMatrix();
   }
   for (const b of document.querySelectorAll<HTMLButtonElement>('#views button')) b.classList.toggle('on', b.dataset.v === v);
+  layoutPlanLabels();
+}
+
+/** Plan view: half the height of the view in metres, and the world point at its centre. */
+function planFrame(): { half: number; x: number; z: number } {
+  const fp = bp.stats.footprint;
+  return { half: (Math.max(fp.x1 - fp.x0, fp.z1 - fp.z0) * 0.62 + 12) / planZoom, x: (fp.x0 + fp.x1) / 2 + planPan.x, z: (fp.z0 + fp.z1) / 2 + planPan.z };
+}
+
+/** Room names over the plan view: one per room of the storey shown, shortened or dropped when the room is too small on screen. */
+function layoutPlanLabels(): void {
+  const box = $('plan-labels');
+  box.replaceChildren();
+  if (view !== 'plan' || !built || params.has('nolabels')) return;
+  const f = planFrame();
+  const { w: W, h: H } = viewSize();
+  const pxPerM = H / (2 * f.half);
+  for (const r of bp.rooms) {
+    if (r.level !== planLevel) continue;
+    const w = (r.inner.x1 - r.inner.x0) * pxPerM;
+    const h = (r.inner.z1 - r.inner.z0) * pxPerM;
+    if (h < 15) continue;
+    // 6.7 px per character at the label's size.
+    const fits = (t: string) => t.length * 6.7 + 10 <= w;
+    const text = labelForms(r.label).find(fits);
+    if (!text) continue;
+    const x = W / 2 + ((r.inner.x0 + r.inner.x1) / 2 - f.x) * pxPerM;
+    const y = H / 2 + ((r.inner.z0 + r.inner.z1) / 2 - f.z) * pxPerM;
+    if (x < 0 || x > W || y < 0 || y > H) continue;
+    const el = document.createElement('span');
+    el.textContent = text;
+    el.title = `${r.label} · ${(r.inner.x1 - r.inner.x0).toFixed(1)} × ${(r.inner.z1 - r.inner.z0).toFixed(1)} m`;
+    el.className = r.role;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    box.appendChild(el);
+  }
 }
 
 function aimCamera(): void {
@@ -366,11 +416,55 @@ let dragging = false;
 renderer.domElement.addEventListener('pointerdown', () => (dragging = true));
 addEventListener('pointerup', () => (dragging = false));
 addEventListener('pointermove', (e) => {
+  if (dragging && view === 'plan' && built) {
+    // Drag the plan: the point under the cursor follows it.
+    const mPerPx = (2 * planFrame().half) / viewSize().h;
+    planPan.x -= e.movementX * mPerPx;
+    planPan.z -= e.movementY * mPerPx;
+    clampPlanPan();
+    setView('plan');
+    return;
+  }
   if (!dragging || (view !== 'scope' && view !== 'wide')) return;
   const k = (camera.fov / 60) * 0.004;
   aim.yaw -= e.movementX * k;
   aim.pitch = Math.max(-0.4, Math.min(0.4, aim.pitch - e.movementY * k));
   aimCamera();
+});
+function clampPlanPan(): void {
+  const fp = bp.stats.footprint;
+  const rx = (fp.x1 - fp.x0) / 2 + 10;
+  const rz = (fp.z1 - fp.z0) / 2 + 10;
+  planPan.x = Math.max(-rx, Math.min(rx, planPan.x));
+  planPan.z = Math.max(-rz, Math.min(rz, planPan.z));
+}
+renderer.domElement.addEventListener(
+  'wheel',
+  (e) => {
+    if (view !== 'plan' || !built) return;
+    e.preventDefault();
+    // Zoom about the cursor: the room under it stays under it.
+    const before = planFrame();
+    const r = renderer.domElement.getBoundingClientRect();
+    const u = ((e.clientX - r.left) / r.width - 0.5) * 2 * (r.width / r.height);
+    const v = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    const wx = before.x + u * before.half;
+    const wz = before.z + v * before.half;
+    planZoom = Math.max(1, Math.min(PLAN_ZOOM_MAX, planZoom * Math.exp(-e.deltaY * 0.0015)));
+    const after = planFrame();
+    planPan.x += wx - (after.x + u * after.half);
+    planPan.z += wz - (after.z + v * after.half);
+    if (planZoom === 1) planPan.x = planPan.z = 0;
+    clampPlanPan();
+    setView('plan');
+  },
+  { passive: false },
+);
+renderer.domElement.addEventListener('dblclick', () => {
+  if (view !== 'plan') return;
+  planZoom = 1;
+  planPan.x = planPan.z = 0;
+  setView('plan');
 });
 renderer.domElement.addEventListener('wheel', (e) => {
   if (view !== 'scope' || !built) return;

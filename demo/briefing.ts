@@ -31,7 +31,22 @@ function fit(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; w: num
   return { ctx, w, h };
 }
 
-export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level: number): void {
+/** A room's name and shorter forms of it, longest first: "West Drawing Room 2", "Drawing Room 2", "Drawing Room", "Drawing". */
+export function labelForms(label: string): string[] {
+  const noSide = label.replace(/^(West|East|North|South) /, '');
+  const noNumber = noSide.replace(/ \d+$/, '');
+  const words = noNumber.split(' ').filter((w) => w !== 'Room');
+  return [...new Set([label, noSide, noNumber, words[words.length - 1] ?? noNumber])];
+}
+
+/** Zoom (1 = whole house) and pan (plan centre, in metres off the middle of the house) of the briefing plan. */
+export interface PlanView {
+  zoom: number;
+  x: number;
+  z: number;
+}
+
+export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level: number, view: PlanView = { zoom: 1, x: 0, z: 0 }): { s: number } {
   const { ctx, w, h } = fit(canvas);
   const fp = bp.stats.footprint;
   const t = bp.site.terrace.rect;
@@ -40,9 +55,9 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   const X1 = Math.max(fp.x1, t.x1) + pad;
   const Z0 = fp.z0 - pad;
   const Z1 = Math.max(fp.z1, t.z1) + pad + 4;
-  const s = Math.min(w / (X1 - X0), h / (Z1 - Z0));
-  const ox = (w - (X1 - X0) * s) / 2;
-  const oz = (h - (Z1 - Z0) * s) / 2;
+  const s = Math.min(w / (X1 - X0), h / (Z1 - Z0)) * view.zoom;
+  const ox = w / 2 - ((X0 + X1) / 2 + view.x - X0) * s;
+  const oz = h / 2 - ((Z0 + Z1) / 2 + view.z - Z0) * s;
   const sx = (x: number) => ox + (x - X0) * s;
   const sz = (z: number) => oz + (z - Z0) * s;
 
@@ -138,8 +153,9 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   for (const r of bp.rooms) {
     if (r.level !== level) continue;
     const rw = (r.rect.x1 - r.rect.x0) * s;
-    if (rw < 46) continue;
-    const label = r.label.length * 6.4 > rw ? r.label.split(' ').pop()! : r.label;
+    if (rw < 46 || (r.rect.z1 - r.rect.z0) * s < 16) continue;
+    const label = labelForms(r.label).find((t) => t.length * 6.4 <= rw);
+    if (!label) continue;
     const x = sx((r.rect.x0 + r.rect.x1) / 2);
     const z = sz((r.rect.z0 + r.rect.z1) / 2);
     ctx.fillStyle = 'rgba(7,8,12,0.72)';
@@ -184,6 +200,7 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   ctx.lineTo(ax + Math.cos(ang + 2.5) * 6, az + Math.sin(ang + 2.5) * 6);
   ctx.lineTo(ax + Math.cos(ang - 2.5) * 6, az + Math.sin(ang - 2.5) * 6);
   ctx.fill();
+  return { s };
 }
 
 /** Bearing dial: the house at the top, the perch arc below it, bars showing how much each bearing sees. */
@@ -257,11 +274,13 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
   let shown: MansionBlueprint | null = null;
   let level = 0;
   let geom = { cx: 0, cy: 0, R: 1 };
+  const planView: PlanView = { zoom: 1, x: 0, z: 0 };
+  let planScale = 1;
   let pending = 0;
 
   const render = () => {
     if (!shown) return;
-    drawPlan(plan, shown, level);
+    planScale = drawPlan(plan, shown, level, planView).s;
     geom = drawDial(dial, shown, shown.site.perch.azimuthDeg);
     const sl = shown.sightlines;
     const seen = shown.pois.filter((p) => p.visibility >= POI_VISIBLE).length;
@@ -316,6 +335,49 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
   const setEl = (deg: number) => setPerch(Number(slider.value), deg);
 
   elSlider.addEventListener('input', () => setEl(Number(elSlider.value)));
+  // The plan zooms about the cursor with the wheel, pans by dragging, and resets on a double click.
+  const clampPlan = () => {
+    if (!base) return;
+    const fp = base.stats.footprint;
+    const rx = (fp.x1 - fp.x0) / 2 + 6;
+    const rz = (fp.z1 - fp.z0) / 2 + 10;
+    planView.x = Math.max(-rx, Math.min(rx, planView.x));
+    planView.z = Math.max(-rz, Math.min(rz, planView.z));
+  };
+  plan.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const r = plan.getBoundingClientRect();
+      const dx = e.clientX - r.left - r.width / 2;
+      const dz = e.clientY - r.top - r.height / 2;
+      const zoom = Math.max(1, Math.min(10, planView.zoom * Math.exp(-e.deltaY * 0.0015)));
+      const s1 = (planScale / planView.zoom) * zoom;
+      planView.x += dx / planScale - dx / s1;
+      planView.z += dz / planScale - dz / s1;
+      planView.zoom = zoom;
+      if (zoom === 1) planView.x = planView.z = 0;
+      clampPlan();
+      render();
+    },
+    { passive: false },
+  );
+  plan.addEventListener('pointerdown', (e) => plan.setPointerCapture(e.pointerId));
+  plan.addEventListener('pointermove', (e) => {
+    if (!e.buttons || planView.zoom === 1) return;
+    planView.x -= e.movementX / planScale;
+    planView.z -= e.movementY / planScale;
+    clampPlan();
+    render();
+  });
+  plan.addEventListener('dblclick', () => {
+    planView.zoom = 1;
+    planView.x = planView.z = 0;
+    render();
+  });
+  plan.style.touchAction = 'none';
+  plan.style.cursor = 'grab';
+
   slider.addEventListener('input', () => setAz(Number(slider.value)));
   const fromPointer = (e: PointerEvent) => {
     const r = dial.getBoundingClientRect();
@@ -345,6 +407,8 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
       base = bp;
       shown = bp;
       level = 0;
+      planView.zoom = 1;
+      planView.x = planView.z = 0;
       const [lo, hi] = bp.site.perch.arcDeg;
       slider.min = String(lo);
       slider.max = String(hi);

@@ -4,7 +4,8 @@
  * Sound is what tells a shooter a hit happened before they can see it: the bullet reaches the mannequin at
  * 412 m in about 0.6 s, and the slap of the hit takes another 1.2 s to come back (343 m/s). So "bang …
  * whop" with a 1.8 s gap is a hit; a dull thud or nothing is a miss. The hills about 1.6 km out return a
- * faint rumble some 9 s later.
+ * faint rumble some 9 s later. The suppressed VSS is the other way round: its report is a dull thump and
+ * the clack of the action, and the slap of a hit at 183 m (1.2 s later) is the loudest thing the shooter hears.
  */
 export type ImpactSound = 'plastic' | 'dirt' | 'rock' | 'steel' | 'wood';
 
@@ -12,8 +13,11 @@ export interface Sound {
   enabled: boolean;
   /** Call from a user gesture: browsers only start audio after one. */
   unlock(): void;
-  /** The report, `delay` s from now. The SVD's lighter rifle and slotted flash hider make it the sharper of the two. */
-  shot(delay: number, svd: boolean): void;
+  /**
+   * The report, `delay` s from now. The SVD's lighter rifle and slotted flash hider make it sharper than the
+   * bolt rifle; the VSS is suppressed and subsonic.
+   */
+  shot(delay: number, rifle: 'svd' | 'bolt' | 'vss'): void;
   /** A bullet arriving `delay` s from now, `dist` m away. */
   impact(delay: number, dist: number, kind: ImpactSound): void;
   /** Working the bolt, or a magazine change, starting now and lasting `dur` s. */
@@ -47,9 +51,20 @@ export function createSound(): Sound {
       }
       if (ctx.state === 'suspended') void ctx.resume();
     },
-    shot(delay, svd) {
+    shot(delay, rifle) {
       if (!s.enabled || !ctx) return;
       const t = ctx.currentTime + delay;
+      if (rifle === 'vss') {
+        // About 121 dB at a metre against 160 for an open muzzle, and no crack: the bullet is slower than sound.
+        // A muffled thump from the suppressor, then the bolt carrier hitting the back of its travel and
+        // slamming home again (the action cycles in about 60 ms). Too quiet to come back off the hills.
+        burst(t, 0.2, 0.001, 0.05, 'lowpass', 1500, 320, 0.04);
+        tone(t, 95, 50, 0.32, 0.002, 0.07);
+        burst(t + 0.028, 0.3, 0.0005, 0.025, 'bandpass', 2600, 2300, 0.02);
+        burst(t + 0.062, 0.26, 0.0005, 0.03, 'bandpass', 2100, 1900, 0.02);
+        return;
+      }
+      const svd = rifle === 'svd';
       // The blast: broadband, collapsing to low frequencies within a few tens of ms.
       burst(t, 0.9, 0.0005, 0.16, 'lowpass', 12000, 600, 0.09);
       // Crack of the supersonic bullet and the action, at the ear at the same moment.

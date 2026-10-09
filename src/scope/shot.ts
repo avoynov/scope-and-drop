@@ -14,7 +14,7 @@ import { AIR, ROUNDS, cdG7, type Round, type RoundId } from './ballistics';
 export type Vec3 = [number, number, number];
 
 export interface Rifle {
-  id: 'svd' | 'bolt';
+  id: 'svd' | 'bolt' | 'vss';
   name: string;
   round: RoundId;
   /** Rifling: one turn in this many mm, right-hand. */
@@ -65,6 +65,19 @@ export const RIFLES = {
     id: 'bolt', name: 'Bolt rifle', round: 'm118lr', twistMm: 286, bulletLenMm: 31.5, bulletDiaMm: 7.82,
     sigmaRad: 0.25 * MOA, mvSd: 4, lockS: 0.003, barrelS: 0.0013,
     action: 'bolt', magazine: 5, reloadS: 4.5, cycleS: 1.1, blastDust: 0.6,
+  },
+  /**
+   * VSS "Vintorez", SP-5: integrally suppressed and subsonic. Spec: 4 shots inside 75 mm at 100 m, prone off
+   * a rest; observed 1–2 MOA. σ ≈ 0.45 MOA with a 4 m/s velocity SD, which at subsonic speed is itself worth
+   * 1.8 cm of vertical at 100 m and 6 cm at 183 m. The twist is not published: 210 mm assumed, which gives
+   * the long bullet SG ≈ 3.3. Striker-fired, ≈ 5 ms lock; a 200 mm ported barrel and the suppressor ahead of
+   * it, ≈ 1.9 ms until the bullet is out. 10-round magazine, semi-automatic (the automatic mode is left out).
+   * The gas leaves through the suppressor, so the blast lifts almost no dust.
+   */
+  vss: {
+    id: 'vss', name: 'VSS', round: 'sp5', twistMm: 210, bulletLenMm: 36, bulletDiaMm: 9.25,
+    sigmaRad: 0.45 * MOA, mvSd: 4, lockS: 0.005, barrelS: 0.0019,
+    action: 'semi', magazine: 10, reloadS: 3, cycleS: 0, blastDust: 0.05,
   },
 } as const satisfies Record<string, Rifle>;
 export type RifleId = keyof typeof RIFLES;

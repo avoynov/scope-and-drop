@@ -4,11 +4,11 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
-import { windAt, type Wind } from '../../src/scope/shot';
+import { windAt, type RifleId, type Wind } from '../../src/scope/shot';
 import { createSound } from './audio';
 import { createComposite } from './composite';
 import { buildRifle, createNearPasses } from './near';
-import { EYE_HEIGHT, RANGE_M, buildRange, heightAt } from './scene';
+import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
 
 const params = new URLSearchParams(location.search);
@@ -19,10 +19,18 @@ const W = Number(params.get('w') ?? 0) || innerWidth;
 const H = Number(params.get('h') ?? 0) || innerHeight;
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
 
+/**
+ * The rifle behind each reticle, and the mannequin it is meant for: the SVD and the bolt rifle shoot the one at
+ * 412 m, the VSS the one at the game's range, 183 m (range.targets[1]).
+ */
+const RIFLE = { pso: 'svd', tree: 'bolt', vss: 'vss' } as const satisfies Record<Reticle['id'], RifleId>;
+const HOME = { pso: 0, tree: 0, vss: 1 } as const satisfies Record<Reticle['id'], number>;
+const reticleParam = params.get('reticle');
+
 const state = {
-  reticle: (params.get('reticle') === 'tree' ? 'tree' : 'pso') as Reticle['id'],
+  reticle: (reticleParam === 'tree' || reticleParam === 'vss' ? reticleParam : 'pso') as Reticle['id'],
   mag: num('mag', 8),
-  parallax: num('par', RANGE_M), // metres; Infinity = ∞
+  parallax: num('par', reticleParam === 'vss' ? NEAR_M : RANGE_M), // metres; Infinity = ∞
   // A good scope, well set up: parallax on the target, eye centred at full eye relief.
   eye: { x: num('ex', 0), y: num('ey', 0), z: num('ez', 0), pupilMm: num('pupil', 3) } as Eye,
   illum: params.has('illum'),
@@ -62,9 +70,10 @@ const wideCam = new THREE.PerspectiveCamera(30, W / H, 0.3, 12000);
 scopeCam.position.copy(eyePos);
 wideCam.position.copy(eyePos);
 
-// Aim at the mannequin's chest.
+// Aim at the chest of the mannequin this rifle is meant for.
 {
-  const d = range.targetHead.clone().setY(range.targetHead.y - 0.55).sub(eyePos);
+  const home = range.targets[HOME[state.reticle]]!.head;
+  const d = home.clone().setY(home.y - 0.55).sub(eyePos);
   state.yaw = Math.atan2(-d.x, -d.z);
   state.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
   // hold=<units>: aim that many reticle units high (and hold=<up>,<right> for wind), so a chevron sits on the chest.
@@ -171,12 +180,16 @@ const terrainCeiling = (r: number) => 13.8 + 0.08 * Math.max(0, r - 1500);
 const toT = new THREE.Vector3();
 const miss = new THREE.Vector3();
 const probe = new THREE.Vector3();
-/** Distance to whatever the reticle centre rests on (ground, or the target board). */
+/** Distance to whatever the reticle centre rests on (ground, or a target board). */
 function aimDistance(dir: THREE.Vector3): number {
-  toT.copy(range.targetHead).sub(eyePos);
-  const along = toT.dot(dir);
-  miss.copy(toT).addScaledVector(dir, -along);
-  if (along > 0 && Math.abs(miss.x) < 3 && miss.y > -2 && miss.y < 1) return along;
+  let board = Infinity;
+  for (const m of range.targets) {
+    toT.copy(m.head).sub(eyePos);
+    const along = toT.dot(dir);
+    miss.copy(toT).addScaledVector(dir, -along);
+    if (along > 0 && Math.abs(miss.x) < 3 && miss.y > -2 && miss.y < 1) board = Math.min(board, along);
+  }
+  if (board < Infinity) return board;
   let d = 5;
   while (d < 9000) {
     const p = probe.copy(eyePos).addScaledVector(dir, d);
@@ -224,7 +237,7 @@ windDirIn.oninput = () => (state.wind.fromClock = Number(windDirIn.value));
 
 function syncUi(): void {
   syncDope();
-  shooting.setRifle(state.reticle === 'pso' ? 'svd' : 'bolt');
+  shooting.setRifle(RIFLE[state.reticle]);
   sound.enabled = state.sound;
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
@@ -250,8 +263,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.o
 $('center').onclick = () => { state.eye.x = state.eye.y = 0; state.eye.z = 0; syncUi(); };
 
 /**
- * Firing (see shooting.ts). The SVD and the bolt rifle behind the tree kick differently. When the motion
- * has died away its lasting rise is folded into the aim, so the rifle stays where it ended up and the
+ * Firing (see shooting.ts). The SVD, the bolt rifle behind the tree and the VSS kick differently. When the
+ * motion has died away its lasting rise is folded into the aim, so the rifle stays where it ended up and the
  * shooter has to drag it back down.
  */
 let recoil: { start: number; spec: RecoilSpec; v: ShotVariation } | null = null;
@@ -292,7 +305,7 @@ function fire(): void {
   if (exit === null) return;
   // A second shot before the first settles starts from wherever the rifle is when the bullet leaves.
   if (recoil) foldRecoil(recoilAt(recoil.spec, recoil.v, exit - recoil.start));
-  recoil = { start: exit, spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(shots++) };
+  recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(shots++) };
 }
 $('fire').onclick = () => fire();
 
@@ -398,7 +411,7 @@ const keys = new Set<string>();
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
-  if (e.code === 'KeyR') { state.reticle = state.reticle === 'pso' ? 'tree' : 'pso'; syncUi(); }
+  if (e.code === 'KeyR') { state.reticle = ({ pso: 'tree', tree: 'vss', vss: 'pso' } as const)[state.reticle]; syncUi(); }
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
@@ -437,6 +450,22 @@ const mirFlow = new THREE.Vector2();
 let boil = 0;
 const windTmp: [number, number, number] = [0, 0, 0];
 const nearVel = new THREE.Vector2();
+/** The mannequin the sun's shadow box is on: whichever the scope points nearest, with 0.2° of hysteresis. */
+let watched = 0;
+const offAim = (i: number, dir: THREE.Vector3) => {
+  const f = range.targets[i]!.foot;
+  return toT.set(f.x, f.y + 1, f.z).sub(eyePos).angleTo(dir);
+};
+function watch(dir: THREE.Vector3): void {
+  const cur = offAim(watched, dir);
+  for (let i = 0; i < range.targets.length; i++) {
+    if (i !== watched && offAim(i, dir) < cur - 0.0035) {
+      watched = i;
+      break;
+    }
+  }
+  if (range.shadowOn(watched)) renderer.shadowMap.needsUpdate = true;
+}
 const sunLocal = new THREE.Vector3();
 const rifleFrame = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -534,6 +563,7 @@ function frame(t: number, dt: number): void {
   scopeCam.fov = (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
   scopeCam.updateProjectionMatrix();
   scopeCam.getWorldDirection(dir);
+  watch(dir);
 
   const D = aimDistance(dir);
   const ep = exitPupilMm(SCOPE, state.mag);
@@ -591,7 +621,7 @@ function frame(t: number, dt: number): void {
   // Bullets in flight and what they hit.
   scopeCam.updateMatrixWorld();
   sunView.copy(toSun).transformDirection(scopeCam.matrixWorldInverse);
-  const fx = shooting.update(t, scopeCam, eyePos, state.wind, sunView);
+  const fx = shooting.update(t, scopeCam, eyePos, state.wind, sunView, state.parallax);
   u.uTrS!.value = fx.trace.s;
   u.uTrA!.value.copy(fx.trace.a);
   u.uTrB!.value.copy(fx.trace.b);
@@ -653,7 +683,8 @@ function frame(t: number, dt: number): void {
     const ret = RETICLES[state.reticle]();
     const tf = trueFovRad(SCOPE, state.mag);
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
-    const fig = 1.7 / RANGE_M / ret.unitRad;
+    const fig = 1.7 / range.targets[watched]!.range / ret.unitRad;
+    const unit = ret.id === 'tree' ? 'mil' : 'th';
     const status = shooting.status(t);
     readout.innerHTML = [
       ['Head', ads ? (ads.dir === 'in' ? 'going down' : 'coming up') : adsIn ? 'on the weld' : 'up'],
@@ -669,8 +700,8 @@ function frame(t: number, dt: number): void {
       ['Wind here', windText()],
       ['Last shot', status.shot],
       ['Aim point', fmt(D)],
-      ['Parallax error', `${Math.abs(par).toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],
-      ['Target 1.7 m', `${fig.toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],
+      ['Parallax error', `${Math.abs(par).toFixed(2)} ${unit}`],
+      ['Target 1.7 m', `${fig.toFixed(2)} ${unit}`],
     ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
   }
 }
@@ -681,13 +712,13 @@ if (shot) {
   // Deterministic still: fixed clock, a couple of frames so shadows and MSAA settle.
   const t = num('t', 2.4);
   // recoil=<s>: the still is taken that long after the trigger.
-  if (params.has('recoil')) recoil = { start: t - num('recoil', 0), spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(0) };
+  if (params.has('recoil')) recoil = { start: t - num('recoil', 0), spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
   // fire=<s>: the still is taken that long after the bullet left the muzzle (recoil and all).
   if (params.has('fire')) {
     const exit = t - num('fire', 0);
     shooting.fireAt(exit, eyePos, aimAt(exit), state.wind);
     // norecoil: keep the rifle still, to look at the impact.
-    if (!params.has('norecoil')) recoil = { start: exit, spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(0) };
+    if (!params.has('norecoil')) recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
   }
   // panrate=<right>,<up> (deg/s): the still is taken mid-swing, with the head trailing as it would.
   if (params.has('panrate')) {

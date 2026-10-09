@@ -20,6 +20,8 @@
       #hud h1 a { color: var(--muted); text-decoration: none; letter-spacing: 0.08em; }
       .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
       .seg.one { grid-template-columns: 1fr; }
+      .seg.three { grid-template-columns: 1fr 1fr 1fr; }
+      .seg.three button { padding: 6px 2px; }
       .flags { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 6px; margin: 4px 0 10px; }
       button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
       button.on { border-color: var(--accent); color: var(--accent); background: rgba(224, 181, 106, 0.08); }
@@ -53,9 +55,10 @@
     <div id="dope" hidden></div>
     <div id="hud">
       <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
-      <div class="seg">
-        <button data-ret="pso">SVD · PSO</button>
-        <button data-ret="tree">MIL TREE</button>
+      <div class="seg three">
+        <button data-ret="pso" title="SVD, 7N1, PSO-1 reticle cut for the round">SVD · PSO</button>
+        <button data-ret="tree" title="Bolt rifle, M118LR, mil tree with an ammo card">MIL TREE</button>
+        <button data-ret="vss" title="VSS, 9×39 SP-5 subsonic, PSO-1-1 reticle cut for the round: the game's rifle">VSS · PSO</button>
       </div>
       <label>Power<input id="mag" type="range" min="4" max="20" step="0.1" /></label>
       <label>Parallax<input id="par" type="range" min="0" max="105" step="0.5" /></label>
@@ -78,7 +81,7 @@
       </div>
       <div class="seg one"><button id="scope">Scope out · F</button></div>
       <dl id="readout"></dl>
-      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space fire (works the bolt, changes magazines) · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
+      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space fire (works the bolt, changes magazines) · WASD head · Q/E eye relief · R rifle · L illum · H hide</div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

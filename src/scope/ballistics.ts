@@ -57,6 +57,12 @@ export const ROUNDS = {
   '7n1': { id: '7n1', name: '7N1', cartridge: '7.62×54R', bulletGr: 151, mv: 823, bc: 0.206, model: 'G7' },
   /** US sniper load: 175 gr Sierra MatchKing, ≈ 2600 ft/s from a 24" barrel, G7 0.243 (Litz). */
   m118lr: { id: 'm118lr', name: 'M118LR', cartridge: '7.62×51', bulletGr: 175, mv: 790, bc: 0.243, model: 'G7' },
+  /**
+   * VSS subsonic sniper load: 16.2 g (250 gr), 36 mm spire-point boat-tail. 280 m/s: chronographed at 905 ft/s
+   * (276 m/s) from a VSS, published as 270–290 m/s. No BC is published; at Mach 0.8 a boat-tail drags about
+   * 1.28 × the G7 shape, so G7 ≈ 0.21 (≈ G1 0.40 at this speed).
+   */
+  sp5: { id: 'sp5', name: 'SP-5', cartridge: '9×39', bulletGr: 250, mv: 280, bc: 0.21, model: 'G7' },
 } as const satisfies Record<string, Round>;
 export type RoundId = keyof typeof ROUNDS;
 

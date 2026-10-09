@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ROUNDS, at } from '../src/scope/ballistics';
+import { AIR, ROUNDS, at } from '../src/scope/ballistics';
 import { THOUSANDTH } from '../src/scope/optics';
-import { PSO_CHEVRON_RANGES, psoChevronY } from '../src/scope/reticles';
+import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from '../src/scope/reticles';
 import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, windAt, type Path, type Vec3 } from '../src/scope/shot';
 
 /** Where the path crosses the vertical plane `range` metres down -z. */
@@ -9,6 +9,7 @@ const plane = (p: Path, range: number) =>
   firstHit(p, () => -1e9, (a, b) => (b[2] <= -range ? { f: (-range - a[2]) / (b[2] - a[2]), what: 'plane' } : null));
 const svd = RIFLES.svd;
 const r7n1 = ROUNDS['7n1'];
+const sp5 = ROUNDS.sp5;
 const steady = (x: number, y: number, z: number) => (_x: number, _y: number, _z: number, _t: number, o: Vec3) => { o[0] = x; o[1] = y; o[2] = z; return o; };
 
 describe('3D bullet flight', () => {
@@ -22,6 +23,13 @@ describe('3D bullet flight', () => {
         expect(h.speed).toBeCloseTo(at(r, d).v, 0);
       }
     }
+    // The subsonic SP-5 flies 1.6 s to 400 m.
+    const p = fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, 0, -1] });
+    for (const d of [100, 183, 400]) {
+      const h = plane(p, d);
+      expect(-h.pos[1]).toBeCloseTo(at(sp5, d).drop, 3);
+      expect(h.t).toBeCloseTo(at(sp5, d).tof, 3);
+    }
   });
 
   it('lands on the target when the matching PSO chevron is held on it', () => {
@@ -33,6 +41,23 @@ describe('3D bullet flight', () => {
       // Within 1 cm of the line of sight, at every chevron range.
       expect(Math.abs(h.pos[1])).toBeLessThan(0.01 + d * 1e-5);
     }
+  });
+
+  it('lands on the target when the matching VSS chevron is held on it', () => {
+    for (const d of VSS_CHEVRON_RANGES) {
+      const up = vssChevronY(d) * THOUSANDTH;
+      const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, Math.sin(up), -Math.cos(up)] }), d);
+      expect(Math.abs(h.pos[1])).toBeLessThan(0.01 + d * 1e-5);
+    }
+  });
+
+  it('keeps the SP-5 subsonic all the way, so it leaves no shock and no trace', () => {
+    const p = fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, 0, -1] });
+    expect(Math.max(...p.speed.subarray(0, p.n))).toBeLessThan(AIR.sound * 0.85);
+    expect(plane(p, 400).speed).toBeGreaterThan(230);
+    // At 183 m: 2.2 m of drop and 0.68 s of flight, against 0.06 m and 0.24 s for the 7N1.
+    expect(at(sp5, 183).drop).toBeCloseTo(2.2, 1);
+    expect(at(sp5, 183).tof).toBeCloseTo(0.68, 2);
   });
 
   it('drifts downwind as the lag rule says: wind × (time of flight − vacuum time)', () => {
@@ -76,6 +101,23 @@ describe('3D bullet flight', () => {
     expect(aeroJumpRad(svd, sg, 2.2)).toBeGreaterThan(0);
     expect(aeroJumpRad(svd, sg, -2.2)).toBeLessThan(0);
     expect(aeroJumpRad(svd, sg, 2.2) / (Math.PI / 10800)).toBeCloseTo(0.22, 1);
+  });
+
+  it('blows the slow SP-5 off less than its flight time suggests: the lag rule holds for it too', () => {
+    const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: steady(3, 0, 0) }), 183);
+    expect(h.pos[0]).toBeCloseTo(3 * (at(sp5, 183).tof - 183 / sp5.mv), 2);
+    // About 7 cm in 3 m/s at 183 m: the bullet barely slows, so there is little lag to drift in.
+    expect(h.pos[0]).toBeGreaterThan(0.05);
+    expect(h.pos[0]).toBeLessThan(0.1);
+  });
+
+  it('VSS: gyro-stable with the assumed 210 mm twist, and its long flight drifts it a few cm right', () => {
+    const sg = millerStability(RIFLES.vss, sp5.mv);
+    expect(sg).toBeGreaterThan(2.5);
+    expect(sg).toBeLessThan(4);
+    const drift = spinDriftM(sg, at(sp5, 183).tof);
+    expect(drift).toBeGreaterThan(0.05);
+    expect(drift).toBeLessThan(0.09);
   });
 
   it('finds the ground crossing and keeps the bullet moving the right way', () => {

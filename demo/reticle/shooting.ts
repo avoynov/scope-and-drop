@@ -5,7 +5,9 @@
  * Everything visible is a closed-form function of the time since its event (shot, impact), so stills are
  * exact and the per-frame cost does not depend on the frame rate:
  *  - the trace: the bullet's wake bending the light, seen through the scope as a ripple running downrange
- *    and dropping into the target;
+ *    and dropping into the target (supersonic bullets only);
+ *  - the bullet itself, true size and as out of focus as the scope makes it: a subsonic VSS bullet can be
+ *    watched falling into the target;
  *  - impact splashes: dirt clods and a dust cloud thrown forward along the bullet's path (at 412 m it
  *    comes in at well under a degree, so it ploughs rather than digs), which then drift with the wind;
  *    rock dust; white plastic flecks; a hole in the mannequin, which rocks on its stake;
@@ -14,7 +16,8 @@
  *  - sound, delayed by the bullet's flight and the sound's return (audio.ts).
  */
 import * as THREE from 'three';
-import { ROUNDS } from '../../src/scope/ballistics';
+import { AIR, ROUNDS } from '../../src/scope/ballistics';
+import { SCOPE } from '../../src/scope/optics';
 import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
 import type { ImpactSound, Sound } from './audio';
 import { heightAt, type Range } from './scene';
@@ -32,8 +35,10 @@ interface Shot {
   path: Path;
   hit: Hit;
   kind: Kind | null;
-  /** Where it crossed the target's plane relative to the mannequin's chest, if it got that far (m, right/up). */
+  /** Where it crossed the plane of the mannequin it came closest to, relative to that one's chest (m, right/up). */
   miss: [number, number] | null;
+  /** The mannequin it hit or came closest to (index into range.targets), if it got that far. */
+  target: number;
   /** What it hit, for the readout. */
   what: string;
   /** Muzzle-blast dust strength. */
@@ -71,6 +76,8 @@ const ROCK = new THREE.Color(0.7, 0.66, 0.6);
 const WHITE = new THREE.Color(0.95, 0.94, 0.9);
 const STEEL = new THREE.Color(0.5, 0.49, 0.47);
 const WOOD = new THREE.Color(0.55, 0.43, 0.3);
+/** A bullet's base: dull tombac-clad steel or copper. */
+const BULLET = new THREE.Color(0.55, 0.36, 0.24);
 
 /** Repeatable per-impact random numbers in [0, 1). */
 function rnd(seed: number, i: number): number {
@@ -87,7 +94,7 @@ function createParticles() {
   geo.setIndex([0, 1, 2, 0, 2, 3]);
   const iPos = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 3), 3).setUsage(THREE.DynamicDrawUsage);
   const iCol = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 3), 3).setUsage(THREE.DynamicDrawUsage);
-  // size (m), alpha, seed, hardness (0 = dust, 1 = a solid fleck)
+  // size (m), alpha, seed, hardness (0 = dust, 1 = a solid fleck, 2 = a bullet)
   const iPar = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 4), 4).setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('iPos', iPos);
   geo.setAttribute('iCol', iCol);
@@ -129,6 +136,9 @@ function createParticles() {
         float r = length(vUv);
         if (r > 1.) discard;
         float alpha = vPar.x, seed = vPar.y, hard = vPar.z;
+        // A bullet seen from behind: its base faces the eye, lit by the sun over the shooter's shoulder and the
+        // sky (the scene's 1.9 and about half its 0.8). Soft at the edge.
+        if (hard > 1.5) { gl_FragColor = vec4(vCol*(.45 + 1.9*max(uSunView.z, 0.)), alpha*(1. - smoothstep(.55, 1., r))); return; }
         // A puff is a cauliflower of smaller billows: lumpy noise thresholded against a soft radial core,
         // lit on the side facing the sun and darker where it is thick.
         vec2 p = vUv*2.3 + seed*13.;
@@ -184,7 +194,7 @@ export function createShooting(range: Range, sound: Sound) {
   const A = new THREE.Vector3();
   const B = new THREE.Vector3();
   const D = new THREE.Vector3();
-  const targetCentre = range.targetFoot.clone().setY(range.targetFoot.y + 1);
+  const targetCentres = range.targets.map((m) => m.foot.clone().setY(m.foot.y + 1));
   const boulderCentre = range.boulder.position.clone();
   const posts = range.fence.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh);
   /** Closest approach of segment a–b to point c. */
@@ -203,7 +213,7 @@ export function createShooting(range: Range, sound: Sound) {
       ray.far = len;
       hits.push(...ray.intersectObjects(objs, recursive));
     };
-    if (segDist(A, Bv, targetCentre) < 1.6) cast([range.target], true);
+    range.targets.forEach((m, i) => { if (segDist(A, Bv, targetCentres[i]!) < 1.6) cast([m.group], true); });
     if (segDist(A, Bv, boulderCentre) < 6.5) cast([range.boulder], false);
     // The fence runs z = −360 − 0.12·x for |x| ≤ 350.
     if (Math.max(a[2], b[2]) > -402 && Math.min(a[2], b[2]) < -318 && Math.min(a[1], b[1]) < heightAt(a[0], a[2]) + 1.4) cast(posts, false);
@@ -215,11 +225,23 @@ export function createShooting(range: Range, sound: Sound) {
     return { f: hits[0]!.distance / len, what: hits[0]!.object.name || 'boulder' };
   };
 
-  // ---- the mannequin's holes and rocking ----
-  const holeGeo = new THREE.CircleGeometry(0.0045, 10);
+  // ---- the mannequins' holes and rocking ----
   const holeMat = new THREE.MeshBasicMaterial({ color: 0x050505, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const rocks: { start: number; axis: THREE.Vector3; amp: number }[] = [];
+  const holeGeos = new Map<number, THREE.CircleGeometry>();
+  /** A true-size hole for a bullet of this diameter. */
+  const holeGeo = (diaMm: number) => {
+    let g = holeGeos.get(diaMm);
+    if (!g) holeGeos.set(diaMm, (g = new THREE.CircleGeometry((diaMm / 1000) * 0.57, 10)));
+    return g;
+  };
+  const rocks: { start: number; axis: THREE.Vector3; amp: number; target: number }[] = [];
   const rockQ = new THREE.Quaternion();
+  /** The mannequin nearest a point on the ground plan. */
+  const nearestTarget = (x: number, z: number) => {
+    let best = 0;
+    range.targets.forEach((m, i) => { if (Math.hypot(m.foot.x - x, m.foot.z - z) < Math.hypot(range.targets[best]!.foot.x - x, range.targets[best]!.foot.z - z)) best = i; });
+    return best;
+  };
 
   function setRifle(id: RifleId): void {
     if (rifle.id === id) return;
@@ -284,29 +306,34 @@ export function createShooting(range: Range, sound: Sound) {
     // Raycasts use world matrices, which a still may not have computed yet.
     range.scene.updateMatrixWorld();
     const hit = firstHit(path, heightAt, solid);
-    // Where it crossed the mannequin's plane, against the chest (1.2 m up), for the readout.
+    // Where it crossed each mannequin's plane, against the chest (1.2 m up), for the readout: the closest one counts.
     let miss: [number, number] | null = null;
-    const tz = range.targetFoot.z;
-    for (let i = 0; i < path.n - 1; i++) {
-      const z0 = path.pos[i * 3 + 2]!, z1 = path.pos[i * 3 + 5]!;
-      if (z1 <= tz && z0 > tz) {
-        if ((i + 1) * path.dt > hit.t + path.dt) break;
-        const f = (tz - z0) / (z1 - z0);
-        const x = path.pos[i * 3]! + (path.pos[i * 3 + 3]! - path.pos[i * 3]!) * f;
-        const y = path.pos[i * 3 + 1]! + (path.pos[i * 3 + 4]! - path.pos[i * 3 + 1]!) * f;
-        miss = [x - range.targetFoot.x, y - (range.targetFoot.y + 1.2)];
-        break;
+    let target = -1;
+    range.targets.forEach((m, k) => {
+      const tz = m.foot.z;
+      for (let i = 0; i < path.n - 1; i++) {
+        const z0 = path.pos[i * 3 + 2]!, z1 = path.pos[i * 3 + 5]!;
+        if (z1 <= tz && z0 > tz) {
+          if ((i + 1) * path.dt > hit.t + path.dt) break;
+          const f = (tz - z0) / (z1 - z0);
+          const x = path.pos[i * 3]! + (path.pos[i * 3 + 3]! - path.pos[i * 3]!) * f;
+          const y = path.pos[i * 3 + 1]! + (path.pos[i * 3 + 4]! - path.pos[i * 3 + 1]!) * f;
+          const off: [number, number] = [x - m.foot.x, y - (m.foot.y + 1.2)];
+          if (!miss || Math.hypot(...off) < Math.hypot(...miss)) { miss = off; target = k; }
+          break;
+        }
       }
-    }
+    });
     const kind = KIND[hit.what] ?? null;
-    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, what: hit.what, blast: rifle.blastDust, holed: false };
+    if (kind === 'plastic' || hit.what === 'stake' || hit.what === 'tripod') target = nearestTarget(hit.pos[0], hit.pos[2]);
+    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false };
     shots.push(shot);
     if (shots.length > 12) shots.shift();
     // Semi-auto: the action reloads itself while rounds last. Bolt: the spent case stays until the bolt is worked.
     if (rifle.action === 'semi' && mag > 0) mag--;
     else chambered = false;
     if (delay !== null) {
-      sound.shot(delay, rifle.id === 'svd');
+      sound.shot(delay, rifle.id);
       if (kind) {
         const dist = Math.hypot(hit.pos[0] - eye.x, hit.pos[1] - eye.y, hit.pos[2] - eye.z);
         sound.impact(delay + hit.t + dist / 343, dist, kind);
@@ -317,12 +344,12 @@ export function createShooting(range: Range, sound: Sound) {
     if (kind === 'plastic' || hit.what === 'stake' || hit.what === 'tripod') {
       const p = new THREE.Vector3(...hit.pos);
       const v = new THREE.Vector3(...hit.vel).normalize();
-      const h = Math.max(0.2, p.y - range.targetFoot.y);
+      const h = Math.max(0.2, p.y - range.targets[target]!.foot.y);
       const impulse = 0.2 * (ROUNDS[rifle.round].bulletGr * 0.0000648) * hit.speed;
       // About the foot, I ≈ 2.4 kg of mannequin and stake at ~1.1 m, ringing at ~2.2 Hz.
       const w = 2 * Math.PI * 2.2;
       const amp = (impulse * h) / (2.4 * 1.1 * 1.1 * w);
-      rocks.push({ start: exit + hit.t, axis: new THREE.Vector3(-v.z, 0, v.x).normalize(), amp });
+      rocks.push({ start: exit + hit.t, axis: new THREE.Vector3(-v.z, 0, v.x).normalize(), amp, target });
     }
   }
 
@@ -334,9 +361,10 @@ export function createShooting(range: Range, sound: Sound) {
 
   /**
    * Updates the effects for time `now` and returns what the composite needs: the trace in the scope's image
-   * uv, the muzzle-blast dust veil and its drift, and whether the shadow map must be redrawn.
+   * uv, the muzzle-blast dust veil and its drift, and whether the shadow map must be redrawn. `focusM` is the
+   * scope's parallax/focus setting (Infinity for ∞).
    */
-  function update(now: number, scopeCam: THREE.PerspectiveCamera, eye: THREE.Vector3, wind: Wind, sunView: THREE.Vector3) {
+  function update(now: number, scopeCam: THREE.PerspectiveCamera, eye: THREE.Vector3, wind: Wind, sunView: THREE.Vector3, focusM: number) {
     particles.mat.uniforms.uSunView!.value.copy(sunView);
     particles.begin();
     let dust = 0;
@@ -358,11 +386,25 @@ export function createShooting(range: Range, sound: Sound) {
           dustTop = 0.25 + 0.85 * (1 - Math.exp(-age / 0.22));
         }
       }
+      // The bullet: true size, spread over the scope's blur circle wherever it is out of focus. At its own
+      // distance D that circle is objective × |1 − D/P| across, so near the muzzle it is a faint smear the size
+      // of the objective and it only firms up close to the focus distance P. A 9 mm subsonic bullet in the last
+      // 50 m to a target at 183 m is a speck of a pixel or two at 12× on a 1080p screen, about as bright as the
+      // sand, so it is easiest to catch against a bush or the sky; a 7.62 mm at 800 m/s is past its target
+      // before the recoil lets the picture back.
+      if (age > 0.06 && age < s.hit.t) {
+        const b = pathAt(s.path, age, tmp);
+        const dist = Math.hypot(b[0] - eye.x, b[1] - eye.y, b[2] - eye.z);
+        const dia = s.rifle.bulletDiaMm / 1000;
+        const blur = (SCOPE.objectiveMm / 1000) * Math.abs(1 - (Number.isFinite(focusM) ? dist / focusM : 0));
+        const size = Math.max(dia, blur);
+        particles.add(b[0], b[1], b[2], size / 2, (dia / size) ** 2, BULLET, 0, 2);
+      }
       // Trace: the wake 0.06 s behind the bullet, from ~40 m out (closer, it is a blur all over the field),
-      // collapsing into the impact point after the hit.
+      // collapsing into the impact point after the hit. A subsonic bullet has no shock and leaves none to see.
       const ta = Math.min(age, s.hit.t);
       const tb = Math.min(Math.max(0, age - 0.06), s.hit.t);
-      if (age < s.hit.t + 0.08 && ta > 0.05) {
+      if (age < s.hit.t + 0.08 && ta > 0.05 && s.path.speed[0]! > AIR.sound) {
         const fade = Math.min(1, (ta - 0.05) / 0.06) * (age > s.hit.t ? 1 - (age - s.hit.t) / 0.08 : 1);
         const head = pathAt(s.path, ta, tmp);
         P.set(head[0], head[1], head[2]);
@@ -380,7 +422,7 @@ export function createShooting(range: Range, sound: Sound) {
           // The wake widens behind the bullet: ~6 cm at it, ~25 cm 0.06 s back.
           trace.w.set((0.25 / dt_) * uvPerRad, (0.06 / Math.max(1, dh)) * uvPerRad);
           // A supersonic wake is the strong one; dry desert air keeps it faint.
-          trace.s = fade * Math.min(1, (s.path.speed[Math.min(s.path.n - 1, Math.floor(ta / s.path.dt))]! - 300) / 200);
+          trace.s = fade * Math.max(0, Math.min(1, (s.path.speed[Math.min(s.path.n - 1, Math.floor(ta / s.path.dt))]! - 300) / 200));
           trace.seed = s.n;
         }
       }
@@ -388,30 +430,32 @@ export function createShooting(range: Range, sound: Sound) {
       splash(s, age - s.hit.t, wind, now);
     }
     particles.end();
-    // The mannequin rocks about its foot. Rocking first, so a new hole lands where the bullet met it.
-    rockQ.identity();
+    // Each mannequin rocks about its foot. Rocking first, so a new hole lands where the bullet met it.
     const q = new THREE.Quaternion();
-    for (let i = rocks.length - 1; i >= 0; i--) {
-      const r = rocks[i]!;
-      const t = now - r.start;
-      if (t > 6) { rocks.splice(i, 1); continue; }
-      if (t < 0) continue;
-      const w = 2 * Math.PI * 2.2;
-      const a = r.amp * Math.sin(w * t) * Math.exp(-0.12 * w * t);
-      rockQ.multiply(q.setFromAxisAngle(r.axis, a));
-    }
-    range.target.quaternion.copy(rockQ);
+    for (let i = rocks.length - 1; i >= 0; i--) if (now - rocks[i]!.start > 6) rocks.splice(i, 1);
+    range.targets.forEach((m, k) => {
+      rockQ.identity();
+      for (const r of rocks) {
+        const t = now - r.start;
+        if (t < 0 || r.target !== k) continue;
+        const w = 2 * Math.PI * 2.2;
+        const a = r.amp * Math.sin(w * t) * Math.exp(-0.12 * w * t);
+        rockQ.multiply(q.setFromAxisAngle(r.axis, a));
+      }
+      m.group.quaternion.copy(rockQ);
+    });
     for (const s of shots) {
       if (s.holed || s.kind !== 'plastic' || now < s.exit + s.hit.t) continue;
-      // A 7.62 mm hole, true size: under a pixel at 412 m even at 20×, as in life.
+      // A true-size hole: a 7.62 mm one is under a pixel at 412 m even at 20×, as in life.
       s.holed = true;
+      const m = range.targets[s.target]!.group;
       const v = new THREE.Vector3(...s.hit.vel).normalize();
-      range.target.updateMatrixWorld();
-      const hole = new THREE.Mesh(holeGeo, holeMat);
-      hole.position.copy(range.target.worldToLocal(new THREE.Vector3(...s.hit.pos).addScaledVector(v, -0.002)));
-      hole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v.negate().applyQuaternion(q.copy(range.target.quaternion).invert()));
+      m.updateMatrixWorld();
+      const hole = new THREE.Mesh(holeGeo(s.rifle.bulletDiaMm), holeMat);
+      hole.position.copy(m.worldToLocal(new THREE.Vector3(...s.hit.pos).addScaledVector(v, -0.002)));
+      hole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v.negate().applyQuaternion(q.copy(m.quaternion).invert()));
       hole.name = 'hole';
-      range.target.add(hole);
+      m.add(hole);
     }
     // The shadow map is drawn once for the static range; redraw it only while the rock is big enough to see.
     const w = 2 * Math.PI * 2.2;

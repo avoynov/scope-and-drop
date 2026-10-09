@@ -16,7 +16,11 @@
  * Free recoil (SAAMI: powder gas leaves at 1.75 × muzzle velocity):
  *  - SVD, 7N1: 9.8 g × 823 + 3.1 g × 1440 ≈ 12.5 N·s into 4.3 kg → 2.9 m/s, 18 J.
  *  - Bolt rifle, M118LR: 11.3 g × 790 + 2.9 g × 1380 ≈ 12.9 N·s into 6.8 kg → 1.9 m/s, 12 J.
- * The lighter SVD kicks harder, so its numbers below are larger.
+ *  - VSS, SP-5: 16.2 g × 280 m/s, its 0.6 g of powder gas mostly held back by the integral suppressor,
+ *    ≈ 4.7 N·s into 3.41 kg (loaded, with the PSO-1-1) → 1.4 m/s, 3.2 J: carbine territory.
+ * The lighter SVD kicks harder than the bolt rifle, so its numbers below are larger. The VSS's are scaled
+ * from theirs by recoil speed: the scope comes back about 10 mm and the muzzle hops under a degree, so
+ * the shooter keeps the target in a 4–8× field and can watch the slow bullet arrive.
  */
 
 const DEG = Math.PI / 180;
@@ -45,6 +49,8 @@ export interface RecoilSpec {
   headLag: number;
   /** Shoulder pivot to eye, along the bore: turns a tilt into an eye offset at the exit pupil. */
   pivotToEyeMm: number;
+  /** How hard the stock slaps the cheek sideways, as a share of the shot's `joltMm`. */
+  jolt: number;
   /** After this the motion is over and the lasting rise belongs to the aim. */
   duration: number;
 }
@@ -55,14 +61,21 @@ export const RECOIL = {
     rise: 1.4 * DEG, drift: 0.35 * DEG, kick: 2.2 * DEG, kickPeak: 0.09, riseTime: 0.03,
     travelMm: 24, travelOnset: 0.004, travelRecover: 0.45,
     shake: 0.07 * DEG, shakeHz: 26, shakeDecay: 0.05,
-    headLag: 0.28, pivotToEyeMm: 120, duration: 3,
+    headLag: 0.28, pivotToEyeMm: 120, jolt: 1, duration: 3,
   },
   bolt: {
     impulseNs: 12.9, rifleKg: 6.8,
     rise: 0.9 * DEG, drift: 0.25 * DEG, kick: 1.4 * DEG, kickPeak: 0.1, riseTime: 0.035,
     travelMm: 17, travelOnset: 0.005, travelRecover: 0.38,
     shake: 0.05 * DEG, shakeHz: 22, shakeDecay: 0.05,
-    headLag: 0.28, pivotToEyeMm: 120, duration: 3,
+    headLag: 0.28, pivotToEyeMm: 120, jolt: 1, duration: 3,
+  },
+  vss: {
+    impulseNs: 4.7, rifleKg: 3.41,
+    rise: 0.45 * DEG, drift: 0.12 * DEG, kick: 0.75 * DEG, kickPeak: 0.08, riseTime: 0.03,
+    travelMm: 10, travelOnset: 0.004, travelRecover: 0.3,
+    shake: 0.04 * DEG, shakeHz: 30, shakeDecay: 0.04,
+    headLag: 0.28, pivotToEyeMm: 120, jolt: 0.4, duration: 3,
   },
 } as const satisfies Record<string, RecoilSpec>;
 
@@ -221,7 +234,7 @@ export function recoilAt(s: RecoilSpec, v: ShotVariation, t: number): RecoilStat
     eye: {
       // The ocular swings up and right about the shoulder faster than the head follows.
       // The stock also slaps the cheek sideways, and the head comes back with the same lag.
-      x: -s.pivotToEyeMm * tiltYaw + v.joltMm * surge(t, 0.01, lag),
+      x: -s.pivotToEyeMm * tiltYaw + v.joltMm * s.jolt * surge(t, 0.01, lag),
       y: -s.pivotToEyeMm * tiltPitch,
       z: -s.travelMm * v.travel * surge(t, s.travelOnset, s.travelRecover * v.travelRecover),
     },

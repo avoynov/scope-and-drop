@@ -38,6 +38,10 @@ renderer.setPixelRatio(dpr);
 renderer.setSize(W, H);
 renderer.shadowMap.enabled = !params.has('noshadow');
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// The range and the sun never move, so the shadow map is the same every frame: draw it once, on the first
+// render that has the sun in it, instead of before every view.
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.needsUpdate = true;
 renderer.autoClear = true;
 document.getElementById('view')!.appendChild(renderer.domElement);
 

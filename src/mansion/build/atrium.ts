@@ -417,7 +417,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   const foot = a.footprint.map(tup);
   g.setTint('#ffffff');
   g.flatPoly('roof-lead', corners, deck, true, [foot]);
-  g.flatPoly('glass', foot, deck, true, [circle(R + 0.3)]);
+  g.flatPoly('roof-glass', foot, deck, true, [circle(R + 0.3)]);
   g.setTint(style.windowFrameColor);
   const inFoot = (x: number, z: number) => pointInPoly(a.footprint, x, z);
   const bar = (x0: number, z0: number, x1: number, z1: number, w: number) => {

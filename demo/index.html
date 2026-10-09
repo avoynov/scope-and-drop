@@ -50,6 +50,7 @@
       #brief-elbars i.on { background: var(--accent); }
       #panel label { color: var(--muted); align-self: center; flex: 1; }
       #minvis { width: 64px; flex: none; }
+      #roofglass { width: 110px; flex: none; padding: 0; border: 0; accent-color: var(--accent); }
       #brief .key { color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       #brief .key i { display: inline-block; width: 90px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, rgb(34, 40, 54), rgb(255, 190, 84)); }
       #brief-deploy { background: var(--accent); color: #16110a; border-color: var(--accent); font-weight: 600; padding: 9px 10px; }
@@ -83,6 +84,10 @@
       <div class="row">
         <label for="minvis" title="Houses whose indoor party floor is less visible than this from the default perch fail the validity check and are regenerated">min visible %</label>
         <input id="minvis" type="number" min="0" max="70" step="5" />
+      </div>
+      <div class="row">
+        <label for="roofglass" title="Opacity of the glass roofs (not the dome). Looks only: the sightline figures do not change">roof glass opacity</label>
+        <input id="roofglass" type="range" min="0" max="100" step="5" />
       </div>
       <div class="row" id="views"></div>
       <div class="row" id="floors"></div>

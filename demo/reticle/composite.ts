@@ -141,16 +141,19 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
 
         // Naked-eye world. On the glass it is blurred and blown out like a camera exposed for the image;
         // head up, the eye adapts to it and it is sharp.
-        vec3 world = uWorldBlur > .4
-          ? discLod(tWide, suv, uWorldBlur/uRes, max(log2(max(uWorldBlur*.35, 1.)) + uWideLod, 0.))
-          : texture2D(tWide, suv).rgb;
-        world *= 1.7;
-
         // Rifle and scope, defocused (premultiplied, alpha = coverage), and where the eyepiece glass shows.
-        vec4 body = texture2D(tBody, suv);
         vec4 near = texture2D(tNear, suv);
         float aperture = texture2D(tLens, suv).r;
-        vec3 col = world*(1. - body.a) + body.rgb*1.7;
+        vec3 col = vec3(0.);
+        // Where the eyepiece covers the view completely, what lies behind it is multiplied by zero: skip it.
+        if (near.a < 1.) {
+          vec3 world = uWorldBlur > .4
+            ? discLod(tWide, suv, uWorldBlur/uRes, max(log2(max(uWorldBlur*.35, 1.)) + uWideLod, 0.))
+            : texture2D(tWide, suv).rgb;
+          world *= 1.7;
+          vec4 body = texture2D(tBody, suv);
+          col = world*(1. - body.a) + body.rgb*1.7;
+        }
         col = col*(1. - near.a) + near.rgb*1.7;
 
         // Magnified image. Mirage moves the image only, never the reticle.

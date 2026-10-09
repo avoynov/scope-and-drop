@@ -95,7 +95,8 @@ export const STYLES: Record<StyleId, StyleDef> = {
     massingWeights: { block: 0.3, 'u-garden': 0.3, 'u-entrance': 0.15, h: 0.25 },
   },
   // After the great iron-and-glass conservatories of the 1820s and 30s (Syon): Bath stone, a temple
-  // front under the dome, giant arched windows between pilasters, glass roofs, single-storey wings.
+  // front under the dome, giant arched windows between pilasters, single-storey glass-roofed wings, and on
+  // the main block the orangery's own roof: flat lead behind a parapet, with glass lanterns standing on it.
   orangery: {
     id: 'orangery',
     name: 'Orangery Bath Stone',
@@ -103,7 +104,7 @@ export const STYLES: Record<StyleId, StyleDef> = {
     wallColor: '#dccba4',
     trimColor: '#eadfc4',
     baseMaterial: 'limestone',
-    roof: 'hipped',
+    roof: 'flat',
     roofMaterial: 'lead',
     glassRoofs: true,
     giantWindows: true,

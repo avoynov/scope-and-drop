@@ -431,29 +431,53 @@ describe('orangery style', () => {
     }
   });
 
-  it('glass roofs cover the top-storey party rooms and nothing else', () => {
-    let skylit = 0;
+  it('the main roof is flat lead with a glass lantern over every top-storey room; wings are all glass', () => {
+    let lanterns = 0;
     for (const bp of houses) {
+      const main = bp.masses.find((q) => q.kind === 'main')!;
+      // Glass and lead are separate roofs: no pitched roof is part glass, part lead.
+      expect(main.roof.kind).toBe('flat');
+      expect(main.roof.balustrade).toBe(true);
+      expect(main.roof.glazed).toBeUndefined();
+      const list = main.roof.lanterns ?? [];
       for (const r of bp.rooms) {
         const ms = bp.masses.find((q) => q.id === r.massId)!;
-        const under = (ms.roof.glazed ?? []).some((g) => g.x0 <= r.inner.x0 && g.x1 >= r.inner.x1 && g.z0 <= r.inner.z0 && g.z1 >= r.inner.z1);
-        if (r.skylit) {
-          skylit++;
-          expect(r.role).toBe('party');
-          expect(r.level).toBe(ms.levels - 1);
-          expect(under, `${r.id} is skylit but its roof is not glass`).toBe(true);
-        } else if (r.role === 'private' || r.role === 'service' || r.type === 'corridor') {
-          expect(under, `${r.id} (${r.type}) must keep a solid roof`).toBe(false);
+        const top = r.level === ms.levels - 1 && (ms.kind === 'main' || ms.kind === 'wing') && r.type !== 'hall-gallery' && r.type !== 'roof-terrace';
+        if (!top) {
+          expect(r.skylight, `${r.id} is not under the roof`).toBeUndefined();
+          continue;
         }
+        if (ms.kind === 'wing') {
+          expect(r.skylight).toEqual(r.inner);
+          expect(ms.roof.kind).toBe('hipped');
+          expect(ms.roof.glazed?.length).toBe(1);
+          continue;
+        }
+        // Every room of the main block's top storey, party or not, wide enough to take one.
+        const l = list.find((q) => q.roomId === r.id);
+        if (Math.min(r.inner.x1 - r.inner.x0, r.inner.z1 - r.inner.z0) >= 2.3) expect(l, `${r.id} (${r.type}) has no lantern`).toBeDefined();
+        if (!l) continue;
+        lanterns++;
+        expect(r.skylight).toEqual(l.rect);
+        // The kerb stands inside the room's walls, and takes most of the ceiling.
+        expect(l.rect.x0).toBeGreaterThan(r.inner.x0);
+        expect(l.rect.z1).toBeLessThan(r.inner.z1);
+        const share = ((l.rect.x1 - l.rect.x0) * (l.rect.z1 - l.rect.z0)) / ((r.inner.x1 - r.inner.x0) * (r.inner.z1 - r.inner.z0));
+        expect(share).toBeGreaterThan(r.type === 'corridor' || r.type === 'service-stair' ? 0.3 : 0.5);
       }
-      // The whole first-floor garden front is the party's.
+      // Lanterns never overlap each other or the hall.
+      const hall = bp.atrium!.inner;
+      for (const a of list) {
+        expect(a.rect.x1 <= hall.x0 || a.rect.x0 >= hall.x1 || a.rect.z1 <= hall.z0 || a.rect.z0 >= hall.z1).toBe(true);
+        for (const b of list) if (a !== b) expect(a.rect.x1 <= b.rect.x0 || a.rect.x0 >= b.rect.x1 || a.rect.z1 <= b.rect.z0 || a.rect.z0 >= b.rect.z1).toBe(true);
+      }
       expect(bp.rooms.filter((r) => r.level === 1 && r.role === 'party').length).toBeGreaterThanOrEqual(2);
     }
-    expect(skylit).toBeGreaterThan(12);
+    expect(lanterns).toBeGreaterThan(40);
     // Other styles have no glass roofs.
     const plain = generateMansion({ seed: 'or-1', style: 'palladian' });
-    expect(plain.rooms.some((r) => r.skylit)).toBe(false);
-    expect(plain.masses.some((ms) => ms.roof.glazed)).toBe(false);
+    expect(plain.rooms.some((r) => r.skylight)).toBe(false);
+    expect(plain.masses.some((ms) => ms.roof.glazed || ms.roof.lanterns)).toBe(false);
   });
 
   it('garden-front windows stack into giant arched windows', () => {

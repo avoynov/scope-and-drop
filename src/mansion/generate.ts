@@ -76,6 +76,9 @@ function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+/** Clear floor left between a room's walls and the kerb of its roof lantern. */
+const LANTERN_MARGIN = 0.5;
+
 function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
   const top = m.levels[m.levels.length - 1]!;
   const eave = snap(top.floorY + top.height, 0.01);
@@ -90,7 +93,8 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
         kind: style.roof,
         eaveY: eave,
         pitchDeg: pitch,
-        balustrade: style.balustradeParapet,
+        // A flat roof always sits behind a parapet.
+        balustrade: style.balustradeParapet || style.roof === 'flat',
         dormers: style.roof === 'mansard' || (style.id === 'georgian' && rng.chance(0.7)) || rng.chance(0.25),
       },
       exposed: [],
@@ -118,7 +122,7 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
       exposed: [],
     });
   }
-  const wingRoof = style.roof === 'mansard' ? 'mansard' : style.balustradeParapet && rng.chance(0.5) ? 'flat' : 'hipped';
+  const wingRoof = style.roof === 'mansard' ? 'mansard' : style.balustradeParapet && rng.chance(0.5) && !style.glassRoofs ? 'flat' : 'hipped';
   for (const w of m.wings) {
     const wl = m.levels[w.levels - 1]!;
     masses.push({
@@ -130,7 +134,7 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
         kind: wingRoof,
         eaveY: snap(wl.floorY + wl.height, 0.01),
         pitchDeg: pitch,
-        balustrade: style.balustradeParapet || wingRoof === 'flat',
+        balustrade: (style.balustradeParapet && !style.glassRoofs) || wingRoof === 'flat',
         dormers: false,
       },
       exposed: [],
@@ -337,20 +341,28 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
   const hallRoom = atrium ? rooms.find((r) => r.id === atrium!.roomId) : undefined;
   if (hallRoom) for (const r of rooms) if (r.type === 'hall-gallery') r.finish = { ...hallRoom.finish };
   disambiguateLabels(rooms);
-  // Glass roofs: over the top-storey party rooms of the main block and the wings. Private and
-  // service rooms and the corridors keep a solid roof, so the spy has cover from above too.
+  // Glass from above. The main block has a flat leaded roof with a glass lantern on a kerb over every
+  // top-storey room; a wing is roofed entirely in glass. Two roofs, two shapes: glass never shares a slope with lead.
   if (style.glassRoofs) {
     for (const ms of masses) {
       if (ms.kind !== 'main' && ms.kind !== 'wing') continue;
-      const glazed: Rect[] = [];
+      const lanterns: { roomId: string; rect: Rect }[] = [];
       for (const r of rooms) {
-        if (r.massId !== ms.id || r.level !== ms.levels - 1 || r.role !== 'party' || r.type === 'roof-terrace') continue;
+        if (r.massId !== ms.id || r.level !== ms.levels - 1 || r.type === 'roof-terrace' || r.type === 'hall-gallery') continue;
+        if (ms.kind === 'wing') {
+          r.skylit = true;
+          r.skylight = r.inner;
+          continue;
+        }
+        // As large as the room allows: the kerb stands just inside the walls.
+        const q = rect(r.inner.x0 + LANTERN_MARGIN, r.inner.z0 + LANTERN_MARGIN, r.inner.x1 - LANTERN_MARGIN, r.inner.z1 - LANTERN_MARGIN);
+        if (q.x1 - q.x0 < 1.2 || q.z1 - q.z0 < 1.2) continue;
         r.skylit = true;
-        // To the eaves where the room is on an outside wall.
-        const out = (room: number, mass: number, dir: number) => (Math.abs(room - mass) < 0.01 ? room + dir * 0.8 : room);
-        glazed.push(rect(out(r.rect.x0, ms.rect.x0, -1), out(r.rect.z0, ms.rect.z0, -1), out(r.rect.x1, ms.rect.x1, 1), out(r.rect.z1, ms.rect.z1, 1)));
+        r.skylight = q;
+        lanterns.push({ roomId: r.id, rect: q });
       }
-      if (glazed.length) ms.roof.glazed = glazed;
+      if (ms.kind === 'wing') ms.roof.glazed = [rect(ms.rect.x0 - 1, ms.rect.z0 - 1, ms.rect.x1 + 1, ms.rect.z1 + 1)];
+      else if (lanterns.length) ms.roof.lanterns = lanterns;
     }
   }
   for (const ms of masses) {

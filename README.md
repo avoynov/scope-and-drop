@@ -19,7 +19,7 @@ Every house is built to be seen into: a mostly glazed garden front, party rooms 
 | ![dome hall](docs/images/dome-hall.jpg) | ![dome](docs/images/dome-exterior.jpg) |
 | **Briefing: pick the bearing and elevation** | **Roof terraces on flat-roofed wings** |
 | ![briefing](docs/images/briefing.jpg) | ![roof terraces](docs/images/roof-terraces.jpg) |
-| **Orangery style, garden front** | **Orangery from above: glass roofs over the party rooms** |
+| **Orangery style, garden front** | **Orangery from above: a glass lantern over every room** |
 | ![orangery](docs/images/orangery-front.jpg) | ![orangery from above](docs/images/orangery-above.jpg) |
 
 ---
@@ -150,7 +150,7 @@ Every stage draws from its own forked RNG stream (`rng.fork('rooms')`), so chang
 
 | # | Stage | File | What happens |
 |---|---|---|---|
-| 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order), or **Orangery** (Bath stone, after the Great Conservatory at Syon: a temple front under the dome, giant arched windows through both storeys between pilasters, glass roofs over the party rooms and the one-storey wings, no drapes). Each sets proportions, ornament and interior palettes. |
+| 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order), or **Orangery** (Bath stone, after the Great Conservatory at Syon: a temple front under the dome, giant arched windows through both storeys between pilasters, a flat lead roof with a glass lantern over every top-storey room, all-glass one-storey wings, no drapes). Each sets proportions, ornament and interior palettes. |
 | 2 | Massing | `layout/massing.ts` | Odd number of bays (3.6–4.5 m) on a grid mirrored about the garden axis, after Stiny & Mitchell's Palladian grammar. Double pile with an optional spine corridor. Plan type `block`, `u-garden`, `u-entrance` or `h`. Optional garden/entrance pavilions, giant or single-storey porticos, two-bay wings, and a glass conservatory. 2–3 storeys on a raised plinth (piano nobile). The central hall is sized so its stair fits: a shallow one grows a deeper garden pavilion, then a deeper front pile. |
 | 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, with a gallery room over it on every upper floor. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis behind it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. No reception room is narrower than 5 m (a narrower bay becomes a study or a passage), corridors are 2.8–3.6 m wide, and when the ground floor has fewer than seven party rooms the first-floor rooms beside the gallery become party rooms (salon, music, card, drawing) reached from the gallery. |
 | 4 | Walls | `layout/walls.ts` | Derived, not authored. Room edges on each line are swept; each run with a constant (room on −side, room on +side) pair becomes a wall. A null side means façade. |
@@ -230,7 +230,7 @@ All renderer code is in `src/mansion/build/`. `buildMansion(bp, opts)` returns `
 - **Roofs and porticos** (`roofs.ts`): hipped (slope-aligned slate UVs), mansard with dormers (some warmly lit), flat with balustrade, and glass conservatory roofs. Also pavilion pediment gables, chimney stacks with pots, and porticos in Doric, Ionic and Corinthian orders with entablature and pediment.
 - **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the chandelier's chain. Outside, the lantern: the attic with its arched lights (blind where a roof stands against them), the hall's glass roof with its glazing bars, the drum and the ribbed parabolic dome. Everything the roofs put over the hall, ridge trims included, is cut away (`GeometryBuilder.splitRect`).
 - **Roof glass** (`roof-glass` material): every glass roof except the dome (orangery roofs, the conservatory, the flat glass round the drum) is a darker, blue-grey, lightly rippled glass. `buildMansion(bp, { roofGlassOpacity })` sets its opacity (default 0.7); it changes the look only, not the sightline figures.
-- **Glass roofs** (`roofs.ts`, Orangery): a hipped roof is built whole, with iron rafters, hips and purlins, and the parts over skylit rooms are moved to glass (`splitRect`). Under it a leaded deck at the eaves covers everything that is not glass, with a plastered well into each skylit room.
+- **Glass roofs** (`roofs.ts`, Orangery): glass and lead never share a slope. The main block has a flat leaded roof behind a parapet; over every top-storey room the roof is opened and a **roof lantern** stands on a stone kerb, a hipped glass roof with iron rafters, with a plastered well down to the room's ceiling (`roof.lanterns`, `room.skylight`). A wing is roofed entirely in glass.
 - **Giant windows** (`arch.ts`): stacked openings are rectangles in the data; the mesher fills the corners of the top one back in as a round head with a fan of bars, and hides the floor edge between two behind an iron panel.
 - **Also:** `stairs.ts` (stone or timber U-stairs with balusters); `props.ts` (furniture, chandeliers with glowing candles, bar with bottles, grand piano with raised lid, statues, paintings from the atlas, lamps, lanterns); `site.ts` (terrain, terrace, steps, gardens, fountain, instanced LOD trees and a far tree line).
 - **Sky** (`sky.ts`): lavender haze to deep-blue zenith, a warm sunset glow on one side and the rosy Belt of Venus opposite. Cirrus is lit from below, there are stars, and the crescent moon is shaded by the real sun vector. It is baked into a PMREM environment map for façade, glass and water reflections.
@@ -333,7 +333,7 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 | Validity, all 48 combinations × 5 seeds × both hall shapes | 480 / 480 (mean 1.1 attempts) |
 | Dome hall | 20 × 17 m on average, dome radius 8 m |
 | From 55° up | 73% of the top gallery and 27% of the hall floor in view; indoor party floor 15% |
-| Orangery | indoor party floor in view 54% from the treeline, 35% from 55° up; half the floor of each glass-roofed room |
+| Orangery | indoor party floor in view 54% from the treeline, 36% from 55° up; every top-storey room has glass over it |
 | Houses with party rooms upstairs | 31 of 100 |
 | Validity, 100 random seeds | 96 first try, 100 / 100 overall |
 | Indoor party floor the sniper sees | 44% on average (29% before the wide glazing, column screens and dome hall) |

@@ -92,8 +92,8 @@ export function collectOccluders(input: OccluderInput): OccluderSet {
     const y0 = m.roof.eaveY - 0.05;
     const y1 = m.roof.eaveY + rise * 0.55;
     const transmit = m.roof.kind === 'glass' ? 0.8 : 0;
-    // Open over the dome hall; glass over the skylit rooms of a glass-roofed house.
-    const skylights = m.roof.glazed?.length ? input.rooms.filter((q) => q.skylit && q.massId === m.id).map((q) => q.inner) : [];
+    // Open over the dome hall; glass over each skylight (a roof lantern's well, or a whole room under an all-glass roof).
+    const skylights = input.rooms.filter((q) => q.skylight && q.massId === m.id && q.level === m.levels - 1).map((q) => q.skylight!);
     for (const p of rectMinus(r, [...(hole ? [hole] : []), ...skylights])) boxes.push({ ...p, y0, y1, transmit });
     for (const sk of skylights) boxes.push({ ...sk, y0, y1: y0 + 0.1, transmit: ROOF_GLASS_TRANSMIT });
   }

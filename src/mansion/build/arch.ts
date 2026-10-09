@@ -132,7 +132,7 @@ export function buildInteriors(ctx: ArchContext): void {
     g.vOffset = 0;
     const f = room.finish;
     const gallery = galleryIds.has(room.id);
-    const openAbove = gallery || room.id === bp.atrium?.roomId || room.type === 'roof-terrace' || !!room.skylit;
+    const openAbove = gallery || room.id === bp.atrium?.roomId || room.type === 'roof-terrace';
     // Floor (minus stairwell holes).
     g.setTint(f.floorColor);
     // (A roof terrace's deck is the wing roof itself.)
@@ -153,6 +153,8 @@ export function buildInteriors(ctx: ArchContext): void {
     // Ceiling, minus holes in the storey above that open into this room.
     const above = bp.rooms.filter((r) => r.level === room.level + (room.doubleHeight ? 2 : 1));
     const ceilHoles = above.flatMap((r) => r.floorHoles).map((h) => ({ t0: h.x0, t1: h.x1, y0: h.z0, y1: h.z1 }));
+    // A skylit room's ceiling is open under its glass.
+    if (room.skylight) ceilHoles.push({ t0: room.skylight.x0, t1: room.skylight.x1, y0: room.skylight.z0, y1: room.skylight.z1 });
     for (const [x0, x1, z0, z1] of openAbove ? [] : rectsMinusHoles(room.rect.x0, room.rect.x1, room.rect.z0, room.rect.z1, ceilHoles)) {
       g.quad('ceiling', [x0, room.ceilingY, z0], [x1, room.ceilingY, z0], [x1, room.ceilingY, z1], [x0, room.ceilingY, z1]);
     }

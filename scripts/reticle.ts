@@ -1,6 +1,7 @@
 /**
  * Headless stills of the scope lab (SwiftShader WebGL2).
  *   OUT=renders npx tsx scripts/reticle.ts "pso=reticle=pso&mag=8" "tree=reticle=tree&mag=12"
+ * W and H set the viewport (default 1280×720); a name ending in .jpg saves a JPEG.
  */
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
@@ -13,7 +14,7 @@ for (const s of shots) {
   const i = s.indexOf('=');
   const name = s.slice(0, i);
   const q = s.slice(i + 1);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const page = await browser.newPage({ viewport: { width: Number(process.env.W ?? 1280), height: Number(process.env.H ?? 720) } });
   page.on('console', (m) => (m.type() === 'error' || m.type()==='warning') && console.log(m.text().slice(0, 600)));
   page.on('pageerror', (e) => console.log('ERR', e.message));
   const t0 = Date.now();

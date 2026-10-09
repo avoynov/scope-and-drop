@@ -90,11 +90,44 @@ Each screen pixel is converted to an apparent direction `t = tan(angle)` (the fi
 8. **Veiling glare.** A small lift of the blacks, as with real glass.
 9. **Hold.** Breathing sway (about 0.3 mrad figure-eight), a heartbeat twitch, and a slow sub-millimetre head wander on a solid cheek weld. Everything moves together, because the reticle is fixed to the tube.
 
-## 5. The range (`demo/reticle/scene.ts`)
+## 5. Recoil (`src/scope/recoil.ts`)
+
+Space, or **Recoil** in the panel, plays what the eye sees when the rifle fires. Nothing is fired: there is no bullet, only the gun's motion.
+
+| Before | 16 ms | 50 ms |
+| --- | --- | --- |
+| ![Before](images/recoil-0.jpg) | ![16 ms](images/recoil-1.jpg) | ![50 ms](images/recoil-2.jpg) |
+| **100 ms** | **250 ms** | **1.6 s** |
+| ![100 ms](images/recoil-3.jpg) | ![250 ms](images/recoil-4.jpg) | ![1.6 s](images/recoil-5.jpg) |
+
+SVD at 8×. The scope slams toward the eye (tunnel), the eye drops off the exit pupil (blackout), the picture comes back full of sky, and the rifle settles 1.2° high with the target at the bottom edge.
+
+**How hard each rifle kicks.** Free recoil, with SAAMI's rule that the powder gas leaves at 1.75 × the bullet's speed:
+
+| Rifle | Round | Impulse | Mass | Free recoil |
+| --- | --- | --- | --- | --- |
+| SVD (PSO reticle) | 7N1: 9.8 g at 823 m/s, 3.1 g of powder | 12.5 N·s | 4.3 kg | 2.9 m/s, 18 J |
+| Bolt rifle (mil tree) | M118LR: 11.3 g at 790 m/s, 2.9 g of powder | 12.9 N·s | 6.8 kg | 1.9 m/s, 12 J |
+
+The lighter SVD kicks harder, so its motions are about 1.5 × the bolt rifle's.
+
+**Three motions overlap**, and each one drives an artifact from section 4:
+
+1. **The scope comes back at the eye.** The rifle slides into the shoulder, so 15 ms after the shot the eyepiece is 23 mm closer than its eye relief (16 mm for the bolt rifle). It then springs about 5 mm past it at 150 ms. Too close, the bundles from the edge of the field miss the eye pupil, and the picture shrinks to a tunnel inside a thick black ring.
+2. **The muzzle rises.** It peaks at 3.1° about 80 ms after the shot (2.0° for the bolt rifle), a little to the right, with a short 26 Hz ring-down of the tube on top. Then it falls back to a rise that stays: 1.2° up and 0.2° right for the SVD, 0.8° up for the bolt rifle.
+3. **The head lags the rifle.** The cheek follows the stock with a 0.12 s lag, so for a moment the scope is tilted up to 2.2° against the eye. The whole sight picture, reticle and field stop included, moves with that tilt, and the ocular housing jumps in the naked-eye view. The eyepiece also swings up about the shoulder, 120 mm behind the eye, which leaves the eye 4.7 mm below the exit pupil at 50 ms. At 8× (a 6.25 mm exit pupil) that is a near blackout with a sliver of light at the top.
+
+**Motion blur.** Each frame stands for a 1/60 s exposure. While the rifle moves, the view through the eyepiece is averaged over 16 jittered moments of that exposure: the scene sweeps through the field at the rifle's rate times the magnification (up to 125°/s × 8 in the first frames), the field stop and reticle sweep with the tilt, and the eye slides over the exit pupil. At rest the shader takes the single-sample path.
+
+**The rifle stays where it ends up.** When the motion has died away (1.6 s), its lasting rise is folded into the aim. Nothing returns on its own: the shooter drags the rifle back down onto the target, as after a real shot. At 8× the target sits near the bottom of the field. From about 10× (15× with the bolt rifle) it is out of the field. A second shot before the first settles starts from wherever the rifle is. Each shot varies: rise ±20 %, drift ±50 %, kick ±15 %.
+
+Tests check, for both rifles, that the kick peaks at more than 1.8 × the lasting rise, that the scope comes at least 80 % of its travel toward the eye, that the eye is low at 50 ms, and that everything but the lasting rise is gone by 1.6 s.
+
+## 6. The range (`demo/reticle/scene.ts`)
 
 A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.5 km, and a ground shader built from band-limited fbm with an integer pcg2d hash (float hashes streak at world coordinates in the hundreds of metres). It has 40k sagebrush clumps, a 4 m boulder, a white mannequin torso on an orange stake at 412 m, a wire fence with T-posts at about 360 m, exponential haze, and a sun over the shooter's shoulder with shadows around the target.
 
-## 6. Controls
+## 7. Controls
 
 | Input | Action |
 | --- | --- |
@@ -102,18 +135,19 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | Wheel / pinch | Power 4–20× |
 | W A S D | Move the eye across the exit pupil |
 | Q / E | Eye relief closer / further |
+| Space | Recoil (no bullet) |
 | R | Switch reticle |
 | L | Illumination |
 | H | Hide the panel |
 
-The panel also has the parallax knob (50 m to ∞), eye sliders, toggles for sway, mirage and head wander, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
+The panel also has the parallax knob (50 m to ∞), eye sliders, toggles for sway, mirage and head wander, a Recoil button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `hud=0`, and `shot=1&t=` for deterministic stills. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `hud=0`, and `shot=1&t=` for deterministic stills (add `recoil=0.05` for a still 50 ms after the trigger). To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
-## 7. Next steps (not built)
+## 8. Next steps (not built)
 
 - Turrets: elevation and windage clicks that move the reticle image, plus a zero-stop. This also gives real holdover use for the PSO chevrons.
-- Shooting: fire along the bore with `trajectory()`, add wind drift, and show splash or impact feedback, so the chevrons and the tree's holds can be tested.
+- Shooting: fire along the bore with `trajectory()` as the recoil starts, add wind drift, and show splash or impact feedback, so the chevrons and the tree's holds can be tested. The bullet takes about 0.6 s to reach 412 m and the picture is back after about 0.2 s, so at low power a shooter who follows through can spot their own hit.
 - Depth-aware focus, so the foreground and far hills blur separately when parallax is set to the target.
 - Low light: a 7 mm eye pupil, a dimmer image, and illumination brightness steps.
 - Bringing the scope composite into the mansion demo's `scope` view in place of its CSS reticle.

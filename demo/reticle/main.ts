@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ROUNDS, at } from '../../src/scope/ballistics';
 import { SCOPE, exitPupilMm, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
+import { RECOIL, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
 import { createComposite } from './composite';
 import { EYE_HEIGHT, RANGE_M, buildRange, heightAt } from './scene';
@@ -173,6 +174,28 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.on
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.onclick = () => { const k = b.dataset.flag as 'illum'; state[k] = !state[k]; syncUi(); };
 $('center').onclick = () => { state.eye.x = state.eye.y = 0; state.eye.z = 0; syncUi(); };
 
+/**
+ * Recoil (no bullet). The SVD and the bolt rifle behind the tree kick differently. When the motion has
+ * died away its lasting rise is folded into the aim, so the rifle stays where it ended up and the
+ * shooter has to drag it back down.
+ */
+let recoil: { start: number; spec: RecoilSpec; v: ShotVariation } | null = null;
+let shots = 0;
+let clock = 0;
+const REST: RecoilState = { pitch: 0, yaw: 0, tiltPitch: 0, tiltYaw: 0, eye: { x: 0, y: 0, z: 0 } };
+/** A frame stands for a 1/60 s exposure: recoil moves far enough within one to smear. */
+const EXPOSURE = 1 / 60;
+function foldRecoil(r: RecoilState): void {
+  state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + r.pitch));
+  state.yaw -= r.yaw; // three.js yaw is positive to the left
+}
+function fire(): void {
+  // A second shot before the first settles starts from wherever the rifle is now.
+  if (recoil) foldRecoil(recoilAt(recoil.spec, recoil.v, clock - recoil.start));
+  recoil = { start: clock, spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(shots++) };
+}
+$('fire').onclick = () => fire();
+
 // Aim: drag (mouse or one finger). Zoom: wheel or pinch.
 const canvas = renderer.domElement;
 const pointers = new Map<number, { x: number; y: number }>();
@@ -208,8 +231,17 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') { state.reticle = state.reticle === 'pso' ? 'tree' : 'pso'; syncUi(); }
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat) fire();
+  }
 });
-addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('keyup', (e) => {
+  keys.delete(e.code);
+  // Space must not also click whichever panel button has focus.
+  if (e.code === 'Space') e.preventDefault();
+});
+for (const b of document.querySelectorAll('button')) b.addEventListener('click', () => b.blur());
 addEventListener('resize', () => { if (!shot) location.reload(); });
 
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : '∞');
@@ -219,6 +251,22 @@ let lastReadout = 0;
 const dir = new THREE.Vector3();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
+  clock = t;
+  // Recoil now, and half an exposure either side of now (for motion blur).
+  let rc = REST;
+  let rcA = REST;
+  let rcB = REST;
+  if (recoil) {
+    const s = t - recoil.start;
+    if (s >= recoil.spec.duration) {
+      foldRecoil(recoilAt(recoil.spec, recoil.v, s));
+      recoil = null;
+    } else {
+      rc = recoilAt(recoil.spec, recoil.v, s);
+      rcA = recoilAt(recoil.spec, recoil.v, s - EXPOSURE / 2);
+      rcB = recoilAt(recoil.spec, recoil.v, s + EXPOSURE / 2);
+    }
+  }
   // Head keys: WASD slide the eye across the exit pupil, Q/E change eye relief.
   const k = dt * 6;
   if (keys.has('KeyA')) state.eye.x -= k;
@@ -235,6 +283,9 @@ function frame(t: number, dt: number): void {
     eye.y += 0.22 * Math.sin(t * 0.27 + 2) + 0.1 * Math.sin(t * 0.71);
     eye.z += 1.0 * Math.sin(t * 0.19 + 0.5);
   }
+  eye.x += rc.eye.x;
+  eye.y += rc.eye.y;
+  eye.z += rc.eye.z;
 
   // Wobble: breathing (≈0.25 Hz figure-eight) plus heartbeat twitch, in object-space radians.
   let yaw = state.yaw;
@@ -246,9 +297,11 @@ function frame(t: number, dt: number): void {
     const beat = Math.exp(-((t * 1.15) % 1) * 18);
     pitch -= 0.00006 * beat;
   }
-  euler.set(pitch, yaw, 0);
+  // The scope looks where the rifle points; the naked eye looks where the head points, which lags it.
+  euler.set(pitch + rc.pitch, yaw - rc.yaw, 0);
   scopeCam.quaternion.setFromEuler(euler);
-  wideCam.quaternion.copy(scopeCam.quaternion);
+  euler.set(pitch + rc.pitch - rc.tiltPitch, yaw - rc.yaw + rc.tiltYaw, 0);
+  wideCam.quaternion.setFromEuler(euler);
   scopeCam.fov = (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
   scopeCam.updateProjectionMatrix();
   scopeCam.getWorldDirection(dir);
@@ -280,6 +333,13 @@ function frame(t: number, dt: number): void {
   // ~1.5 px of rim softness, whatever the screen size.
   u.uEdge!.value = 1.5 / (R * 2);
   u.uTime!.value = t;
+  // Recoil: the scope tilts against the eye. Across one exposure the whole picture swings in the eye's
+  // view (apparent tan), the scene sweeps through it at the rifle's rate magnified (scope-canvas uv),
+  // and the eye slides over the exit pupil (mm).
+  u.uTilt!.value.set(Math.tan(rc.tiltYaw), Math.tan(rc.tiltPitch));
+  u.uSweep!.value.set(Math.tan(rcB.tiltYaw) - Math.tan(rcA.tiltYaw), Math.tan(rcB.tiltPitch) - Math.tan(rcA.tiltPitch));
+  u.uBlur!.value.set((rcB.yaw - rcA.yaw) * toUv, (rcB.pitch - rcA.pitch) * toUv);
+  u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x, rcB.eye.y - rcA.eye.y, rcB.eye.z - rcA.eye.z);
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.
   u.uMirage!.value = state.mirage ? 0.000025 * toUv * Math.min(1, D / 300) : 0;
 
@@ -318,6 +378,8 @@ syncUi();
 if (shot) {
   // Deterministic still: fixed clock, a couple of frames so shadows and MSAA settle.
   const t = num('t', 2.4);
+  // recoil=<s>: the still is taken that long after the trigger.
+  if (params.has('recoil')) recoil = { start: t - num('recoil', 0), spec: state.reticle === 'pso' ? RECOIL.svd : RECOIL.bolt, v: shotVariation(0) };
   frame(t, 0);
   frame(t, 0);
   (window as unknown as { __ready: boolean }).__ready = true;

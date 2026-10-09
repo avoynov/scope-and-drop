@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, trueFovRad } from '../src/scope/optics';
 import { ROUNDS, at, handHoldRad, holdRad, type Round } from '../src/scope/ballistics';
+import { RECOIL, recoilAt, shotVariation } from '../src/scope/recoil';
 import { PSO_CHEVRON_RANGES, psoChevronY, psoCurveHeight, psoReticle, treeReticle } from '../src/scope/reticles';
 
 const eye = (x = 0, y = 0, z = 0) => ({ x, y, z, pupilMm: 3 });
@@ -102,5 +103,35 @@ describe('ballistics', () => {
       expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS['7n1'], d) / THOUSANDTH, 9);
       expect(psoChevronY(d)).toBeGreaterThan(i === 0 ? 1 : psoChevronY(PSO_CHEVRON_RANGES[i - 1]!));
     });
+  });
+});
+
+describe('recoil', () => {
+  const v = shotVariation(0);
+  for (const [name, spec] of Object.entries(RECOIL)) {
+    it(`${name}: kicks high, settles with the rifle left up, and gives the eye back`, () => {
+      const end = recoilAt(spec, v, spec.duration);
+      expect(end.pitch).toBeCloseTo(spec.rise * v.rise, 4);
+      expect(end.yaw).toBeGreaterThan(0);
+      expect(Math.abs(end.tiltPitch)).toBeLessThan(1e-4);
+      expect(Math.hypot(end.eye.x, end.eye.y, end.eye.z)).toBeLessThan(0.05);
+      const peak = Math.max(...[0.03, 0.05, 0.07, 0.09].map((t) => recoilAt(spec, v, t).pitch));
+      expect(peak).toBeGreaterThan(end.pitch * 1.8);
+    });
+
+    it(`${name}: drives the scope toward the eye, then the eye under the exit pupil`, () => {
+      const early = [0.01, 0.015, 0.02, 0.025].map((t) => recoilAt(spec, v, t));
+      expect(Math.min(...early.map((r) => r.eye.z))).toBeLessThan(-0.8 * spec.travelMm);
+      // The head lags the rifle, so the scope tilts up against the eye and the eye ends up low.
+      const mid = recoilAt(spec, v, 0.05);
+      expect(mid.tiltPitch).toBeGreaterThan(0.01);
+      expect(mid.eye.y).toBeLessThan(-2);
+    });
+  }
+
+  it('makes the lighter SVD kick harder than the bolt rifle', () => {
+    expect(RECOIL.svd.impulseNs / RECOIL.svd.rifleKg).toBeGreaterThan(RECOIL.bolt.impulseNs / RECOIL.bolt.rifleKg);
+    expect(RECOIL.svd.kick).toBeGreaterThan(RECOIL.bolt.kick);
+    expect(RECOIL.svd.travelMm).toBeGreaterThan(RECOIL.bolt.travelMm);
   });
 });

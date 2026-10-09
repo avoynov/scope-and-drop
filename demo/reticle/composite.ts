@@ -3,6 +3,8 @@
  * Layers, back to front: the naked-eye world (blurred, over-exposed, as in the footage), the ocular
  * housing (very close to the eye, so heavily defocused), then inside the lens aperture the magnified
  * image with eyebox transmission, field stop, pincushion, lateral colour, mirage, parallax and focus.
+ * Recoil tilts the scope against the eye and, while it moves fast, the inside of the lens is averaged
+ * over a 1/60 s exposure.
  */
 import * as THREE from 'three';
 
@@ -25,6 +27,10 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uHousing: { value: 26 },
       uTnorm: { value: 1 },
       uPar: { value: new THREE.Vector2() },
+      uTilt: { value: new THREE.Vector2() },
+      uSweep: { value: new THREE.Vector2() },
+      uBlur: { value: new THREE.Vector2() },
+      uEyeSweep: { value: new THREE.Vector3() },
       uFocus: { value: 0 },
       uTime: { value: 0 },
       uMirage: { value: 0 },
@@ -37,8 +43,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
     fragmentShader: /* glsl */ `
       precision highp float;
       uniform sampler2D tScope, tWide, tRet;
-      uniform vec2 uRes, uPar;
-      uniform vec3 uEye, uRetCol;
+      uniform vec2 uRes, uPar, uTilt, uSweep, uBlur;
+      uniform vec3 uEye, uEyeSweep, uRetCol;
       uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uEyeRelief, uHousing, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
@@ -71,44 +77,22 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
 
       vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.); }
 
-      void main(){
-        vec2 frag = gl_FragCoord.xy;
-        vec2 suv = frag/uRes;
-        vec2 p = frag - .5*uRes;
-        vec2 t = p/uR*uTanHalf;                 // tan of the apparent direction of this pixel
-        float eyeDist = uEyeRelief + uEye.z;
-
-        // Naked-eye world around the scope: defocused and blown out like a camera exposed for the image.
-        vec3 world = disc(tWide, suv, 9./uRes*vec2(1.), 24) * 1.7;
-
-        // Ocular housing: a black ring a few cm from the eye, so it is a soft blur, shifted against the head.
-        vec2 lensC = -uEye.xy/eyeDist;
-        float lr = length(t - lensC);
-        float soft = 6./eyeDist;
-        float housing = 1. - smoothstep(uHousing/eyeDist - soft, uHousing/eyeDist + soft, lr);
-        vec3 body = mix(vec3(.012,.014,.024), vec3(.05,.07,.12), smoothstep(.0, 1., (t.y - lensC.y)/(uHousing/eyeDist))*.6);
-        vec3 col = mix(world, body, housing);
-        float aperture = 1. - smoothstep((uHousing - 9.)/eyeDist - soft*.5, (uHousing - 9.)/eyeDist + soft*.5, lr);
-
-        // Magnified image.
-        vec2 q = p/uR;                           // 1 at the field stop
+      // What the eye gets through the eyepiece from direction ts (tan, from the scope's axis) with the eye
+      // at eye (mm from the exit pupil): the magnified image, its uv nudged by o, the FFP reticle, the
+      // eyebox transmission and the field stop. focus: apply the parallax/focus and rim blur.
+      vec3 glass(vec2 ts, vec3 eye, vec2 o, bool focus){
+        vec2 q = ts/uTanHalf;                    // 1 at the field stop
         float r2 = dot(q, q);
         vec2 qd = q*(1. - uDist*r2);             // pincushion (shared by image and FFP reticle)
-        vec2 trueAng = qd*uTanHalf/uMag*1000.;   // mrad, object space
-        vec2 mir = vec2(vn(trueAng*1.6 + vec2(uTime*1.1, uTime*.35)) - .5, vn(trueAng*1.6 + vec2(17. + uTime*.9, 5. - uTime*.5)) - .5);
-        mir += .5*vec2(vn(trueAng*4. + vec2(uTime*2.6, 3.)) - .5, vn(trueAng*4. + vec2(9., uTime*2.)) - .5);
-        vec2 mq = mir*uMirage;
-        vec3 img;
-        vec4 ret;
         float ca = uCA*r2;
         vec2 uR_ = .5 + .5*qd*(1. + ca), uG_ = .5 + .5*qd, uB_ = .5 + .5*qd*(1. - ca);
         // Field curvature / coma: a good eyepiece is sharp over most of the field and softens only at the rim.
-        float edge = uEdge*r2*r2*r2;
-        vec2 fr = vec2(uFocus + edge);
-        if (fr.x > .0006) {
-          img = vec3(disc(tScope, uR_ + mq, fr, 16).r, disc(tScope, uG_ + mq, fr, 16).g, disc(tScope, uB_ + mq, fr, 16).b);
+        vec2 fr = vec2(uFocus + uEdge*r2*r2*r2);
+        vec3 img;
+        if (focus && fr.x > .0006) {
+          img = vec3(disc(tScope, uR_ + o, fr, 16).r, disc(tScope, uG_ + o, fr, 16).g, disc(tScope, uB_ + o, fr, 16).b);
         } else {
-          img = vec3(texture2D(tScope, uR_ + mq).r, texture2D(tScope, uG_ + mq).g, texture2D(tScope, uB_ + mq).b);
+          img = vec3(texture2D(tScope, uR_ + o).r, texture2D(tScope, uG_ + o).g, texture2D(tScope, uB_ + o).b);
         }
         // Veiling glare: a little light scattered across the field lifts the blacks, as in real glass.
         img = img*.9 + .035*vec3(.95, .97, 1.);
@@ -119,10 +103,54 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         img.b = mix(img.b, rG.b*rG.b*1.6 + uRetCol.b, rB.a);
 
         // Eyebox: fraction of the eye pupil the bundle for this direction still reaches.
-        float d = length(uEye.xy - uEye.z*t);
+        float d = length(eye.xy - eye.z*ts);
         float T = overlap(uExitR, uEyePupilR, d)/(PI*uEyePupilR*uEyePupilR)/uTnorm;
         float stop = 1. - smoothstep(1. - 1.2/uR, 1. + .6/uR, sqrt(r2));
-        img *= T*stop*(1. - .16*r2);
+        return img*T*stop*(1. - .16*r2);
+      }
+
+      void main(){
+        vec2 frag = gl_FragCoord.xy;
+        vec2 suv = frag/uRes;
+        vec2 p = frag - .5*uRes;
+        vec2 t = p/uR*uTanHalf;                 // tan of the apparent direction of this pixel
+        // Relative to the scope's axis, which recoil can tilt against the head for a moment.
+        vec2 ts = t - uTilt;
+        float eyeDist = uEyeRelief + uEye.z;
+
+        // Naked-eye world around the scope: defocused and blown out like a camera exposed for the image.
+        vec3 world = disc(tWide, suv, 9./uRes*vec2(1.), 24) * 1.7;
+
+        // Ocular housing: a black ring a few cm from the eye, so it is a soft blur, shifted against the head.
+        vec2 lensC = uTilt - uEye.xy/eyeDist;
+        float lr = length(t - lensC);
+        float soft = 6./eyeDist;
+        float housing = 1. - smoothstep(uHousing/eyeDist - soft, uHousing/eyeDist + soft, lr);
+        vec3 body = mix(vec3(.012,.014,.024), vec3(.05,.07,.12), smoothstep(.0, 1., (t.y - lensC.y)/(uHousing/eyeDist))*.6);
+        vec3 col = mix(world, body, housing);
+        float aperture = 1. - smoothstep((uHousing - 9.)/eyeDist - soft*.5, (uHousing - 9.)/eyeDist + soft*.5, lr);
+
+        // Magnified image. Mirage moves the image only, never the reticle.
+        vec3 img = vec3(0.);
+        if (aperture > 0.) {
+          vec2 q = ts/uTanHalf;
+          vec2 trueAng = q*(1. - uDist*dot(q, q))*uTanHalf/uMag*1000.;   // mrad, object space
+          vec2 mir = vec2(vn(trueAng*1.6 + vec2(uTime*1.1, uTime*.35)) - .5, vn(trueAng*1.6 + vec2(17. + uTime*.9, 5. - uTime*.5)) - .5);
+          mir += .5*vec2(vn(trueAng*4. + vec2(uTime*2.6, 3.)) - .5, vn(trueAng*4. + vec2(9., uTime*2.)) - .5);
+          vec2 mq = mir*uMirage;
+          if (length(uBlur) > .002 || length(uSweep) > .5*uTanHalf/uR || length(uEyeSweep) > .3) {
+            // Recoil: across the exposure the picture swings in the eye's view, the scene sweeps through it
+            // and the eye slides over the exit pupil. Stratified, jittered taps turn ghosting into grain.
+            float j = h21(frag + 51.7);
+            for (int i = 0; i < 16; i++) {
+              float f = (float(i) + j)/16. - .5;
+              img += glass(ts - uSweep*f, uEye + uEyeSweep*f, mq + uBlur*f, false);
+            }
+            img /= 16.;
+          } else {
+            img = glass(ts, uEye, mq, true);
+          }
+        }
 
         col = mix(col, img, aperture);
         col = aces(col*1.05);

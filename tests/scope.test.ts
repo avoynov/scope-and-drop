@@ -162,6 +162,37 @@ describe('recoil', () => {
     expect(followHead(0, 1, 0, 0.03)).toBe(0);
   });
 
+  it('varies every shot, ties shoulder and cheek together, and never hides the artifacts', () => {
+    const shots = Array.from({ length: 200 }, (_, n) => shotVariation(n));
+    const spread = (k: keyof (typeof shots)[0]) => Math.max(...shots.map((v) => v[k])) - Math.min(...shots.map((v) => v[k]));
+    for (const k of ['rise', 'drift', 'kick', 'kickPeak', 'travel', 'travelRecover', 'headLag', 'shake', 'joltMm'] as const) {
+      expect(spread(k)).toBeGreaterThan(0.1);
+    }
+    expect(shotVariation(7)).toEqual(shotVariation(7));
+    const left = shots.filter((v) => v.drift < 0).length;
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThan(15);
+    // A loose hold lets the scope come further back and the head settle more slowly.
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const mt = mean(shots.map((v) => v.travel));
+    const ml = mean(shots.map((v) => v.headLag));
+    expect(mean(shots.map((v) => (v.travel - mt) * (v.headLag - ml)))).toBeGreaterThan(0);
+    for (const spec of Object.values(RECOIL)) {
+      for (const v of shots.slice(0, 40)) {
+        let close = 0;
+        let low = 0;
+        for (let t = 0; t < 1; t += 0.004) {
+          const r = recoilAt(spec, v, t);
+          if (r.eye.z < -10) close += 0.004;
+          if (r.eye.y < -2) low += 0.004;
+        }
+        expect(close).toBeGreaterThan(0.1);
+        expect(low).toBeGreaterThan(0.1);
+        expect(recoilAt(spec, v, 0).pitch).toBe(0);
+      }
+    }
+  });
+
   it('makes the lighter SVD kick harder than the bolt rifle', () => {
     expect(RECOIL.svd.impulseNs / RECOIL.svd.rifleKg).toBeGreaterThan(RECOIL.bolt.impulseNs / RECOIL.bolt.rifleKg);
     expect(RECOIL.svd.kick).toBeGreaterThan(RECOIL.bolt.kick);

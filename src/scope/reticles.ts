@@ -3,6 +3,7 @@
  * x grows right, y grows DOWN (holdover is positive). Line widths are angular too, so the whole
  * pattern, strokes included, scales with magnification as on a first-focal-plane scope.
  */
+import { ROUNDS, holdRad, type RoundId } from './ballistics';
 import { MRAD, THOUSANDTH } from './optics';
 
 export type Prim =
@@ -18,6 +19,8 @@ export interface Reticle {
   unitRad: number;
   unitName: string;
   prims: Prim[];
+  /** The load the rifle behind this reticle fires. */
+  round: RoundId;
   /** Illumination colour (the PSO-1 lights the whole pattern; modern trees light the centre). */
   illum: string;
 }
@@ -28,19 +31,31 @@ const EDGE = 120;
 /** Height of the PSO-1 rangefinder curve above its base line at range n×100 m, for a 1.7 m man. */
 export const psoCurveHeight = (n: number) => 1.7 / (n * 100) / THOUSANDTH;
 
+/** Ranges marked by the PSO's three holdover chevrons. */
+export const PSO_CHEVRON_RANGES = [400, 600, 800] as const;
+
+/** Where a PSO holdover chevron sits below the aiming chevron: the 7N1's hold with the 0 m zero, in thousandths. */
+export const psoChevronY = (rangeM: number) => holdRad(ROUNDS['7n1'], rangeM, 0) / THOUSANDTH;
+
 /**
- * SVD / PSO-1 style. Main chevron is the aiming point; three holdover chevrons below; a vertical stadia
- * from the last chevron down; a lateral scale every 1 thousandth to ±10 with longer marks at 5 and 10;
- * the stadiametric rangefinder at lower left (base line, dashed 1.7 m curve, ranges 2–10 ×100 m).
+ * SVD / PSO-1 style, tailored to the 7N1 round. Main chevron is the aiming point; three holdover chevrons
+ * below sit at the 7N1's computed hold for 400, 600 and 800 m with the scope zeroed at 0 m (the
+ * PSO-1's own chevrons serve 1100–1300 m with the drum on 10). A vertical stadia runs from the last
+ * chevron down; a lateral scale every 1 thousandth to ±10 with longer marks at 5 and 10; the
+ * stadiametric rangefinder at lower left (base line, dashed 1.7 m curve, ranges 2–10 ×100 m).
  */
 export function psoReticle(): Reticle {
   const p: Prim[] = [];
   const W = 0.13; // stroke
   const chevron = (y: number, hw: number, h: number) => p.push({ kind: 'poly', pts: [[-hw, y + h], [0, y], [hw, y + h]], w: W, lit: true });
   chevron(0, 0.5, 1.0);
-  // Holdovers for 1100/1200/1300 m with the turret on 1000 (7N1 drops ≈1.5, 2.9, 4.3 thousandths further).
-  for (const y of [1.5, 2.9, 4.3]) chevron(y, 0.42, 0.85);
-  p.push({ kind: 'line', x1: 0, y1: 5.5, x2: 0, y2: EDGE, w: W, lit: true });
+  let last = 0;
+  for (const range of PSO_CHEVRON_RANGES) {
+    last = psoChevronY(range);
+    chevron(last, 0.42, 0.85);
+    p.push({ kind: 'text', x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: 'left', lit: true });
+  }
+  p.push({ kind: 'line', x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
   // Lateral scale.
   for (let i = 1; i <= 10; i++) {
     const len = i === 10 ? 1.3 : i === 5 ? 0.85 : 0.5;
@@ -65,7 +80,7 @@ export function psoReticle(): Reticle {
     p.push({ kind: 'line', x1: xOf(n), y1: y, x2: xOf(n), y2: y - 0.35, w: W * 0.8, lit: true });
     if (n % 2 === 0) p.push({ kind: 'text', x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
   }
-  return { id: 'pso', name: 'SVD · PSO', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, illum: 'rgb(255,46,24)' };
+  return { id: 'pso', name: 'SVD · PSO', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: '7n1', illum: 'rgb(255,46,24)' };
 }
 
 /**
@@ -118,7 +133,7 @@ export function treeReticle(): Reticle {
     p.push({ kind: 'line', x1: -0.2, y1: y, x2: 0.2, y2: y, w: fine });
     p.push({ kind: 'text', x: hw + 0.45, y: y + 0.12, size: 0.32, text: String(y), align: 'left' });
   }
-  return { id: 'tree', name: 'MIL TREE', unitRad: MRAD, unitName: 'mrad', prims: p, illum: 'rgb(255,52,30)' };
+  return { id: 'tree', name: 'MIL TREE', unitRad: MRAD, unitName: 'mrad', prims: p, round: 'm118lr', illum: 'rgb(255,52,30)' };
 }
 
 export const RETICLES = { pso: psoReticle, tree: treeReticle } as const;

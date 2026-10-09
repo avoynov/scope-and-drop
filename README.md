@@ -88,7 +88,7 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 
 ### Reticle lab
 
-`npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope with a selectable **SVD · PSO-1** reticle (chevrons, lateral scale, 1.7 m stadiametric rangefinder) or a **mil tree**, over a high-desert range with a 1.7 m mannequin at 412 m. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
+`npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope with a selectable **SVD · PSO-1** reticle (chevrons, lateral scale, 1.7 m stadiametric rangefinder) or a **mil tree**, over a high-desert range with a 1.7 m mannequin at 412 m. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. The scope is zeroed at 0 m. The PSO's holdover chevrons are cut for the 7N1 round at 400, 600 and 800 m. The mil tree comes with an ammo card that shows the bullet's speed every 200 m, so the shooter can work out the hold. The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
 
 ![reticle lab](docs/images/reticle-tree.jpg)
 
@@ -307,7 +307,7 @@ src/mansion/
   analysis/             sightlines tracer, occluders, nav grids, validation
   build/                three.js renderer: textures, lighting, materials, geometry,
                         arch, atrium, roofs, stairs, props, site, sky, grade, index (buildMansion)
-src/scope/              optics (exit pupil, eyebox, parallax) and reticle patterns (PSO-1, mil tree)
+src/scope/              optics (exit pupil, eyebox, parallax), ballistics (G7 point-mass) and reticle patterns (PSO-1, mil tree)
 demo/                   dev viewer (Vite) with the mission briefing; demo/reticle/ is the scope lab
 artifact/               published viewer page (field-dossier UI, mil-dot scope)
 scripts/                gen, batch, stress, debug, render, texsheet, png, reticle (scope lab stills)

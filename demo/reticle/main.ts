@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ROUNDS, at } from '../../src/scope/ballistics';
 import { SCOPE, exitPupilMm, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
 import { createComposite } from './composite';
@@ -135,7 +136,26 @@ const ezIn = $('ez') as HTMLInputElement;
 const parToSlider = (m: number) => (Number.isFinite(m) ? (Math.log(m / 50) / Math.log(30)) * 100 : 105);
 const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 100));
 
+/**
+ * Ammo card for the mil tree: the tree is generic, so the shooter works the hold out from the bullet's
+ * speed. Speeds every 200 m, as printed on a box of match ammunition. The SVD's PSO is cut for its
+ * round, so it needs no card.
+ */
+const DOPE_RANGES = [0, 200, 400, 600, 800, 1000];
+const dope = $('dope');
+function syncDope(): void {
+  const show = state.reticle === 'tree';
+  dope.hidden = !show;
+  if (!show) return;
+  const r = ROUNDS[RETICLES.tree().round];
+  dope.innerHTML =
+    `<div class="dope-head"><b>${r.name}</b> ${r.cartridge} · ${r.bulletGr} gr<span>zero 0 m</span></div>` +
+    `<table><tr><th>m</th>${DOPE_RANGES.map((d) => `<td>${d}</td>`).join('')}</tr>` +
+    `<tr><th>m/s</th>${DOPE_RANGES.map((d) => `<td>${Math.round(at(r, d).v)}</td>`).join('')}</tr></table>`;
+}
+
 function syncUi(): void {
+  syncDope();
   magIn.value = String(state.mag);
   parIn.value = String(parToSlider(state.parallax));
   exIn.value = String(state.eye.x);
@@ -284,6 +304,8 @@ function frame(t: number, dt: number): void {
       ['Parallax set', fmt(state.parallax)],
       // Turrets are left at 0: nothing is dialled, so every hold comes from the reticle.
       ['Zero', '0 m · turrets 0'],
+      ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
+      ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
       ['Aim point', fmt(D)],
       ['Parallax error', `${Math.abs(par).toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],
       ['Target 1.7 m', `${fig.toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],

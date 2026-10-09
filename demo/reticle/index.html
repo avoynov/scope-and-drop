@@ -29,11 +29,27 @@
       dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
       .hint { color: var(--muted); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
       body.nohud #hud { display: none; }
-      @media (max-width: 640px) { #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; } .hint { display: none; } }
+      /* Ammo card: what the shooter knows about the round. Part of the sight picture, so H keeps it. */
+      #dope { position: fixed; top: 16px; right: 16px; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 8px; font-variant-numeric: tabular-nums; }
+      #dope[hidden] { display: none; }
+      #dope .dope-head { display: flex; gap: 6px; align-items: baseline; color: var(--muted); margin-bottom: 6px; }
+      #dope .dope-head b { color: var(--accent); font-weight: 600; letter-spacing: 0.08em; }
+      #dope .dope-head span { margin-left: auto; padding-left: 14px; }
+      #dope table { border-collapse: collapse; }
+      #dope th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
+      #dope td { text-align: right; padding: 1px 0 1px 12px; }
+      #dope tr:first-child td { color: var(--muted); }
+      @media (max-width: 640px) {
+        #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; }
+        .hint { display: none; }
+        #dope { left: 16px; right: 16px; font-size: 11px; }
+        #dope td { padding-left: 8px; }
+      }
     </style>
   </head>
   <body>
     <div id="view"></div>
+    <div id="dope" hidden></div>
     <div id="hud">
       <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
       <div class="seg">

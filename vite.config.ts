@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+
+const page = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export default defineConfig({
   root: 'demo',
@@ -9,6 +12,8 @@ export default defineConfig({
     outDir: '../dist',
     emptyOutDir: true,
     target: 'es2022',
+    // Every page under demo/ ships: the mansion viewer at /demo/ and the scope lab at /demo/reticle/.
+    rollupOptions: { input: { main: page('demo/index.html'), reticle: page('demo/reticle/index.html') } },
   },
   server: { host: '127.0.0.1', port: 5173 },
 });

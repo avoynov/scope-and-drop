@@ -50,7 +50,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 102 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
+npm test                 # 118 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -85,6 +85,12 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 | `light`, `sky`, `exposure` | Lighting balance. |
 | `nograde`, `split`, `sat` | Colour grade off, split-tone strength, saturation. |
 | `shot=1&w=&h=&frames=` | Headless capture mode used by `scripts/render.ts`. |
+
+### Reticle lab
+
+`npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope with a selectable **SVD · PSO-1** reticle (chevrons, lateral scale, 1.7 m stadiametric rangefinder) or a **mil tree**, over a high-desert range with a 1.7 m mannequin at 412 m. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. The scope is zeroed at 0 m. The PSO's holdover chevrons are cut for the 7N1 round at 400, 600 and 800 m. The mil tree comes with an ammo card that shows the bullet's speed every 200 m, so the shooter can work out the hold. Space plays the rifle's recoil (no bullet is fired): the scope slams toward the eye, the picture tunnels and blacks out for a moment, and the rifle settles high, so you bring it back down yourself. The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
+
+![reticle lab](docs/images/reticle-tree.jpg)
 
 ---
 
@@ -301,11 +307,12 @@ src/mansion/
   analysis/             sightlines tracer, occluders, nav grids, validation
   build/                three.js renderer: textures, lighting, materials, geometry,
                         arch, atrium, roofs, stairs, props, site, sky, grade, index (buildMansion)
-demo/                   dev viewer (Vite) with the mission briefing
+src/scope/              optics (exit pupil, eyebox, parallax), ballistics (G7 point-mass), recoil and reticle patterns (PSO-1, mil tree)
+demo/                   dev viewer (Vite) with the mission briefing; demo/reticle/ is the scope lab
 artifact/               published viewer page (field-dossier UI, mil-dot scope)
-scripts/                gen, batch, stress, debug, render, texsheet, png
-tests/                  generator.test.ts, builder.test.ts
-docs/                   mansion-generation.md (design doc), images/
+scripts/                gen, batch, stress, debug, render, texsheet, png, reticle (scope lab stills)
+tests/                  generator.test.ts, builder.test.ts, scope.test.ts
+docs/                   mansion-generation.md (design doc), reticle-demo.md, images/
 ```
 
 ---
@@ -314,7 +321,7 @@ docs/                   mansion-generation.md (design doc), images/
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 102 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
+| `npm test` | 118 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics and recoil. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |

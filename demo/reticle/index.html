@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reticle Lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --ink: #e9e4d8;
+        --muted: #9a9486;
+        --line: rgba(233, 228, 216, 0.14);
+        --panel: rgba(10, 11, 15, 0.62);
+        --accent: #e0b56a;
+      }
+      html, body { margin: 0; height: 100%; background: #07080c; color: var(--ink); font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; overflow: hidden; }
+      canvas { display: block; touch-action: none; cursor: crosshair; }
+      #hud { position: fixed; left: 16px; bottom: 16px; width: 280px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-sizing: border-box; }
+      #hud h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; color: var(--accent); display: flex; justify-content: space-between; }
+      #hud h1 a { color: var(--muted); text-decoration: none; letter-spacing: 0.08em; }
+      .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+      .flags { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 10px; }
+      button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+      button.on { border-color: var(--accent); color: var(--accent); background: rgba(224, 181, 106, 0.08); }
+      label { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; color: var(--muted); margin-bottom: 4px; }
+      input[type='range'] { width: 100%; margin: 0; accent-color: var(--accent); }
+      dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 8px 0 0; border-top: 1px solid var(--line); padding-top: 8px; }
+      dt { color: var(--muted); }
+      dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+      .hint { color: var(--muted); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+      body.nohud #hud { display: none; }
+      /* Ammo card: what the shooter knows about the round. Part of the sight picture, so H keeps it. */
+      #dope { position: fixed; top: 16px; right: 16px; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 8px; font-variant-numeric: tabular-nums; }
+      #dope[hidden] { display: none; }
+      #dope .dope-head { display: flex; gap: 6px; align-items: baseline; color: var(--muted); margin-bottom: 6px; }
+      #dope .dope-head b { color: var(--accent); font-weight: 600; letter-spacing: 0.08em; }
+      #dope .dope-head span { margin-left: auto; padding-left: 14px; }
+      #dope table { border-collapse: collapse; }
+      #dope th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
+      #dope td { text-align: right; padding: 1px 0 1px 12px; }
+      #dope tr:first-child td { color: var(--muted); }
+      @media (max-width: 640px) {
+        #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; }
+        .hint { display: none; }
+        #dope { left: 16px; right: 16px; font-size: 11px; }
+        #dope td { padding-left: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="dope" hidden></div>
+    <div id="hud">
+      <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
+      <div class="seg">
+        <button data-ret="pso">SVD · PSO</button>
+        <button data-ret="tree">MIL TREE</button>
+      </div>
+      <label>Power<input id="mag" type="range" min="4" max="20" step="0.1" /></label>
+      <label>Parallax<input id="par" type="range" min="0" max="105" step="0.5" /></label>
+      <label>Eye ↔<input id="ex" type="range" min="-6" max="6" step="0.1" /></label>
+      <label>Eye ↕<input id="ey" type="range" min="-6" max="6" step="0.1" /></label>
+      <label>Eye relief<input id="ez" type="range" min="-30" max="40" step="0.5" /></label>
+      <div class="flags">
+        <button data-flag="illum">Illum</button>
+        <button data-flag="sway">Sway</button>
+        <button data-flag="mirage">Mirage</button>
+        <button data-flag="drift">Head</button>
+      </div>
+      <div class="seg">
+        <button id="center">Centre eye</button>
+        <button id="fire">Recoil · Space</button>
+      </div>
+      <dl id="readout"></dl>
+      <div class="hint">Drag to aim · wheel/pinch zoom · Space recoil · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

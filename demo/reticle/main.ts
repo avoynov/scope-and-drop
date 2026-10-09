@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { ROUNDS, at } from '../../src/scope/ballistics';
-import { SCOPE, exitPupilMm, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
+import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from '../../src/scope/ads';
+import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
 import { createComposite } from './composite';
+import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, RANGE_M, buildRange, heightAt } from './scene';
 
 const params = new URLSearchParams(location.search);
@@ -67,6 +69,7 @@ const panHead = { yaw: state.yaw, pitch: state.pitch };
 let R = 0;
 let scopeRT: THREE.WebGLRenderTarget;
 let wideRT: THREE.WebGLRenderTarget;
+let wideLoRT: THREE.WebGLRenderTarget;
 const retCanvas = document.createElement('canvas');
 const retCtx = retCanvas.getContext('2d')!;
 const retTex = new THREE.CanvasTexture(retCanvas);
@@ -81,6 +84,9 @@ const quadScene = new THREE.Scene();
 quadScene.add(quad);
 const quadCam = new THREE.Camera();
 let comp: THREE.ShaderMaterial;
+const rifle = buildRifle();
+const near = createNearPasses(renderer, rifle);
+const toSun = range.sun.position.clone().sub(range.sun.target.position).normalize();
 
 function layout(): void {
   const bw = Math.round(W * dpr);
@@ -89,11 +95,16 @@ function layout(): void {
   const S = Math.min(4096, 2 * R);
   scopeRT?.dispose();
   wideRT?.dispose();
+  wideLoRT?.dispose();
   scopeRT = new THREE.WebGLRenderTarget(S, S, { type: THREE.HalfFloatType, samples: 4 });
-  wideRT = new THREE.WebGLRenderTarget(Math.ceil(bw / 3), Math.ceil(bh / 3), { type: THREE.HalfFloatType });
+  // Full resolution: with the head up the naked eye is the whole view. Mips give the on-glass blur cheaply.
+  wideRT = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, samples: 4, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  // On the glass the surroundings are blurred anyway: a third of the resolution is plenty and much cheaper.
+  wideLoRT = new THREE.WebGLRenderTarget(Math.ceil(bw / 3), Math.ceil(bh / 3), { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  near.setSize(bw, bh);
   retCanvas.width = retCanvas.height = S;
   if (!comp) {
-    comp = createComposite(scopeRT.texture, wideRT.texture, retTex);
+    comp = createComposite(scopeRT.texture, wideRT.texture, retTex, near.eyepiece, near.lens, near.body);
     quad.material = comp;
   }
   comp.uniforms.tScope!.value = scopeRT.texture;
@@ -105,6 +116,9 @@ function layout(): void {
   wideCam.fov = (2 * Math.atan(bh / 2 / f) * 180) / Math.PI;
   wideCam.aspect = bw / bh;
   wideCam.updateProjectionMatrix();
+  rifle.camera.fov = wideCam.fov;
+  rifle.camera.aspect = wideCam.aspect;
+  rifle.camera.updateProjectionMatrix();
   retKey = '';
 }
 
@@ -178,6 +192,7 @@ function syncUi(): void {
   panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
+  $('scope').textContent = adsIn ? 'Scope out · F' : 'Scope in · F';
 }
 magIn.oninput = () => (state.mag = Number(magIn.value));
 parIn.oninput = () => (state.parallax = sliderToPar(Number(parIn.value)));
@@ -215,19 +230,75 @@ function fire(): void {
 }
 $('fire').onclick = () => fire();
 
+/**
+ * Scope-in and scope-out (see src/scope/ads.ts). The rifle stays on its bipod and the head moves: down onto
+ * the cheek weld until the eye finds the exit pupil, or up to look over the scope with the naked eye.
+ * `adapt` is how far the eye has adapted to the picture in the glass (1) rather than the open range (0):
+ * it sets exposure and how blurred the surroundings look, and lags the head like real light adaptation.
+ */
+let ads: AdsMotion | null = null;
+let adsIn = !params.has('out');
+let adsMoves = 0;
+let headRest: Vec3 = adsIn ? { ...ON_WELD } : { ...HEAD_UP };
+let adapt = adsIn ? 1 : 0;
+function headAt(t: number): Vec3 {
+  return ads ? adsEye(ads, t) : headRest;
+}
+function toggleScope(): void {
+  const from = headAt(clock);
+  const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
+  adsIn = !adsIn;
+  ads = (adsIn ? planScopeIn : planScopeOut)(clock, from, vel, adsMoves++);
+  syncUi();
+}
+$('scope').onclick = () => toggleScope();
+
+/** Share of the field that reaches the eye: eyebox light inside the eyepiece glass, averaged over the field. */
+function imageShare(eye: Eye, tilt: { x: number; y: number }): number {
+  const th = tanHalfApparent(SCOPE);
+  const dist = SCOPE.eyeReliefMm + 2.5 + eye.z;
+  const lr = 20.5 / dist;
+  const lx = tilt.x - eye.x / dist;
+  const ly = tilt.y - eye.y / dist;
+  let sum = 0;
+  let n = 0;
+  for (let j = -4; j <= 4; j++) {
+    for (let i = -4; i <= 4; i++) {
+      const tx = (i / 4) * th;
+      const ty = (j / 4) * th;
+      if (tx * tx + ty * ty > th * th) continue;
+      n++;
+      if (Math.hypot(tx + tilt.x - lx, ty + tilt.y - ly) > lr) continue;
+      sum += Math.min(1, eyeboxTransmission(SCOPE, state.mag, eye, tx, ty));
+    }
+  }
+  return sum / n;
+}
+/** Light adaptation is quick, dark adaptation slower: the eye takes longer to settle into the dimmer glass. */
+function stepAdapt(target: number, dt: number): void {
+  const tau = target > adapt ? 0.45 : 0.2;
+  adapt += (target - adapt) * (1 - Math.exp(-dt / tau));
+}
+
 // Aim: drag (mouse or one finger). Zoom: wheel or pinch.
 const canvas = renderer.domElement;
 const pointers = new Map<number, { x: number; y: number }>();
 let pinch = 0;
-canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); });
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button === 2) { toggleScope(); return; }
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerup', (e) => { pointers.delete(e.pointerId); pinch = 0; });
 canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); pinch = 0; });
 canvas.addEventListener('pointermove', (e) => {
   const prev = pointers.get(e.pointerId);
   if (!prev) return;
   if (pointers.size === 1) {
-    // One screen px of drag moves the view one apparent px: feels locked to the glass.
-    const k = tanHalfApparent(SCOPE) / state.mag / (R / dpr);
+    // One screen px of drag moves the view one apparent px: locked to the glass on the weld, to the
+    // naked-eye view with the head up.
+    const k = tanHalfApparent(SCOPE) / (1 + (state.mag - 1) * adapt) / (R / dpr);
     state.yaw += (e.clientX - prev.x) * k;
     state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + (e.clientY - prev.y) * k));
   }
@@ -250,6 +321,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') { state.reticle = state.reticle === 'pso' ? 'tree' : 'pso'; syncUi(); }
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
+  if (e.code === 'KeyF' && !e.repeat) toggleScope();
   if (e.code === 'Space') {
     e.preventDefault();
     if (!e.repeat) fire();
@@ -268,6 +340,7 @@ const readout = $('readout');
 let lastReadout = 0;
 
 const dir = new THREE.Vector3();
+const nearVel = new THREE.Vector2();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
   clock = t;
@@ -315,6 +388,25 @@ function frame(t: number, dt: number): void {
   eye.y += SUPPORT_TO_EYE_MM * panPitch;
   const tiltPitch = rc.tiltPitch + panPitch;
   const tiltYaw = rc.tiltYaw + panYaw;
+  // Head down onto the weld or up off it.
+  let roll = 0;
+  let adsA: Vec3 = headRest;
+  let adsB: Vec3 = headRest;
+  if (ads) {
+    if (t - ads.start >= ads.duration) {
+      headRest = adsEye(ads, ads.start + ads.duration);
+      ads = null;
+    } else {
+      roll = adsRoll(ads, t);
+      adsA = adsEye(ads, t - EXPOSURE / 2);
+      adsB = adsEye(ads, t + EXPOSURE / 2);
+    }
+  }
+  const head = headAt(t);
+  eye.x += head.x;
+  eye.y += head.y;
+  eye.z += head.z;
+  if (!shot) stepAdapt(imageShare(eye, { x: Math.tan(tiltYaw), y: Math.tan(tiltPitch) }), dt);
 
   // Wobble: breathing (≈0.25 Hz figure-eight) plus heartbeat twitch, in object-space radians.
   let yaw = state.yaw;
@@ -344,8 +436,6 @@ function frame(t: number, dt: number): void {
   u.uExitR!.value = ep / 2;
   u.uEye!.value.set(eye.x, eye.y, eye.z);
   u.uEyePupilR!.value = eye.pupilMm / 2;
-  u.uEyeRelief!.value = SCOPE.eyeReliefMm;
-  u.uHousing!.value = SCOPE.ocularHousingMm;
   u.uSaep!.value = SCOPE.pupilAberrationMm;
   // Partial auto-exposure: a pupil-starved image is darker, but the eye/camera adapts some of it back.
   const centre = Math.min(ep / 2, eye.pupilMm / 2) ** 2 / (eye.pupilMm / 2) ** 2;
@@ -369,14 +459,38 @@ function frame(t: number, dt: number): void {
   u.uTilt!.value.set(Math.tan(tiltYaw), Math.tan(tiltPitch));
   u.uSweep!.value.set(Math.tan(rcB.tiltYaw) - Math.tan(rcA.tiltYaw), Math.tan(rcB.tiltPitch) - Math.tan(rcA.tiltPitch));
   u.uBlur!.value.set((rcB.yaw - rcA.yaw) * toUv, (rcB.pitch - rcA.pitch) * toUv);
-  u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x, rcB.eye.y - rcA.eye.y, rcB.eye.z - rcA.eye.z);
+  u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x + adsB.x - adsA.x, rcB.eye.y - rcA.eye.y + adsB.y - adsA.y, rcB.eye.z - rcA.eye.z + adsB.z - adsA.z);
+  u.uRoll!.value = roll;
+  u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
+  u.uWorldBlur!.value = 9 * dpr * adapt;
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.
   u.uMirage!.value = state.mirage ? 0.000025 * toUv * Math.min(1, D / 300) : 0;
+
+  // The rifle from the eye: the head looks along the scope, less the recoil and swing tilt between them.
+  const cam = rifle.camera;
+  cam.position.set(eye.x / 1000, eye.y / 1000, eye.z / 1000);
+  cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
+  cam.updateMatrixWorld();
+  rifle.setLight(toSun.clone().applyQuaternion(scopeCam.quaternion.clone().invert()));
+  // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
+  const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
+  // The eyepiece's sweep across the view during one exposure, for the smear.
+  const ocular = (e: Vec3, r: RecoilState) => {
+    const d = SCOPE.eyeReliefMm + e.z + r.eye.z;
+    return [Math.tan(r.tiltYaw) - (e.x + r.eye.x) / d, Math.tan(r.tiltPitch) - (e.y + r.eye.y) / d];
+  };
+  const [ax, ay] = ocular(adsA, rcA);
+  const [bx, by] = ocular(adsB, rcB);
+  nearVel.set(((bx! - ax!) / th) * (R / 2), ((by! - ay!) / th) * (R / 2));
+  near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97);
 
   drawRet();
   renderer.setRenderTarget(scopeRT);
   renderer.render(scene, scopeCam);
-  renderer.setRenderTarget(wideRT);
+  const wide = adapt > 0.6 ? wideLoRT : wideRT;
+  u.tWide!.value = wide.texture;
+  u.uWideLod!.value = wide === wideLoRT ? -Math.log2(3) : 0;
+  renderer.setRenderTarget(wide);
   renderer.render(scene, wideCam);
   renderer.setRenderTarget(null);
   renderer.render(quadScene, quadCam);
@@ -388,6 +502,7 @@ function frame(t: number, dt: number): void {
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
     const fig = 1.7 / RANGE_M / ret.unitRad;
     readout.innerHTML = [
+      ['Head', ads ? (ads.dir === 'in' ? 'going down' : 'coming up') : adsIn ? 'on the weld' : 'up'],
       ['Magnification', `${state.mag.toFixed(1)}×`],
       ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ['Exit pupil', `${ep.toFixed(1)} mm`],
@@ -416,6 +531,21 @@ if (shot) {
     const lag = PAN_LAG * state.pan;
     panHead.yaw = state.yaw + ((right * Math.PI) / 180) * lag;
     panHead.pitch = state.pitch - ((up * Math.PI) / 180) * lag;
+  }
+  // adsin=<s> / adsout=<s>: the still is taken that long after the head starts down / up.
+  for (const [k, inward] of [['adsin', true], ['adsout', false]] as const) {
+    if (!params.has(k)) continue;
+    const start = t - num(k, 0);
+    headRest = inward ? { ...HEAD_UP } : { ...ON_WELD };
+    adsIn = inward;
+    ads = (inward ? planScopeIn : planScopeOut)(start, headRest, { x: 0, y: 0, z: 0 }, 0);
+    // Replay the eye's adaptation from well before the move.
+    adapt = inward ? 0 : 1;
+    for (let u = start - 0.5; u < t; u += 1 / 240) {
+      const e = { ...state.eye, ...(u < start ? headRest : adsEye(ads, u)) } as Eye;
+      e.pupilMm = state.eye.pupilMm;
+      stepAdapt(imageShare(e, { x: 0, y: 0 }), 1 / 240);
+    }
   }
   frame(t, 0);
   frame(t, 0);

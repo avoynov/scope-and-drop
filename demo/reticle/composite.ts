@@ -1,14 +1,15 @@
 /**
  * Final pass: the eye's view through the scope.
- * Layers, back to front: the naked-eye world (blurred, over-exposed, as in the footage), the ocular
- * housing (very close to the eye, so heavily defocused), then inside the lens aperture the magnified
- * image with eyebox transmission, field stop, pincushion, lateral colour, mirage, parallax and focus.
+ * Layers, back to front: the naked-eye world (blurred and over-exposed while the eye is on the glass, as in
+ * the footage; sharp and normally exposed with the head up), the rifle and scope (a few centimetres from
+ * an eye focused far away, so defocused; see near.ts), then through the eyepiece glass the magnified image
+ * with eyebox transmission, field stop, pincushion, lateral colour, mirage, parallax and focus.
  * Recoil and quick swings tilt the scope against the eye. While recoil moves it fast, the inside of the
  * lens is averaged over a 1/60 s exposure.
  */
 import * as THREE from 'three';
 
-export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRet: THREE.Texture): THREE.ShaderMaterial {
+export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRet: THREE.Texture, tNear: THREE.Texture, tLens: THREE.Texture, tBody: THREE.Texture): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     depthTest: false,
     depthWrite: false,
@@ -16,6 +17,13 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       tScope: { value: tScope },
       tWide: { value: tWide },
       tRet: { value: tRet },
+      tNear: { value: tNear },
+      tLens: { value: tLens },
+      tBody: { value: tBody },
+      uExposure: { value: 1 },
+      uWorldBlur: { value: 9 },
+      uRoll: { value: 0 },
+      uWideLod: { value: 0 },
       uRes: { value: new THREE.Vector2() },
       uR: { value: 300 },
       uTanHalf: { value: 0.2 },
@@ -23,8 +31,6 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uExitR: { value: 2.5 },
       uEye: { value: new THREE.Vector3() },
       uEyePupilR: { value: 1.5 },
-      uEyeRelief: { value: 90 },
-      uHousing: { value: 26 },
       uSaep: { value: 0 },
       uTnorm: { value: 1 },
       uPar: { value: new THREE.Vector2() },
@@ -43,10 +49,10 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
     vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0., 1.); }',
     fragmentShader: /* glsl */ `
       precision highp float;
-      uniform sampler2D tScope, tWide, tRet;
+      uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur;
       uniform vec3 uEye, uEyeSweep, uRetCol;
-      uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uEyeRelief, uHousing, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
+      uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
@@ -111,30 +117,45 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         return img*T*stop*(1. - .16*r2);
       }
 
+      // Mip-filtered disc: wide blurs without hundreds of taps.
+      vec3 discLod(sampler2D t, vec2 uv, vec2 rad, float lod){
+        vec3 s = vec3(0.);
+        for (int i = 0; i < 24; i++){
+          float f = float(i) + .5;
+          float r = sqrt(f/24.);
+          float a = f*2.39996;
+          s += textureLod(t, uv + vec2(cos(a), sin(a))*r*rad, lod).rgb;
+        }
+        return s/24.;
+      }
+
       void main(){
         vec2 frag = gl_FragCoord.xy;
-        vec2 suv = frag/uRes;
-        vec2 p = frag - .5*uRes;
+        // Residual roll of the head while it moves: every layer turns together about the line of sight.
+        float cr = cos(uRoll), sr = sin(uRoll);
+        vec2 p = mat2(cr, sr, -sr, cr)*(frag - .5*uRes);
+        vec2 suv = (p + .5*uRes)/uRes;
         vec2 t = p/uR*uTanHalf;                 // tan of the apparent direction of this pixel
         // Relative to the scope's axis, which recoil can tilt against the head for a moment.
         vec2 ts = t - uTilt;
-        float eyeDist = uEyeRelief + uEye.z;
 
-        // Naked-eye world around the scope: defocused and blown out like a camera exposed for the image.
-        vec3 world = disc(tWide, suv, 9./uRes*vec2(1.), 24) * 1.7;
+        // Naked-eye world. On the glass it is blurred and blown out like a camera exposed for the image;
+        // head up, the eye adapts to it and it is sharp.
+        vec3 world = uWorldBlur > .4
+          ? discLod(tWide, suv, uWorldBlur/uRes, max(log2(max(uWorldBlur*.35, 1.)) + uWideLod, 0.))
+          : texture2D(tWide, suv).rgb;
+        world *= 1.7;
 
-        // Ocular housing: a black ring a few cm from the eye, so it is a soft blur, shifted against the head.
-        vec2 lensC = uTilt - uEye.xy/eyeDist;
-        float lr = length(t - lensC);
-        float soft = 6./eyeDist;
-        float housing = 1. - smoothstep(uHousing/eyeDist - soft, uHousing/eyeDist + soft, lr);
-        vec3 body = mix(vec3(.012,.014,.024), vec3(.05,.07,.12), smoothstep(.0, 1., (t.y - lensC.y)/(uHousing/eyeDist))*.6);
-        vec3 col = mix(world, body, housing);
-        float aperture = 1. - smoothstep((uHousing - 9.)/eyeDist - soft*.5, (uHousing - 9.)/eyeDist + soft*.5, lr);
+        // Rifle and scope, defocused (premultiplied, alpha = coverage), and where the eyepiece glass shows.
+        vec4 body = texture2D(tBody, suv);
+        vec4 near = texture2D(tNear, suv);
+        float aperture = texture2D(tLens, suv).r;
+        vec3 col = world*(1. - body.a) + body.rgb*1.7;
+        col = col*(1. - near.a) + near.rgb*1.7;
 
         // Magnified image. Mirage moves the image only, never the reticle.
         vec3 img = vec3(0.);
-        if (aperture > 0.) {
+        if (aperture > .002) {
           vec2 q = ts/uTanHalf;
           vec2 trueAng = q*(1. - uDist*dot(q, q))*uTanHalf/uMag*1000.;   // mrad, object space
           vec2 mir = vec2(vn(trueAng*1.6 + vec2(uTime*1.1, uTime*.35)) - .5, vn(trueAng*1.6 + vec2(17. + uTime*.9, 5. - uTime*.5)) - .5);
@@ -154,8 +175,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
           }
         }
 
-        col = mix(col, img, aperture);
-        col = aces(col*1.05);
+        col += img*aperture;
+        col = aces(col*1.05*uExposure);
         col = pow(col, vec3(1./2.2));
         col += (h21(frag + fract(uTime)*91.) - .5)*.018;
         gl_FragColor = vec4(col, 1.);

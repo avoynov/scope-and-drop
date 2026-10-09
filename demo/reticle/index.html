@@ -19,6 +19,7 @@
       #hud h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; color: var(--accent); display: flex; justify-content: space-between; }
       #hud h1 a { color: var(--muted); text-decoration: none; letter-spacing: 0.08em; }
       .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+      .seg.one { grid-template-columns: 1fr; }
       .flags { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 10px; }
       button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
       button.on { border-color: var(--accent); color: var(--accent); background: rgba(224, 181, 106, 0.08); }
@@ -72,8 +73,9 @@
         <button id="center">Centre eye</button>
         <button id="fire">Recoil · Space</button>
       </div>
+      <div class="seg one"><button id="scope">Scope out · F</button></div>
       <dl id="readout"></dl>
-      <div class="hint">Drag to aim · wheel/pinch zoom · Space recoil · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
+      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space recoil · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

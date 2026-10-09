@@ -204,8 +204,6 @@ export function buildRange(): Range {
   `);
   const N = 40000;
   const bushes = new THREE.InstancedMesh(sage, sageMat, N);
-  bushes.castShadow = true;
-  bushes.receiveShadow = true;
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const col = new THREE.Color();
@@ -229,8 +227,39 @@ export function buildRange(): Range {
     bushes.setColorAt(placed, col);
     placed++;
   }
-  bushes.count = placed;
-  scene.add(bushes);
+  // Split into tiles by bearing and distance, so a narrow scope view culls the bushes it cannot see instead
+  // of drawing all 22 M triangles. Same instances, matrices and colours, just in separate draws.
+  const BEARINGS = 24;
+  const BANDS = [140, 260, 420, 640, 960, 1360, 1841];
+  const tiles = new Map<number, number[]>();
+  const pos = new THREE.Vector3();
+  for (let i = 0; i < placed; i++) {
+    bushes.getMatrixAt(i, m);
+    pos.setFromMatrixPosition(m);
+    const b = Math.min(BEARINGS - 1, Math.max(0, Math.floor(((Math.atan2(pos.x, -pos.z) / 0.9 + 0.5) * BEARINGS))));
+    const r = Math.hypot(pos.x, pos.z);
+    let band = 0;
+    while (band < BANDS.length - 2 && r >= BANDS[band + 1]!) band++;
+    const key = band * BEARINGS + b;
+    let list = tiles.get(key);
+    if (!list) tiles.set(key, (list = []));
+    list.push(i);
+  }
+  for (const key of [...tiles.keys()].sort((a, b) => a - b)) {
+    const list = tiles.get(key)!;
+    const tile = new THREE.InstancedMesh(sage, sageMat, list.length);
+    list.forEach((src, j) => {
+      bushes.getMatrixAt(src, m);
+      tile.setMatrixAt(j, m);
+      bushes.getColorAt(src, col);
+      tile.setColorAt(j, col);
+    });
+    tile.castShadow = true;
+    tile.receiveShadow = true;
+    tile.computeBoundingSphere();
+    scene.add(tile);
+  }
+  bushes.dispose();
 
   // The boulder.
   const rock = mergeVertices(new THREE.IcosahedronGeometry(1, 6).deleteAttribute('normal').deleteAttribute('uv'));

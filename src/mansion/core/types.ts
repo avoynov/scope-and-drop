@@ -25,6 +25,13 @@ export type RoomType =
   | 'card-room'
   | 'morning-room'
   | 'conservatory'
+  | 'great-room'
+  | 'bar'
+  | 'cinema'
+  | 'spa'
+  | 'theatre'
+  | 'gym'
+  | 'kitchen'
   | 'entrance-hall'
   | 'stair-hall'
   | 'corridor'
@@ -331,7 +338,16 @@ export type PropKind =
   | 'safe'
   | 'urn'
   | 'lamppost'
-  | 'lantern';
+  | 'lantern'
+  | 'kitchen-island'
+  | 'range'
+  | 'cinema-screen'
+  | 'wine-rack'
+  | 'pool'
+  | 'treadmill'
+  | 'weights'
+  | 'stage'
+  | 'bathtub';
 
 export type PoiType =
   | 'statue'

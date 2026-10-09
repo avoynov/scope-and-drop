@@ -68,11 +68,12 @@ export interface MassingPlan {
   serviceSide: 'west' | 'east';
 }
 
-// A great house: the smallest is nine bays, wide enough for a five-bay hall with rooms either side.
+// A great house: the smallest is eleven bays, wide enough for a five-bay hall and the rooms such a
+// house is expected to have (kitchen, great room, bar, study...) either side of it.
 const SIZE_BAYS: Record<MansionSize, number[]> = {
-  compact: [9, 11],
-  grand: [11, 13, 13],
-  palatial: [15, 17],
+  compact: [11, 13],
+  grand: [15, 17, 17],
+  palatial: [19, 21],
 };
 
 export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced?: MassingType): MassingPlan {
@@ -100,12 +101,13 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   // pile so an upper corridor can be carved from it.
   const corridorWidth = snap(rng.range(3.0, 3.6), 0.1);
   const dc = rng.chance(0.45) ? corridorWidth : 0;
-  let df = snap(rng.range(9.0, 11.0), 0.1);
+  let df = snap(rng.range(9.8, 11.8), 0.1);
   const db = snap(dc > 0 ? rng.range(7.0, 8.6) : rng.range(8.6, 10.2), 0.1);
 
-  // The dome hall is five bays wide (seven in a palatial house) and runs back from the garden
+  // The dome hall is seven bays wide (five in a compact house), a ballroom with a real dance floor
+  // between the stair's arms, and runs back from the garden
   // front deep into the house. Behind it, on the axis, a three-bay entrance hall with a room either side.
-  const centerFront = size === 'palatial' ? 7 : 5;
+  const centerFront = size === 'compact' ? 5 : 7;
   const centerBack = 3;
   const entranceDepth = snap(rng.range(5.0, 6.0), 0.1);
 
@@ -169,7 +171,8 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
 
   // Conservatory on an open end of the front pile.
   let conservatory: MassingPlan['conservatory'] = null;
-  if ((type === 'block' || type === 'u-entrance') && rng.chance(0.45)) {
+  // About half of all houses have one: usual where the garden front has open ends, occasional beside a garden wing.
+  if (rng.chance(type === 'block' || type === 'u-entrance' ? 0.7 : 0.25)) {
     const side = rng.pick(['west', 'east'] as const);
     const cw = snap(rng.range(6.5, 9.0), 0.1);
     const x0 = side === 'east' ? W / 2 : -W / 2 - cw;

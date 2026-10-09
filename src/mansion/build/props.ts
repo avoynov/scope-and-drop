@@ -513,6 +513,156 @@ const BUILDERS: Partial<Record<Prop['kind'], Builder>> = {
     g.setTint('#ffffff');
     g.box('brass', -0.08, p.h * 0.5, p.d / 2, 0.08, p.h * 0.5 + 0.16, p.d / 2 + 0.03);
   },
+  'kitchen-island': (c, p) => {
+    const { g } = c;
+    g.setTint('#e9e4d6');
+    g.box('wood-mid', -p.w / 2 + 0.06, 0.08, -p.d / 2 + 0.06, p.w / 2 - 0.06, p.h - 0.05, p.d / 2 - 0.06);
+    g.setTint('#3a3a3a');
+    g.box('iron', -p.w / 2 + 0.1, 0, -p.d / 2 + 0.1, p.w / 2 - 0.1, 0.08, p.d / 2 - 0.1);
+    g.setTint(MARBLE);
+    g.box('marble', -p.w / 2, p.h - 0.05, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    // Hob at one end, a bowl of fruit and a row of copper pans at the other.
+    g.setTint('#ffffff');
+    g.box('lacquer', -p.w / 2 + 0.25, p.h, -0.3, -p.w / 2 + 1.05, p.h + 0.012, 0.3);
+    g.setTint('#b5683a');
+    for (let k = 0; k < 3; k++) g.cylinder('brass', p.w / 2 - 0.4 - k * 0.42, p.h, 0, 0.15 - k * 0.02, 0.13 - k * 0.02, 0.13, 10, false);
+    // Stools along the room side.
+    for (let x = -p.w / 2 + 0.6; x < p.w / 2 - 0.3; x += 0.75) {
+      g.setTint('#2a2a2a');
+      g.cylinder('iron', x, 0, p.d / 2 + 0.32, 0.03, 0.03, 0.66, 6, false);
+      g.setTint('#6a3a22');
+      g.cylinder('leather', x, 0.66, p.d / 2 + 0.32, 0.18, 0.18, 0.06, 10, true);
+    }
+  },
+  range: (c, p) => {
+    const { g } = c;
+    // Range cooker flanked by counters, a canopy hood above, pans on a rail.
+    g.setTint('#20262b');
+    g.box('iron', -0.75, 0, -p.d / 2, 0.75, 0.92, p.d / 2 - 0.02);
+    g.setTint('#ffffff');
+    for (const x of [-0.5, 0, 0.5]) g.box('brass', x - 0.18, 0.7, p.d / 2 - 0.02, x + 0.18, 0.74, p.d / 2 + 0.03);
+    g.box('lacquer', -0.72, 0.92, -p.d / 2 + 0.05, 0.72, 0.935, p.d / 2 - 0.08);
+    g.setTint('#e9e4d6');
+    for (const s of [-1, 1]) g.box('wood-mid', s > 0 ? 0.75 : -p.w / 2, 0, -p.d / 2, s > 0 ? p.w / 2 : -0.75, 0.88, p.d / 2 - 0.05);
+    g.setTint(MARBLE);
+    for (const s of [-1, 1]) g.box('marble', s > 0 ? 0.75 : -p.w / 2, 0.88, -p.d / 2, s > 0 ? p.w / 2 : -0.75, 0.92, p.d / 2);
+    g.setTint('#b5683a');
+    g.box('brass', -0.95, 1.75, -p.d / 2, 0.95, 1.85, p.d / 2 - 0.1);
+    g.box('brass', -0.7, 1.85, -p.d / 2, 0.7, Math.min(p.h, 2.4), p.d / 2 - 0.3);
+    g.setTint('#8a8a8a');
+    g.box('iron', -p.w / 2 + 0.1, 1.55, -p.d / 2 + 0.03, -1.05, 1.57, -p.d / 2 + 0.06);
+    g.setTint('#b5683a');
+    for (let k = 0; k < 3; k++) g.cylinder('brass', -p.w / 2 + 0.25 + k * 0.22, 1.3, -p.d / 2 + 0.1, 0.09, 0.08, 0.22, 8, false);
+  },
+  'cinema-screen': (c, p) => {
+    const { g } = c;
+    const { w, h } = p;
+    g.setTint('#101010');
+    g.box('lacquer', -w / 2 - 0.08, -0.08, 0, w / 2 + 0.08, h + 0.08, 0.05);
+    g.setTint('#ffffff');
+    g.quad('screen', [-w / 2, 0, 0.055], [w / 2, 0, 0.055], [w / 2, h, 0.055], [-w / 2, h, 0.055]);
+    // Curtains drawn back either side.
+    g.setTint(c.room?.finish.drapery ?? '#6a1d33');
+    for (const s of [-1, 1]) g.box('fabric', s * (w / 2 + 0.1), -0.6, 0, s * (w / 2 + 0.55), h + 0.3, 0.12);
+  },
+  'wine-rack': (c, p) => {
+    const { g } = c;
+    g.setTint('#3a2416');
+    g.box('wood-dark', -p.w / 2, 0, -p.d / 2, p.w / 2, p.h, -p.d / 2 + 0.04);
+    g.box('wood-dark', -p.w / 2, 0, -p.d / 2, -p.w / 2 + 0.04, p.h, p.d / 2);
+    g.box('wood-dark', p.w / 2 - 0.04, 0, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    g.box('wood-dark', -p.w / 2, p.h - 0.05, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    for (let y = 0.12; y < p.h - 0.2; y += 0.2) {
+      g.setTint('#3a2416');
+      g.box('wood-dark', -p.w / 2, y - 0.02, -p.d / 2, p.w / 2, y, p.d / 2 - 0.02);
+      // Bottles lying on their sides, necks out.
+      for (let x = -p.w / 2 + 0.12; x < p.w / 2 - 0.08; x += 0.13) {
+        if (c.rand() < 0.18) continue;
+        g.setTint(pick(['#1f3a1c', '#2a1a12', '#3a2a14', '#14241a', '#4a1414'], c.rand()));
+        g.box('bottles', x - 0.04, y + 0.01, -p.d / 2 + 0.06, x + 0.04, y + 0.09, p.d / 2 - 0.06);
+        g.setTint('#8a1a14');
+        g.box('bottles', x - 0.018, y + 0.032, p.d / 2 - 0.06, x + 0.018, y + 0.068, p.d / 2);
+      }
+    }
+  },
+  pool: (c, p) => {
+    const { g } = c;
+    // A stone coping round still water, set a hand's height above the floor.
+    const e = 0.32;
+    g.setTint(MARBLE);
+    g.box('marble', -p.w / 2, 0, -p.d / 2, p.w / 2, p.h, -p.d / 2 + e);
+    g.box('marble', -p.w / 2, 0, p.d / 2 - e, p.w / 2, p.h, p.d / 2);
+    g.box('marble', -p.w / 2, 0, -p.d / 2 + e, -p.w / 2 + e, p.h, p.d / 2 - e);
+    g.box('marble', p.w / 2 - e, 0, -p.d / 2 + e, p.w / 2, p.h, p.d / 2 - e);
+    g.setTint('#5fb6c8');
+    g.quad('pool-water', [-p.w / 2 + e, p.h - 0.04, p.d / 2 - e], [p.w / 2 - e, p.h - 0.04, p.d / 2 - e], [p.w / 2 - e, p.h - 0.04, -p.d / 2 + e], [-p.w / 2 + e, p.h - 0.04, -p.d / 2 + e]);
+    // Steps and a brass rail at one end.
+    g.setTint('#ffffff');
+    for (const s of [-1, 1]) {
+      g.cylinder('brass', -p.w / 2 + 0.16, 0, s * 0.35, 0.02, 0.02, 0.9, 6, false);
+      g.cylinder('brass', -p.w / 2 + 0.6, 0, s * 0.35, 0.02, 0.02, 0.9, 6, false);
+      g.beam('brass', [-p.w / 2 + 0.16, 0.9, s * 0.35], [-p.w / 2 + 0.6, 0.9, s * 0.35], 0.04);
+    }
+  },
+  treadmill: (c, p) => {
+    const { g } = c;
+    g.setTint('#202326');
+    g.box('iron', -p.w / 2 + 0.08, 0.08, -p.d / 2 + 0.1, p.w / 2 - 0.08, 0.2, p.d / 2);
+    g.setTint('#0c0c0c');
+    g.box('lacquer', -p.w / 2 + 0.14, 0.2, -p.d / 2 + 0.3, p.w / 2 - 0.14, 0.215, p.d / 2 - 0.05);
+    g.setTint('#9aa0a6');
+    for (const s of [-1, 1]) {
+      g.beam('iron', [s * (p.w / 2 - 0.1), 0.2, -p.d / 2 + 0.25], [s * (p.w / 2 - 0.1), p.h - 0.2, -p.d / 2 + 0.05], 0.06);
+      g.beam('iron', [s * (p.w / 2 - 0.1), p.h - 0.35, -p.d / 2 + 0.1], [s * (p.w / 2 - 0.1), p.h - 0.4, -p.d / 2 + 0.75], 0.05);
+    }
+    g.setTint('#101418');
+    g.box('lacquer', -p.w / 2 + 0.12, p.h - 0.32, -p.d / 2, p.w / 2 - 0.12, p.h, -p.d / 2 + 0.12);
+  },
+  weights: (c, p) => {
+    const { g } = c;
+    // Two-tier dumbbell rack with a barbell leaning beside it.
+    g.setTint('#24272a');
+    for (const s of [-1, 1]) g.box('iron', s * (p.w / 2 - 0.06) - 0.04, 0, -p.d / 2, s * (p.w / 2 - 0.06) + 0.04, p.h, p.d / 2);
+    for (const y of [0.45, 0.9]) {
+      g.setTint('#24272a');
+      g.box('iron', -p.w / 2, y - 0.03, -p.d / 2 + 0.1, p.w / 2, y, p.d / 2 - 0.1);
+      for (let x = -p.w / 2 + 0.25; x < p.w / 2 - 0.15; x += 0.34) {
+        g.setTint('#0e0e0e');
+        const r = 0.07 + 0.03 * c.rand();
+        for (const dz of [-0.16, 0.16]) g.sphere('lacquer', x, y + r, dz, r, r, 0.06, 8, 5);
+        g.setTint('#9aa0a6');
+        g.box('iron', x - 0.015, y + r - 0.015, -0.14, x + 0.015, y + r + 0.015, 0.14);
+      }
+    }
+  },
+  stage: (c, p) => {
+    const { g } = c;
+    const col = c.room?.finish.drapery ?? '#6a1d33';
+    g.setTint('#5a3a22');
+    g.box('wood-mid', -p.w / 2, 0, -p.d / 2, p.w / 2, p.h, p.d / 2);
+    g.setTint('#2a1a12');
+    g.box('wood-dark', -p.w / 2, p.h - 0.08, p.d / 2, p.w / 2, p.h, p.d / 2 + 0.05);
+    // Proscenium: curtains drawn back at the sides, a pelmet across the top, a backcloth behind.
+    const top = Math.min(4.2, (c.room ? c.room.ceilingY - c.room.floorY : 4.4) - 0.25);
+    g.setTint(col);
+    for (const s of [-1, 1]) g.box('fabric', s > 0 ? p.w / 2 - 0.9 : -p.w / 2, p.h, p.d / 2 - 0.25, s > 0 ? p.w / 2 : -p.w / 2 + 0.9, top, p.d / 2 - 0.1);
+    g.box('fabric', -p.w / 2, top - 0.55, p.d / 2 - 0.28, p.w / 2, top, p.d / 2 - 0.07);
+    g.setTint('#1a2230');
+    g.box('fabric', -p.w / 2 + 0.2, p.h, -p.d / 2 + 0.04, p.w / 2 - 0.2, top - 0.3, -p.d / 2 + 0.1);
+    // Steps up at one side.
+    g.setTint('#5a3a22');
+    g.box('wood-mid', p.w / 2 - 1.6, 0, p.d / 2, p.w / 2 - 0.6, p.h / 2, p.d / 2 + 0.6);
+  },
+  bathtub: (c, p) => {
+    const { g } = c;
+    g.setTint('#f4f2ec');
+    g.box('marble', -p.w / 2, 0.12, -p.d / 2, p.w / 2, p.h, p.d / 2, 0b111011);
+    g.setTint('#cfd8dc');
+    g.quad('marble', [-p.w / 2 + 0.08, p.h - 0.1, p.d / 2 - 0.08], [p.w / 2 - 0.08, p.h - 0.1, p.d / 2 - 0.08], [p.w / 2 - 0.08, p.h - 0.1, -p.d / 2 + 0.08], [-p.w / 2 + 0.08, p.h - 0.1, -p.d / 2 + 0.08]);
+    g.setTint('#ffffff');
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.sphere('brass', sx * (p.w / 2 - 0.15), 0.06, sz * (p.d / 2 - 0.12), 0.07, 0.06, 0.07, 6, 4);
+    g.cylinder('brass', -p.w / 2 + 0.1, p.h, 0, 0.02, 0.02, 0.3, 6, false);
+  },
   bench: (c, p) => {
     const { g } = c;
     g.setTint(pick(WOODS, c.rand()));

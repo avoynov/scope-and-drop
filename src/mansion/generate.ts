@@ -10,7 +10,7 @@ import { rect, type Rect, type Vec3 } from './core/geom';
 import { Rng, snap } from './core/rng';
 import { ROOM_LABELS, roomFinish, STYLE_IDS, STYLES } from './core/styles';
 import { PAVILION_PITCH, roofSurfaceY } from './core/roofs';
-import type { Atrium, LevelSpec, LightSpec, MansionBlueprint, MansionOptions, Mass, NavLevel, NavLink, Poi, Prop, RoofTerrace, Room, Sightlines, Site, Stair, StyleDef } from './core/types';
+import type { Atrium, LevelSpec, LightSpec, MansionBlueprint, MansionOptions, Mass, NavLevel, NavLink, Poi, Prop, RoofTerrace, Room, Sightlines, Site, Stair, StyleDef, RoomType } from './core/types';
 import { collectOccluders } from './analysis/occluders';
 import { buildNav, VIS_BLOCK } from './analysis/nav';
 import { SightlineTracer } from './analysis/sightlines';
@@ -20,7 +20,7 @@ import { planAtriumGeometry, type AtriumGeometry } from './layout/atrium';
 import { planMassing, type MassingPlan } from './layout/massing';
 import { collectLinks, placeTerraceDoors, placeWindows, planDoors, resetOpeningIds, type PlacedRoom } from './layout/openings';
 import { planPorticos } from './layout/porticos';
-import { isPassThrough, planRooms, ROLE, type RoomDraft } from './layout/rooms';
+import { isPassThrough, planRooms, ROLE, type RoomDraft, MIN_BATHROOMS } from './layout/rooms';
 import { fitStairBetween } from './layout/stairs';
 import { deriveWalls, innerRect } from './layout/walls';
 import { perchEyeAt } from './site/perch';
@@ -153,11 +153,41 @@ function buildMasses(m: MassingPlan, style: StyleDef, rng: Rng): Mass[] {
   return masses;
 }
 
+/** After door planning: every house still has a study and its bathrooms. */
+function restoreRequired(rooms: PlacedRoom[], walls: MansionBlueprint['walls']): void {
+  const area = (r: PlacedRoom) => (r.inner.x1 - r.inner.x0) * (r.inner.z1 - r.inner.z0);
+  const span = (r: PlacedRoom) => Math.min(r.inner.x1 - r.inner.x0, r.inner.z1 - r.inner.z0);
+  const count = (t: RoomType) => rooms.filter((r) => r.type === t).length;
+  const take = (types: RoomType[], levels: (l: number) => boolean, minSpan: number): PlacedRoom | undefined => {
+    for (const t of types) {
+      // Never the last of its kind, unless there are plenty (bedrooms).
+      const pool = rooms.filter((r) => r.type === t && levels(r.level) && span(r) >= minSpan).sort((a, b) => area(a) - area(b));
+      if (pool.length && (count(t) > 1 || t === 'bedroom' || t === 'sitting-room' || t === 'dressing-room')) return pool[0];
+    }
+    return undefined;
+  };
+  if (count('study') === 0) {
+    const r = take(['cloakroom', 'pantry', 'sitting-room', 'dressing-room', 'bedroom'], (l) => l <= 1, 2.6);
+    if (r) r.type = 'study';
+  }
+  while (count('bathroom') < MIN_BATHROOMS) {
+    const r = take(['dressing-room', 'bedroom', 'sitting-room'], (l) => l >= 1, 2.0);
+    if (!r) break;
+    r.type = 'bathroom';
+    // Obscured glass, as in every other bathroom.
+    for (const w of walls) if (w.exterior && (w.neg === r.id || w.pos === r.id)) for (const o of w.openings) if (o.glazed) o.frosted = true;
+  }
+}
+
 function litFor(rng: Rng, r: RoomDraft): number {
   const role = ROLE[r.type];
   if (role === 'party') return 1;
+  // Someone has left the gym lights on.
+  if (r.type === 'gym') return (rng.next(), 0.7);
   if (r.type === 'hall-gallery') return 0.9;
   if (role === 'circulation') return r.level === 0 ? 0.9 : r.type === 'service-stair' ? 0.35 : 0.6;
+  // The kitchen is at work all evening.
+  if (r.type === 'kitchen') return (rng.pick([0, 0.4, 0.6]), 1);
   if (role === 'service') return rng.pick([0, 0.4, 0.6]);
   if (r.level >= 2) return rng.weighted([
     [0, 0.6],
@@ -287,6 +317,9 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
     .map((ms) => ({ id: `${ms.levels}:T-${ms.id.replace('wing-', '')}`, rect: ms.rect, level: ms.levels, massId: ms.id }));
   const terraceDoors = placeTerraceDoors(octx, terraceSpecs);
   const doors = planDoors(octx);
+  // Door planning may turn a room into a passage. If that cost the house its study or a bathroom,
+  // a small private or service room that is no one's way through takes over the role.
+  restoreRequired([...placed.values()], walls);
   const roofTerraces: RoofTerrace[] = [];
   for (const t of terraceSpecs) {
     const door = terraceDoors.get(t.id);

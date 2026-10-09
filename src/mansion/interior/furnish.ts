@@ -43,8 +43,9 @@ export function furnish(input: FurnishInput): FurnishOutput {
 
   // The bar goes where the sniper can watch it, with a little randomness.
   const barCands = rooms
-    .filter((r) => r.level === 0 && BAR_ROOMS.has(r.type))
-    .map((r) => ({ r, score: (input.visHint.get(r.id) ?? 0) + rng.range(0, 0.15) + (r.type === 'ballroom' ? -0.1 : 0) }))
+    .filter((r) => (r.level === 0 && BAR_ROOMS.has(r.type)) || r.type === 'bar')
+    // The house's own bar room first; if it cannot take one, wherever the sniper can best watch it.
+    .map((r) => ({ r, score: (r.type === 'bar' ? 10 : 0) + (input.visHint.get(r.id) ?? 0) + rng.range(0, 0.15) + (r.type === 'ballroom' ? -0.1 : 0) }))
     .sort((a, b) => b.score - a.score);
   const barRoom = barCands[0]?.r.id;
 

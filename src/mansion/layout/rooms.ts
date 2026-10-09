@@ -41,6 +41,13 @@ export const ROLE: Record<RoomType, RoomRole> = {
   'hall-gallery': 'circulation',
   'roof-terrace': 'party',
   'service-stair': 'circulation',
+  'great-room': 'party',
+  bar: 'party',
+  cinema: 'party',
+  spa: 'party',
+  theatre: 'party',
+  gym: 'private',
+  kitchen: 'service',
   study: 'private',
   bedroom: 'private',
   'sitting-room': 'private',
@@ -52,7 +59,8 @@ export const ROLE: Record<RoomType, RoomRole> = {
 
 export function isPassThrough(type: RoomType): boolean {
   const role = ROLE[type];
-  return role === 'party' || role === 'circulation' || type === 'sitting-room';
+  // Caterers come and go through the kitchen all evening: it may be walked through.
+  return role === 'party' || role === 'circulation' || type === 'sitting-room' || type === 'kitchen';
 }
 
 /**
@@ -337,7 +345,7 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
   const upRng = rng.fork('upper');
   const groundParty = rooms.filter((r) => r.level === 0 && ROLE[r.type] === 'party').length;
   const partyUpstairs = groundParty < MIN_GROUND_PARTY_ROOMS || m.partyUpstairs;
-  const upstairsParty = upRng.shuffle(['grand-salon', 'music-room', 'card-room', 'drawing-room'] as RoomType[]);
+  const upstairsParty = upRng.shuffle(['morning-room', 'music-room', 'card-room', 'drawing-room'] as RoomType[]);
   const upstairsMore = upRng.shuffle(['gallery', 'morning-room', 'card-room', 'music-room', 'drawing-room', 'billiard-room'] as RoomType[]);
   const [uc0, uc1] = m.upperCorridor;
   for (let L = 1; L < m.mainLevels; L++) {
@@ -446,7 +454,121 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
     }
   }
 
+  assignProgramme(rng.fork('programme'), rooms);
   return { rooms, frontRanges, backRanges };
+}
+
+/* ------------------------------------------------------------------ */
+/* The programme: which room is what                                    */
+/* ------------------------------------------------------------------ */
+
+interface ProgrammeItem {
+  type: RoomType;
+  /** Least clear span and floor area (m, m2) the room needs. */
+  span: number;
+  area: number;
+  /** Storeys it may be on, in order of preference. */
+  levels: number[];
+  /** Added to a slot's score by its zone. */
+  zones: Partial<Record<RoomDraft['zone'], number>>;
+  /** +1: takes the largest slot that fits; -1: the smallest. */
+  size: 1 | -1;
+}
+
+/** Every house has these, placed in this order (the hungriest for space first). */
+const REQUIRED: ProgrammeItem[] = [
+  { type: 'great-room', span: 6, area: 60, levels: [0], zones: { front: 1 }, size: 1 },
+  { type: 'dining-room', span: 5.5, area: 48, levels: [0], zones: { front: 0.5, back: 0.2 }, size: 1 },
+  { type: 'kitchen', span: 4.5, area: 30, levels: [0], zones: { back: 1.5, wing: 0.5 }, size: -1 },
+  { type: 'library', span: 5, area: 38, levels: [0, 1], zones: { front: 0.3, back: 0.3 }, size: 1 },
+  { type: 'bar', span: 4.6, area: 28, levels: [0, 1], zones: { back: 1, wing: 0.6 }, size: -1 },
+  { type: 'drawing-room', span: 5, area: 40, levels: [0, 1], zones: { front: 0.8 }, size: 1 },
+  { type: 'study', span: 3.2, area: 14, levels: [0, 1], zones: { back: 0.6 }, size: -1 },
+];
+
+/** Rooms a house may have, each with its chance. */
+const OPTIONAL: (ProgrammeItem & { chance: number })[] = [
+  { type: 'grand-salon', chance: 0.6, span: 6, area: 55, levels: [0, 1], zones: { front: 1 }, size: 1 },
+  { type: 'cinema', chance: 0.6, span: 5, area: 36, levels: [0, 1], zones: { back: 1.2, wing: 0.4 }, size: -1 },
+  { type: 'gym', chance: 0.62, span: 4.5, area: 30, levels: [0, 1], zones: { back: 1, wing: 0.8 }, size: -1 },
+  { type: 'spa', chance: 0.5, span: 6, area: 60, levels: [0], zones: { wing: 1.2, front: 0.4, back: 0.2 }, size: 1 },
+  { type: 'theatre', chance: 0.3, span: 6, area: 55, levels: [0, 1], zones: { wing: 0.8, back: 0.5, front: 0.3 }, size: 1 },
+];
+
+/** What fills the reception rooms left over, each once before any repeats. */
+const FILLERS: RoomType[] = ['music-room', 'billiard-room', 'card-room', 'morning-room', 'gallery'];
+/** Once those are used up: rooms a great house may have more than one of. */
+const REPEATABLE: RoomType[] = ['drawing-room', 'morning-room', 'card-room'];
+/** What fills the rooms too narrow for the party, in order. */
+const SMALL: RoomType[] = ['cloakroom', 'pantry', 'bathroom', 'study'];
+const FIXED = new Set<RoomType>(['ballroom', 'entrance-hall', 'service-stair', 'corridor', 'hall-gallery', 'conservatory', 'landing', 'roof-terrace', 'stair-hall']);
+/** Bathrooms every house has at least, and the number it aims for. */
+export const MIN_BATHROOMS = 2;
+const WANT_BATHROOMS = 3;
+
+/**
+ * Decide what each room is. The plan above fixes the shell (hall, entrance, stairs, corridors) and
+ * the size of every other room; this hands those rooms out: first the rooms every house must have,
+ * then the optional ones by chance, then one each of the remaining reception rooms. No type repeats
+ * while another is still unused, so a house gets a cinema before it gets a second music room.
+ */
+function assignProgramme(rng: Rng, rooms: RoomDraft[]): void {
+  const span = (r: RoomDraft) => Math.min(r.rect.x1 - r.rect.x0, r.rect.z1 - r.rect.z0) - 0.4;
+  const area = (r: RoomDraft) => (r.rect.x1 - r.rect.x0 - 0.4) * (r.rect.z1 - r.rect.z0 - 0.4);
+  const slots = rooms.filter((r) => !FIXED.has(r.type) && r.level <= 1);
+  const free = new Set(slots.filter((r) => r.level === 0));
+  // Upstairs, a bedroom or sitting room can give way to a room the house must have; bathrooms and dressing rooms stay.
+  const spare = new Set(slots.filter((r) => r.level === 1 && r.type !== 'bathroom' && r.type !== 'dressing-room'));
+  const jitter = new Map(slots.map((r) => [r, rng.range(0, 0.4)]));
+
+  const place = (it: ProgrammeItem, relax = 1): boolean => {
+    for (const level of it.levels) {
+      const pool = [...(level === 0 ? free : spare)].filter((r) => r.level === level && span(r) >= it.span * relax && area(r) >= it.area * relax);
+      if (!pool.length) continue;
+      const score = (r: RoomDraft) => (it.zones[r.zone] ?? 0) + (it.size * area(r)) / 120 + jitter.get(r)!;
+      const best = pool.sort((a, b) => score(b) - score(a))[0]!;
+      best.type = it.type;
+      free.delete(best);
+      spare.delete(best);
+      return true;
+    }
+    return false;
+  };
+  for (const it of REQUIRED) {
+    // A tight house makes do with a smaller room, on either storey, rather than go without.
+    if (!place(it) && !place(it, 0.7) && !place({ ...it, levels: [0, 1] }, 0.5)) place({ ...it, levels: [0, 1], span: 3, area: 10 });
+  }
+  for (const it of rng.shuffle([...OPTIONAL])) if (rng.chance(it.chance)) place(it);
+
+  // The rest of the ground floor.
+  const fillers = rng.shuffle([...FILLERS]);
+  let f = 0;
+  let s = 0;
+  for (const r of [...free].sort((a, b) => area(b) - area(a))) {
+    if (span(r) >= MIN_PARTY_SPAN - 0.4) {
+      // A picture gallery wants a long room.
+      const long = Math.max(r.rect.x1 - r.rect.x0, r.rect.z1 - r.rect.z0) >= 10;
+      const k = fillers.findIndex((t) => t !== 'gallery' || long);
+      // Each once; after that only the kinds of room a great house has several of. Never a second music or billiard room.
+      r.type = k >= 0 ? fillers.splice(k, 1)[0]! : REPEATABLE[f++ % REPEATABLE.length]!;
+    } else r.type = SMALL[s++ % SMALL.length]!;
+  }
+
+  // Upstairs reception rooms were handed out before the ground floor was settled: one that repeats a
+  // music or billiard room downstairs becomes a drawing room.
+  for (const r of rooms) {
+    if (r.level < 1 || (r.type !== 'music-room' && r.type !== 'billiard-room' && r.type !== 'gallery')) continue;
+    if (rooms.some((q) => q !== r && q.type === r.type)) r.type = 'drawing-room';
+  }
+
+  // Bathrooms: dressing rooms, then the smallest bedrooms, become bathrooms until there are enough.
+  const count = () => rooms.filter((r) => r.type === 'bathroom').length;
+  const give = (types: RoomType[], target: number) => {
+    const pool = rooms.filter((r) => r.level >= 1 && types.includes(r.type)).sort((a, b) => area(a) - area(b));
+    while (count() < target && pool.length) pool.shift()!.type = 'bathroom';
+  };
+  give(['dressing-room'], WANT_BATHROOMS);
+  give(['bedroom', 'sitting-room'], MIN_BATHROOMS);
 }
 
 /** Rect of wing bays [s, e) counted from the junction with the main block. */

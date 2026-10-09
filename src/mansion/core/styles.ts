@@ -162,7 +162,17 @@ function wallKey(type: RoomType): string {
     case 'drawing-room':
     case 'morning-room':
     case 'card-room':
+    case 'great-room':
       return 'salon';
+    case 'bar':
+    case 'cinema':
+    case 'theatre':
+      return 'billiard';
+    case 'spa':
+      return 'conservatory';
+    case 'kitchen':
+    case 'gym':
+      return 'service';
     case 'library':
     case 'study':
       return 'library';
@@ -196,7 +206,15 @@ function wallFinishFor(type: RoomType, rng: Rng): WallFinish {
     case 'library':
     case 'study':
     case 'billiard-room':
+    case 'bar':
       return 'paneling';
+    case 'spa':
+      return 'stone';
+    case 'great-room':
+      return rng.pick<WallFinish>(['damask', 'silk', 'paneling']);
+    case 'cinema':
+    case 'theatre':
+      return rng.pick<WallFinish>(['damask', 'stripe']);
     case 'ballroom':
     case 'grand-salon':
       return rng.pick<WallFinish>(['paneling', 'silk', 'paint']);
@@ -242,7 +260,16 @@ function floorFinishFor(type: RoomType, rng: Rng): FloorFinish {
     case 'cloakroom':
       return 'stone';
     case 'bathroom':
+    case 'spa':
+    case 'kitchen':
       return 'marble';
+    case 'bar':
+      return 'stone';
+    case 'cinema':
+    case 'theatre':
+      return 'carpet';
+    case 'gym':
+      return 'boards';
     case 'bedroom':
     case 'dressing-room':
       return rng.pick<FloorFinish>(['carpet', 'boards', 'parquet']);
@@ -292,6 +319,13 @@ export const ROOM_LABELS: Record<RoomType, string> = {
   'card-room': 'Card Room',
   'morning-room': 'Morning Room',
   conservatory: 'Conservatory',
+  'great-room': 'Great Room',
+  bar: 'Bar & Wine Cellar',
+  cinema: 'Home Cinema',
+  spa: 'Spa & Pool',
+  theatre: 'Theatre',
+  gym: 'Gym',
+  kitchen: 'Gourmet Kitchen',
   'entrance-hall': 'Entrance Hall',
   'stair-hall': 'Stair Hall',
   corridor: 'Corridor',

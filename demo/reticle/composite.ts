@@ -3,8 +3,8 @@
  * Layers, back to front: the naked-eye world (blurred, over-exposed, as in the footage), the ocular
  * housing (very close to the eye, so heavily defocused), then inside the lens aperture the magnified
  * image with eyebox transmission, field stop, pincushion, lateral colour, mirage, parallax and focus.
- * Recoil tilts the scope against the eye and, while it moves fast, the inside of the lens is averaged
- * over a 1/60 s exposure.
+ * Recoil and quick swings tilt the scope against the eye. While recoil moves it fast, the inside of the
+ * lens is averaged over a 1/60 s exposure.
  */
 import * as THREE from 'three';
 
@@ -25,6 +25,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uEyePupilR: { value: 1.5 },
       uEyeRelief: { value: 90 },
       uHousing: { value: 26 },
+      uSaep: { value: 0 },
       uTnorm: { value: 1 },
       uPar: { value: new THREE.Vector2() },
       uTilt: { value: new THREE.Vector2() },
@@ -45,7 +46,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uniform sampler2D tScope, tWide, tRet;
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur;
       uniform vec3 uEye, uEyeSweep, uRetCol;
-      uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uEyeRelief, uHousing, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
+      uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uEyeRelief, uHousing, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
@@ -102,8 +103,9 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         img.g = mix(img.g, rG.g*rG.g*1.6 + uRetCol.g, rG.a);
         img.b = mix(img.b, rG.b*rG.b*1.6 + uRetCol.b, rB.a);
 
-        // Eyebox: fraction of the eye pupil the bundle for this direction still reaches.
-        float d = length(eye.xy - eye.z*ts);
+        // Eyebox: fraction of the eye pupil the bundle for this direction still reaches. The bundle travels
+        // against its apparent direction, and edge bundles cross a little nearer the eyepiece (uSaep).
+        float d = length(eye.xy + (eye.z + uSaep*r2)*ts);
         float T = overlap(uExitR, uEyePupilR, d)/(PI*uEyePupilR*uEyePupilR)/uTnorm;
         float stop = 1. - smoothstep(1. - 1.2/uR, 1. + .6/uR, sqrt(r2));
         return img*T*stop*(1. - .16*r2);

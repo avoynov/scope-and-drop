@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, trueFovRad } from '../src/scope/optics';
+import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, tanHalfApparent, trueFovRad } from '../src/scope/optics';
 import { ROUNDS, at, handHoldRad, holdRad, type Round } from '../src/scope/ballistics';
-import { RECOIL, recoilAt, shotVariation } from '../src/scope/recoil';
+import { RECOIL, followHead, recoilAt, shotVariation } from '../src/scope/recoil';
 import { PSO_CHEVRON_RANGES, psoChevronY, psoCurveHeight, psoReticle, treeReticle } from '../src/scope/reticles';
 
 const eye = (x = 0, y = 0, z = 0) => ({ x, y, z, pupilMm: 3 });
@@ -26,15 +26,19 @@ describe('optics', () => {
     expect(eyeboxTransmission(SCOPE, 20, eye(4, 0, 0), 0, 0)).toBe(0);
   });
 
-  it('casts the crescent on the head side when the eye is too far back', () => {
-    // Eye right of the axis and behind the exit pupil: all its light comes through the exit pupil, on its left.
-    const e = eye(1.5, 0, 15);
-    const right = eyeboxTransmission(SCOPE, 16, e, 0.18, 0);
-    const left = eyeboxTransmission(SCOPE, 16, e, -0.18, 0);
-    expect(left).toBeGreaterThan(right);
-    // Too close: the visible disc moves the other way.
+  it('darkens the side the eye has moved to when it is too far back, and the other side when too close', () => {
+    const back = eye(1.5, 0, 15);
+    expect(eyeboxTransmission(SCOPE, 16, back, 0.18, 0)).toBeLessThan(eyeboxTransmission(SCOPE, 16, back, -0.18, 0));
     const close = eye(1.5, 0, -15);
     expect(eyeboxTransmission(SCOPE, 16, close, 0.18, 0)).toBeGreaterThan(eyeboxTransmission(SCOPE, 16, close, -0.18, 0));
+  });
+
+  it('brings a crescent in from the side the eye slips to, even at the right eye relief', () => {
+    const edge = tanHalfApparent(SCOPE);
+    expect(eyeboxTransmission(SCOPE, 12, eye(), edge, 0)).toBeGreaterThan(0.95);
+    const slip = eye(1, 0, 0);
+    expect(eyeboxTransmission(SCOPE, 12, slip, edge, 0)).toBeLessThan(0.75);
+    expect(eyeboxTransmission(SCOPE, 12, slip, -edge, 0)).toBeGreaterThan(0.95);
   });
 
   it('has no parallax when focused at the target range, and some when not', () => {
@@ -128,7 +132,27 @@ describe('recoil', () => {
       expect(mid.tiltPitch).toBeGreaterThan(0.01);
       expect(mid.eye.y).toBeLessThan(-2);
     });
+
+    it(`${name}: holds the scope too close and the eye low long enough to be seen`, () => {
+      let close = 0;
+      let low = 0;
+      for (let t = 0; t < 1; t += 0.002) {
+        const r = recoilAt(spec, v, t);
+        if (r.eye.z < -10) close += 0.002;
+        if (r.eye.y < -2) low += 0.002;
+      }
+      expect(close).toBeGreaterThan(0.2);
+      expect(low).toBeGreaterThan(0.15);
+    });
   }
+
+  it('lets the head trail a steady swing by its lag, and glues it on with none', () => {
+    let head = 0;
+    for (let i = 1; i <= 1000; i++) head = followHead(head, i * 0.001, 0.001, 0.03);
+    expect(1 - head).toBeCloseTo(0.03, 2);
+    expect(followHead(0, 1, 0.016, 0)).toBe(1);
+    expect(followHead(0, 1, 0, 0.03)).toBe(0);
+  });
 
   it('makes the lighter SVD kick harder than the bolt rifle', () => {
     expect(RECOIL.svd.impulseNs / RECOIL.svd.rifleKg).toBeGreaterThan(RECOIL.bolt.impulseNs / RECOIL.bolt.rifleKg);

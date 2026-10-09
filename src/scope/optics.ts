@@ -15,6 +15,12 @@ export interface ScopeSpec {
   eyeReliefMm: number;
   /** Radius of the ocular housing as seen from the eye (the black ring around the image). */
   ocularHousingMm: number;
+  /**
+   * Spherical aberration of the exit pupil: bundles from the edge of the field cross the axis this much
+   * nearer the eyepiece than the central one. It is why an eye that slips sideways at the right eye
+   * relief sees a crescent creep in from that side, instead of the whole field dimming evenly.
+   */
+  pupilAberrationMm: number;
 }
 
 /** A 4–20×50 first-focal-plane tactical scope. At 4× the true field is ~6°, the PSO-1's own field. */
@@ -25,6 +31,7 @@ export const SCOPE: ScopeSpec = {
   apparentFovDeg: 24,
   eyeReliefMm: 90,
   ocularHousingMm: 31,
+  pupilAberrationMm: 2.5,
 };
 
 /** One Soviet artillery "thousandth": 1/6000 of a circle, the PSO-1's unit (≈ 1.047 mrad). */
@@ -66,17 +73,19 @@ export interface Eye {
 
 /**
  * Fraction of the eye pupil filled with light from one field direction.
- * Every field direction leaves the eyepiece as a bundle as wide as the exit pupil. The bundles cross at
- * the exit pupil plane, so the bundle the eye sees in apparent direction `t` (tan) travels toward −t, and
- * `z` mm behind that plane it sits at −z·t. Where it misses the eye pupil, that part of the field goes
- * black: this is the crescent "scope shadow". Too far back, all the light still comes through the exit
- * pupil, so the image survives on the side away from the head and the crescent falls on the head's side;
- * too close, it flips.
+ * Every field direction leaves the eyepiece as a bundle as wide as the exit pupil, and the bundles cross
+ * at the exit pupil. Light that appears to come from apparent direction `t` (tan, right and up positive)
+ * travels the opposite way, so an eye `z` mm behind the crossing finds that bundle centred at −z·t.
+ * Where the bundle misses the eye pupil, that part of the field goes black: the crescent "scope shadow".
+ * Too far back, the exit pupil works like a window in front of the eye, so the dark edge is on the side
+ * the eye has moved to. Too close, it is on the other side. Pupil aberration puts the edge bundles'
+ * crossing nearer the eyepiece, so at the right eye relief a sideways slip darkens the eye's own side.
  */
 export function eyeboxTransmission(s: ScopeSpec, mag: number, eye: Eye, tx: number, ty: number): number {
   const a = exitPupilMm(s, mag) / 2;
   const b = eye.pupilMm / 2;
-  const d = Math.hypot(eye.x + eye.z * tx, eye.y + eye.z * ty);
+  const z = eye.z + (s.pupilAberrationMm * (tx * tx + ty * ty)) / tanHalfApparent(s) ** 2;
+  const d = Math.hypot(eye.x + z * tx, eye.y + z * ty);
   return circleOverlap(a, b, d) / (Math.PI * b * b);
 }
 

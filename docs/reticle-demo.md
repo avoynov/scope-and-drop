@@ -21,6 +21,7 @@ A good, well set-up 4–20×50 FFP scope (`src/scope/optics.ts`, `SCOPE`):
 | Distortion | 2.5 % pincushion at the rim | Good scopes keep some pincushion to stop the "rolling ball" (globe) effect when panning. |
 | Lateral colour | ±0.6 % at the rim | A faint red/blue split at the field edge. |
 | Rim softness | ≈1.5 px at the field stop, rising as r⁶ | Field curvature and coma in a good eyepiece: sharp over most of the field, soft only at the very edge. |
+| Pupil aberration | 2.5 mm at the field stop, rising as r² | Bundles from the edge of the field cross the axis a little nearer the eyepiece. An eye that slips sideways sees a crescent come in from that side rather than an even dimming. |
 
 The defaults describe a scope that is good and properly adjusted: the parallax knob is set to the target range and the eye sits on the exit pupil at full eye relief. Zeroing is the exception: the scope is zeroed at 0 m with both turrets at 0, so nothing is dialled and every hold comes from the reticle (shown as "Zero" in the panel). You change power. Everything else is there to experiment with.
 
@@ -78,29 +79,35 @@ Each screen pixel is converted to an apparent direction `t = tan(angle)` (the fi
 
 1. **Naked-eye world.** A second camera renders the scene at 1× with the same angular mapping. It is defocused and over-exposed like the reference camera.
 2. **Ocular housing.** The eyepiece bell is part of the 3D rifle (section 6), a few centimetres from an eye focused far away, so it is heavily blurred. It slides against head movement while the field stop (imaged at infinity) stays put.
-3. **Eyebox: scope shadow, crescents, tunnelling.** Every field direction leaves the eyepiece as a bundle as wide as the exit pupil. The bundles cross at the exit pupil, so with the eye `Δz` behind it the bundle for direction `t` sits at `−Δz·t`. The light reaching the eye is the overlap of that disc with the eye pupil (3 mm in daylight), computed exactly as a circle–circle intersection (`eyeboxTransmission`, mirrored in GLSL). This gives:
-   - a lateral offset at the right eye relief dims the whole field evenly;
-   - too far back, the light still all comes through the exit pupil, so the image survives on the side away from the head and the crescent falls on the head's side;
-   - too close, the crescent flips sides;
-   - at high power the exit pupil shrinks, so the eyebox gets tight, as on real glass.
-4. **Parallax.** An eye offset `e` in the exit pupil corresponds to a ray `e·mag` off-axis at the objective. When the target is not focused on the reticle plane, the reticle shifts by `aperture · (1/D − 1/P)` radians (`parallaxShiftRad`), where `D` is the range to whatever the crosshair rests on (ray-marched each frame) and `P` is the parallax knob. Set `P = D` and the reticle stays glued to the target however the head moves.
-5. **Focus.** The parallax knob is also the focus. The blur circle is `objective · |1/D − 1/P|` and is applied to the image but not the reticle.
-6. **Distortion, lateral colour and rim softness** as in the table above. They are applied to the image and the FFP reticle alike, because both pass through the erector and eyepiece.
-7. **Mirage.** Two octaves of flowing noise displace the image (not the reticle) by about 25 µrad. It is invisible at 4× and boils at 20×, and it is faded out for short ranges.
-8. **Veiling glare.** A small lift of the blacks, as with real glass.
-9. **Hold.** Breathing sway (about 0.3 mrad figure-eight), a heartbeat twitch, and a slow sub-millimetre head wander on a solid cheek weld. Everything moves together, because the reticle is fixed to the tube.
+3. **Eyebox: scope shadow, crescents, tunnelling.** Every field direction leaves the eyepiece as a bundle as wide as the exit pupil, and the bundles cross at the exit pupil. Light that appears to come from direction `t` travels the opposite way, so with the eye `Δz` behind the exit pupil the bundle for `t` is centred at `−Δz·t`. Edge bundles cross a little early (the pupil aberration above). The light reaching the eye is the overlap of that disc with the eye pupil (3 mm in daylight), computed exactly as a circle–circle intersection (`eyeboxTransmission`, mirrored in GLSL). This gives:
+   - too far back, the exit pupil works like a window in front of the eye, so a crescent comes in from the side the head has moved to;
+   - too close, the crescent comes in from the other side;
+   - at the right eye relief, a sideways slip darkens the eye's own side first, then dims the whole field;
+   - at high power the exit pupil shrinks, so the eyebox gets tight. Even with the eye centred, the rim is about 20 % darker at 16×, as on real glass.
+4. **Pan shadow.** Prone, the rifle swings about its front support (bipod or bag), about 600 mm ahead of the eye, so the eyepiece moves the opposite way to the muzzle. The head rides along on the cheek weld but trails it by a 30 ms lag. In a quick swing that leaves the eye off the exit pupil toward the way the muzzle is going, so a crescent creeps in from the leading edge and clears once the swing stops. Panning right at 4°/s at 12× puts the eye 1.3 mm off: the right edge drops to about half and the centre to three quarters. The **Pan shadow** slider scales the lag from 0 (head glued to the stock) through 1 (the default) to 2 (a loose cheek weld, which blacks out a quick swing).
+
+   | Panning right at 4°/s, 12×, Pan shadow 1 | Pan shadow 2 |
+   | --- | --- |
+   | ![Pan shadow 1](images/pan-1.jpg) | ![Pan shadow 2](images/pan-2.jpg) |
+
+5. **Parallax.** An eye offset `e` in the exit pupil corresponds to a ray `e·mag` off-axis at the objective. When the target is not focused on the reticle plane, the reticle shifts by `aperture · (1/D − 1/P)` radians (`parallaxShiftRad`), where `D` is the range to whatever the crosshair rests on (ray-marched each frame) and `P` is the parallax knob. Set `P = D` and the reticle stays glued to the target however the head moves.
+6. **Focus.** The parallax knob is also the focus. The blur circle is `objective · |1/D − 1/P|` and is applied to the image but not the reticle.
+7. **Distortion, lateral colour and rim softness** as in the table above. They are applied to the image and the FFP reticle alike, because both pass through the erector and eyepiece.
+8. **Mirage.** Two octaves of flowing noise displace the image (not the reticle) by about 25 µrad. It is invisible at 4× and boils at 20×, and it is faded out for short ranges.
+9. **Veiling glare.** A small lift of the blacks, as with real glass.
+10. **Hold.** Breathing sway (about 0.3 mrad figure-eight), a heartbeat twitch, and a slow sub-millimetre head wander on a solid cheek weld. Everything moves together, because the reticle is fixed to the tube.
 
 ## 5. Recoil (`src/scope/recoil.ts`)
 
 Space, or **Recoil** in the panel, plays what the eye sees when the rifle fires. Nothing is fired: there is no bullet, only the gun's motion.
 
-| Before | 16 ms | 50 ms |
+| Before | 16 ms | 80 ms |
 | --- | --- | --- |
-| ![Before](images/recoil-0.jpg) | ![16 ms](images/recoil-1.jpg) | ![50 ms](images/recoil-2.jpg) |
-| **100 ms** | **250 ms** | **1.6 s** |
-| ![100 ms](images/recoil-3.jpg) | ![250 ms](images/recoil-4.jpg) | ![1.6 s](images/recoil-5.jpg) |
+| ![Before](images/recoil-0.jpg) | ![16 ms](images/recoil-1.jpg) | ![80 ms](images/recoil-2.jpg) |
+| **200 ms** | **350 ms** | **3 s** |
+| ![200 ms](images/recoil-3.jpg) | ![350 ms](images/recoil-4.jpg) | ![3 s](images/recoil-5.jpg) |
 
-SVD at 8×. The scope slams toward the eye (tunnel), the eye drops off the exit pupil (blackout), the picture comes back full of sky, and the rifle settles 1.2° high with the target at the bottom edge.
+SVD at 8×. The scope slams toward the eye and the picture tunnels. The eye drops below the exit pupil, so the picture goes dark apart from a crescent of light at the bottom, which widens as the head settles. By 0.35 s the picture is back, full of sky, and the rifle settles 1.2° high with the target at the bottom edge. At 8× the artifacts last about 0.3 s. At higher power the eyebox is tighter and they last longer.
 
 **How hard each rifle kicks.** Free recoil, with SAAMI's rule that the powder gas leaves at 1.75 × the bullet's speed:
 
@@ -113,15 +120,15 @@ The lighter SVD kicks harder, so its motions are about 1.5 × the bolt rifle's.
 
 **Three motions overlap**, and each one drives an artifact from section 4:
 
-1. **The scope comes back at the eye.** The rifle slides into the shoulder, so 15 ms after the shot the eyepiece is 23 mm closer than its eye relief (16 mm for the bolt rifle). It then springs about 5 mm past it at 150 ms. Too close, the bundles from the edge of the field miss the eye pupil, and the picture shrinks to a tunnel inside a thick black ring.
-2. **The muzzle rises.** It peaks at 3.1° about 80 ms after the shot (2.0° for the bolt rifle), a little to the right, with a short 26 Hz ring-down of the tube on top. Then it falls back to a rise that stays: 1.2° up and 0.2° right for the SVD, 0.8° up for the bolt rifle.
-3. **The head lags the rifle.** The cheek follows the stock with a 0.12 s lag, so for a moment the scope is tilted up to 2.2° against the eye. The whole sight picture, reticle and field stop included, moves with that tilt, and the ocular housing jumps in the naked-eye view. The eyepiece also swings up about the shoulder, 120 mm behind the eye, which leaves the eye 4.7 mm below the exit pupil at 50 ms. At 8× (a 6.25 mm exit pupil) that is a near blackout with a sliver of light at the top.
+1. **The scope comes back at the eye.** The rifle slams into the shoulder, so 16 ms after the shot the eyepiece is 24 mm closer than its eye relief (17 mm for the bolt rifle). The shoulder pushes it forward again only slowly, with a 0.45 s time constant (0.38 s for the bolt rifle): it is still 16 mm too close at 0.2 s and 10 mm at 0.4 s. Too close, the bundles from the edge of the field miss the eye pupil, and the picture shrinks to a tunnel inside a thick black ring.
+2. **The muzzle rises.** It peaks at 3.1° about 90 ms after the shot (2.0° at 105 ms for the bolt rifle), a little to the right, with a short 26 Hz ring-down of the tube on top. Then it falls back to a rise that stays: 1.2° up and 0.2° right for the SVD, 0.8° up for the bolt rifle.
+3. **The head is jolted off the cheek weld.** It settles back with a 0.28 s lag, so the scope tilts up to 2.6° against the eye at about 80 ms. The whole sight picture, reticle and field stop included, moves with that tilt, and the ocular housing jumps in the naked-eye view. The eyepiece also swings up about the shoulder, 120 mm behind the eye. That keeps the eye 4–5 mm below the exit pupil from about 40 to 130 ms, and more than 2 mm low for 0.2 s. At 8× (a 6.25 mm exit pupil) the picture goes dark apart from a crescent of light at the bottom, which widens as the head settles.
 
-**Motion blur.** Each frame stands for a 1/60 s exposure. While the rifle moves, the view through the eyepiece is averaged over 16 jittered moments of that exposure: the scene sweeps through the field at the rifle's rate times the magnification (up to 125°/s × 8 in the first frames), the field stop and reticle sweep with the tilt, and the eye slides over the exit pupil. At rest the shader takes the single-sample path.
+**Motion blur.** Each frame stands for a 1/60 s exposure. While the rifle moves, the view through the eyepiece is averaged over 16 jittered moments of that exposure: the scene sweeps through the field at the rifle's rate times the magnification (up to 110°/s × 8 in the first frames), the field stop and reticle sweep with the tilt, and the eye slides over the exit pupil. At rest the shader takes the single-sample path.
 
-**The rifle stays where it ends up.** When the motion has died away (1.6 s), its lasting rise is folded into the aim. Nothing returns on its own: the shooter drags the rifle back down onto the target, as after a real shot. At 8× the target sits near the bottom of the field. From about 10× (15× with the bolt rifle) it is out of the field. A second shot before the first settles starts from wherever the rifle is. Each shot varies: rise ±20 %, drift ±50 %, kick ±15 %.
+**The rifle stays where it ends up.** When the motion has died away (3 s, the last of it being the slow return of eye relief), its lasting rise is folded into the aim. Nothing returns on its own: the shooter drags the rifle back down onto the target, as after a real shot. At 8× the target sits near the bottom of the field. From about 10× (15× with the bolt rifle) it is out of the field. A second shot before the first settles starts from wherever the rifle is. Each shot varies: rise ±20 %, drift ±50 %, kick ±15 %.
 
-Tests check, for both rifles, that the kick peaks at more than 1.8 × the lasting rise, that the scope comes at least 80 % of its travel toward the eye, that the eye is low at 50 ms, and that everything but the lasting rise is gone by 1.6 s.
+Tests check, for both rifles, that the kick peaks at more than 1.8 × the lasting rise, that the scope comes at least 80 % of its travel toward the eye, and that the eye is low at 50 ms. They also check that the scope stays more than 10 mm too close for at least 0.2 s and the eye more than 2 mm low for at least 0.15 s, so the artifacts last long enough to see, and that everything but the lasting rise is gone at the end.
 
 ## 6. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
 
@@ -148,8 +155,6 @@ Tests check, for both rifles, that the kick peaks at more than 1.8 × the lastin
 
 Drag sensitivity follows adaptation: locked to the glass on the weld, locked to the naked-eye view with the head up.
 
-**A sign fix in the eyebox model.** The bundles cross at the exit pupil, so the bundle seen in direction `t` sits at `−Δz·t` behind it, not `+Δz·t` as before. With the eye too far back, the image survives on the side away from the head and the crescent falls on the head's side. Scope-in passes through large eye offsets, where the old sign put the first light at the top of the eyepiece. That is physically impossible from above, because no ray through the top of the glass reaches an eye above it.
-
 URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up.
 
 ## 7. The range (`demo/reticle/scene.ts`)
@@ -170,9 +175,9 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | L | Illumination |
 | H | Hide the panel |
 
-The panel also has the parallax knob (50 m to ∞), eye sliders, toggles for sway, mirage and head wander, a Recoil button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
+The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, toggles for sway, mirage and head wander, a Recoil button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `hud=0`, and `shot=1&t=` for deterministic stills (add `recoil=0.05` for a still 50 ms after the trigger). To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 9. Next steps (not built)
 

@@ -66,13 +66,14 @@ function windowSpec(ctx: OpeningContext, w: Wall, room: PlacedRoom, terraceFacin
   const lv = levels[w.level]!;
   const b = m.bay;
   if (w.level === 0 && terraceFacing && ROLE[room.type] !== 'service') {
-    const width = Math.min(1.95, Math.max(1.5, 0.44 * b));
+    // Wide glazing on the stage front: about 70% of each bay is glass, so the sniper reads the room, not the piers.
+    const width = Math.min(3.1, Math.max(2.4, 0.7 * b));
     return {
       kind: 'french-window',
       width,
       sill: lv.floorY,
       head: lv.floorY + Math.min(3.9, lv.height - 1.1),
-      panes: [2, 5],
+      panes: [3, 5],
       leaves: 2,
       passable: true,
     };
@@ -81,6 +82,12 @@ function windowSpec(ctx: OpeningContext, w: Wall, room: PlacedRoom, terraceFacin
     const width = Math.min(1.7, Math.max(1.3, 0.38 * b));
     const sill = lv.floorY + 0.75;
     return { kind: 'window', width, sill, head: sill + Math.min(2.95, lv.height - 1.85), panes: [3, 4], leaves: 1, passable: false };
+  }
+  if (w.level >= 1 && ROLE[room.type] === 'party' && terraceFacing) {
+    // Upstairs reception rooms get tall, wide sashes: guests there should be seen too.
+    const width = Math.min(2.6, Math.max(1.9, 0.56 * b));
+    const sill = lv.floorY + 0.45;
+    return { kind: 'window', width, sill, head: sill + Math.min(3.0, lv.height - 1.15), panes: [4, 4], leaves: 1, passable: false };
   }
   if (w.level === 1) {
     const width = Math.min(1.6, Math.max(1.25, 0.36 * b));
@@ -203,6 +210,81 @@ export function placeWindows(ctx: OpeningContext): void {
 }
 
 /* ------------------------------------------------------------------ */
+/* Roof terraces                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface TerraceSpec {
+  id: string;
+  rect: Rect;
+  level: number;
+}
+
+export interface TerraceDoor {
+  x: number;
+  z: number;
+  from: string;
+  openingId: string;
+}
+
+/**
+ * A glazed door from the main block onto each flat wing roof. The wall above a lower
+ * wing is otherwise blank (no window looks onto a roof), so there is always room.
+ * Terraces that get no door are left out: a terrace nobody can reach is just a roof.
+ */
+export function placeTerraceDoors(ctx: OpeningContext, specs: TerraceSpec[]): Map<string, TerraceDoor> {
+  const out = new Map<string, TerraceDoor>();
+  for (const t of specs) {
+    const lv = ctx.levels[t.level];
+    if (!lv) continue;
+    const cands: { w: Wall; a: number; b: number; room: PlacedRoom }[] = [];
+    for (const w of ctx.walls) {
+      if (!w.exterior || w.level !== t.level || w.glazed) continue;
+      const line = w.axis === 'x' ? w.a.z : w.a.x;
+      const onEdge = w.axis === 'x' ? Math.abs(line - t.rect.z0) < 1e-3 || Math.abs(line - t.rect.z1) < 1e-3 : Math.abs(line - t.rect.x0) < 1e-3 || Math.abs(line - t.rect.x1) < 1e-3;
+      if (!onEdge) continue;
+      const a = Math.max(w.axis === 'x' ? w.a.x : w.a.z, w.axis === 'x' ? t.rect.x0 : t.rect.z0);
+      const b = Math.min(w.axis === 'x' ? w.b.x : w.b.z, w.axis === 'x' ? t.rect.x1 : t.rect.z1);
+      const room = ctx.rooms.get((w.neg ?? w.pos)!);
+      if (!room || b - a < 2.6 || room.type === 'service-stair' || room.type === 'hall-gallery') continue;
+      cands.push({ w, a, b, room });
+    }
+    // Rooms guests may already cross first, bathrooms only if nothing else touches the terrace.
+    const rank = (r: PlacedRoom) => (isPassThrough(r.type) ? 2 : r.type === 'bathroom' ? 0 : 1);
+    cands.sort((p, q) => rank(q.room) - rank(p.room) || q.b - q.a - (p.b - p.a));
+    for (const c of cands) {
+      const base = c.w.axis === 'x' ? c.w.a.x : c.w.a.z;
+      const u = (c.a + c.b) / 2 - base;
+      const width = 1.6;
+      if (!fits(c.w, u - width / 2, u + width / 2, 0.3, 0.45) || !floorBothSides(ctx, c.w, u, width)) continue;
+      const o: Opening = {
+        id: nextId('o'),
+        kind: 'french-window',
+        u0: u - width / 2,
+        u1: u + width / 2,
+        y0: lv.floorY,
+        y1: lv.floorY + Math.min(2.7, lv.height - 1.0),
+        glazed: true,
+        passable: true,
+        panes: [2, 4],
+        leaves: 2,
+        dressing: { surround: true },
+        curtain: 'open',
+      };
+      c.w.openings.push(o);
+      // Guests cross this room to reach the terrace, so it cannot stay a bedroom.
+      if (!isPassThrough(c.room.type)) {
+        if (c.room.type === 'bathroom') for (const w of ctx.walls) if (w.neg === c.room.id || w.pos === c.room.id) for (const q of w.openings) delete q.frosted;
+        c.room.type = 'sitting-room';
+      }
+      const p = wallPoint(c.w, u);
+      out.set(t.id, { x: p.x, z: p.z, from: c.room.id, openingId: o.id });
+      break;
+    }
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
 /* Doors                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -243,6 +325,52 @@ function doorDims(ctx: OpeningContext, a: PlacedRoom, b: PlacedRoom, kind: Openi
   }
 }
 
+/** Both sides of an opening need floor, not a stairwell or the side of a flight. */
+function floorBothSides(ctx: OpeningContext, w: Wall, u: number, width: number): boolean {
+  const p = wallPoint(w, u);
+  const ts = [-width / 2 + 0.1, 0, width / 2 - 0.1];
+  if (width > 2) ts.push(-width / 4, width / 4);
+  for (const id of [w.neg, w.pos]) {
+    if (!id) continue;
+    const dir = id === w.pos ? 1 : -1;
+    for (const probe of [0.45, 1.0]) {
+      const x = w.axis === 'z' ? p.x + dir * probe : p.x;
+      const z = w.axis === 'x' ? p.z + dir * probe : p.z;
+      for (const t of ts) {
+        const px = w.axis === 'x' ? x + t : x;
+        const pz = w.axis === 'z' ? z + t : z;
+        if ((ctx.blocked.get(id) ?? []).some((r) => containsPoint(r, px, pz))) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Column screen: open a wall between two party rooms bay by bay, leaving piers.
+ * The sniper looks in at an angle, so only wide openings let a view carry from
+ * the garden front through to the room behind. Returns the number of bays opened.
+ */
+function cutScreen(ctx: OpeningContext, w: Wall): number {
+  const len = wallLength(w);
+  const lv = ctx.levels[w.level]!;
+  const n = Math.max(1, Math.round(len / ctx.m.bay));
+  const span = len / n;
+  const width = Math.min(span - 0.8, 3.6);
+  if (width < 1.6) return 0;
+  const height = Math.min(3.6, lv.height - ctx.m.slab - 0.7);
+  let cut = 0;
+  for (let i = 0; i < n; i++) {
+    const u = (i + 0.5) * span;
+    const u0 = u - width / 2;
+    const u1 = u + width / 2;
+    if (!fits(w, u0, u1, 0.25, 0.35) || !floorBothSides(ctx, w, u, width)) continue;
+    w.openings.push({ id: nextId('o'), kind: 'arch', u0, u1, y0: lv.floorY, y1: lv.floorY + height, glazed: false, passable: true, leaves: 2 });
+    cut++;
+  }
+  return cut;
+}
+
 /** Try to cut a door into `w` near `preferU`; returns the opening or null. */
 function cutDoor(ctx: OpeningContext, w: Wall, preferU: number, kind: OpeningKind, width: number, height: number, glazed = false): Opening | null {
   const len = wallLength(w);
@@ -254,27 +382,11 @@ function cutDoor(ctx: OpeningContext, w: Wall, preferU: number, kind: OpeningKin
   for (let k = 1; k <= 40; k++) {
     candidates.push(clampU(preferU + k * 0.35), clampU(preferU - k * 0.35));
   }
-  const sides = [w.neg, w.pos].filter((s): s is string => !!s);
   for (const u of candidates) {
     const u0 = u - width / 2;
     const u1 = u + width / 2;
     if (!fits(w, u0, u1, 0.25, 0.35)) continue;
-    // Both sides of the door need floor, not a stairwell or the side of a flight.
-    const p = wallPoint(w, u);
-    let ok = true;
-    for (const id of sides) {
-      const dir = id === w.pos ? 1 : -1;
-      for (const probe of [0.45, 1.0]) {
-        const x = w.axis === 'z' ? p.x + dir * probe : p.x;
-        const z = w.axis === 'x' ? p.z + dir * probe : p.z;
-        for (const t of [-width / 2 + 0.1, 0, width / 2 - 0.1]) {
-          const px = w.axis === 'x' ? x + t : x;
-          const pz = w.axis === 'z' ? z + t : z;
-          if ((ctx.blocked.get(id) ?? []).some((r) => containsPoint(r, px, pz))) ok = false;
-        }
-      }
-    }
-    if (!ok) continue;
+    if (!floorBothSides(ctx, w, u, width)) continue;
     const y0 = ctx.levels[w.level]!.floorY;
     const o: Opening = {
       id: nextId('o'),
@@ -298,6 +410,8 @@ export interface DoorPlanResult {
   retyped: { id: string; from: RoomType; to: RoomType }[];
   unreachable: string[];
   passViolations: string[];
+  /** Walls opened as column screens. */
+  screens: string[];
 }
 
 export function planDoors(ctx: OpeningContext): DoorPlanResult {
@@ -306,6 +420,7 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
   const unreachable: string[] = [];
   const passViolations: string[] = [];
   const doorPairs = new Set<string>();
+  const screens: string[] = [];
   const maxLevel = Math.max(...[...ctx.rooms.values()].map((r) => r.level));
 
   const addDoor = (adj: Adjacency, kind: OpeningKind, preferU?: number, glazed = false): boolean => {
@@ -347,21 +462,26 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
       const axisAt = (w: Wall) => uOf(w, 0, 0);
       const hall = roomsL.find((r) => r.type === 'entrance-hall');
       const ball = roomsL.find((r) => r.type === 'ballroom');
-      const corr = roomsL.find((r) => r.type === 'corridor' && r.zone === 'corridor');
-      if (hall && ball) {
-        if (corr) {
-          tryPair(hall.id, corr.id, 'double-door', axisAt);
-          tryPair(corr.id, ball.id, 'double-door', axisAt);
-        } else tryPair(hall.id, ball.id, 'double-door', axisAt);
-      }
-      // 2. Hall to grand stair.
-      const stairHall = roomsL.find((r) => r.type === 'stair-hall');
-      if (hall && stairHall) tryPair(hall.id, stairHall.id, 'arch') || tryPair(hall.id, stairHall.id, 'double-door');
+      if (hall && ball) tryPair(hall.id, ball.id, 'double-door', axisAt);
       // 3. Enfilade along the garden front, near the windows.
       const front = roomsL.filter((r) => r.zone === 'front').sort((p, q) => p.rect.x0 - q.rect.x0);
       const zEnf = m.zGarden - 0.3 - 1.25 - 0.9;
       for (let i = 0; i + 1 < front.length; i++) {
         tryPair(front[i]!.id, front[i + 1]!.id, 'double-door', (w) => uOf(w, w.a.x, zEnf));
+      }
+      // 3b. Column screens: party rooms that sit one behind the other open into each other, so the
+      // garden-front view carries through. Capped by rule: only party-to-party walls parallel to the
+      // garden front. Halls, corridors, service and private rooms keep solid walls and stay blind.
+      for (const adj of adjs) {
+        if (adj.wall.axis !== 'x') continue;
+        const ra = ctx.rooms.get(adj.a)!;
+        const rb = ctx.rooms.get(adj.b)!;
+        if (ROLE[ra.type] !== 'party' || ROLE[rb.type] !== 'party') continue;
+        if (ra.zone === 'conservatory' || rb.zone === 'conservatory') continue;
+        if (cutScreen(ctx, adj.wall) > 0) {
+          doorPairs.add(pairKey(adj.a, adj.b));
+          screens.push(adj.wall.id);
+        }
       }
       // 4. Conservatory.
       for (const r of roomsL.filter((q) => q.type === 'conservatory')) {
@@ -390,6 +510,19 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
       }
     }
 
+    // 5b. Ring gallery of the dome hall: a door into every room beside it. (The corridor behind it
+    // is joined in step 6.) Doors go near the garden end, where the gallery runs straight.
+    const gallery = roomsL.find((r) => r.type === 'hall-gallery');
+    if (gallery) {
+      for (const k of [...byPair.keys()]) {
+        const ids = k.split('|');
+        if (!ids.includes(gallery.id)) continue;
+        const other = ctx.rooms.get(ids.find((id) => id !== gallery.id)!)!;
+        if (other.type === 'corridor') continue;
+        tryPair(gallery.id, other.id, 'door', (w) => (w.axis === 'z' ? uOf(w, w.a.x, m.zGarden - 2.4) : wallLength(w) / 2));
+      }
+    }
+
     // 6. Every room opening onto a corridor or landing gets a door to it.
     for (const r of roomsL) {
       if (r.type !== 'corridor' && r.type !== 'landing') continue;
@@ -397,7 +530,7 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
         const ids = k.split('|');
         if (!ids.includes(r.id)) continue;
         const other = ctx.rooms.get(ids.find((id) => id !== r.id)!)!;
-        const kind: OpeningKind = ROLE[other.type] === 'party' && L === 0 ? 'double-door' : 'door';
+        const kind: OpeningKind = (ROLE[other.type] === 'party' && L === 0) || other.type === 'hall-gallery' ? 'double-door' : 'door';
         tryPair(r.id, other.id, kind, (w) => {
           // Aim for the middle of the other room's span along the wall.
           const c = w.axis === 'x' ? (other.rect.x0 + other.rect.x1) / 2 : (other.rect.z0 + other.rect.z1) / 2;
@@ -410,7 +543,7 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
     const root =
       L === 0
         ? roomsL.find((r) => r.type === 'entrance-hall')
-        : (roomsL.find((r) => r.type === 'landing') ?? roomsL.find((r) => r.type === 'service-stair') ?? roomsL.find((r) => r.type === 'corridor'));
+        : ((L === 1 ? gallery : undefined) ?? roomsL.find((r) => r.type === 'landing') ?? roomsL.find((r) => r.type === 'service-stair') ?? roomsL.find((r) => r.type === 'corridor'));
     if (!root) continue;
     const neighboursWithDoor = (id: string): string[] =>
       [...doorPairs].filter((k) => k.split('|').includes(id)).map((k) => k.split('|').find((x) => x !== id)!).filter((x) => ctx.rooms.get(x)!.level === L);
@@ -473,7 +606,9 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
         const blocker = neighboursWithDoor(v.id).find((x) => ok.has(x) && !isPassThrough(typeOf(x)));
         if (blocker) {
           const br = ctx.rooms.get(blocker)!;
-          const to: RoomType = L === 0 ? 'morning-room' : 'landing';
+          // A wide room becomes a morning room the party walks through; a narrow one is just a passage.
+          const narrow = Math.min(br.rect.x1 - br.rect.x0, br.rect.z1 - br.rect.z0) < 5;
+          const to: RoomType = L === 0 ? (narrow ? 'corridor' : 'morning-room') : 'landing';
           retyped.push({ id: br.id, from: br.type, to });
           br.type = to;
           progressed = true;
@@ -515,7 +650,7 @@ export function planDoors(ctx: OpeningContext): DoorPlanResult {
     }
   }
 
-  return { retyped, unreachable, passViolations };
+  return { retyped, unreachable, passViolations, screens };
 }
 
 /** Navigation links for every passable opening. */

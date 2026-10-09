@@ -38,6 +38,8 @@ export const ROLE: Record<RoomType, RoomRole> = {
   'stair-hall': 'circulation',
   corridor: 'circulation',
   landing: 'circulation',
+  'hall-gallery': 'circulation',
+  'roof-terrace': 'party',
   'service-stair': 'circulation',
   study: 'private',
   bedroom: 'private',
@@ -119,7 +121,13 @@ function symmetricRanges(bays: number, center: number, side: number[]): [number,
   return ranges;
 }
 
+// Party rooms on the garden front are two or three bays wide: no one-bay rooms in a house like this.
 const FRONT_WEIGHTS = [
+  [2, 0.55],
+  [3, 0.45],
+] as const;
+
+const BACK_WEIGHTS = [
   [1, 0.18],
   [2, 0.5],
   [3, 0.32],
@@ -130,6 +138,11 @@ const WING_WEIGHTS = [
   [2, 0.55],
   [3, 0.45],
 ] as const;
+
+/** With fewer party rooms than this on the ground floor, reception rooms are added upstairs. */
+export const MIN_GROUND_PARTY_ROOMS = 7;
+/** Narrowest side (m) a room may have and still be a room of the party. */
+const MIN_PARTY_SPAN = 5;
 
 export interface FloorPlan {
   rooms: RoomDraft[];
@@ -144,11 +157,13 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
   const kF = (n - m.centerFront) / 2;
   const kB = (n - m.centerBack) / 2;
 
-  // Wing junction rooms must not be split by the wing wall, so pin the
+  // Wing junction rooms should not be split by the wing wall, so pin the
   // outermost front part to the wing width (2 bays) when wings face the garden.
   const gardenWings = m.wings.some((w) => w.toward === 'garden');
   const frontSide = composeBays(rng.fork('front'), kF, FRONT_WEIGHTS, undefined, gardenWings && kF >= 2 ? 2 : undefined);
-  const backSide = composeBays(rng.fork('back'), kB, FRONT_WEIGHTS, 2, 1);
+  // Back pile, from the axis outward: a one-bay room beside the entrance hall (behind the dome
+  // hall), then rooms of the back pile proper, ending in a one-bay service column.
+  const backSide = composeBays(rng.fork('back'), kB, BACK_WEIGHTS, (m.centerFront - m.centerBack) / 2, 1);
   const frontRanges = symmetricRanges(n, m.centerFront, frontSide);
   const backRanges = symmetricRanges(n, m.centerBack, backSide);
 
@@ -157,6 +172,10 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
   const centerIndexB = backSide.length;
   const pz = m.gardenPavilion?.depth ?? 0;
   const pe = m.entrancePavilion?.depth ?? 0;
+  const [hallX0, hallX1] = xr(frontRanges[centerIndexF]!);
+  const hallRect = rect(hallX0, m.zHallBack, hallX1, m.zGarden + pz);
+  /** Back-pile rooms directly behind the dome hall: the entrance hall and the room either side of it. */
+  const behindHall = (i: number) => Math.abs(i - centerIndexB) <= 1;
 
   /* ---------------- Ground floor (level 0): the party floor ---------------- */
   const typeRng = rng.fork('types');
@@ -194,31 +213,37 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
       type: frontTypes[i]!,
       level: 0,
       massId: 'main',
-      rect: rect(x0, m.zFrontInner, x1, isCenter ? m.zGarden + pz : m.zGarden),
+      rect: isCenter ? hallRect : rect(x0, m.zFrontInner, x1, m.zGarden),
       zone: 'front',
-      doubleHeight: isCenter && m.ballroomDoubleHeight,
+      doubleHeight: false,
       floorHoles: [],
     });
   });
 
   const backTypes: RoomType[] = new Array(backRanges.length);
   backTypes[centerIndexB] = 'entrance-hall';
-  const stairWest = m.grandStairSide === 'west';
   const serviceWest = m.serviceSide === 'west';
-  const backPool: RoomType[] = typeRng.shuffle(['billiard-room', 'card-room', 'study', 'cloakroom', 'morning-room', 'music-room'] as RoomType[]);
+  // Rooms the party can use first: a deep back pile has space for several.
+  const backPool: RoomType[] = [...required.splice(0), ...typeRng.shuffle(['billiard-room', 'card-room', 'morning-room', 'music-room', 'study', 'gallery'] as RoomType[])];
   for (let j = 0; j < backSide.length; j++) {
     const west = centerIndexB - 1 - j;
     const east = centerIndexB + 1 + j;
     const outermost = j === backSide.length - 1;
-    if (j === 0) {
-      backTypes[stairWest ? west : east] = 'stair-hall';
-      backTypes[stairWest ? east : west] = typeRng.pick(['study', 'morning-room', 'card-room'] as RoomType[]);
+    if (j === 0 && backSide[0]! < 2) {
+      // Either side of the entrance hall.
+      const pair = typeRng.shuffle(['study', 'cloakroom', 'cloakroom', 'pantry'] as RoomType[]);
+      backTypes[west] = pair[0]!;
+      backTypes[east] = pair[1]!;
     } else if (outermost) {
       backTypes[serviceWest ? west : east] = 'service-stair';
       backTypes[serviceWest ? east : west] = typeRng.pick(['cloakroom', 'pantry'] as RoomType[]);
     } else {
-      backTypes[west] = backPool.shift() ?? 'study';
-      backTypes[east] = backPool.shift() ?? 'card-room';
+      const pick = (bays: number): RoomType => {
+        const idx = backPool.findIndex((t) => t !== 'gallery' || bays >= 3);
+        return idx >= 0 ? backPool.splice(idx, 1)[0]! : 'card-room';
+      };
+      backTypes[west] = pick(backSide[j]!);
+      backTypes[east] = pick(backSide[j]!);
     }
   }
   // The service stair is a full-depth column at one end of the back pile on
@@ -235,25 +260,24 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
       type: backTypes[i]!,
       level: 0,
       massId: 'main',
-      rect: rect(x0, isCenter ? m.zEntrance - pe : m.zEntrance, x1, i === serviceIndex ? m.zFrontInner : m.zBackInner),
+      rect: rect(x0, isCenter ? m.zEntrance - pe : m.zEntrance, x1, behindHall(i) ? m.zHallBack : i === serviceIndex ? m.zFrontInner : m.zBackInner),
       zone: 'back',
       doubleHeight: false,
       floorHoles: [],
     });
   });
 
-  if (m.dc > 0) {
-    rooms.push({
-      id: '0:C',
-      type: 'corridor',
-      level: 0,
-      massId: 'main',
-      rect: rect(corrX0, m.zBackInner, corrX1, m.zFrontInner),
-      zone: 'corridor',
-      doubleHeight: false,
-      floorHoles: [],
-    });
-  }
+  // The spine corridor stops at the dome hall on either side of it.
+  const corridorHalves = (L: number, z0: number, z1: number) => {
+    for (const [tag, x0, x1] of [
+      ['w', corrX0, hallX0],
+      ['e', hallX1, corrX1],
+    ] as const) {
+      if (x1 - x0 < 1) continue;
+      rooms.push({ id: `${L}:C${tag}`, type: 'corridor', level: L, massId: 'main', rect: rect(x0, z0, x1, z1), zone: 'corridor', doubleHeight: false, floorHoles: [] });
+    }
+  };
+  if (m.dc > 0) corridorHalves(0, m.zBackInner, m.zFrontInner);
 
   /* ---------------- Wings ---------------- */
   const wingRng = rng.fork('wings');
@@ -303,46 +327,44 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
     });
   }
 
+  // A grand house has no narrow reception rooms: anything under five metres across is a study, not a salon.
+  for (const r of rooms) {
+    if (ROLE[r.type] !== 'party' || r.type === 'ballroom' || r.type === 'conservatory') continue;
+    if (Math.min(r.rect.x1 - r.rect.x0, r.rect.z1 - r.rect.z0) < MIN_PARTY_SPAN) r.type = 'study';
+  }
+
   /* ---------------- Upper floors ---------------- */
   const upRng = rng.fork('upper');
+  const groundParty = rooms.filter((r) => r.level === 0 && ROLE[r.type] === 'party').length;
+  const partyUpstairs = groundParty < MIN_GROUND_PARTY_ROOMS;
+  const upstairsParty = upRng.shuffle(['grand-salon', 'music-room', 'card-room', 'drawing-room'] as RoomType[]);
   const [uc0, uc1] = m.upperCorridor;
   for (let L = 1; L < m.mainLevels; L++) {
     const attic = L >= 2;
     frontRanges.forEach((r, i) => {
       const isCenter = i === centerIndexF;
-      if (isCenter && m.ballroomDoubleHeight && L === 1) return; // ballroom void
       const [x0, x1] = xr(r);
-      const bays = r[1] - r[0];
-      const type: RoomType = attic
-        ? bays >= 2
-          ? 'bedroom'
-          : upRng.pick(['dressing-room', 'bathroom'] as RoomType[])
-        : isCenter
-          ? upRng.pick(['sitting-room', 'bedroom'] as RoomType[])
-          : bays >= 2
-            ? upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[])
-            : upRng.pick(['dressing-room', 'bathroom', 'sitting-room'] as RoomType[]);
+      if (isCenter) {
+        // Over the ball room: the hall stays open, ringed by a gallery on this floor.
+        rooms.push({ id: `${L}:G`, type: 'hall-gallery', level: L, massId: 'main', rect: hallRect, zone: 'front', doubleHeight: false, floorHoles: [] });
+        return;
+      }
+      // When the hall has taken much of the ground floor, the party spills upstairs: the rooms either
+      // side of the first gallery become reception rooms, reached straight off the stair.
+      const besideGallery = L === 1 && Math.abs(i - centerIndexF) === 1;
+      const type: RoomType = besideGallery && partyUpstairs ? upstairsParty[i < centerIndexF ? 0 : 1]! : attic ? 'bedroom' : upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[]);
       rooms.push({
         id: `${L}:F${i}`,
         type,
         level: L,
         massId: 'main',
-        rect: rect(x0, m.zFrontInner, x1, isCenter ? m.zGarden + pz : m.zGarden),
+        rect: rect(x0, m.zFrontInner, x1, m.zGarden),
         zone: 'front',
         doubleHeight: false,
         floorHoles: [],
       });
     });
-    rooms.push({
-      id: `${L}:C`,
-      type: 'corridor',
-      level: L,
-      massId: 'main',
-      rect: rect(corrX0, uc0, corrX1, uc1),
-      zone: 'corridor',
-      doubleHeight: false,
-      floorHoles: [],
-    });
+    corridorHalves(L, uc0, uc1);
     backRanges.forEach((r, i) => {
       const [x0, x1] = xr(r);
       const isCenter = i === centerIndexB;
@@ -359,9 +381,8 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
         });
         return;
       }
-      const below = backTypes[i]!;
       let type: RoomType;
-      if (below === 'stair-hall' && L === 1) type = 'landing';
+      if (isCenter) type = attic ? 'bedroom' : upRng.pick(['sitting-room', 'bedroom'] as RoomType[]);
       else if (attic) type = r[1] - r[0] >= 2 ? 'bedroom' : upRng.pick(['bathroom', 'dressing-room'] as RoomType[]);
       else type = r[1] - r[0] >= 2 ? upRng.pick(['bedroom', 'bedroom', 'sitting-room'] as RoomType[]) : upRng.pick(['bathroom', 'dressing-room'] as RoomType[]);
       rooms.push({
@@ -369,7 +390,7 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
         type,
         level: L,
         massId: 'main',
-        rect: rect(x0, isCenter ? m.zEntrance - pe : m.zEntrance, x1, uc0),
+        rect: rect(x0, isCenter ? m.zEntrance - pe : m.zEntrance, x1, behindHall(i) ? m.zHallBack : uc0),
         zone: 'back',
         doubleHeight: false,
         floorHoles: [],
@@ -381,7 +402,7 @@ export function planRooms(rng: Rng, m: MassingPlan): FloorPlan {
       const comp = wingComps.get(w.toward)!;
       // Corridor strip along the court-facing side keeps bedrooms off the route.
       const inner = w.side === 'west' ? 'x1' : 'x0';
-      const cw = 2.3;
+      const cw = 2.8;
       const corr =
         inner === 'x1'
           ? rect(snap(w.rect.x1 - cw, 0.01), w.rect.z0, w.rect.x1, w.rect.z1)

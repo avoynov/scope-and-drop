@@ -4,11 +4,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { generateMansion, type MansionBlueprint, type MansionOptions } from '../src/mansion';
+import { generateMansion, movePerch, type MansionBlueprint, type MansionOptions } from '../src/mansion';
 import { buildMansion, type BuiltMansion, type Quality } from '../src/mansion/build';
 import { createGradePass } from '../src/mansion/build/grade';
+import { createBriefing } from './briefing';
 
-type View = 'scope' | 'wide' | 'orbit' | 'iso' | 'plan';
+type View = 'scope' | 'wide' | 'orbit' | 'iso' | 'plan' | 'free';
 
 const params = new URLSearchParams(location.search);
 const shot = params.has('shot');
@@ -50,6 +51,8 @@ composer.addPass(new OutputPass());
 
 let bp: MansionBlueprint;
 let built: BuiltMansion | null = null;
+let lastGenMs = 0;
+const briefing = createBriefing((chosen) => deploy(chosen));
 let view: View = (params.get('view') as View) ?? 'scope';
 let aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
 const overlays = { sight: params.has('sight'), pois: params.has('pois') };
@@ -63,6 +66,10 @@ const seedInput = $('seed') as HTMLInputElement;
 const styleSel = $('style') as HTMLSelectElement;
 const massSel = $('massing') as HTMLSelectElement;
 const sizeSel = $('size') as HTMLSelectElement;
+const hallSel = $('hall') as HTMLSelectElement;
+hallSel.value = params.get('hall') ?? 'gallery';
+const minVisInput = $('minvis') as HTMLInputElement;
+minVisInput.value = params.get('minvis') ?? '30';
 seedInput.value = params.get('seed') ?? 'gala-night';
 styleSel.value = params.get('style') ?? '';
 massSel.value = params.get('massing') ?? '';
@@ -75,8 +82,12 @@ function build(): void {
     style: (styleSel.value || undefined) as MansionOptions['style'],
     massing: (massSel.value || undefined) as MansionOptions['massing'],
     size: sizeSel.value as MansionOptions['size'],
+    hall: hallSel.value as MansionOptions['hall'],
+    minVisible: Math.max(0, Math.min(70, Number(minVisInput.value) || 0)) / 100,
   };
   bp = generateMansion(opts);
+  // A bearing in the URL skips the choice (used by the render scripts and shared links).
+  if (params.has('az') || params.has('el')) bp = movePerch(bp, Number(params.get('az') ?? bp.site.perch.azimuthDeg), Number(params.get('el') ?? bp.site.perch.elevationDeg));
   const genMs = performance.now() - t0;
   if (built) {
     scene.remove(built.root);
@@ -96,19 +107,42 @@ function build(): void {
   buildOverlays();
   aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
   setView(view);
+  showStats(genMs);
+  const url = new URL(location.href);
+  url.searchParams.set('seed', opts.seed as string);
+  url.searchParams.set('hall', hallSel.value);
+  url.searchParams.set('minvis', minVisInput.value || '0');
+  if (url.searchParams.has('level')) url.searchParams.set('level', String(planLevel));
+  history.replaceState(null, '', url);
+  // Before the mission: show the plan and let the sniper pick a bearing.
+  if ((!shot && !params.has('az') && !params.has('el') && !params.has('nobrief')) || params.has('brief')) briefing.open(bp);
+}
+
+function showStats(genMs?: number): void {
+  if (!built) return;
+  if (genMs !== undefined) lastGenMs = genMs;
   const v = bp.validation;
   const errors = v.issues.filter((i) => i.severity === 'error');
   $('stats').textContent = [
     `${bp.style.name} · ${bp.massing} · ${bp.bays} bays × ${bp.bay} m · ${bp.levels.length} storeys`,
     `rooms ${bp.stats.rooms} (party ${bp.stats.partyRooms}) · props ${bp.stats.props} · lights ${bp.stats.lights} · POIs ${bp.pois.length}`,
-    `perch ${bp.site.perch.distance} m @ ${bp.site.perch.azimuthDeg}° · party visible ${(bp.sightlines.partyVisible * 100).toFixed(0)}% · blind spots ${v.metrics.blindSpots}`,
-    `valid ${v.ok ? 'yes' : 'NO'} (attempt ${bp.attempt})${errors.length ? '\n' + errors.map((e) => '× ' + e.message).join('\n') : ''}`,
-    `generate ${genMs.toFixed(0)} ms · build ${built.stats.buildMs} ms · ${(built.stats.triangles / 1000).toFixed(0)}k tris · ${built.stats.meshes} meshes`,
+    `perch ${bp.site.perch.distance} m @ ${bp.site.perch.azimuthDeg}°, up ${bp.site.perch.elevationDeg}° · indoor party in view ${(bp.sightlines.partyVisible * 100).toFixed(0)}% · terrace ${(bp.sightlines.terrace * 100).toFixed(0)}%`,
+    `out of sight ${(bp.sightlines.hiddenShare * 100).toFixed(0)}% of the ground floor · ${bp.atrium ? `${bp.atrium.shape} dome hall` : 'no dome hall'}${bp.roofTerraces.length ? ` · ${bp.roofTerraces.length} roof terrace${bp.roofTerraces.length > 1 ? 's' : ''}` : ''}`,
+    `valid ${v.ok ? 'yes' : `NO: closest of ${bp.options.maxAttempts} tries`} (attempt ${bp.attempt}) · minimum in view ${(bp.options.partyVisibility[0] * 100).toFixed(0)}%${errors.length ? '\n' + errors.map((e) => '× ' + e.message).join('\n') : ''}`,
+    `generate ${lastGenMs.toFixed(0)} ms · build ${built.stats.buildMs} ms · ${(built.stats.triangles / 1000).toFixed(0)}k tris · ${built.stats.meshes} meshes`,
   ].join('\n');
-  const url = new URL(location.href);
-  url.searchParams.set('seed', opts.seed as string);
-  if (url.searchParams.has('level')) url.searchParams.set('level', String(planLevel));
-  history.replaceState(null, '', url);
+}
+
+/** The sniper has chosen a bearing: same house, new eye. */
+function deploy(next: MansionBlueprint): void {
+  bp = next;
+  if (!built) return;
+  const e = bp.site.perch.eye;
+  built.perch.position.set(e.x, e.y, e.z);
+  buildOverlays();
+  aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 9) };
+  setView(view === 'plan' || view === 'iso' || view === 'orbit' ? 'scope' : view);
+  showStats();
 }
 
 /** One button per storey; rebuilt per house because storey counts differ. */
@@ -228,6 +262,16 @@ function setView(v: View): void {
     camera.far = 9000;
     camera.updateProjectionMatrix();
     aimCamera();
+  } else if (v === 'free') {
+    // Debug camera from the URL: ?view=free&cam=x,y,z&look=x,y,z[&camfov=50]
+    const num = (k: string, d: number[]) => (params.get(k)?.split(',').map(Number) ?? d) as [number, number, number];
+    renderPass.camera = camera;
+    camera.fov = Number(params.get('camfov') ?? 55);
+    camera.near = 0.1;
+    camera.updateProjectionMatrix();
+    camera.position.set(...num('cam', [cx, 30, cz + 40]));
+    camera.lookAt(...num('look', [cx, 5, cz]));
+    scene.fog = null;
   } else if (v === 'orbit') {
     renderPass.camera = camera;
     camera.fov = 35;
@@ -299,6 +343,9 @@ for (const [k, label] of [
   $('overlays').appendChild(b);
 }
 $('go').onclick = build;
+hallSel.onchange = build;
+minVisInput.onchange = build;
+$('rebrief').onclick = () => briefing.open(bp);
 $('rnd').onclick = () => {
   seedInput.value = Math.random().toString(36).slice(2, 8);
   build();
@@ -336,7 +383,8 @@ let lastInfo = { calls: 0, triangles: 0 };
 function loop(): void {
   if (view === 'orbit') controls.update();
   renderer.info.reset();
-  composer.render();
+  // The briefing covers the scene: no need to draw it underneath.
+  if (!briefing.isOpen || shot) composer.render();
   lastInfo = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
   frames++;
   if (shot && frames === Number(params.get('frames') ?? 2)) {

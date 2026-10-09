@@ -7,6 +7,7 @@ import { rect, type Rect, type Vec2 } from '../core/geom';
 import { snap, type Rng } from '../core/rng';
 import type { LightSpec, Perch, Portico, Prop, Site, SkySpec, StyleDef, Terrace, TerrainSpec, Tree } from '../core/types';
 import type { MassingPlan } from '../layout/massing';
+import { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEyeAt, perchPlan } from './perch';
 import { terrainHeight } from './terrain';
 
 export interface SiteInput {
@@ -18,6 +19,7 @@ export interface SiteInput {
   footprint: Rect;
   perchDistance?: number;
   perchAzimuthDeg?: number;
+  perchElevationDeg?: number;
 }
 
 export interface SiteOutput {
@@ -215,40 +217,36 @@ export function planSite(input: SiteInput): SiteOutput {
   lights.push({ id: `lx${lid++}`, kind: 'uplight', scope: 'exterior', x: 0, y: 0.6, z: fountainZ, color: [1, 0.86, 0.66], intensity: 90, range: fountainR + 8 });
 
   /* ---------------- Perch, terrain, sky ---------------- */
-  const dist = snap(input.perchDistance ?? rng.range(135, 205), 0.1);
-  const az = snap(input.perchAzimuthDeg ?? rng.range(-24, 24), 0.1);
+  // Always draw both, so overriding one never reshuffles the rest of the site.
+  const drawnDist = rng.range(135, 205);
+  const drawnAz = rng.range(-24, 24);
+  const dist = snap(input.perchDistance ?? drawnDist, 0.1);
+  const az = snap(Math.max(-PERCH_ARC_DEG, Math.min(PERCH_ARC_DEG, input.perchAzimuthDeg ?? drawnAz)), 0.1);
+  const elevation = snap(Math.max(0, Math.min(PERCH_MAX_ELEVATION_DEG, input.perchElevationDeg ?? 0)), 0.1);
   const azr = (az * Math.PI) / 180;
-  const px = snap(Math.sin(azr) * dist, 0.01);
-  const pz = snap(m.zGarden + Math.cos(azr) * dist, 0.01);
+  const { x: px, z: pz } = perchPlan(m.zGarden, az, dist);
   const fountainReach = Math.hypot(fountainR + 20, gardenEnd);
   const terrain: TerrainSpec = {
     flatRadius: snap(Math.min(dist - 55, Math.max(70, fountainReach + 8)), 0.1),
     perchRise: snap(rng.range(4, 11), 0.1),
     crest: { x: snap(px + Math.sin(azr) * 7, 0.01), z: snap(pz + Math.cos(azr) * 7, 0.01) },
+    ridge: { cz: m.zGarden, radius: snap(dist + 7, 0.01), halfAngle: snap(((PERCH_ARC_DEG + 4) * Math.PI) / 180, 0.0001) },
     undulation: snap(rng.range(0.3, 0.9), 0.01),
     seed: rng.int(1, 1 << 20),
   };
-  const groundAtPerch = terrainHeight(terrain, px, pz);
   const target = { x: 0, y: snap(m.groundFloorY + 3.0, 0.01), z: m.zGarden };
-  let eyeY = groundAtPerch + 0.55;
-  // Make sure the brow of the hill does not cut the sightline; the sniper lies on a mound if needed.
-  const torsoY = m.groundFloorY + 1.3;
-  let lift = 0;
-  for (let i = 1; i < 40; i++) {
-    const t = i / 40;
-    const x = px + (0 - px) * t;
-    const z = pz + (m.zGarden - pz) * t;
-    const rayY = eyeY + (torsoY - eyeY) * t;
-    lift = Math.max(lift, terrainHeight(terrain, x, z) + 0.3 - rayY);
-  }
-  eyeY += Math.min(2.5, Math.max(0, lift) * 1.15);
   const perch: Perch = {
-    eye: { x: px, y: snap(eyeY, 0.01), z: pz },
+    eye: perchEyeAt(terrain, m.zGarden, m.groundFloorY, az, elevation, dist),
     target,
     distance: dist,
     azimuthDeg: az,
     fovMinDeg: 1.2,
     fovMaxDeg: 24,
+    arcDeg: [-PERCH_ARC_DEG, PERCH_ARC_DEG],
+    options: [],
+    elevationDeg: elevation,
+    elevationRangeDeg: [0, PERCH_MAX_ELEVATION_DEG],
+    elevationOptions: [],
   };
   const sunSide = rng.chance(0.5) ? 1 : -1;
   const sunAz = snap(180 + sunSide * rng.range(22, 60), 0.1);
@@ -261,24 +259,31 @@ export function planSite(input: SiteInput): SiteOutput {
   };
 
   /* ---------------- Trees ---------------- */
-  // Keep the cone from the eye to the façade (plus margin) clear.
-  const eye = perch.eye;
+  // Keep the cone from every bearing on the perch arc to the façade (plus margin) clear,
+  // so the sniper can pick a direction without a tree belt in the way.
   const fx0 = Math.min(footprint.x0, tx0) - 8;
   const fx1 = Math.max(footprint.x1, tx1) + 8;
-  const angOf = (x: number, z: number) => Math.atan2(x - eye.x, eye.z - z);
-  const aA = angOf(fx0, m.zGarden);
-  const aB = angOf(fx1, m.zGarden);
-  const aLo = Math.min(aA, aB);
-  const aHi = Math.max(aA, aB);
-  const coneDist = Math.hypot(eye.x, eye.z - footprint.z0) + 5;
+  const arcX = Math.sin((PERCH_ARC_DEG * Math.PI) / 180) * dist;
+  const arcZ = m.zGarden + Math.cos((PERCH_ARC_DEG * Math.PI) / 180) * dist;
+  const cones: { e: { x: number; z: number }; angOf: (x: number, z: number) => number; aLo: number; aHi: number; reach: number }[] = [];
+  for (let a = -PERCH_ARC_DEG; a <= PERCH_ARC_DEG + 1e-6; a += 2) {
+    const e = perchPlan(m.zGarden, a, dist);
+    const angOf = (x: number, z: number) => Math.atan2(x - e.x, e.z - z);
+    const aA = angOf(fx0, m.zGarden);
+    const aB = angOf(fx1, m.zGarden);
+    cones.push({ e, angOf, aLo: Math.min(aA, aB), aHi: Math.max(aA, aB), reach: Math.hypot(e.x, e.z - footprint.z0) + 5 });
+  }
   const inCone = (x: number, z: number, r: number): boolean => {
-    const d = Math.hypot(x - eye.x, z - eye.z);
-    if (d < 6 + r) return true; // the sniper's own spot
-    if (z > eye.z + r) return false; // behind the sniper
-    if (d > coneDist) return false; // behind the house
-    const a = angOf(x, z);
-    const margin = Math.asin(Math.min(1, (r + 2.5) / d));
-    return a > aLo - margin && a < aHi + margin;
+    for (const c of cones) {
+      const d = Math.hypot(x - c.e.x, z - c.e.z);
+      if (d < 6 + r) return true; // a firing position
+      // Behind this position (measured along its own line of fire) or behind the house.
+      if ((x - c.e.x) * -c.e.x + (z - c.e.z) * (m.zGarden - c.e.z) < -r * Math.hypot(c.e.x, m.zGarden - c.e.z) || d > c.reach) continue;
+      const a = c.angOf(x, z);
+      const margin = Math.asin(Math.min(1, (r + 2.5) / d));
+      if (a > c.aLo - margin && a < c.aHi + margin) return true;
+    }
+    return false;
   };
   const trees: Tree[] = [];
   const nearHouse = (x: number, z: number, r: number) =>
@@ -297,10 +302,10 @@ export function planSite(input: SiteInput): SiteOutput {
   // Woods behind the house: silhouettes above the roofline.
   addTrees(rect(footprint.x0 - 70, footprint.z0 - 110, footprint.x1 + 70, footprint.z0 - 16), 9, ['beech', 'oak', 'cedar', 'beech', 'poplar'], 160);
   // Flanking belts.
-  addTrees(rect(fx1 + 18, footprint.z0 - 30, fx1 + 140, eye.z - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
-  addTrees(rect(fx0 - 140, footprint.z0 - 30, fx0 - 18, eye.z - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
-  // The sniper's treeline along the ridge.
-  addTrees(rect(eye.x - 230, eye.z - 30, eye.x + 230, eye.z + 50), 7.5, ['oak', 'beech', 'yew', 'oak'], 220);
+  addTrees(rect(fx1 + 18, footprint.z0 - 30, fx1 + 140, arcZ - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
+  addTrees(rect(fx0 - 140, footprint.z0 - 30, fx0 - 18, arcZ - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
+  // The sniper's treeline along the ridge, behind and beside every firing position.
+  addTrees(rect(-arcX - 150, arcZ - 30, arcX + 150, m.zGarden + dist + 50), 7.5, ['oak', 'beech', 'yew', 'oak'], 420);
   // A specimen cedar or two on the lawn.
   for (const side of [-1, 1]) {
     if (!rng.chance(0.7)) continue;
@@ -320,7 +325,7 @@ export function planSite(input: SiteInput): SiteOutput {
 
   const site: Site = {
     terrace,
-    lawn: rect(-260, footprint.z0 - 130, 260, eye.z + 80),
+    lawn: rect(-260 - arcX, footprint.z0 - 130, 260 + arcX, m.zGarden + dist + 80),
     paths,
     fountain: { x: 0, z: fountainZ, radius: fountainR, tiers: rng.int(1, 3) },
     parterres,

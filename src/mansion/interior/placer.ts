@@ -57,6 +57,8 @@ export class Placer {
   readonly bands: WallBand[] = [];
   readonly mustReach: { x: number; z: number }[] = [];
   private readonly doorPoints: { x: number; z: number }[] = [];
+  /** Set for the dome hall and its galleries: where the great chandelier hangs. */
+  dome: { x: number; z: number; y: number } | null = null;
 
   constructor(
     room: Room,
@@ -106,6 +108,20 @@ export class Placer {
         }
       }
     }
+  }
+
+  /**
+   * Restrict the stretch of each wall that furniture may use (the rotunda's curved
+   * wall hides the back corners of the rectangle the room is planned on).
+   */
+  limitWalls(backX: [number, number], sideZ: [number, number]): void {
+    const clamp = (info: SideInfo, lo: number, hi: number) => {
+      info.t0 = Math.max(info.t0, lo);
+      info.t1 = Math.max(info.t0, Math.min(info.t1, hi));
+    };
+    clamp(this.sides.s, backX[0], backX[1]);
+    clamp(this.sides.e, sideZ[0], sideZ[1]);
+    clamp(this.sides.w, sideZ[0], sideZ[1]);
   }
 
   get floorY(): number {

@@ -20,6 +20,10 @@ export interface FurnishInput {
   required: Partial<Record<PoiType, { min: number; visible: number }>>;
   /** Threshold used for "visible" while placing (a margin above validation's). */
   visibleAt: number;
+  /** Doors onto roof terraces (the terrace has no walls of its own for the placer to find them on). */
+  terraceDoors?: Map<string, { x: number; z: number }>;
+  /** Dome hall: its rooms, the chandelier position and the wall stretches furniture may use. */
+  atrium?: { roomIds: string[]; dome: { x: number; z: number; y: number }; backX: [number, number]; sideZ: [number, number] };
 }
 
 export interface FurnishOutput {
@@ -50,6 +54,17 @@ export function furnish(input: FurnishInput): FurnishOutput {
   for (const room of rooms) {
     const walls = input.walls.filter((w) => w.neg === room.id || w.pos === room.id);
     const p = new Placer(room, walls, input.blocked.get(room.id) ?? [], rng.fork(room.id), ids);
+    const door = input.terraceDoors?.get(room.id);
+    if (door) {
+      // Keep the way out of the door clear, and everything on the terrace reachable from it.
+      const at = { x: Math.min(room.inner.x1 - 0.4, Math.max(room.inner.x0 + 0.4, door.x)), z: Math.min(room.inner.z1 - 0.4, Math.max(room.inner.z0 + 0.4, door.z)) };
+      p.keep.push({ x0: at.x - 1.3, z0: at.z - 1.3, x1: at.x + 1.3, z1: at.z + 1.3 });
+      p.mustReach.push(at);
+    }
+    if (input.atrium?.roomIds.includes(room.id)) {
+      p.dome = input.atrium.dome;
+      p.limitWalls(input.atrium.backX, input.atrium.sideZ);
+    }
     // The bar claims its wall before anything else in its room.
     if (room.id === barRoom) bar(p);
     RECIPES[room.type](p, { wantBar: false });

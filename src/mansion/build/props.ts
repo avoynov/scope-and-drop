@@ -25,7 +25,8 @@ export function buildProps(bp: MansionBlueprint, g: GeometryBuilder, seedRand: (
   const rooms = new Map(bp.rooms.map((r) => [r.id, r]));
   for (const p of bp.props) {
     const room = p.roomId ? rooms.get(p.roomId) : undefined;
-    g.scope = room ? room.index : -1;
+    // Roof terraces are open air: their furniture is lit by the exterior lights.
+    g.scope = room && room.type !== 'roof-terrace' ? room.index : -1;
     // Per-prop deterministic randomness from its id.
     let h = 2166136261;
     for (let i = 0; i < p.id.length; i++) h = Math.imul(h ^ p.id.charCodeAt(i), 16777619);

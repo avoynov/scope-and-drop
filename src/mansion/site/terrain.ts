@@ -1,6 +1,6 @@
 /**
  * Deterministic terrain height field: a flat lawn plateau around the house,
- * an elongated wooded rise for the sniper's perch, and gentle undulation.
+ * a wooded ridge along the sniper's perch arc, and gentle undulation.
  * Pure function of the TerrainSpec so the server, AI and renderer agree.
  */
 import type { TerrainSpec } from '../core/types';
@@ -32,13 +32,18 @@ const smooth = (e0: number, e1: number, x: number): number => {
 };
 
 export function terrainHeight(t: TerrainSpec, x: number, z: number): number {
-  // Elongated rise along x through the crest.
-  const dx = (x - t.crest.x) / 2.6;
-  const dz = z - t.crest.z;
-  const d = Math.sqrt(dx * dx + dz * dz);
+  // The lawn plateau round the house is flat: nothing to compute there.
+  const r = Math.sqrt(x * x + z * z);
+  if (r <= t.flatRadius) return 0;
+  // Wooded ridge following the perch arc, so every bearing the sniper may pick looks down on the house.
+  const rz = z - t.ridge.cz;
+  const rho = Math.sqrt(x * x + rz * rz);
+  const over = Math.max(0, Math.abs(Math.atan2(x, rz)) - t.ridge.halfAngle);
+  const along = (over * t.ridge.radius) / 2.6;
+  const across = rho - t.ridge.radius;
+  const d = Math.sqrt(along * along + across * across);
   const rise = t.perchRise * (1 - smooth(0, 95, d));
   // Plateau mask: zero near the house, full beyond.
-  const r = Math.sqrt(x * x + z * z);
   const mask = smooth(t.flatRadius, t.flatRadius + 60, r);
   const n = (valueNoise(x / 55, z / 55, t.seed) - 0.5) * 2 + (valueNoise(x / 19, z / 19, t.seed + 7) - 0.5) * 0.5;
   return (rise + n * t.undulation) * mask;

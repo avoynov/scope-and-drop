@@ -91,7 +91,9 @@ export const RECIPES: Record<string, MaterialRecipe> = {
   soil: { tex: 'soil' },
   bark: { tex: 'bark' },
   foliage: { tex: 'foliage', normalScale: 0.55, roughness: 0.85 },
-  water: { color: '#05080b', roughness: 0.02, metalness: 0.0, envMapIntensity: 2.2 },
+  // Not mirror-smooth: the fountain's uplight sits just above the surface, and a mirror highlight
+  // that close blows out the bloom and veils the house from the perch.
+  water: { color: '#05080b', roughness: 0.16, metalness: 0.0, envMapIntensity: 2.2 },
   lamp: { color: '#ffd29a', emissive: '#ffbe73', emissiveIntensity: 2.4, unlit: true },
 };
 

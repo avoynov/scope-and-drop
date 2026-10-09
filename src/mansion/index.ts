@@ -4,7 +4,8 @@
  *   const bp = generateMansion({ seed: 'match-42' });   // pure data, runs anywhere
  *   const built = buildMansion(bp, { renderer });        // three.js scene (browser)
  */
-export { generateMansion, resolveOptions, SCHEMA } from './generate';
+export { generateMansion, movePerch, resolveOptions, SCHEMA } from './generate';
+export { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEye, perchEyeAt, perchPlan } from './site/perch';
 export { STYLES, STYLE_IDS } from './core/styles';
 export { Rng } from './core/rng';
 export { terrainHeight } from './site/terrain';

@@ -58,8 +58,8 @@ export function hipParams(m: Mass): { pitchDeg: number; lift: number; inset: num
  * Height of the roof surface over plan point (x, z), or -Infinity where no roof covers it.
  * `main` is the main block (a pavilion's roof runs back into it).
  */
-export function roofSurfaceY(masses: Mass[], x: number, z: number): number {
-  const main = masses.find((m) => m.kind === 'main');
+export function roofSurfaceY(masses: Mass[], x: number, z: number, mainMass?: Mass): number {
+  const main = mainMass ?? masses.find((m) => m.kind === 'main');
   let best = -Infinity;
   for (const m of masses) {
     const yb = m.roof.eaveY + ROOF_BASE;

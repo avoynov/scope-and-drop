@@ -420,7 +420,7 @@ describe('proportions of a great house', () => {
 });
 
 describe('orangery style', () => {
-  const houses = ['or-1', 'or-2', 'or-3', 'or-4', 'or-5', 'or-6'].map((seed) => generateMansion({ seed, style: 'orangery' }));
+  const houses = ['or-1', 'or-2', 'or-3', 'or-4', 'or-5', 'or-6', 'pv-1', 'pv-3', 'pv-5'].map((seed) => generateMansion({ seed, style: 'orangery' }));
 
   it('is valid, two storeys, with one-storey wings and no garden portico', () => {
     for (const bp of houses) {
@@ -455,7 +455,10 @@ describe('orangery style', () => {
         }
         // Every room of the main block's top storey, party or not, wide enough to take one.
         const l = list.find((q) => q.roomId === r.id);
-        if (Math.min(r.inner.x1 - r.inner.x0, r.inner.z1 - r.inner.z0) >= 2.3) expect(l, `${r.id} (${r.type}) has no lantern`).toBeDefined();
+        // ...except a room that runs under a roof of its own (the pedimented entrance): that roof stays whole.
+        const ownRoof = bp.masses.some((q) => q.kind === 'pavilion' && q.rect.x0 < r.rect.x1 - 0.01 && q.rect.x1 > r.rect.x0 + 0.01 && q.rect.z0 <= r.rect.z1 && q.rect.z1 >= r.rect.z0);
+        if (ownRoof) expect(l, `${r.id} runs under a pavilion roof and must not have a lantern`).toBeUndefined();
+        else if (Math.min(r.inner.x1 - r.inner.x0, r.inner.z1 - r.inner.z0) >= 2.3) expect(l, `${r.id} (${r.type}) has no lantern`).toBeDefined();
         if (!l) continue;
         lanterns++;
         expect(r.skylight).toEqual(l.rect);

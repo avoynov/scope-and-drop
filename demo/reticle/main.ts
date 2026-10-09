@@ -140,17 +140,25 @@ function drawRet(): void {
   retTex.needsUpdate = true;
 }
 
+/**
+ * Ceiling of `heightAt` at horizontal distance r: each fbm is below 1, so the swells stay under 7 + 0.8 m,
+ * the hide adds at most 6 m and the far hills at most 0.08 m per metre beyond 1.5 km.
+ */
+const terrainCeiling = (r: number) => 13.8 + 0.08 * Math.max(0, r - 1500);
+const toT = new THREE.Vector3();
+const miss = new THREE.Vector3();
+const probe = new THREE.Vector3();
 /** Distance to whatever the reticle centre rests on (ground, or the target board). */
 function aimDistance(dir: THREE.Vector3): number {
-  const tgt = range.targetHead;
-  const toT = tgt.clone().sub(eyePos);
+  toT.copy(range.targetHead).sub(eyePos);
   const along = toT.dot(dir);
-  const miss = toT.clone().addScaledVector(dir, -along);
+  miss.copy(toT).addScaledVector(dir, -along);
   if (along > 0 && Math.abs(miss.x) < 3 && miss.y > -2 && miss.y < 1) return along;
   let d = 5;
   while (d < 9000) {
-    const p = eyePos.clone().addScaledVector(dir, d);
-    if (p.y < heightAt(p.x, p.z)) return d;
+    const p = probe.copy(eyePos).addScaledVector(dir, d);
+    // Above the ceiling the ground cannot be hit here, so the terrain need not be evaluated.
+    if (p.y < terrainCeiling(Math.hypot(p.x, p.z)) && p.y < heightAt(p.x, p.z)) return d;
     d += Math.max(1, d * 0.01);
   }
   return Infinity;
@@ -359,6 +367,8 @@ let lastReadout = 0;
 
 const dir = new THREE.Vector3();
 const nearVel = new THREE.Vector2();
+const sunLocal = new THREE.Vector3();
+const rifleFrame = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
   clock = t;
@@ -489,7 +499,7 @@ function frame(t: number, dt: number): void {
   cam.position.set(eye.x / 1000, eye.y / 1000, eye.z / 1000);
   cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
   cam.updateMatrixWorld();
-  rifle.setLight(toSun.clone().applyQuaternion(scopeCam.quaternion.clone().invert()));
+  rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
   const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.

@@ -112,6 +112,14 @@ describe('ballistics', () => {
 });
 
 describe('recoil', () => {
+  it('gives bit-identical results when frames reuse the cached head track, in any order', () => {
+    for (const spec of [RECOIL.svd, RECOIL.bolt]) {
+      const shared = shotVariation(5);
+      const times = [0.5, 0.0005, 2.9, 0.1, 0.1083, 0.0917, 1.6, 0, -0.01, spec.duration, 0.0010000001];
+      for (const t of times) expect(recoilAt(spec, shared, t)).toStrictEqual(recoilAt(spec, { ...shared }, t));
+    }
+  });
+
   const v = shotVariation(0);
   for (const [name, spec] of Object.entries(RECOIL)) {
     it(`${name}: kicks high, settles with the rifle left up, and gives the eye back`, () => {

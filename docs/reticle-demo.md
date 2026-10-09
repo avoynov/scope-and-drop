@@ -99,7 +99,7 @@ Each screen pixel is converted to an apparent direction `t = tan(angle)` (the fi
 
 ## 5. Recoil (`src/scope/recoil.ts`)
 
-Space, or **Recoil** in the panel, plays what the eye sees when the rifle fires. Nothing is fired: there is no bullet, only the gun's motion.
+This is the gun's motion when it fires (Space, or **Fire** in the panel). The bullet itself is section 6.
 
 | Before | 16 ms | 80 ms |
 | --- | --- | --- |
@@ -130,7 +130,69 @@ The lighter SVD kicks harder, so its motions are about 1.5 × the bolt rifle's.
 
 Tests check, for both rifles, that the kick peaks at more than 1.8 × the lasting rise, that the scope comes at least 80 % of its travel toward the eye, and that the eye is low at 50 ms. They also check that the scope stays more than 10 mm too close for at least 0.2 s and the eye more than 2 mm low for at least 0.15 s, so the artifacts last long enough to see, and that everything but the lasting rise is gone at the end.
 
-## 6. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
+## 6. Shooting (`src/scope/shot.ts`, `demo/reticle/shooting.ts`)
+
+Space fires a real bullet. It flies through moving air from the bore, hits whatever is in its way, and the shooter sees and hears what happens downrange at the moment it would really reach them.
+
+| Impact in dirt at 384 m, 20×, wind 2.5 m/s from 9:30 (0.03, 0.18, 0.6, 1.9 and 3.9 s after it lands) |
+| --- |
+| ![Dust](images/impact-dust.jpg) |
+
+### The bullet
+
+`fly()` is a 3D point-mass solver. It uses the same G7 drag, ICAO air and RK4 at 0.5 ms as `trajectory()`, but drag acts on the speed through the air rather than over the ground, and it adds:
+
+| Effect | Model | At 412 m (7N1) |
+| --- | --- | --- |
+| Wind | Drag on the air-relative velocity, with the wind sampled along the path every 1 ms | 0.27 thousandth per m/s of full-value crosswind (34 cm in 3 m/s), within 0.1 % of the lag rule `W·(t − R/V₀)` |
+| Gusts | Speed ±30 % and direction ±12° over 5–15 s. Gusts are carried across the range, so the wind at the target is not the wind at the shooter | Varies shot to shot |
+| Head and tail wind | Same drag model | A few cm lower or higher |
+| Spin drift | Litz: `1.25·(SG + 1.2)·t^1.83` inches to the right (right-hand twist). Miller stability from the bullet's length and the twist: SVD 1:240 mm gives SG 2.2, the bolt rifle's 1:11.25" gives 1.9 | 4.5 cm right |
+| Aerodynamic jump | Litz: `(0.01·SG − 0.0024·L + 0.032)` MOA per mph of crosswind. With a right-hand twist a wind from the left throws the bullet up | 0.09 mrad in 3 m/s |
+| Coriolis | `−2Ω×v` for a range at 38.5° N firing north-west (which puts the sun over the left shoulder, as in the scene) | 1 cm right, 1 cm low |
+
+With no wind and no Earth rotation, a level shot reproduces `trajectory()` to the millimetre (tested), so the ammo card stays true, and a bullet fired with the PSO's 4, 6 or 8 chevron on a target at that range lands within 1 cm of it (tested). The scope is still zeroed at 0 m, with the bore on the line of sight, so holds work exactly as in section 3. Wind holds come off the PSO's lateral scale or the tree's rows.
+
+### The rifle and the shot
+
+| | SVD (PSO) | Bolt rifle (tree) |
+| --- | --- | --- |
+| Precision | σ = 0.4 MOA per axis: 7N1 spec ≤ 1.24 MOA extreme vertical spread for 5 shots, every shot of a group inside 80 mm at 300 m | σ = 0.25 MOA (≈ 0.75 MOA 5-shot groups) |
+| Muzzle velocity spread | SD 8 m/s (military ammunition) | SD 4 m/s (match) |
+| At 412 m | ≈ 5 cm per axis, plus ≈ 3 cm vertical from velocity | ≈ 3 cm per axis, plus ≈ 1.5 cm vertical |
+| Lock and barrel time | 6 ms (hammer) + 1.3 ms | 3 ms (striker) + 1.3 ms |
+| Action | Semi-automatic, 10-round magazine | Bolt, 5-round magazine. After each shot Space works the bolt (1.1 s) |
+| Magazine change | 3.2 s | 4.5 s |
+
+- **The bullet goes where the rifle points when it leaves**, not where it pointed when Space was pressed: breathing sway, the heartbeat and any recoil still running are all sampled at trigger + lock time + barrel time. Break the shot at the bottom of the breath and it goes where the reticle was.
+- **Follow-up shots** fired before the rifle settles start wherever the recoil has put it. Rapid fire from the SVD walks up and right.
+- **Working the bolt or changing magazines** moves the rifle off the aim (about 1 mrad for the bolt, several for a magazine) and slides the cheek on the stock, so the picture shadows and the aim has to be found again. As with recoil, nothing returns on its own.
+- Each shot's dispersion is seeded by its number, so stills are repeatable.
+
+### What it hits
+
+`firstHit()` walks the path in 1 ms (under 1 m) steps. The mannequin, its stake and tripod, the boulder and the fence posts are raycast only when a step passes near them. The ground is tested against the terrain height and the crossing is bisected to millimetres. Bullets go straight through sagebrush, as .30 calibre bullets do through light brush. Flying stops half a metre into the ground, so a shot costs about 2.5 ms of CPU, once, at the trigger.
+
+### What the shooter sees
+
+| Hit on the mannequin at 412 m, 20× (0.04, 0.13 and 0.23 s after) | Muzzle-blast dust, 6× (0.05, 0.2, 0.6, 1.5 s) |
+| --- | --- |
+| ![Hit](images/impact-hit.jpg) | ![Blast](images/blast-dust.jpg) |
+
+- **Trace.** Through the scope, the bullet's wake shows as a ripple bending the image (`trace()` in composite.ts). It is a turbulent, lens-like push across the path, about 6 cm wide at the bullet and widening to 25 cm 60 ms behind it. It runs downrange from about 40 m out and drops into the target ("rolls in", as spotters say), fading as the bullet slows and collapsing into the impact. It is projected from the bullet's real position into the current view, so with recoil the trace is where the bullet is, not where the reticle was. Dry desert air keeps it faint: it is easiest to see at low power and in motion.
+- **Impacts.** At 412 m the bullet comes in well under a degree from the horizontal, so it ploughs the dirt rather than digging. Dirt clods are thrown forward and up and fall back under gravity. The dust is a forward-leaning plume of billows that brakes hard in the air (0.1–0.4 s), swells as √t, lifts slightly and then drifts off at the wind's speed. Dust lingers 2–5 s. Rock throws pale dust. A mannequin hit throws white plastic flecks and a small puff, leaves a true-size 7.62 mm hole (under a pixel even at 20×, as in life), and rocks the mannequin on its stake about 1° at 2.2 Hz. The bullet keeps about a fifth of its 5.4 N·s. Posts give a puff and a ring. Everything is a closed-form function of time since the impact, so the cost is one draw of up to 320 sprites, whatever the frame rate.
+- **Muzzle-blast dust.** Prone on dry ground, the SVD's slotted flash hider lifts dust in front of the muzzle. It is far out of focus, so it shows as a sunlit veil boiling up from the bottom of the view in the first 0.2 s, hazing the field for about a second and drifting off downwind. The bolt rifle raises 60 % as much. Together with recoil, this is why a shooter often cannot see their own impact.
+- **Running mirage.** The mirage in the glass now moves with the crosswind at roughly its angular rate, weighted toward the near two thirds of the path, and boils in place when the air is still. That is the shooter's main wind cue downrange. The panel's **Wind here** reads the wind at the firing point like a hand-held meter. It is not the wind at the target.
+
+### What the shooter hears
+
+Synthesised in WebAudio (`audio.ts`): the report (blast, crack and thump, sharper for the SVD), the bolt or magazine clicks, and the bullet's arrival. That is a slap for the mannequin, a thud for dirt, a ring for a steel post. It is heard after the time of flight plus the sound's return at 343 m/s: about 1.8 s at 412 m. Bang, then a slap 1.8 s later, is a hit. A faint echo comes back from the hills about 9 s after the shot. **Sound** in the panel mutes it.
+
+### Readouts
+
+**Rounds** (in the magazine and chamber, and what Space will do next), **Wind here**, and **Last shot**: hit and where, or the miss distance against the chest in the target's plane. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD player still needs no numbers.
+
+## 7. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
 
 ![Scope-in at 8×](images/scope-in-filmstrip.jpg)
 
@@ -157,11 +219,11 @@ Drag sensitivity follows adaptation: locked to the glass on the weld, locked to 
 
 URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up.
 
-## 7. The range (`demo/reticle/scene.ts`)
+## 8. The range (`demo/reticle/scene.ts`)
 
 A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.5 km, and a ground shader built from band-limited fbm with an integer pcg2d hash (float hashes streak at world coordinates in the hundreds of metres). It has 40k sagebrush clumps, a 4 m boulder, a white mannequin torso on an orange stake at 412 m, a wire fence with T-posts at about 360 m, exponential haze, and a sun over the shooter's shoulder with shadows around the target.
 
-## 8. Controls
+## 9. Controls
 
 | Input | Action |
 | --- | --- |
@@ -170,19 +232,20 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | W A S D | Move the eye across the exit pupil |
 | Q / E | Eye relief closer / further |
 | F / right-click | Scope in / scope out |
-| Space | Recoil (no bullet) |
+| Space | Fire. With the chamber empty: work the bolt (bolt rifle) or change the magazine |
 | R | Switch reticle |
 | L | Illumination |
 | H | Hide the panel |
 
-The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, toggles for sway, mirage and head wander, a Recoil button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
+The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander and sound, a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree`, `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`), `nogust`, `mute`, `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
-## 9. Next steps (not built)
+## 10. Next steps (not built)
 
 - Turrets: elevation and windage clicks that move the reticle image, plus a zero-stop. This also gives real holdover use for the PSO chevrons.
-- Shooting: fire along the bore with `trajectory()` as the recoil starts, add wind drift, and show splash or impact feedback, so the chevrons and the tree's holds can be tested. The bullet takes about 0.6 s to reach 412 m and the picture is back after about 0.2 s, so at low power a shooter who follows through can spot their own hit.
+- Atmosphere: temperature, pressure and altitude (air density), so the PSO's chevrons stop being exact off standard conditions, as on a real PSO-1.
+- Moving targets and lead (the lateral scale is already there for it).
 - Depth-aware focus, so the foreground and far hills blur separately when parallax is set to the target.
 - Low light: a 7 mm eye pupil, a dimmer image, and illumination brightness steps.
 - Bringing the scope composite into the mansion demo's `scope` view in place of its CSS reticle.

@@ -20,7 +20,7 @@
       #hud h1 a { color: var(--muted); text-decoration: none; letter-spacing: 0.08em; }
       .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
       .seg.one { grid-template-columns: 1fr; }
-      .flags { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 10px; }
+      .flags { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 6px; margin: 4px 0 10px; }
       button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
       button.on { border-color: var(--accent); color: var(--accent); background: rgba(224, 181, 106, 0.08); }
       label { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; color: var(--muted); margin-bottom: 4px; }
@@ -63,19 +63,22 @@
       <label>Eye ↕<input id="ey" type="range" min="-6" max="6" step="0.1" /></label>
       <label>Eye relief<input id="ez" type="range" min="-30" max="40" step="0.5" /></label>
       <label>Pan shadow<input id="pan" type="range" min="0" max="2" step="0.05" /></label>
+      <label>Wind m/s<input id="wind" type="range" min="0" max="10" step="0.5" /></label>
+      <label>Wind from<input id="winddir" type="range" min="0.5" max="12" step="0.5" title="clock: 12 from downrange, 3 from the right, 9 from the left" /></label>
       <div class="flags">
         <button data-flag="illum">Illum</button>
         <button data-flag="sway">Sway</button>
         <button data-flag="mirage">Mirage</button>
         <button data-flag="drift">Head</button>
+        <button data-flag="sound">Sound</button>
       </div>
       <div class="seg">
         <button id="center">Centre eye</button>
-        <button id="fire">Recoil · Space</button>
+        <button id="fire">Fire · Space</button>
       </div>
       <div class="seg one"><button id="scope">Scope out · F</button></div>
       <dl id="readout"></dl>
-      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space recoil · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
+      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space fire (works the bolt, changes magazines) · WASD head · Q/E eye relief · R reticle · L illum · H hide</div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

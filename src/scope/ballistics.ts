@@ -36,6 +36,9 @@ function cdAt(table: readonly number[], mach: number): number {
   return table[n * 2 - 1]!;
 }
 
+/** Standard G7 drag coefficient at a Mach number. */
+export const cdG7 = (mach: number): number => cdAt(G7, mach);
+
 export interface Round {
   id: string;
   /** Load name as printed on the box. */

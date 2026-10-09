@@ -116,6 +116,10 @@ export interface Range {
   bushLod: (cam: THREE.Camera, pxPerRad: number, tolPx: number) => void;
   targetHead: THREE.Vector3;
   targetFoot: THREE.Vector3;
+  /** What a bullet can hit besides the ground: the mannequin on its stake (pivots at its foot), the boulder, the fence posts. */
+  target: THREE.Group;
+  boulder: THREE.Mesh;
+  fence: THREE.Group;
 }
 
 export function buildRange(): Range {
@@ -361,19 +365,23 @@ export function buildRange(): Range {
   const torsoProfile = [
     [0.0, 0.0], [0.16, 0.0], [0.17, 0.08], [0.15, 0.24], [0.17, 0.4], [0.21, 0.52], [0.22, 0.58], [0.15, 0.63], [0.06, 0.66], [0.055, 0.7], [0, 0.7],
   ].map(([r, y]) => new THREE.Vector2(r, y));
+  stake.name = 'stake';
   const torso = new THREE.Mesh(new THREE.LatheGeometry(torsoProfile, 28), white);
   torso.scale.set(1, 1, 0.55);
   torso.position.y = 0.86;
+  torso.name = 'torso';
   tgt.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 20, 16), white);
   head.scale.set(0.85, 1.2, 0.95);
   head.position.y = 0.86 + 0.7 + 0.03;
+  head.name = 'head';
   tgt.add(head);
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + 0.4;
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.95), steel);
     leg.position.set(Math.cos(a) * 0.18, 0.42, Math.sin(a) * 0.18);
     leg.rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4);
+    leg.name = 'tripod';
     tgt.add(leg);
   }
   tgt.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
@@ -389,6 +397,7 @@ export function buildRange(): Range {
     const z = -360 - x * 0.12;
     const y = heightAt(x, z);
     const post = new THREE.Mesh(postGeo, i % 6 === 0 ? wood : steel);
+    post.name = i % 6 === 0 ? 'post-wood' : 'post-steel';
     post.position.set(x, y + 0.6, z);
     post.rotation.z = (hash(i, 9) - 0.5) * 0.08;
     fence.add(post);
@@ -434,5 +443,8 @@ export function buildRange(): Range {
     bushLod,
     targetHead: new THREE.Vector3(TARGET.x, ty + 1.7, TARGET.z),
     targetFoot: new THREE.Vector3(TARGET.x, ty, TARGET.z),
+    target: tgt,
+    boulder,
+    fence,
   };
 }

@@ -278,6 +278,20 @@ function imageShare(eye: Eye, tilt: { x: number; y: number }): number {
   }
   return sum / n;
 }
+/**
+ * True when the eyebox passes no light for any direction the composite can show, so the image counts for
+ * nothing. Mirrors glass() in composite.ts: light needs |eye.xy + (eye.z + aberration·r²)·t| < exit + eye
+ * pupil radii, and the field stop zeroes everything past r = 1 + 0.6/R. `sweep` is the eye's travel over
+ * the exposure, which the recoil path samples ±½ of. The 1 % margin covers float32 in the shader.
+ */
+function eyeboxDark(eye: Eye, sweep: THREE.Vector3, exitR: number, pupilR: number, th: number): boolean {
+  const rMax = 1 + 0.6 / R;
+  const tMax = th * rMax;
+  const zMax = Math.abs(eye.z) + Math.abs(sweep.z) / 2 + SCOPE.pupilAberrationMm * rMax * rMax;
+  const lateral = Math.hypot(eye.x, eye.y) - Math.hypot(sweep.x, sweep.y) / 2;
+  return lateral - zMax * tMax > (exitR + pupilR) * 1.01 + 0.01;
+}
+
 /** Light adaptation is quick, dark adaptation slower: the eye takes longer to settle into the dimmer glass. */
 function stepAdapt(target: number, dt: number): void {
   const tau = target > adapt ? 0.45 : 0.2;
@@ -489,8 +503,12 @@ function frame(t: number, dt: number): void {
   near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97);
 
   drawRet();
-  renderer.setRenderTarget(scopeRT);
-  renderer.render(scene, scopeCam);
+  // The magnified image only reaches the screen through the eyebox. When no direction in the field can send
+  // light into the eye pupil, the composite multiplies the image by exactly zero, so skip rendering it.
+  if (!eyeboxDark(eye, u.uEyeSweep!.value, ep / 2, eye.pupilMm / 2, th)) {
+    renderer.setRenderTarget(scopeRT);
+    renderer.render(scene, scopeCam);
+  }
   const wide = adapt > 0.6 ? wideLoRT : wideRT;
   u.tWide!.value = wide.texture;
   u.uWideLod!.value = wide === wideLoRT ? -Math.log2(3) : 0;

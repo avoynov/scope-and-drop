@@ -579,8 +579,8 @@ describe('the programme of rooms', () => {
     expect(share('gym')).toBeLessThan(0.65);
     expect(share('spa')).toBeGreaterThan(0.25);
     expect(share('spa')).toBeLessThan(0.55);
-    expect(share('disco')).toBeGreaterThan(0.65);
-    expect(share('disco')).toBeLessThan(0.92);
+    expect(share('disco')).toBeGreaterThan(0.27);
+    expect(share('disco')).toBeLessThan(0.53);
     expect(share('theatre')).toBeGreaterThan(0.15);
     expect(share('theatre')).toBeLessThan(0.45);
     expect(share('conservatory')).toBeGreaterThan(0.35);

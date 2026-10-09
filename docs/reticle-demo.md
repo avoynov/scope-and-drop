@@ -22,7 +22,7 @@ A good, well set-up 4–20×50 FFP scope (`src/scope/optics.ts`, `SCOPE`):
 | Lateral colour | ±0.6 % at the rim | A faint red/blue split at the field edge. |
 | Rim softness | ≈1.5 px at the field stop, rising as r⁶ | Field curvature and coma in a good eyepiece: sharp over most of the field, soft only at the very edge. |
 
-The defaults describe a scope that is good and properly adjusted: the parallax knob is set to the target range, the eye sits on the exit pupil at full eye relief, and nothing is dialled on the turrets. You change power. Everything else is there to experiment with.
+The defaults describe a scope that is good and properly adjusted: the parallax knob is set to the target range and the eye sits on the exit pupil at full eye relief. Zeroing is the exception: the scope is zeroed at 0 m with both turrets at 0, so nothing is dialled and every hold comes from the reticle (shown as "Zero" in the panel). You change power. Everything else is there to experiment with.
 
 ## 2. Reticles (`src/scope/reticles.ts`)
 

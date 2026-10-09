@@ -282,6 +282,8 @@ function frame(t: number, dt: number): void {
       ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ['Exit pupil', `${ep.toFixed(1)} mm`],
       ['Parallax set', fmt(state.parallax)],
+      // Turrets are left at 0: nothing is dialled, so every hold comes from the reticle.
+      ['Zero', '0 m · turrets 0'],
       ['Aim point', fmt(D)],
       ['Parallax error', `${Math.abs(par).toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],
       ['Target 1.7 m', `${fig.toFixed(2)} ${ret.id === 'pso' ? 'th' : 'mil'}`],

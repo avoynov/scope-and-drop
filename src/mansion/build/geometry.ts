@@ -414,9 +414,18 @@ export class GeometryBuilder {
 
   /**
    * Cut a plan rectangle out of every triangle added since `mark` to buckets whose key
-   * passes `match` (used to open the roof where the dome's drum comes through).
+   * passes `match` (used to open the roof where the dome hall rises through it).
    */
   cutRectHole(mark: Map<string, number>, match: (key: string) => boolean, hole: { x0: number; z0: number; x1: number; z1: number }): void {
+    this.splitRect(mark, match, hole, () => null);
+  }
+
+  /**
+   * Split every triangle added since `mark` (in buckets passing `match`) along a plan rectangle.
+   * The part outside stays where it is; the part inside moves to the bucket `inside(key)` names,
+   * or is dropped when that is null. Used to cut holes and to glaze part of a roof.
+   */
+  splitRect(mark: Map<string, number>, match: (key: string) => boolean, hole: { x0: number; z0: number; x1: number; z1: number }, inside: (key: string) => string | null): void {
     type Vx = number[]; // x y z nx ny nz u v r g b scope
     const lerp = (a: Vx, b: Vx, t: number): Vx => a.map((v, i) => v + (b[i]! - v) * t);
     // Keep the part of a convex polygon where sign * (p[axis] - at) >= 0.
@@ -432,10 +441,26 @@ export class GeometryBuilder {
       }
       return out;
     };
-    for (const [key, bk] of this.buckets) {
+    const writeTo = (bk: Bucket, v: Vx): number => {
+      const i = bk.vertexCount;
+      bk.pos.push(v[0]!, v[1]!, v[2]!);
+      bk.nor.push(v[3]!, v[4]!, v[5]!);
+      bk.uv.push(v[6]!, v[7]!);
+      bk.col.push(v[8]!, v[9]!, v[10]!);
+      bk.scope.push(v[11]!);
+      return i;
+    };
+    const emit = (bk: Bucket, piece: Vx[]) => {
+      if (piece.length < 3) return;
+      const vi = piece.map((v) => writeTo(bk, v));
+      for (let k = 1; k + 1 < vi.length; k++) bk.idx.push(vi[0]!, vi[k]!, vi[k + 1]!);
+    };
+    for (const [key, bk] of [...this.buckets]) {
       if (!match(key)) continue;
       const from = mark.get(key) ?? 0;
       if (from >= bk.idx.length) continue;
+      const toKey = inside(key);
+      const to = toKey === null ? null : this.bucket(toKey);
       const old = bk.idx.data.slice(from, bk.idx.length);
       bk.idx.length = from;
       const read = (i: number): Vx => [
@@ -445,15 +470,6 @@ export class GeometryBuilder {
         bk.col.data[i * 3]!, bk.col.data[i * 3 + 1]!, bk.col.data[i * 3 + 2]!,
         bk.scope.data[i]!,
       ];
-      const write = (v: Vx): number => {
-        const i = bk.vertexCount;
-        bk.pos.push(v[0]!, v[1]!, v[2]!);
-        bk.nor.push(v[3]!, v[4]!, v[5]!);
-        bk.uv.push(v[6]!, v[7]!);
-        bk.col.push(v[8]!, v[9]!, v[10]!);
-        bk.scope.push(v[11]!);
-        return i;
-      };
       for (let t = 0; t + 2 < old.length; t += 3) {
         const ids = [old[t]!, old[t + 1]!, old[t + 2]!];
         const tri = ids.map(read);
@@ -464,14 +480,18 @@ export class GeometryBuilder {
           continue;
         }
         const mid = clip(clip(tri, 0, hole.x0, 1), 0, hole.x1, -1);
-        const pieces = [clip(tri, 0, hole.x0, -1), clip(tri, 0, hole.x1, 1), clip(mid, 2, hole.z0, -1), clip(mid, 2, hole.z1, 1)];
-        for (const piece of pieces) {
-          if (piece.length < 3) continue;
-          const vi = piece.map(write);
-          for (let k = 1; k + 1 < vi.length; k++) bk.idx.push(vi[0]!, vi[k]!, vi[k + 1]!);
-        }
+        for (const piece of [clip(tri, 0, hole.x0, -1), clip(tri, 0, hole.x1, 1), clip(mid, 2, hole.z0, -1), clip(mid, 2, hole.z1, 1)]) emit(bk, piece);
+        if (to) emit(to, clip(clip(mid, 2, hole.z0, 1), 2, hole.z1, -1));
       }
     }
+  }
+
+  /** Drop everything added to a bucket since `mark` (and the bucket itself if that leaves it empty). */
+  discardSince(mark: Map<string, number>, key: string): void {
+    const bk = this.buckets.get(key);
+    if (!bk) return;
+    bk.idx.length = mark.get(key) ?? 0;
+    if (bk.idx.length === 0) this.buckets.delete(key);
   }
 
   /** Finish: one BufferGeometry per bucket key. */

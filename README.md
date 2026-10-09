@@ -19,6 +19,8 @@ Every house is built to be seen into: a mostly glazed garden front, party rooms 
 | ![dome hall](docs/images/dome-hall.jpg) | ![dome](docs/images/dome-exterior.jpg) |
 | **Briefing: pick the bearing and elevation** | **Roof terraces on flat-roofed wings** |
 | ![briefing](docs/images/briefing.jpg) | ![roof terraces](docs/images/roof-terraces.jpg) |
+| **Orangery style, garden front** | **Orangery from above: glass roofs over the party rooms** |
+| ![orangery](docs/images/orangery-front.jpg) | ![orangery from above](docs/images/orangery-above.jpg) |
 
 ---
 
@@ -48,7 +50,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 84 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
+npm test                 # 102 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -147,11 +149,11 @@ Every stage draws from its own forked RNG stream (`rng.fork('rooms')`), so chang
 
 | # | Stage | File | What happens |
 |---|---|---|---|
-| 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), or **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order). Each sets proportions, ornament and interior palettes. |
+| 1 | Style | `core/styles.ts` | **Palladian limestone** (balustraded parapet, Ionic portico, pedimented windows), **Georgian red brick** (Flemish bond, stone quoins, dormers), **Beaux-Arts** (rusticated base, zinc mansard with dormers, iron balconettes, Corinthian order), or **Orangery** (Bath stone, after the Great Conservatory at Syon: a temple front under the dome, giant arched windows through both storeys between pilasters, glass roofs over the party rooms and the one-storey wings, no drapes). Each sets proportions, ornament and interior palettes. |
 | 2 | Massing | `layout/massing.ts` | Odd number of bays (3.6–4.5 m) on a grid mirrored about the garden axis, after Stiny & Mitchell's Palladian grammar. Double pile with an optional spine corridor. Plan type `block`, `u-garden`, `u-entrance` or `h`. Optional garden/entrance pavilions, giant or single-storey porticos, two-bay wings, and a glass conservatory. 2–3 storeys on a raised plinth (piano nobile). The central hall is sized so its stair fits: a shallow one grows a deeper garden pavilion, then a deeper front pile. |
 | 3 | Rooms | `layout/rooms.ts` | Symmetric compositions of bays per pile, so walls land on bay lines. Ballroom on the axis, with a gallery room over it on every upper floor. Mirrored pairs of party rooms (drawing, dining, library, music, card, billiard, morning, gallery). Entrance hall on the axis behind it. A full-depth **service column** stacks the service stair on every floor. Upper floors reuse the ground-floor partition lines so walls stack. No reception room is narrower than 5 m (a narrower bay becomes a study or a passage), corridors are 2.8–3.6 m wide, and when the ground floor has fewer than seven party rooms the first-floor rooms beside the gallery become party rooms (salon, music, card, drawing) reached from the gallery. |
 | 4 | Walls | `layout/walls.ts` | Derived, not authored. Room edges on each line are swept; each run with a constant (room on −side, room on +side) pair becomes a wall. A null side means façade. |
-| 5 | Dome hall | `layout/atrium.ts` | The ball room is open through every storey to a glass dome. One outline, the *void edge* (a U open to the garden windows with rounded back corners), drives it all. Offset inward it gives the two arms of the **split stair**, which sweep from the back of the dance floor round both sides up to the first gallery. Offset outward it gives the **ring gallery** on each upper floor: left, back and right, with doors into the rooms there; the garden side stays glass. `hall: 'rotunda'` makes the back of the hall a true apse with a curved wall; `'gallery'` (default) keeps a rectangular room with curved galleries. Proportions are those of a great house: the hall is five bays wide (seven when palatial), about 20 × 17 m on average; galleries are 3–4.2 m wide and each stair arm 2.6–3.6 m. The **dome** is the largest circle that fits the hall (8 m radius on average) and stands on a low curb in a glass roof that covers the whole hall. Curved shapes reach the rest of the generator as thin rectangular strips, so walls, nav and sightlines stay rectangular. |
+| 5 | Dome hall | `layout/atrium.ts` | The ball room is open through every storey to a glass dome. One outline, the *void edge* (a U open to the garden windows with rounded back corners), drives it all. Offset inward it gives the two arms of the **split stair**, which sweep from the back of the dance floor round both sides up to the first gallery. Offset outward it gives the **ring gallery** on each upper floor: left, back and right, with doors into the rooms there; the garden side stays glass. `hall: 'rotunda'` makes the back of the hall a true apse with a curved wall; `'gallery'` (default) keeps a rectangular room with curved galleries. Proportions are those of a great house: the hall is five bays wide (seven when palatial), about 20 × 17 m on average; galleries are 3–4.2 m wide and each stair arm 2.6–3.6 m. Above the eaves the hall goes on up as a **lantern**: a glazed attic clear of every roof round it (so the house roof simply dies into its walls), a glass roof over the whole hall, then a glazed drum carrying a parabolic glass **dome**, the largest circle that fits the hall (8 m radius on average). Columns stand only where they carry a gallery; the top gallery is open to the glass. Curved shapes reach the rest of the generator as thin rectangular strips, so walls, nav and sightlines stay rectangular. |
 | 5b | Stairs | `layout/stairs.ts` | U-return service stairs stacked in the service column (riser/tread search, approach zone, stairwell hole cut in the floor above). The grand stair is the dome hall's. |
 | 6 | Windows | `layout/openings.ts` | One window per bay per storey on the main fronts and wing bays, centred on end walls. **Wide French windows to the terrace: about 70% of each garden-front bay is glass.** Frosted glass for bathrooms. Style dressing (pediments, keystones, surrounds, balconettes) and curtain state (open, sheer or drawn). A lower wing whose roof is *already* flat becomes a walkable **roof terrace** with a glazed door from the storey beside it; no roof is flattened for this. |
 | 7 | Doors | `layout/openings.ts` | Solved as a graph problem. First the mandatory doors: grand axis, enfilade near the windows, wing chains, every room onto its corridor, the hall galleries into the rooms beside and behind them. **Column screens:** a wall between two party rooms that sit one behind the other is opened bay by bay, leaving piers, so the view from the garden front carries through; halls, corridors, service and private rooms keep solid walls. Then connectivity growth from the entrance or gallery. Then a **pass-through repair** so a private room is never the only way in; the blocker is promoted to a landing or morning room. |
@@ -225,7 +227,9 @@ All renderer code is in `src/mansion/build/`. `buildMansion(bp, opts)` returns `
   - Façades get outer faces mitred at convex and concave corners, with plinth and water table, string courses, stepped cornices, balustraded parapets, quoins, pavilion pilasters, window surrounds, triangular and segmental pediments, keystones and iron balconettes.
   - Windows get sash and French-window joinery with glazing bars, Fresnel glass, double-sided pleated drapes, pelmets and sheers.
 - **Roofs and porticos** (`roofs.ts`): hipped (slope-aligned slate UVs), mansard with dormers (some warmly lit), flat with balustrade, and glass conservatory roofs. Also pavilion pediment gables, chimney stacks with pots, and porticos in Doric, Ionic and Corinthian orders with entablature and pediment.
-- **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the chandelier's chain. Outside, the hall's glass roof with its glazing bars and, on a low curb, the ribbed glass dome; the house roof is cut open over the hall and the well walls follow the roof slope, so nothing stands higher than the roof between the sniper and the glass.
+- **Dome hall** (`atrium.ts`): gallery floors with stone balustrades, the curved stair (treads, sloping soffit, stringers, handrails), gallery columns, the rotunda's curved wall with its doorways, and the chandelier's chain. Outside, the lantern: the attic with its arched lights (blind where a roof stands against them), the hall's glass roof with its glazing bars, the drum and the ribbed parabolic dome. Everything the roofs put over the hall, ridge trims included, is cut away (`GeometryBuilder.splitRect`).
+- **Glass roofs** (`roofs.ts`, Orangery): a hipped roof is built whole, with iron rafters, hips and purlins, and the parts over skylit rooms are moved to glass (`splitRect`). Under it a leaded deck at the eaves covers everything that is not glass, with a plastered well into each skylit room.
+- **Giant windows** (`arch.ts`): stacked openings are rectangles in the data; the mesher fills the corners of the top one back in as a round head with a fan of bars, and hides the floor edge between two behind an iron panel.
 - **Also:** `stairs.ts` (stone or timber U-stairs with balusters); `props.ts` (furniture, chandeliers with glowing candles, bar with bottles, grand piano with raised lid, statues, paintings from the atlas, lamps, lanterns); `site.ts` (terrain, terrace, steps, gardens, fountain, instanced LOD trees and a far tree line).
 - **Sky** (`sky.ts`): lavender haze to deep-blue zenith, a warm sunset glow on one side and the rosy Belt of Venus opposite. Cirrus is lit from below, there are stars, and the crescent moon is shaded by the real sun vector. It is baked into a PMREM environment map for façade, glass and water reflections.
 - **Post** (`grade.ts`): ACES tone mapping, bloom on bulbs, then a split-tone grade (cool shadows, warm highlights, +12% saturation, soft vignette).
@@ -258,7 +262,7 @@ The target is about 70% realistic and 30% appealing: real proportions, materials
 generateMansion({
   seed: 'match-42',                 // string or number
   size: 'grand',                    // 'compact' (9–11 bays) | 'grand' (11–13) | 'palatial' (15–17)
-  style: 'palladian',               // 'palladian' | 'georgian' | 'beauxarts' (default: random)
+  style: 'palladian',               // 'palladian' | 'georgian' | 'beauxarts' | 'orangery' (default: random)
   massing: 'u-garden',              // 'block' | 'u-garden' | 'u-entrance' | 'h' (default: weighted by style)
   hall: 'gallery',                  // 'gallery' | 'rotunda': shape of the dome hall (default 'gallery')
   perchDistance: 180,               // metres from the garden façade (default 135–205)
@@ -308,7 +312,7 @@ docs/                   mansion-generation.md (design doc), images/
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 84 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 36 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
+| `npm test` | 102 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, and texture range and tiling. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |
@@ -324,14 +328,15 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 
 | Metric | Value |
 |---|---|
-| Validity, all 36 combinations × 5 seeds × both hall shapes | 360 / 360 (mean 1.1 attempts) |
+| Validity, all 48 combinations × 5 seeds × both hall shapes | 480 / 480 (mean 1.1 attempts) |
 | Dome hall | 20 × 17 m on average, dome radius 8 m |
 | From 55° up | 73% of the top gallery and 27% of the hall floor in view; indoor party floor 15% |
+| Orangery | indoor party floor in view 54% from the treeline, 35% from 55° up; half the floor of each glass-roofed room |
 | Houses with party rooms upstairs | 31 of 100 |
 | Validity, 100 random seeds | 96 first try, 100 / 100 overall |
 | Indoor party floor the sniper sees | 44% on average (29% before the wide glazing, column screens and dome hall) |
 | Ground floor out of the sniper's sight | 54% on average |
-| Generation time | ~240–290 ms per attempt |
+| Generation time | ~220–290 ms per attempt |
 | Typical grand house | ~30–50 rooms, ~370 props, ~100–400 lights, ~60 POIs, ~600 trees |
 | Static mesh triangles | ~290–460k |
 | Rendered per frame (incl. shadows, trees) | ~1.5–1.8M triangles, ~180 draw calls |

@@ -69,6 +69,43 @@ export function wbox(g: GeometryBuilder, key: string, axis: 'x' | 'z', line: num
   else g.box(key, Math.min(a, b), y0, t0, Math.max(a, b), y1, t1, faces);
 }
 
+/** Height of a semi-elliptical arch head at t: springs `rise` below `yTop`, spans [a, b]. */
+export function archY(t: number, a: number, b: number, yTop: number, rise: number): number {
+  const u = (t - (a + b) / 2) / ((b - a) / 2);
+  return yTop - rise + rise * Math.sqrt(Math.max(0, 1 - u * u));
+}
+
+/**
+ * The masonry between an arched head and the square opening behind it: the two corner fillets
+ * of the rectangle [a, b] x [yTop - rise, yTop], on a wall plane. With `band` > 0, draws instead
+ * a band of that depth following the arch from below (the window's arched head frame).
+ */
+export function archFill(g: GeometryBuilder, key: string, axis: 'x' | 'z', line: number, sgn: 1 | -1, a: number, b: number, yTop: number, rise: number, band = 0, steps = 14): void {
+  const P = (t: number, y: number): [number, number, number] => (axis === 'x' ? [t, y, line] : [line, y, t]);
+  const nx = axis === 'z' ? sgn : 0;
+  const nz = axis === 'x' ? sgn : 0;
+  for (let i = 0; i < steps; i++) {
+    const ta = a + ((b - a) * i) / steps;
+    const tb = a + ((b - a) * (i + 1)) / steps;
+    const ya = archY(ta, a, b, yTop, rise);
+    const yb = archY(tb, a, b, yTop, rise);
+    if (band > 0) g.quadFacing(key, P(ta, Math.max(yTop - rise, ya - band)), P(tb, Math.max(yTop - rise, yb - band)), P(tb, yb), P(ta, ya), nx, 0, nz);
+    else g.quadFacing(key, P(ta, ya), P(tb, yb), P(tb, yTop), P(ta, yTop), nx, 0, nz);
+  }
+}
+
+/** Curved underside of an arched head, between two wall planes. */
+export function archSoffit(g: GeometryBuilder, key: string, axis: 'x' | 'z', n0: number, n1: number, a: number, b: number, yTop: number, rise: number, steps = 14): void {
+  const P = (t: number, y: number, n: number): [number, number, number] => (axis === 'x' ? [t, y, n] : [n, y, t]);
+  for (let i = 0; i < steps; i++) {
+    const ta = a + ((b - a) * i) / steps;
+    const tb = a + ((b - a) * (i + 1)) / steps;
+    const ya = archY(ta, a, b, yTop, rise);
+    const yb = archY(tb, a, b, yTop, rise);
+    g.quadFacing(key, P(ta, ya, n0), P(tb, yb, n0), P(tb, yb, n1), P(ta, ya, n1), 0, -1, 0);
+  }
+}
+
 const wallLine = (w: Wall) => (w.axis === 'x' ? w.a.z : w.a.x);
 const wallT0 = (w: Wall) => (w.axis === 'x' ? w.a.x : w.a.z);
 const wallT1 = (w: Wall) => (w.axis === 'x' ? w.b.x : w.b.z);
@@ -95,7 +132,7 @@ export function buildInteriors(ctx: ArchContext): void {
     g.vOffset = 0;
     const f = room.finish;
     const gallery = galleryIds.has(room.id);
-    const openAbove = gallery || room.id === bp.atrium?.roomId || room.type === 'roof-terrace';
+    const openAbove = gallery || room.id === bp.atrium?.roomId || room.type === 'roof-terrace' || !!room.skylit;
     // Floor (minus stairwell holes).
     g.setTint(f.floorColor);
     // (A roof terrace's deck is the wing roof itself.)
@@ -402,7 +439,8 @@ export function buildFacades(ctx: ArchContext): void {
         }
       }
       // Pilasters on pavilion fronts (giant order).
-      if (pavilionIds.has(w.massId) && (w.side === 'garden' || w.side === 'entrance') && level === 0) {
+      const giantWall = !!style.giantWindows && w.openings.some((o) => o.dressing?.giant);
+      if (((pavilionIds.has(w.massId) && (w.side === 'garden' || w.side === 'entrance')) || giantWall) && level === 0) {
         const top = (bp.masses.find((m) => m.id === w.massId)?.roof.eaveY ?? yTop) - 0.62;
         for (let x = wallT0(w); x <= wallT1(w) + 1e-3; x += bp.bay) {
           wbox(g, 'ext-trim', w.axis, face, sgn, x - 0.3, x + 0.3, 0, 0.1, floor0 + 0.02, top - 0.3);
@@ -472,7 +510,36 @@ function windowDressing(ctx: ArchContext, w: Wall, o: Opening, face: number, sgn
     const s = o.kind === 'entrance' ? 0.22 : 0.16;
     wbox(g, 'ext-trim', w.axis, face, sgn, t0 - s, t0, 0, 0.05, o.y0, o.y1 + s);
     wbox(g, 'ext-trim', w.axis, face, sgn, t1, t1 + s, 0, 0.05, o.y0, o.y1 + s);
-    wbox(g, 'ext-trim', w.axis, face, sgn, t0 - s, t1 + s, 0, 0.05, o.y1, o.y1 + s);
+    if (!d.arch) wbox(g, 'ext-trim', w.axis, face, sgn, t0 - s, t1 + s, 0, 0.05, o.y1, o.y1 + s);
+  }
+  if (d.arch) {
+    // Round head: the opening itself is square, so the corners are filled back in, outside and in.
+    const rise = Math.min(d.arch, (t1 - t0) / 2);
+    const inFace = line - sgn * (w.thickness / 2);
+    g.setTint(style.wallMaterial === 'brick' ? '#ffffff' : style.wallColor);
+    archFill(g, wallMaterialKey(style), w.axis, face + sgn * 0.004, sgn, t0, t1, o.y1, rise);
+    g.setTint(style.trimColor);
+    archSoffit(g, 'ext-trim', w.axis, face, inFace, t0, t1, o.y1, rise);
+    // Archivolt and keystone.
+    const s = d.giant ? 0.2 : 0.14;
+    archFill(g, 'ext-trim', w.axis, face + sgn * 0.035, sgn, t0 - s, t1 + s, o.y1 + s, rise + s, s);
+    const c = (t0 + t1) / 2;
+    wbox(g, 'ext-trim', w.axis, face, sgn, c - 0.14, c + 0.14, 0, 0.09, o.y1 - 0.04, o.y1 + s + 0.12);
+    if (room) {
+      g.scope = room.index;
+      g.setTint(room.finish.wallColor);
+      archFill(g, 'int-trim', w.axis, inFace - sgn * 0.004, (-sgn) as 1 | -1, t0, t1, o.y1, rise);
+      g.scope = -1;
+      g.setTint(style.trimColor);
+    }
+  }
+  if (d.spandrel) {
+    // The floor edge between this window and the one above, behind an iron panel: one window, not two.
+    g.setTint(shade(style.windowFrameColor, 0.86));
+    wbox(g, 'frame', w.axis, face, sgn, t0, t1, 0, 0.03, o.y1 - 0.02, o.y1 + d.spandrel + 0.02);
+    g.setTint(style.windowFrameColor);
+    for (const t of [t0, (t0 + t1) / 2, t1]) wbox(g, 'frame', w.axis, face, sgn, t - 0.04, t + 0.04, 0, 0.06, o.y1 - 0.02, o.y1 + d.spandrel + 0.02);
+    g.setTint(style.trimColor);
   }
   if (o.glazed && o.y0 > bp.levels[w.level]!.floorY + 0.1) wbox(g, 'ext-trim', w.axis, face, sgn, t0 - 0.12, t1 + 0.12, 0, 0.14, o.y0 - 0.1, o.y0);
   if (d.keystone) {
@@ -591,17 +658,38 @@ function joinery(ctx: ArchContext, w: Wall, o: Opening, line: number, room: Room
   const inner1 = t1 - fw;
   const iy0 = o.y0 + (o.kind === 'french-window' ? 0.14 : fw);
   const iy1 = o.y1 - fw;
+  const d = o.dressing ?? {};
+  // Under an arched head the square panes stop at the springing; a fan of bars fills the arch.
+  const rise = d.arch ? Math.min(d.arch, (t1 - t0) / 2) : 0;
+  const gy1 = rise ? o.y1 - rise : iy1;
+  if (rise) {
+    const P = (t: number, y: number, n = 0): [number, number, number] => (w.axis === 'x' ? [t, y, plane + sgn * n] : [plane + sgn * n, y, t]);
+    fb(inner0, inner1, gy1 - 0.035, gy1 + 0.035);
+    const c = (t0 + t1) / 2;
+    const hw = (inner1 - inner0) / 2;
+    const fan = d.giant ? 8 : 4;
+    for (let k = 1; k < fan; k++) {
+      const th = (Math.PI * k) / fan;
+      g.beam('frame', P(c + Math.cos(th) * hw * 0.3, gy1 + Math.sin(th) * rise * 0.3), P(c + Math.cos(th) * hw, gy1 + Math.sin(th) * (rise - 0.03)), 0.035);
+    }
+    for (const n of [0.036, -0.036]) {
+      const fs = (n > 0 ? sgn : -sgn) as 1 | -1;
+      const pl = plane + sgn * n;
+      archFill(g, 'frame', w.axis, pl, fs, inner0 - fw, inner1 + fw, o.y1, rise, 0.08);
+      archFill(g, 'frame', w.axis, pl, fs, c - hw * 0.3, c + hw * 0.3, gy1 + rise * 0.3, rise * 0.3, 0.05);
+    }
+  }
   const leafW = (inner1 - inner0) / leaves;
   for (let l = 0; l < leaves; l++) {
     const a = inner0 + l * leafW;
     const b = a + leafW;
-    if (l > 0) fb(a - 0.035, a + 0.035, iy0, iy1, fd * 1.1);
+    if (l > 0) fb(a - 0.035, a + 0.035, iy0, gy1, fd * 1.1);
     for (let i = 1; i < cols; i++) {
       const t = a + ((b - a) * i) / cols;
-      fb(t - 0.013, t + 0.013, iy0, iy1, 0.035);
+      fb(t - 0.013, t + 0.013, iy0, gy1, 0.035);
     }
     for (let j = 1; j < rows; j++) {
-      const y = iy0 + ((iy1 - iy0) * j) / rows;
+      const y = iy0 + ((gy1 - iy0) * j) / rows;
       const thick = o.kind === 'window' && j === rows / 2 ? 0.04 : 0.013;
       fb(a, b, y - thick, y + thick, thick > 0.02 ? fd : 0.035);
     }
@@ -616,7 +704,8 @@ function joinery(ctx: ArchContext, w: Wall, o: Opening, line: number, room: Room
     vquad(g, 'sheer', w.axis, plane - sgn * 0.01, sgn, inner0, inner1, iy0, iy1);
     g.scope = -1;
   }
-  if (!room) return;
+  // A glasshouse front has no drapes: nothing between the sniper and the room.
+  if (!room || d.giant) return;
   // Curtains inside.
   g.scope = room.index;
   g.setTint(room.finish.drapery);

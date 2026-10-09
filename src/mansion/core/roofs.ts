@@ -12,6 +12,9 @@ export const EAVE_OVERHANG = 0.62;
 /** Low, as on a temple front: a steep pediment would stand between the sniper and the hall's glass roof. */
 export const PAVILION_PITCH = 15;
 
+/** Pitch of the shallow upper slopes of a mansard. */
+export const MANSARD_TOP_PITCH = 8;
+
 /** Plan rectangle a mass's roof covers. */
 export function roofRect(m: Mass): { x0: number; z0: number; x1: number; z1: number } {
   const e = m.roof.balustrade ? 0 : EAVE_OVERHANG;
@@ -29,7 +32,7 @@ export function mansardBreak(m: Mass): { height: number; inset: number } {
  * A hipped roof over a deep block does not run up to a ridge: it stops at this rise and is
  * leaded flat on top, as on real double-pile houses. It also keeps the dome's base low.
  */
-export const HIP_MAX_RISE = 3.6;
+export const HIP_MAX_RISE = 3.0;
 
 /** Pitch and base lift the renderer uses for a hipped roof, and how far in the slopes run before the flat top (Infinity: to the ridge). */
 export function hipParams(m: Mass): { pitchDeg: number; lift: number; inset: number } {
@@ -73,7 +76,7 @@ export function roofSurfaceY(masses: Mass[], x: number, z: number): number {
         break;
       case 'mansard': {
         const { height, inset } = mansardBreak(m);
-        best = Math.max(best, d < inset ? yb + (d / inset) * height : yb + height + (d - inset) * Math.tan(16 * DEG));
+        best = Math.max(best, d < inset ? yb + (d / inset) * height : yb + height + (d - inset) * Math.tan(MANSARD_TOP_PITCH * DEG));
         break;
       }
       default: {

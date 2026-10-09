@@ -1,4 +1,5 @@
 /** Collect sightline occluders from the blueprint parts. */
+import { rectMinus } from '../core/geom';
 import { HIP_MAX_RISE } from '../core/roofs';
 import type { Atrium, LevelSpec, Mass, Portico, Prop, RoofTerrace, Room, Site, Stair, Wall } from '../core/types';
 import type { BoxOccluder, CylOccluder, OccluderSet, SlabOccluder, WallOccluder } from './sightlines';
@@ -20,6 +21,12 @@ export interface OccluderInput {
   /** Include furniture (second pass) or only architecture (first pass). */
   withProps: boolean;
 }
+
+/** The hall's attic above the eaves: a stone sill, then arched lights between piers (about two thirds glass). */
+const ATTIC_SILL = 0.55;
+const ATTIC_TRANSMIT = 0.6;
+/** A glass roof with its rafters and glazing bars. */
+const ROOF_GLASS_TRANSMIT = 0.75;
 
 const PROP_TRANSMIT: Partial<Record<Prop['kind'], number>> = {
   statue: 0.4,
@@ -85,30 +92,27 @@ export function collectOccluders(input: OccluderInput): OccluderSet {
     const y0 = m.roof.eaveY - 0.05;
     const y1 = m.roof.eaveY + rise * 0.55;
     const transmit = m.roof.kind === 'glass' ? 0.8 : 0;
-    const cut = hole && hole.x0 < r.x1 && hole.x1 > r.x0 && hole.z0 < r.z1 && hole.z1 > r.z0 ? hole : null;
-    if (!cut) {
-      boxes.push({ ...r, y0, y1, transmit });
-      continue;
-    }
-    // The roof in up to four pieces round the opening.
-    const pieces = [
-      { x0: r.x0, z0: r.z0, x1: Math.min(r.x1, cut.x0), z1: r.z1 },
-      { x0: Math.max(r.x0, cut.x1), z0: r.z0, x1: r.x1, z1: r.z1 },
-      { x0: Math.max(r.x0, cut.x0), z0: r.z0, x1: Math.min(r.x1, cut.x1), z1: Math.min(r.z1, cut.z0) },
-      { x0: Math.max(r.x0, cut.x0), z0: Math.max(r.z0, cut.z1), x1: Math.min(r.x1, cut.x1), z1: r.z1 },
-    ];
-    for (const p of pieces) if (p.x1 - p.x0 > 0.05 && p.z1 - p.z0 > 0.05) boxes.push({ ...p, y0, y1, transmit });
+    // Open over the dome hall; glass over the skylit rooms of a glass-roofed house.
+    const skylights = m.roof.glazed?.length ? input.rooms.filter((q) => q.skylit && q.massId === m.id).map((q) => q.inner) : [];
+    for (const p of rectMinus(r, [...(hole ? [hole] : []), ...skylights])) boxes.push({ ...p, y0, y1, transmit });
+    for (const sk of skylights) boxes.push({ ...sk, y0, y1: y0 + 0.1, transmit: ROOF_GLASS_TRANSMIT });
   }
   if (dome && hole) {
     const main = input.masses.find((m) => m.kind === 'main');
     const base = (main?.roof.eaveY ?? dome.baseY) - 0.05;
-    const t = 0.35;
-    // Drum walls up to where the glass starts, then the glass itself.
-    boxes.push({ x0: hole.x0 - t, z0: hole.z0 - t, x1: hole.x1 + t, z1: hole.z0, y0: base, y1: dome.springY, transmit: 0 });
-    boxes.push({ x0: hole.x0 - t, z0: hole.z1, x1: hole.x1 + t, z1: hole.z1 + t, y0: base, y1: dome.springY, transmit: 0 });
-    boxes.push({ x0: hole.x0 - t, z0: hole.z0, x1: hole.x0, z1: hole.z1, y0: base, y1: dome.springY, transmit: 0 });
-    boxes.push({ x0: hole.x1, z0: hole.z0, x1: hole.x1 + t, z1: hole.z1, y0: base, y1: dome.springY, transmit: 0 });
-    boxes.push({ x0: hole.x0, z0: hole.z0, x1: hole.x1, z1: hole.z1, y0: dome.springY - 0.3, y1: dome.springY - 0.2, transmit: 0.85 });
+    const t = 0.4;
+    // The glazed attic round the hall, then the glass roof on it (the drum and dome above are glass too).
+    for (const b of [
+      { x0: hole.x0 - t, z0: hole.z0 - t, x1: hole.x1 + t, z1: hole.z0 },
+      { x0: hole.x0 - t, z0: hole.z1, x1: hole.x1 + t, z1: hole.z1 + t },
+      { x0: hole.x0 - t, z0: hole.z0, x1: hole.x0, z1: hole.z1 },
+      { x0: hole.x1, z0: hole.z0, x1: hole.x1 + t, z1: hole.z1 },
+    ]) {
+      boxes.push({ ...b, y0: base, y1: base + ATTIC_SILL, transmit: 0 });
+      boxes.push({ ...b, y0: base + ATTIC_SILL, y1: dome.deckY - 0.4, transmit: ATTIC_TRANSMIT });
+      boxes.push({ ...b, y0: dome.deckY - 0.4, y1: dome.deckY, transmit: 0 });
+    }
+    boxes.push({ x0: hole.x0, z0: hole.z0, x1: hole.x1, z1: hole.z1, y0: dome.deckY, y1: dome.deckY + 0.1, transmit: 0.85 });
   }
   for (const p of input.porticos) {
     for (const c of p.columns) cyls.push({ x: c.x, z: c.z, r: p.columnRadius, y0: p.baseY, y1: p.topY, transmit: 0 });
@@ -117,7 +121,8 @@ export function collectOccluders(input: OccluderInput): OccluderSet {
   if (input.atrium) {
     const a = input.atrium;
     const top = input.levels[input.levels.length - 1]!;
-    for (const c of a.columns) cyls.push({ x: c.x, z: c.z, r: a.columnRadius, y0: input.levels[0]!.floorY, y1: top.ceilingY, transmit: 0 });
+    // Columns carry the galleries; none stands on the top one.
+    for (const c of a.columns) cyls.push({ x: c.x, z: c.z, r: a.columnRadius, y0: input.levels[0]!.floorY, y1: top.floorY, transmit: 0 });
   }
   for (const t of input.roofTerraces ?? []) {
     const edges: ['x' | 'z', number, number, number][] = [

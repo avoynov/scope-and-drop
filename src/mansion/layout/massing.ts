@@ -53,6 +53,8 @@ export interface MassingPlan {
   groundFloorY: number;
   slab: number;
   /** Bays of the central front (garden) room and central back room (entrance hall). */
+  /** The whole first-floor garden front is given to the party (houses whose windows show both storeys). */
+  partyUpstairs: boolean;
   centerFront: number;
   centerBack: number;
   /** Projecting central pavilion on the garden front. */
@@ -144,7 +146,8 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   // window rhythm carries round the corner.
   const wings: WingSpec[] = [];
   const ww = 2 * bay;
-  const wingLevels = mainLevels >= 3 && rng.chance(0.6) ? 2 : 1;
+  // Glass-roofed houses keep their wings to one storey, as orangery ranges.
+  const wingLevels = mainLevels >= 3 && rng.chance(0.6) && !style.glassRoofs ? 2 : 1;
   const addWings = (toward: 'garden' | 'entrance') => {
     const nb = rng.int(3, size === 'palatial' ? 6 : 5);
     const L = snap(nb * bay, 0.01);
@@ -203,6 +206,7 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
     wings,
     conservatory,
     serviceSide,
+    partyUpstairs: !!style.giantWindows,
   };
 }
 

@@ -2,11 +2,11 @@
  * Roofs and porticos: hipped, mansard, flat and glass roofs; pavilion
  * pediments; dormers; chimney stacks; columns with entablature and pediment.
  */
-import { expand, type Rect } from '../core/geom';
-import { HIP_MAX_RISE, PAVILION_PITCH, hipParams } from '../core/roofs';
+import { expand, rectMinus, type Rect } from '../core/geom';
+import { HIP_MAX_RISE, MANSARD_TOP_PITCH, PAVILION_PITCH, hipParams } from '../core/roofs';
 import type { Mass, Portico } from '../core/types';
 import type { ArchContext } from './arch';
-import { baluster } from './arch';
+import { baluster, vquad } from './arch';
 import { domeBase } from './atrium';
 import type { V3 } from './geometry';
 
@@ -123,7 +123,7 @@ export function buildRoofs(ctx: ArchContext): void {
         const hb = Math.min(3.2, 0.3 * Math.min(r.x1 - r.x0, r.z1 - r.z0));
         const inset = hb / Math.tan(70 * DEG);
         const inner = frustum(ctx, key, r, inset, yb, hb);
-        const top = hipRoof(ctx, key, inner, yb + hb, 16);
+        const top = hipRoof(ctx, key, inner, yb + hb, MANSARD_TOP_PITCH);
         g.setTint(ctx.style.trimColor);
         // Curb moulding at the break.
         for (const [a, b] of [
@@ -141,6 +141,21 @@ export function buildRoofs(ctx: ArchContext): void {
       default: {
         const hp = hipParams(m);
         const base = yb + hp.lift;
+        const glazed = m.roof.glazed ?? [];
+        const mark = g.mark();
+        const glaze = () => {
+          if (!glazed.length) return;
+          // Rafters and purlins for the whole roof, kept only where it is glass.
+          g.setTint(ctx.style.windowFrameColor);
+          hipBars(ctx, r, base, hp.pitchDeg, hp.inset);
+          for (const q of glazed) {
+            g.splitRect(mark, (k) => k === key || k === 'roof-lead', q, () => 'glass');
+            g.splitRect(mark, (k) => k === BARS, q, () => 'frame');
+          }
+          g.discardSince(mark, BARS);
+          g.setTint('#ffffff');
+          atticDeck(ctx, m);
+        };
         if (Number.isFinite(hp.inset)) {
           // Deep block: slopes up to a leaded flat instead of a ridge.
           const inner = frustum(ctx, key, r, hp.inset, base, HIP_MAX_RISE);
@@ -152,19 +167,120 @@ export function buildRoofs(ctx: ArchContext): void {
           g.box('ext-trim', inner.x1 - 0.06, base + HIP_MAX_RISE - 0.08, inner.z0, inner.x1 + 0.1, base + HIP_MAX_RISE + 0.1, inner.z1);
           g.setTint('#ffffff');
           if (m.kind === 'main') {
-            if (m.roof.dormers && !m.roof.balustrade) hipDormers(ctx, m, r, yb, hp.pitchDeg);
-            chimneys(ctx, m, { ridgeY: base + HIP_MAX_RISE, alongX: true, ridge: [inner.x0, inner.x1] }, r);
-          }
+            glaze();
+            if (m.roof.dormers && !m.roof.balustrade && !ctx.style.glassRoofs) hipDormers(ctx, m, r, yb, hp.pitchDeg);
+            if (!ctx.style.glassRoofs) chimneys(ctx, m, { ridgeY: base + HIP_MAX_RISE, alongX: true, ridge: [inner.x0, inner.x1] }, r);
+          } else glaze();
           break;
         }
         const res = hipRoof(ctx, key, r, base, hp.pitchDeg);
-        if (m.kind === 'main') {
+        glaze();
+        if (m.kind === 'main' && !ctx.style.glassRoofs) {
           if (m.roof.dormers && !m.roof.balustrade) hipDormers(ctx, m, r, yb, hp.pitchDeg);
           chimneys(ctx, m, res, r);
         }
       }
     }
   }
+}
+
+/** Scratch bucket for glazing bars before they are clipped to the glass. */
+const BARS = 'bars-tmp';
+
+/**
+ * Rafters, hips, purlins and ridge of a hipped (or flat-topped) glass roof over rect r, as iron bars.
+ * Drawn for the whole roof; the caller keeps the parts over glass.
+ */
+function hipBars(ctx: ArchContext, r: Rect, base: number, pitchDeg: number, inset: number): void {
+  const { g } = ctx;
+  const t = Math.tan(pitchDeg * DEG);
+  const W = r.x1 - r.x0;
+  const D = r.z1 - r.z0;
+  const reach = Math.min(W / 2, D / 2, inset);
+  const lift = 0.04;
+  const bar = (a: V3, b: V3, w: number) => g.beam(BARS, [a[0], a[1] + lift, a[2]], [b[0], b[1] + lift, b[2]], w, 0.08);
+  // Each eave: rafters run straight in until they meet a hip or the top.
+  const edges: { o: [number, number]; along: [number, number]; inward: [number, number]; len: number }[] = [
+    { o: [r.x0, r.z1], along: [1, 0], inward: [0, -1], len: W },
+    { o: [r.x0, r.z0], along: [1, 0], inward: [0, 1], len: W },
+    { o: [r.x0, r.z0], along: [0, 1], inward: [1, 0], len: D },
+    { o: [r.x1, r.z0], along: [0, 1], inward: [-1, 0], len: D },
+  ];
+  for (const e of edges) {
+    const n = Math.max(2, Math.round(e.len / 0.75));
+    for (let i = 1; i < n; i++) {
+      const u = (e.len * i) / n;
+      const d = Math.min(u, e.len - u, reach);
+      if (d < 0.4) continue;
+      const x = e.o[0] + e.along[0] * u;
+      const z = e.o[1] + e.along[1] * u;
+      bar([x, base, z], [x + e.inward[0] * d, base + d * t, z + e.inward[1] * d], i % 4 === 0 ? 0.11 : 0.045);
+    }
+  }
+  // Hips, then purlins as rings.
+  for (const [cx, cz, sx, sz] of [
+    [r.x0, r.z0, 1, 1],
+    [r.x1, r.z0, -1, 1],
+    [r.x1, r.z1, -1, -1],
+    [r.x0, r.z1, 1, -1],
+  ] as const) {
+    bar([cx, base, cz], [cx + sx * reach, base + reach * t, cz + sz * reach], 0.14);
+  }
+  const ringAt = (d: number, w: number) => {
+    const y = base + d * t;
+    const q = { x0: r.x0 + d, z0: r.z0 + d, x1: r.x1 - d, z1: r.z1 - d };
+    if (q.x1 - q.x0 > 0.05) {
+      bar([q.x0, y, q.z0], [q.x1, y, q.z0], w);
+      bar([q.x0, y, q.z1], [q.x1, y, q.z1], w);
+    }
+    if (q.z1 - q.z0 > 0.05) {
+      bar([q.x0, y, q.z0], [q.x0, y, q.z1], w);
+      bar([q.x1, y, q.z0], [q.x1, y, q.z1], w);
+    }
+  };
+  for (let d = 2.2; d < reach - 0.8; d += 2.2) ringAt(d, 0.09);
+  ringAt(reach, 0.14);
+  // A flat top is glazed on a grid.
+  const top = { x0: r.x0 + reach, z0: r.z0 + reach, x1: r.x1 - reach, z1: r.z1 - reach };
+  if (top.x1 - top.x0 > 1 && top.z1 - top.z0 > 1) {
+    const y = base + reach * t + 0.05;
+    const n = Math.round((top.x1 - top.x0) / 0.75);
+    for (let i = 1; i < n; i++) {
+      const x = top.x0 + ((top.x1 - top.x0) * i) / n;
+      bar([x, y, top.z0], [x, y, top.z1], i % 4 === 0 ? 0.11 : 0.045);
+    }
+    const mz = Math.max(1, Math.round((top.z1 - top.z0) / 2.4));
+    for (let j = 1; j < mz; j++) {
+      const z = top.z0 + ((top.z1 - top.z0) * j) / mz;
+      bar([top.x0, y, z], [top.x1, y, z], 0.09);
+    }
+  }
+}
+
+/**
+ * Under a part-glazed roof: a leaded deck at the eaves over everything that is not glass, with a
+ * plastered well down into each skylit room. Without it one would look through the glass,
+ * past the tops of the walls, into the rooms that are meant to be roofed over.
+ */
+function atticDeck(ctx: ArchContext, m: Mass): void {
+  const { g, bp } = ctx;
+  const y = m.roof.eaveY + 0.03;
+  const skylit = bp.rooms.filter((q) => q.skylit && q.massId === m.id);
+  const holes = skylit.map((q) => q.inner);
+  if (bp.atrium && m.kind === 'main') holes.push(domeBase(bp.atrium));
+  g.scope = -1;
+  g.setTint('#ffffff');
+  for (const p of rectMinus(expand(m.rect, -0.05), holes)) g.quad('roof-lead', [p.x0, y, p.z1], [p.x1, y, p.z1], [p.x1, y, p.z0], [p.x0, y, p.z0]);
+  for (const q of skylit) {
+    g.scope = q.index;
+    g.setTint(q.finish.ceilingColor);
+    const i = q.inner;
+    vquad(g, 'int-trim', 'x', i.z0, 1, i.x0, i.x1, q.ceilingY, y);
+    vquad(g, 'int-trim', 'x', i.z1, -1, i.x0, i.x1, q.ceilingY, y);
+    vquad(g, 'int-trim', 'z', i.x0, 1, i.z0, i.z1, q.ceilingY, y);
+    vquad(g, 'int-trim', 'z', i.x1, -1, i.z0, i.z1, q.ceilingY, y);
+  }
+  g.scope = -1;
 }
 
 /** Is a roof feature at (x, z) in the way of the dome's base? */
@@ -175,14 +291,8 @@ function nearDome(ctx: ArchContext, x: number, z: number, margin: number): boole
   return x > b.x0 - margin && x < b.x1 + margin && z > b.z0 - margin - 1.6 && z < b.z1 + margin + 1.6;
 }
 
-function rib(ctx: ArchContext, a: V3, b: V3): void {
-  const { g } = ctx;
-  const n = 6;
-  for (let i = 0; i < n; i++) {
-    const p = [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n, a[2] + ((b[2] - a[2]) * i) / n];
-    const q = [a[0] + ((b[0] - a[0]) * (i + 1)) / n, a[1] + ((b[1] - a[1]) * (i + 1)) / n, a[2] + ((b[2] - a[2]) * (i + 1)) / n];
-    g.box('frame', Math.min(p[0]!, q[0]!) - 0.03, Math.min(p[1]!, q[1]!), Math.min(p[2]!, q[2]!) - 0.03, Math.max(p[0]!, q[0]!) + 0.03, Math.max(p[1]!, q[1]!) + 0.05, Math.max(p[2]!, q[2]!) + 0.03);
-  }
+function rib(ctx: ArchContext, a: V3, b: V3, w = 0.06): void {
+  ctx.g.beam('frame', [a[0], a[1] + 0.03, a[2]], [b[0], b[1] + 0.03, b[2]], w, 0.07);
 }
 
 function pavilionRoof(ctx: ArchContext, m: Mass, key: string, yb: number): void {

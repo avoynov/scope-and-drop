@@ -94,6 +94,39 @@ export const STYLES: Record<StyleId, StyleDef> = {
     columnOrder: 'corinthian',
     massingWeights: { block: 0.3, 'u-garden': 0.3, 'u-entrance': 0.15, h: 0.25 },
   },
+  // After the great iron-and-glass conservatories of the 1820s and 30s (Syon): Bath stone, a temple
+  // front under the dome, giant arched windows between pilasters, glass roofs, single-storey wings.
+  orangery: {
+    id: 'orangery',
+    name: 'Orangery Bath Stone',
+    wallMaterial: 'limestone',
+    wallColor: '#dccba4',
+    trimColor: '#eadfc4',
+    baseMaterial: 'limestone',
+    roof: 'hipped',
+    roofMaterial: 'lead',
+    glassRoofs: true,
+    giantWindows: true,
+    roofPitchDeg: [22, 27],
+    bayWidth: [4.0, 4.5],
+    levelHeights: [
+      [5.0, 5.6],
+      [4.4, 4.9],
+      [3.2, 3.5],
+    ],
+    floors: [2, 2],
+    plinth: [0.9, 1.2],
+    porticoChance: 0,
+    pavilionChance: 1,
+    quoins: false,
+    balustradeParapet: false,
+    pedimentedWindows: false,
+    balconettes: false,
+    windowFrameColor: '#f3f1ea',
+    doorColor: '#2f3d36',
+    columnOrder: 'ionic',
+    massingWeights: { block: 0.3, 'u-garden': 0.35, 'u-entrance': 0.1, h: 0.25 },
+  },
 };
 
 export const STYLE_IDS = Object.keys(STYLES) as StyleId[];

@@ -9,7 +9,7 @@
 import { rect, type Rect, type Vec3 } from './core/geom';
 import { Rng, snap } from './core/rng';
 import { ROOM_LABELS, roomFinish, STYLE_IDS, STYLES } from './core/styles';
-import { PAVILION_PITCH } from './core/roofs';
+import { PAVILION_PITCH, roofSurfaceY } from './core/roofs';
 import type { Atrium, LevelSpec, LightSpec, MansionBlueprint, MansionOptions, Mass, NavLevel, NavLink, Poi, Prop, RoofTerrace, Room, Sightlines, Site, Stair, StyleDef } from './core/types';
 import { collectOccluders } from './analysis/occluders';
 import { buildNav, VIS_BLOCK } from './analysis/nav';
@@ -207,7 +207,8 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         const g = at('hall-gallery', L);
         if (!g) continue;
         const holes = L === 1 ? geo.holesFirst : geo.holesPlain;
-        for (const r of [...holes, ...geo.columnBlocks]) block(g.id, r);
+        // Columns carry the gallery above, so the top gallery has none.
+        for (const r of L < levels.length - 1 ? [...holes, ...geo.columnBlocks] : holes) block(g.id, r);
         g.floorHoles.push(...holes);
         galleries.push({ level: L, roomId: g.id, y: levels[L]!.floorY, outline: L === 1 ? geo.outlineWithLandings : geo.outlinePlain, rails: L === 1 ? geo.railsWithLandings : geo.railsPlain });
       }
@@ -225,9 +226,21 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         landings: geo.landings.map((r) => ({ rect: r, y: levels[1]!.floorY })),
         arms: geo.arms,
       });
-      // The dome springs from a low curb at the eaves: a tall drum would wall off the sniper's view down.
+      // The hall's lantern: a glazed attic clear of every roof round it, then the drum and the dome.
       const top = levels[levels.length - 1]!;
       const eave = top.floorY + top.height;
+      let roofY = eave;
+      const ring = { x0: hall.inner.x0 - 0.7, z0: hall.inner.z0 - 0.7, x1: hall.inner.x1 + 0.7, z1: hall.inner.z1 + 0.7 };
+      for (let i = 0; i <= 16; i++) {
+        const x = ring.x0 + ((ring.x1 - ring.x0) * i) / 16;
+        const z = ring.z0 + ((ring.z1 - ring.z0) * i) / 16;
+        for (const [px, pz] of [[x, ring.z0], [x, ring.z1], [ring.x0, z], [ring.x1, z]] as const) {
+          const y = roofSurfaceY(masses, px, pz);
+          if (Number.isFinite(y)) roofY = Math.max(roofY, y);
+        }
+      }
+      const deckY = snap(Math.max(eave + 2.0, roofY + 0.7), 0.01);
+      const drum = Math.min(2.6, Math.max(1.8, 0.3 * geo.dome.radius));
       atrium = {
         roomId: hall.id,
         shape: geo.shape,
@@ -240,7 +253,7 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
         columns: geo.columns,
         columnRadius: geo.columnRadius,
         stairId: 'stair-grand',
-        dome: { ...geo.dome, baseY: top.ceilingY, springY: snap(eave + 1.0, 0.01), height: snap(geo.dome.radius * 0.58, 0.01) },
+        dome: { ...geo.dome, baseY: top.ceilingY, deckY, springY: snap(deckY + drum, 0.01), height: snap(geo.dome.radius * 0.85, 0.01) },
       };
     } else missingStairs.push('grand');
     for (let L = 0; L + 1 < levels.length; L++) {
@@ -324,6 +337,22 @@ export function generateOnce(opts: Resolved, attempt: number): MansionBlueprint 
   const hallRoom = atrium ? rooms.find((r) => r.id === atrium!.roomId) : undefined;
   if (hallRoom) for (const r of rooms) if (r.type === 'hall-gallery') r.finish = { ...hallRoom.finish };
   disambiguateLabels(rooms);
+  // Glass roofs: over the top-storey party rooms of the main block and the wings. Private and
+  // service rooms and the corridors keep a solid roof, so the spy has cover from above too.
+  if (style.glassRoofs) {
+    for (const ms of masses) {
+      if (ms.kind !== 'main' && ms.kind !== 'wing') continue;
+      const glazed: Rect[] = [];
+      for (const r of rooms) {
+        if (r.massId !== ms.id || r.level !== ms.levels - 1 || r.role !== 'party' || r.type === 'roof-terrace') continue;
+        r.skylit = true;
+        // To the eaves where the room is on an outside wall.
+        const out = (room: number, mass: number, dir: number) => (Math.abs(room - mass) < 0.01 ? room + dir * 0.8 : room);
+        glazed.push(rect(out(r.rect.x0, ms.rect.x0, -1), out(r.rect.z0, ms.rect.z0, -1), out(r.rect.x1, ms.rect.x1, 1), out(r.rect.z1, ms.rect.z1, 1)));
+      }
+      if (glazed.length) ms.roof.glazed = glazed;
+    }
+  }
   for (const ms of masses) {
     ms.exposed = [...new Set(walls.filter((w) => w.exterior && w.massId === ms.id && w.side).map((w) => w.side!))];
   }

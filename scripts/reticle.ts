@@ -9,7 +9,7 @@ const shots = process.argv.slice(2); // name=query string
 const out = process.env.OUT ?? "renders";
 const server = await createServer({ configFile: 'vite.config.ts', logLevel: 'error', server: { port: 5198, host: '127.0.0.1' } });
 await server.listen();
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-proxy-server', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 for (const s of shots) {
   const i = s.indexOf('=');
   const name = s.slice(0, i);

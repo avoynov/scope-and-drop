@@ -13,7 +13,7 @@ export type Prim =
   | { kind: 'text'; x: number; y: number; size: number; text: string; align?: 'left' | 'center' | 'right'; lit?: boolean };
 
 export interface Reticle {
-  id: 'pso' | 'tree';
+  id: 'pso' | 'tree' | 'vss';
   name: string;
   /** Radians per reticle unit. */
   unitRad: number;
@@ -83,6 +83,67 @@ export function psoReticle(): Reticle {
   return { id: 'pso', name: 'SVD · PSO', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: '7n1', illum: 'rgb(255,46,24)' };
 }
 
+/** Ranges marked by the VSS reticle's holdover chevrons: every 100 m numbered, the 50 m steps between plain. */
+export const VSS_CHEVRON_RANGES = [100, 150, 200, 250, 300, 350, 400] as const;
+
+/** Where a VSS holdover chevron sits below the aiming chevron: the SP-5's hold with the 0 m zero, in thousandths. */
+export const vssChevronY = (rangeM: number) => holdRad(ROUNDS.sp5, rangeM, 0) / THOUSANDTH;
+
+/** The VSS rangefinder's marks, ×100 m: 1.7 m curve heights from 100 to 400 m in 50 m steps. */
+export const VSS_RANGEFINDER = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+
+/**
+ * VSS / PSO-1-1 style, tailored to the SP-5. The real 9×39 scopes (PSO-1-1, PSO-1M2-1) have a single aiming
+ * chevron, a range drum cut for the round and a rangefinder out to 400 m; with the drum left at 0 (the lab's
+ * rule) the drum's job moves onto the glass, as on the SVD's PSO. The subsonic bullet drops 6 thousandths by 100 m and 27 by 400 m, so the holdover chevrons run far down
+ * the field: one at the SP-5's hold for every 100 m, numbered 1–4, and a smaller plain one at each 50 m step,
+ * because between 100 and 200 m the hold changes by a thousandth every 15 m. The vertical stadia starts below
+ * the last chevron; the lateral scale is the PSO's. The rangefinder is re-cut for 100–400 m, as on those scopes:
+ * base line and dashed 1.7 m curve, ticks every 50 m and numbers 1–4 (×100 m).
+ */
+export function vssReticle(): Reticle {
+  const p: Prim[] = [];
+  const W = 0.13;
+  const chevron = (y: number, hw: number, h: number) => p.push({ kind: 'poly', pts: [[-hw, y + h], [0, y], [hw, y + h]], w: W, lit: true });
+  chevron(0, 0.5, 1.0);
+  let last = 0;
+  for (const range of VSS_CHEVRON_RANGES) {
+    last = vssChevronY(range);
+    const whole = range % 100 === 0;
+    if (whole) {
+      chevron(last, 0.42, 0.85);
+      p.push({ kind: 'text', x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: 'left', lit: true });
+    } else chevron(last, 0.28, 0.55);
+  }
+  p.push({ kind: 'line', x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
+  // Lateral scale, as on the PSO.
+  for (let i = 1; i <= 10; i++) {
+    const len = i === 10 ? 1.3 : i === 5 ? 0.85 : 0.5;
+    for (const s of [-1, 1]) p.push({ kind: 'line', x1: s * i, y1: 0, x2: s * i, y2: len, w: W, lit: true });
+  }
+  p.push({ kind: 'line', x1: -10, y1: 0, x2: -1, y2: 0, w: W * 0.8, lit: true });
+  p.push({ kind: 'line', x1: 1, y1: 0, x2: 10, y2: 0, w: W * 0.8, lit: true });
+  for (const s of [-1, 1]) p.push({ kind: 'text', x: s * 10, y: -0.55, size: 1.0, text: '10', lit: true });
+  // Rangefinder at lower left: n = 1 (100 m) at the far left, where the curve stands 16 thousandths tall.
+  const base = 17.5;
+  const xOf = (n: number) => -15 + ((n - 1) / 3) * 9.5;
+  p.push({ kind: 'line', x1: xOf(1) - 0.4, y1: base, x2: xOf(4) + 0.3, y2: base, w: W, lit: true });
+  const curve: [number, number][] = [];
+  for (let n = 1; n <= 4.0001; n += 0.04) curve.push([xOf(n), base - psoCurveHeight(n)]);
+  for (let i = 0; i < curve.length - 1; i += 2) {
+    const [x1, y1] = curve[i]!;
+    const [x2, y2] = curve[i + 1]!;
+    p.push({ kind: 'line', x1, y1, x2, y2, w: W * 0.8, lit: true });
+  }
+  for (const n of VSS_RANGEFINDER) {
+    const y = base - psoCurveHeight(n);
+    const whole = n % 1 === 0;
+    p.push({ kind: 'line', x1: xOf(n), y1: y, x2: xOf(n), y2: y - (whole ? 0.35 : 0.22), w: W * 0.8, lit: true });
+    if (whole) p.push({ kind: 'text', x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
+  }
+  return { id: 'vss', name: 'VSS · PSO-1-1', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: 'sp5', illum: 'rgb(255,46,24)' };
+}
+
 /**
  * Mil-tree ("Christmas tree") in MRAD, after the reference footage: heavy posts from 8 mil, a fine
  * crosshair hashed every 0.5 mil with a floating centre dot, and a tree of hold rows every 2 mil whose
@@ -136,7 +197,7 @@ export function treeReticle(): Reticle {
   return { id: 'tree', name: 'MIL TREE', unitRad: MRAD, unitName: 'mrad', prims: p, round: 'm118lr', illum: 'rgb(255,52,30)' };
 }
 
-export const RETICLES = { pso: psoReticle, tree: treeReticle } as const;
+export const RETICLES = { pso: psoReticle, tree: treeReticle, vss: vssReticle } as const;
 
 /**
  * Paints a reticle onto a 2D canvas. `pxPerUnit` is set by magnification (FFP), so strokes thin out at

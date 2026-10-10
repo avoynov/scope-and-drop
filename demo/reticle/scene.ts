@@ -1,6 +1,7 @@
 /**
- * High-desert range after the reference footage: rolling sage flats, a lone boulder, a white mannequin
- * torso on an orange stake (1.7 m tall overall, so the PSO rangefinder reads it), a wire fence, haze.
+ * High-desert range after the reference footage: rolling sage flats, a lone boulder, white mannequin
+ * torsos on orange stakes (1.7 m tall overall, so the PSO rangefinders read them) at 412 m and at the game's
+ * range of 183 m, a wire fence, haze.
  */
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -68,6 +69,9 @@ export function heightAt(x: number, z: number): number {
 export const RANGE_M = 412;
 /** Target lies down-range on -Z, a touch right of the camera's start bearing. */
 export const TARGET = new THREE.Vector3(18, 0, -RANGE_M);
+/** The second mannequin, at the game's range (the perch is 130–210 m from the house): a touch left, 3.4° off the first. */
+export const NEAR_M = 183;
+export const NEAR_TARGET = new THREE.Vector3(-3, 0, -NEAR_M);
 export const EYE_HEIGHT = 1.1;
 
 /** Shared GLSL value noise. */
@@ -100,11 +104,38 @@ function proceduralLambert(color: THREE.ColorRepresentation, body: string): THRE
   return m;
 }
 
+interface BushTile {
+  near: THREE.InstancedMesh;
+  far: THREE.InstancedMesh;
+  sphere: THREE.Sphere;
+  shadowed: boolean;
+}
+
+/** Worst offset of the far bush's surface from the full one: 10 % of the largest lobe at the largest bush. */
+const FAR_BUSH_ERROR_M = 0.1 * 0.67 * 0.62 * 1.5 * 1.15;
+
+/** A mannequin on its stake: it pivots at its foot. */
+export interface Mannequin {
+  group: THREE.Group;
+  head: THREE.Vector3;
+  foot: THREE.Vector3;
+  /** Nominal range, as the lab quotes it. */
+  range: number;
+}
+
 export interface Range {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
-  targetHead: THREE.Vector3;
-  targetFoot: THREE.Vector3;
+  bushLod: (cam: THREE.Camera, pxPerRad: number, tolPx: number) => void;
+  /** What a bullet can hit besides the ground: the mannequins (412 m, then 183 m), the boulder, the fence posts. */
+  targets: Mannequin[];
+  boulder: THREE.Mesh;
+  fence: THREE.Group;
+  /**
+   * The sun's shadow box covers one mannequin and its surroundings at a time. Puts it on mannequin `i`;
+   * true when it moved, and the shadow map then needs drawing again.
+   */
+  shadowOn: (i: number) => boolean;
 }
 
 export function buildRange(): Range {
@@ -191,12 +222,35 @@ export function buildRange(): Range {
   }
   const sage = mergeVertices(mergeGeometries(lobes).deleteAttribute('normal'));
   const sp = sage.attributes.position as THREE.BufferAttribute;
+  const jitter = new Map<string, number>();
+  const at = (x: number, y: number, z: number) => `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
   for (let i = 0; i < sp.count; i++) {
     const x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i);
     const n = 0.85 + 0.3 * hash(i, 77);
+    jitter.set(at(x, y, z), n);
     sp.setXYZ(i, x * n, Math.max(y, -0.05) * n, z * n);
   }
   sage.computeVertexNormals();
+  // Far version, 140 triangles instead of 560: the same seven lobes as bare icosahedra. Their corners are the
+  // full bush's corner vertices, with the same jitter, pushed out 8 % about each lobe's centre so the facets
+  // straddle the round lobe instead of sitting inside it. Off by at most ~10 % of a lobe radius.
+  const farLobes: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 7; k++) {
+    const lobe = new THREE.IcosahedronGeometry(0.42 + hash(k, 41) * 0.25, 0).deleteAttribute('uv').deleteAttribute('normal');
+    const a = (k / 7) * Math.PI * 2;
+    const rr = k === 0 ? 0 : 0.45 + hash(k, 42) * 0.25;
+    const cx = Math.cos(a) * rr, cy = 0.15 + hash(k, 43) * 0.35 - rr * 0.25, cz = Math.sin(a) * rr;
+    const lp = lobe.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < lp.count; i++) {
+      const x = lp.getX(i) + cx, y = lp.getY(i) + cy, z = lp.getZ(i) + cz;
+      const n = jitter.get(at(x, y, z)) ?? 1;
+      const X = cx + (x - cx) * 1.08, Y = cy + (y - cy) * 1.08, Z = cz + (z - cz) * 1.08;
+      lp.setXYZ(i, X * n, Math.max(Y, -0.05) * n, Z * n);
+    }
+    farLobes.push(lobe);
+  }
+  const sageFar = mergeVertices(mergeGeometries(farLobes));
+  sageFar.computeVertexNormals();
   const sageMat = proceduralLambert(0xffffff, /* glsl */ `
     float px = length(fwidth(vWPos.xz));
     float n = fbmAA(vWPos.xz*9. + vWPos.y*7., px*9.);
@@ -233,6 +287,7 @@ export function buildRange(): Range {
   const BEARINGS = 24;
   const BANDS = [140, 260, 420, 640, 960, 1360, 1841];
   const tiles = new Map<number, number[]>();
+  const bushTiles: BushTile[] = [];
   const pos = new THREE.Vector3();
   for (let i = 0; i < placed; i++) {
     bushes.getMatrixAt(i, m);
@@ -259,6 +314,15 @@ export function buildRange(): Range {
     tile.receiveShadow = true;
     tile.computeBoundingSphere();
     scene.add(tile);
+    // Its far version: the same instances, never in the shadow map, swapped in per view by bushLod().
+    const far = new THREE.InstancedMesh(sageFar, sageMat, list.length);
+    far.instanceMatrix.copy(tile.instanceMatrix);
+    far.instanceColor = tile.instanceColor!.clone() as THREE.InstancedBufferAttribute;
+    far.receiveShadow = true;
+    far.boundingSphere = tile.boundingSphere!.clone();
+    far.visible = false;
+    scene.add(far);
+    bushTiles.push({ near: tile, far, sphere: tile.boundingSphere!, shadowed: false });
   }
   bushes.dispose();
 
@@ -303,37 +367,48 @@ export function buildRange(): Range {
   boulder.receiveShadow = true;
   scene.add(boulder);
 
-  // Target: white mannequin torso on an orange stake, braced by a wire tripod.
-  const ty = heightAt(TARGET.x, TARGET.z);
-  TARGET.y = ty;
-  const tgt = new THREE.Group();
-  tgt.position.copy(TARGET);
+  // Targets: white mannequin torsos on orange stakes, each braced by a wire tripod.
   const white = new THREE.MeshLambertMaterial({ color: 0xf2f1ec });
   const orange = new THREE.MeshLambertMaterial({ color: 0xd8641c });
   const steel = new THREE.MeshLambertMaterial({ color: 0x6d6a66 });
-  const stake = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.86, 0.05), orange);
-  stake.position.y = 0.43;
-  tgt.add(stake);
+  const stakeGeo = new THREE.BoxGeometry(0.07, 0.86, 0.05);
   const torsoProfile = [
     [0.0, 0.0], [0.16, 0.0], [0.17, 0.08], [0.15, 0.24], [0.17, 0.4], [0.21, 0.52], [0.22, 0.58], [0.15, 0.63], [0.06, 0.66], [0.055, 0.7], [0, 0.7],
   ].map(([r, y]) => new THREE.Vector2(r, y));
-  const torso = new THREE.Mesh(new THREE.LatheGeometry(torsoProfile, 28), white);
-  torso.scale.set(1, 1, 0.55);
-  torso.position.y = 0.86;
-  tgt.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 20, 16), white);
-  head.scale.set(0.85, 1.2, 0.95);
-  head.position.y = 0.86 + 0.7 + 0.03;
-  tgt.add(head);
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + 0.4;
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.95), steel);
-    leg.position.set(Math.cos(a) * 0.18, 0.42, Math.sin(a) * 0.18);
-    leg.rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4);
-    tgt.add(leg);
-  }
-  tgt.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
-  scene.add(tgt);
+  const torsoGeo = new THREE.LatheGeometry(torsoProfile, 28);
+  const headGeo = new THREE.SphereGeometry(0.095, 20, 16);
+  const legGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.95);
+  const mannequin = (at: THREE.Vector3, range: number): Mannequin => {
+    at.y = heightAt(at.x, at.z);
+    const tgt = new THREE.Group();
+    tgt.position.copy(at);
+    const stake = new THREE.Mesh(stakeGeo, orange);
+    stake.position.y = 0.43;
+    stake.name = 'stake';
+    tgt.add(stake);
+    const torso = new THREE.Mesh(torsoGeo, white);
+    torso.scale.set(1, 1, 0.55);
+    torso.position.y = 0.86;
+    torso.name = 'torso';
+    tgt.add(torso);
+    const head = new THREE.Mesh(headGeo, white);
+    head.scale.set(0.85, 1.2, 0.95);
+    head.position.y = 0.86 + 0.7 + 0.03;
+    head.name = 'head';
+    tgt.add(head);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + 0.4;
+      const leg = new THREE.Mesh(legGeo, steel);
+      leg.position.set(Math.cos(a) * 0.18, 0.42, Math.sin(a) * 0.18);
+      leg.rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4);
+      leg.name = 'tripod';
+      tgt.add(leg);
+    }
+    tgt.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    scene.add(tgt);
+    return { group: tgt, head: new THREE.Vector3(at.x, at.y + 1.7, at.z), foot: at.clone(), range };
+  };
+  const targets = [mannequin(TARGET, RANGE_M), mannequin(NEAR_TARGET, NEAR_M)];
 
   // Wire fence on a slant across the range, steel T-posts every 5 m with the odd wooden post.
   const postGeo = new THREE.BoxGeometry(0.05, 1.25, 0.05);
@@ -345,6 +420,7 @@ export function buildRange(): Range {
     const z = -360 - x * 0.12;
     const y = heightAt(x, z);
     const post = new THREE.Mesh(postGeo, i % 6 === 0 ? wood : steel);
+    post.name = i % 6 === 0 ? 'post-wood' : 'post-steel';
     post.position.set(x, y + 0.6, z);
     post.rotation.z = (hash(i, 9) - 0.5) * 0.08;
     fence.add(post);
@@ -360,13 +436,42 @@ export function buildRange(): Range {
 
   // Sun high and to the left, behind the shooter's shoulder, as in the footage.
   const toSun = new THREE.Vector3(-0.55, 0.62, 0.55).normalize();
-  sun.target.position.copy(TARGET);
-  sun.position.copy(TARGET).addScaledVector(toSun, 120);
-
-  return {
-    scene,
-    sun,
-    targetHead: new THREE.Vector3(TARGET.x, ty + 1.7, TARGET.z),
-    targetFoot: new THREE.Vector3(TARGET.x, ty, TARGET.z),
+  // One shadow box, on whichever mannequin is being watched: 44 m across at 412 m, and the same angle at 183 m,
+  // so the shadows are as fine in the glass on either. Tiles that reach into it keep the full bush, so each
+  // bush always matches its own shadow.
+  const SHADOW_HALF = [22, 10];
+  let shadowAt = -1;
+  const shadowOn = (i: number): boolean => {
+    if (i === shadowAt) return false;
+    shadowAt = i;
+    const h = SHADOW_HALF[i]!;
+    sc.left = -h; sc.right = h; sc.top = h; sc.bottom = -h;
+    sc.updateProjectionMatrix();
+    sun.target.position.copy(targets[i]!.foot);
+    sun.position.copy(targets[i]!.foot).addScaledVector(toSun, 120);
+    sun.updateMatrixWorld();
+    sun.target.updateMatrixWorld();
+    sun.shadow.updateMatrices(sun);
+    const shadowBox = sun.shadow.getFrustum();
+    for (const b of bushTiles) b.shadowed = shadowBox.intersectsSphere(b.sphere);
+    return true;
   };
+  shadowOn(0);
+
+  const toCam = new THREE.Vector3();
+  /**
+   * Pick each bush tile's version for one view. `pxPerRad` is the view's pixels per radian at the centre;
+   * a tile goes far when the far bush's worst offset from the full one is under `tolPx` pixels at the
+   * tile's nearest point.
+   */
+  const bushLod = (cam: THREE.Camera, pxPerRad: number, tolPx: number) => {
+    for (const b of bushTiles) {
+      const d = Math.max(1, toCam.copy(b.sphere.center).sub(cam.position).length() - b.sphere.radius);
+      const far = !b.shadowed && (FAR_BUSH_ERROR_M * pxPerRad) / d < tolPx;
+      b.near.visible = !far;
+      b.far.visible = far;
+    }
+  };
+
+  return { scene, sun, bushLod, targets, boulder, fence, shadowOn };
 }

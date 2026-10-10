@@ -54,7 +54,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 128 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab
+npm test                 # 159 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -92,7 +92,7 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 
 ### Reticle lab
 
-`npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope with a selectable **SVD · PSO-1** reticle (chevrons, lateral scale, 1.7 m stadiametric rangefinder) or a **mil tree**, over a high-desert range with a 1.7 m mannequin at 412 m. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. The scope is zeroed at 0 m. The PSO's holdover chevrons are cut for the 7N1 round at 400, 600 and 800 m. The mil tree comes with an ammo card that shows the bullet's speed every 200 m, so the shooter can work out the hold. Space plays the rifle's recoil (no bullet is fired): the scope slams toward the eye, the picture tunnels and blacks out for about a third of a second, and the rifle settles high, so you bring it back down yourself. A quick swing brings a crescent in from the leading edge, and the Pan shadow slider sets how strong it is. The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
+`npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope on one of three rifles, over a high-desert range with 1.7 m mannequins at 412 m and 183 m. The game's rifle is a suppressed **VSS** firing the subsonic SP-5, with a **PSO-1-1**-style reticle cut for it: holdover chevrons every 50 m from 100 to 400 m and a 100–400 m stadiametric rangefinder. At the game's 130–210 m the bullet drops 1.1–2.9 m and takes up to 0.8 s, so ranging decides the hit. For comparison there is an **SVD · PSO-1** (chevrons cut for the 7N1 at 400, 600 and 800 m, lateral scale, 1.7 m rangefinder) and a bolt rifle with a **mil tree** and an ammo card that shows the bullet's speed every 200 m, so the shooter can work out the hold. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. The scope is zeroed at 0 m. Space fires a real bullet: a 3D point-mass flight with gusting wind, spin drift, aerodynamic jump and Coriolis, from wherever the swaying rifle points when the shot breaks. It brings dirt splashes that drift downwind, a trace through the glass behind supersonic bullets, the VSS's slow bullet as a speck in flight, hits that rock the mannequin, muzzle-blast dust, and sound delayed by the flight and the return trip (a crack and a boom from the full-bore rifles, a thump and the clack of the action from the VSS). The SVD and the VSS are semi-automatic with 10-round magazines; the bolt rifle needs its bolt worked. Recoil slams the scope toward the eye, the picture tunnels and blacks out for about a third of a second, and the rifle settles high, so you bring it back down yourself. The VSS kicks a fifth as hard: the picture only dims for a moment and the target stays in view, so you watch the hit. A quick swing brings a crescent in from the leading edge, and the Pan shadow slider sets how strong it is. The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
 
 ![reticle lab](docs/images/reticle-tree.jpg)
 
@@ -311,7 +311,7 @@ src/mansion/
   analysis/             sightlines tracer, occluders, nav grids, validation
   build/                three.js renderer: textures, lighting, materials, geometry,
                         arch, atrium, roofs, stairs, props, site, sky, grade, index (buildMansion)
-src/scope/              optics (exit pupil, eyebox, parallax), ballistics (G7 point-mass), recoil and reticle patterns (PSO-1, mil tree)
+src/scope/              optics (exit pupil, eyebox, parallax), ballistics (G7 point-mass), shot (3D flight, wind, rifles), recoil and reticle patterns (PSO-1, PSO-1-1, mil tree)
 demo/                   dev viewer (Vite) with the mission briefing; demo/reticle/ is the scope lab
 artifact/               published viewer page (field-dossier UI, mil-dot scope)
 scripts/                gen, batch, stress, debug, render, texsheet, png, reticle (scope lab stills)
@@ -325,7 +325,7 @@ docs/                   mansion-generation.md (design doc), reticle-demo.md, ima
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 128 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics and recoil. |
+| `npm test` | 159 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics, 3D bullet flight and recoil. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |

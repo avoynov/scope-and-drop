@@ -1,10 +1,11 @@
 /**
- * The rifle and scope as the eye sees them from a few centimetres away: a 4–20×50 tactical scope on a bolt
- * action, modelled to scale in the scope's own frame (metres; origin at the exit pupil, −Z down the bore,
- * +Y up). It is rendered from the eye with the naked-eye mapping, then defocused: the eye is focused on the
- * target, so a point d metres away spreads into a disc pupil/d radians wide. Near the eyepiece that is tens
- * of pixels, at the muzzle a few. When the eye looks down at the elevation drum it focuses on it instead, at
- * distance f, and the disc is pupil·|1/d − 1/f|.
+ * The rifle and scope as the eye sees them from a few centimetres away: a 4–20×50 tactical scope on whichever
+ * rifle is chosen, with the hands that work its action (actions.ts), modelled to scale in the scope's own frame
+ * (metres; origin at the exit pupil, −Z down the bore, +Y up). It is rendered from the eye with the naked-eye
+ * mapping, then defocused: the eye is focused on the target, so a point d metres away spreads into a disc
+ * pupil/d radians wide. Near the eyepiece that is tens of pixels, at the muzzle a few. When the eye looks down
+ * at the elevation drum or at the hands it focuses there instead, at distance f, and the disc is
+ * pupil·|1/d − 1/f|.
  *
  * Passes, all at half resolution:
  *  1. `near`: colour (premultiplied, alpha = coverage) and aux (r = eyepiece glass, g = distance).
@@ -14,7 +15,10 @@
  *     light is conserved whatever its size. Head motion adds a smear along the ocular's screen velocity.
  */
 import * as THREE from 'three';
+import type { HandlingPose } from '../../src/scope/handling';
 import { SCOPE } from '../../src/scope/optics';
+import type { RifleId } from '../../src/scope/shot';
+import { buildActions } from './actions';
 import { DRUM_R_MM, paintDrum } from './drum';
 
 const mm = (v: number) => v / 1000;
@@ -86,6 +90,10 @@ export interface NearLayer {
   setDrumMarks(marks: readonly number[]): void;
   /** The drum's meshes, for picking it with the pointer. */
   drum: THREE.Object3D;
+  /** Which rifle is under the scope. */
+  setRifle(id: RifleId): void;
+  /** Where its moving parts and the hands are. */
+  pose(p: HandlingPose): void;
 }
 
 export function buildRifle(): NearLayer {
@@ -185,23 +193,16 @@ export function buildRifle(): NearLayer {
   const focus = new THREE.CylinderGeometry(mm(22), mm(22), mm(14), 48);
   focus.rotateZ(Math.PI / 2);
   add(focus, anod, -mm(24), 0, -mm(272));
-  // Rings and their bases, on a Picatinny rail.
+  // Rings and their bases, on the rail or the side mount (actions.ts).
   for (const h of [205, 362]) {
     tube(18.6, 18.6, h - 11, h + 11, steel);
     add(new THREE.BoxGeometry(mm(28), mm(18), mm(22)), steel, 0, -mm(24), -mm(h));
   }
-  add(new THREE.BoxGeometry(mm(21), mm(8), mm(370)), steel, 0, -mm(36), -mm(295));
-  // Action, barrel and muzzle brake, 58 mm under the scope axis.
-  tube(17, 17, 60, 420, steel, 0, -58);
-  tube(12.5, 10.5, 420, 1080, steel, 0, -58);
-  tube(13, 13, 1080, 1160, steel, 0, -58);
-  // Bolt handle on the right, swept down and back, with its knob.
-  const arm = new THREE.CylinderGeometry(mm(4), mm(5), mm(52), 16);
-  arm.rotateZ(Math.PI / 2 + 0.55);
-  add(arm, steel, mm(38), -mm(70), -mm(118));
-  add(new THREE.SphereGeometry(mm(10), 24, 16), steel, mm(60), -mm(84), -mm(116));
-  // Stock comb with the cheek riser, under the face.
-  add(new THREE.BoxGeometry(mm(40), mm(30), mm(320)), polymer, 0, -mm(52), mm(100));
+  // The rifle under the scope, its moving parts and the hands, in millimetres.
+  const below = new THREE.Group();
+  below.scale.setScalar(0.001);
+  scene.add(below);
+  const actions = buildActions(below, (b, g, s) => mat(b, g, s), (o) => o.layers.set(BODY));
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.004, 5);
   return {
@@ -218,6 +219,8 @@ export function buildRifle(): NearLayer {
       drumTex.needsUpdate = true;
     },
     drum,
+    setRifle: (id) => actions.setRifle(id),
+    pose: (p) => actions.apply(p),
   };
 }
 

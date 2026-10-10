@@ -426,7 +426,7 @@ const BUILDERS: Partial<Record<Prop['kind'], Builder>> = {
     const top = p.h;
     g.setTint('#ffffff');
     g.cylinder('brass', 0, top * 0.55, 0, 0.02, 0.02, top * 0.45, 6, false);
-    g.disc('int-trim', 0, top - 0.002, 0, Math.max(0.35, r * 0.6), 16, false);
+    g.disc('int-trim', 0, top - 0.02, 0, Math.max(0.35, r * 0.6), 16, false);
     if (p.variant === 2) {
       g.lathe(lit ? 'shade' : 'white', 0, 0, [[0.06, top * 0.1], [0.24, top * 0.15], [0.26, top * 0.55], [0.12, top * 0.6]], 10, true);
       return;

@@ -50,7 +50,7 @@ Requires Node 22+.
 ```bash
 npm install
 npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 122 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab
+npm test                 # 128 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -321,7 +321,7 @@ docs/                   mansion-generation.md (design doc), reticle-demo.md, ima
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 122 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics and recoil. |
+| `npm test` | 128 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics and recoil. |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |

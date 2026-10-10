@@ -4,6 +4,7 @@
  * range of 183 m, a wire fence, haze.
  */
 import * as THREE from 'three';
+import { TORSO_PROFILE } from '../../src/body/anatomy';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 function hash(x: number, y: number): number {
@@ -372,9 +373,8 @@ export function buildRange(): Range {
   const orange = new THREE.MeshLambertMaterial({ color: 0xd8641c });
   const steel = new THREE.MeshLambertMaterial({ color: 0x6d6a66 });
   const stakeGeo = new THREE.BoxGeometry(0.07, 0.86, 0.05);
-  const torsoProfile = [
-    [0.0, 0.0], [0.16, 0.0], [0.17, 0.08], [0.15, 0.24], [0.17, 0.4], [0.21, 0.52], [0.22, 0.58], [0.15, 0.63], [0.06, 0.66], [0.055, 0.7], [0, 0.7],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
+  // The same outline the wound model uses (src/body/anatomy.ts), so a hole here is an entry wound there.
+  const torsoProfile = TORSO_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
   const torsoGeo = new THREE.LatheGeometry(torsoProfile, 28);
   const headGeo = new THREE.SphereGeometry(0.095, 20, 16);
   const legGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.95);

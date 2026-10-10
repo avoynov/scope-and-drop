@@ -42,10 +42,7 @@
       #dope th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
       #dope td { text-align: right; padding: 1px 0 1px 12px; }
       #dope tr:first-child td { color: var(--muted); }
-      /* The elevation drum on top of the scope, read from behind. Part of the rifle, so H keeps it. */
-      #drum { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); width: 220px; height: 64px; cursor: ew-resize; touch-action: none; filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.5)); }
       @media (max-width: 640px) {
-        #drum { top: auto; bottom: calc(46vh + 28px); width: 180px; height: 56px; }
         #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; }
         .hint { display: none; }
         #dope { left: 16px; right: 16px; font-size: 11px; }
@@ -56,7 +53,6 @@
   <body>
     <div id="view"></div>
     <div id="dope" hidden></div>
-    <canvas id="drum" title="Elevation drum: the number at the index is the zero, ×100 m. Drag, scroll or tap a side; [ and ] click it"></canvas>
     <div id="hud">
       <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
       <div class="seg three">
@@ -85,7 +81,7 @@
       </div>
       <div class="seg one"><button id="scope">Scope out · F</button></div>
       <dl id="readout"></dl>
-      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space fire (works the bolt, changes magazines) · WASD head · Q/E eye relief · [ ] drum · R rifle · L illum · H hide</div>
+      <div class="hint">Drag to aim · wheel/pinch zoom · F or right-click scope in/out · Space fire (works the bolt, changes magazines) · WASD head · Q/E eye relief · head up: drag or scroll the drum on the scope, [ ] click it · R rifle · L illum · H hide</div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

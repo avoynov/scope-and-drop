@@ -3,8 +3,10 @@
  * index line on the saddle is what the rifle is zeroed to (1 = 100 m). It clicks in 50 m detents.
  */
 
-/** Drum rotation per detent. The SVD's 18 clicks from 1 to 10 then take 270°, leaving a clear gap between its 10 and its 1. */
+/** Drum rotation per detent. The bolt dial's 19 clicks from 0 to 10 then take 285°, leaving a clear gap between its ends. */
 export const DRUM_STEP = (15 * Math.PI) / 180;
+/** The detent of the drum's 1 (100 m), which faces the index when the drum is not turned. */
+export const drumHome = (marks: readonly number[]) => Math.max(0, marks.indexOf(100));
 /** Radius of the drum's engraved side. */
 export const DRUM_R_MM = 19;
 
@@ -47,8 +49,8 @@ export function createDrum(onTurn: (index: number) => void): Drum {
 
 /**
  * The drum's side as a texture, unrolled: the canvas runs once round the drum (u = angle / 2π from the
- * rear, increasing to the right as the shooter sees it) and from its top (y = 0) to the saddle. Mark i sits
- * i detents round from the rear, so the drum's first mark, its 1, faces the eye when it is not turned. Knurling on the
+ * rear, increasing to the right as the shooter sees it) and from its top (y = 0) to the saddle. Each mark sits
+ * as many detents round from the rear as it is from the 1, so the 1 faces the eye when the drum is not turned. Knurling on the
  * top third, numbers on the hundreds, a line on every detent: paint-filled engraving in black anodising.
  */
 export function paintDrum(marks: readonly number[]): HTMLCanvasElement {
@@ -75,8 +77,9 @@ export function paintDrum(marks: readonly number[]): HTMLCanvasElement {
   g.font = `600 ${Math.round(H * 0.2)}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
+  const home = drumHome(marks);
   marks.forEach((m, i) => {
-    let u = (i * DRUM_STEP) / (2 * Math.PI);
+    let u = ((i - home) * DRUM_STEP) / (2 * Math.PI);
     u -= Math.floor(u);
     for (const x of [u * W, u * W - W, u * W + W]) {
       const whole = m % 100 === 0;

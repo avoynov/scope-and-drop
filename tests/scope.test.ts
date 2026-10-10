@@ -113,10 +113,12 @@ describe('ballistics', () => {
     expect(high).toBeCloseTo(0.14, 2);
   });
 
-  it('gives every rifle a drum from 1 (100 m) up in 50 m clicks', () => {
+  it('gives every rifle a drum from 1 (100 m) up in 50 m clicks, and the bolt rifle a 0 below it', () => {
     for (const rifle of Object.values(RIFLES)) {
-      expect(rifle.drumM[0]).toBe(BATTLE_ZERO_M);
-      for (let i = 1; i < rifle.drumM.length; i++) expect(rifle.drumM[i]! - rifle.drumM[i - 1]!).toBe(50);
+      const one = rifle.drumM.indexOf(BATTLE_ZERO_M);
+      expect(one).toBe(rifle.id === 'bolt' ? 1 : 0);
+      if (rifle.id === 'bolt') expect(rifle.drumM[0]).toBe(0);
+      for (let i = one + 1; i < rifle.drumM.length; i++) expect(rifle.drumM[i]! - rifle.drumM[i - 1]!).toBe(50);
     }
     expect(RIFLES.vss.drumM.at(-1)).toBe(400);
     expect(RIFLES.svd.drumM.at(-1)).toBe(1000);

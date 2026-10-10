@@ -7,7 +7,7 @@ import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
 import { BATTLE_ZERO_M, RIFLES, windAt, type RifleId, type Wind } from '../../src/scope/shot';
 import { createSound } from './audio';
 import { createComposite } from './composite';
-import { DRUM_R_MM, DRUM_STEP, createDrum } from './drum';
+import { DRUM_R_MM, DRUM_STEP, createDrum, drumHome } from './drum';
 import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
@@ -748,7 +748,7 @@ function frame(t: number, dt: number): void {
   cam.updateMatrixWorld();
   rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
   drum.step(shot ? 1 : dt);
-  rifle.setDrum(drum.pos * DRUM_STEP);
+  rifle.setDrum((drum.pos - drumHome(drumRifle().drumM)) * DRUM_STEP);
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
   const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.

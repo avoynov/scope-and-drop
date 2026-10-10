@@ -4,7 +4,7 @@
  * range of 183 m, a wire fence, haze.
  */
 import * as THREE from 'three';
-import { TORSO_PROFILE } from '../../src/body/anatomy';
+import { HEAD, TORSO_BASE, TORSO_PROFILE, torsoDepth } from '../../src/body/anatomy';
 import type { Obstacle } from '../../src/scope/wind';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createFlags, type Flags } from './flags';
@@ -433,6 +433,10 @@ export function buildRange(wind?: WindGL): Range {
   // The same outline the wound model uses (src/body/anatomy.ts), so a hole here is an entry wound there.
   const torsoProfile = TORSO_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
   const torsoGeo = new THREE.LatheGeometry(torsoProfile, 28);
+  // Flattened front to back as a person's torso is, by height.
+  const tp = torsoGeo.attributes.position!;
+  for (let i = 0; i < tp.count; i++) tp.setZ(i, tp.getZ(i) * torsoDepth(TORSO_BASE + Math.min(tp.getY(i), 0.6999)));
+  torsoGeo.computeVertexNormals();
   const headGeo = new THREE.SphereGeometry(0.095, 20, 16);
   const legGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.95);
   const mannequin = (at: THREE.Vector3, range: number): Mannequin => {
@@ -444,13 +448,12 @@ export function buildRange(wind?: WindGL): Range {
     stake.name = 'stake';
     tgt.add(stake);
     const torso = new THREE.Mesh(torsoGeo, white);
-    torso.scale.set(1, 1, 0.55);
-    torso.position.y = 0.86;
+    torso.position.y = TORSO_BASE;
     torso.name = 'torso';
     tgt.add(torso);
     const head = new THREE.Mesh(headGeo, white);
-    head.scale.set(0.85, 1.2, 0.95);
-    head.position.y = 0.86 + 0.7 + 0.03;
+    head.scale.set(HEAD.r[0] / 0.095, HEAD.r[1] / 0.095, HEAD.r[2] / 0.095);
+    head.position.y = HEAD.c[1];
     head.name = 'head';
     tgt.add(head);
     for (let i = 0; i < 3; i++) {

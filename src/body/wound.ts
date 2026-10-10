@@ -107,6 +107,12 @@ export interface WoundInput {
   round: TerminalId;
   /** Shot number: the person's and the bullet's variation. */
   seed: number;
+  /**
+   * After glass (src/scope/glass.ts): the yaw it arrives with (rad), and what is left of it if the jacket
+   * came off. A yawed bullet presents more of its side and turns at once instead of after its neck.
+   */
+  yawRad?: number;
+  massKg?: number;
 }
 
 export interface Damage {
@@ -156,11 +162,14 @@ export function woundTrack(w: WoundInput): Pick<Wound, 'damage' | 'energyJ' | 'e
   const b: Terminal = TERMINAL[w.round];
   const n = Math.hypot(...w.dir);
   const d: Vec3 = [w.dir[0] / n, w.dir[1] / n, w.dir[2] / n];
-  let neck = b.neckM * (0.65 + 0.7 * rnd(w.seed, 1));
+  // Arriving yawed, the overturning moment in tissue takes over at once: by ~20° there is no neck left.
+  const yaw0 = Math.min(Math.PI / 2, Math.max(0, w.yawRad ?? 0));
+  let neck = b.neckM * (0.65 + 0.7 * rnd(w.seed, 1)) * Math.max(0.08, 1 - yaw0 / 0.35);
   const frontA = (Math.PI * b.diaM * b.diaM) / 4;
   const sideA = b.lenM * b.diaM * 0.8;
   const fragments = w.speed > b.fragmentAbove ? b.fragmentFrac * Math.min(1, (w.speed - b.fragmentAbove) / 150) : 0;
-  let mass = b.massKg;
+  const mass0 = Math.min(b.massKg, w.massKg ?? b.massKg);
+  let mass = mass0;
   let v = w.speed;
   // Back up a little so the walk starts outside the skin.
   const p: Vec3 = [w.entry[0] - d[0] * 0.01, w.entry[1] - d[1] * 0.01, w.entry[2] - d[2] * 0.01];
@@ -179,7 +188,8 @@ export function woundTrack(w: WoundInput): Pick<Wound, 'damage' | 'energyJ' | 'e
     if (s >= 0 && !inside) break;
     if (s < 0) s = 0;
     // Yaw: point-forward, then sideways, then base-forward.
-    const yaw = s < neck ? 0 : Math.min(Math.PI, (Math.PI / 2) * Math.min(1, (s - neck) / YAW_TO_SIDE_M) + (Math.PI / 2) * Math.max(0, Math.min(1, (s - neck - YAW_TO_SIDE_M) / SIDE_TO_BASE_M)));
+    const turn = s < neck ? 0 : Math.min(Math.PI, (Math.PI / 2) * Math.min(1, (s - neck) / YAW_TO_SIDE_M) + (Math.PI / 2) * Math.max(0, Math.min(1, (s - neck - YAW_TO_SIDE_M) / SIDE_TO_BASE_M)));
+    const yaw = Math.max(yaw0, turn);
     const sideways = Math.abs(Math.sin(yaw));
     const cdA = (sideways > 0 ? CD_SIDE * sideA * sideways : 0) + (yaw > Math.PI / 2 ? CD_BASE : CD_NOSE) * frontA * Math.abs(Math.cos(yaw));
     // What the point is in.
@@ -202,7 +212,7 @@ export function woundTrack(w: WoundInput): Pick<Wound, 'damage' | 'energyJ' | 'e
     // The bullet breaks where it starts to yaw, if it is fast enough to: fragments shed into the cavity.
     let fragDE = 0;
     if (fragments > 0 && s >= neck && s < neck + 0.02) {
-      const lose = (b.massKg * fragments * STEP) / 0.02;
+      const lose = (mass0 * fragments * STEP) / 0.02;
       fragDE = 0.5 * lose * v * v;
       mass -= lose;
     }

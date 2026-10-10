@@ -16,7 +16,7 @@ import type { Cue, SoundEvent } from '../../src/scope/handling';
 import type { RifleId } from '../../src/scope/shot';
 import { render, type Synth } from './synth';
 
-export type ImpactSound = 'plastic' | 'dirt' | 'rock' | 'steel' | 'wood';
+export type ImpactSound = 'plastic' | 'dirt' | 'rock' | 'steel' | 'wood' | 'glass' | 'tempered';
 
 export interface Sound {
   enabled: boolean;
@@ -178,6 +178,18 @@ export function createSound(): Sound {
         burst(t, 1.6 * g, 0.0005, 0.05, 'bandpass', Math.min(top, 1800), 900, 0.04);
       } else if (kind === 'wood') {
         burst(t, 1.5 * g, 0.001, 0.06, 'bandpass', Math.min(top, 700), 500, 0.05);
+      } else if (kind === 'glass' || kind === 'tempered') {
+        // A pane breaking: a hard, bright snap, then shards ringing as they hit the sill and the ground. Tempered
+        // glass lets go all at once and pours out of its frame in a rush of little dice.
+        const all = kind === 'tempered';
+        burst(t, (all ? 2.2 : 1.7) * g, 0.0003, 0.03, 'highpass', Math.min(top, 2600), 1600, 0.02);
+        for (let i = 0; i < (all ? 24 : 9); i++) {
+          const f = 2600 + 4200 * Math.random();
+          // The air takes the treble: rings above `top` fade with distance.
+          const air = f > top ? (top / f) ** 2 : 1;
+          tone(t + 0.04 + (all ? 0.9 : 0.45) * Math.random() ** 1.5, f, f * 0.985, (0.12 + 0.2 * Math.random()) * g * air, 0.0005, 0.03 + 0.05 * Math.random());
+        }
+        if (all) burst(t + 0.1, 0.6 * g, 0.06, 0.55, 'highpass', Math.min(top, 3600), 2400, 0.5);
       } else {
         burst(t, 0.9 * g, 0.004, 0.12, 'lowpass', Math.min(top, 450), 200, 0.1);
       }

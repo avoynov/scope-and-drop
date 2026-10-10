@@ -90,14 +90,22 @@ export function woundNow(w: Wound, since: number): string {
   return 'on their feet';
 }
 
+/** What glass did to the bullet before it struck: share of its speed lost, its yaw on striking, and its jacket. */
+export interface GlassNote {
+  lost: number;
+  yawRad: number;
+  stripped: boolean;
+}
+
 /** The card's text: verdict, cause, timeline and what the bullet did. */
-export function woundText(w: Wound, speed: number, since: number): string {
+export function woundText(w: Wound, speed: number, since: number, glass?: GlassNote | null): string {
   const verdict = w.outcome === 'killed' ? 'KILLED' : w.outcome === 'downed' ? 'DOWNED' : 'WOUNDED';
   const line = (k: string, v: string) => `<dt>${k}</dt><dd>${v}</dd>`;
   const organs = w.damage.filter((d) => d.direct || d.frac > 0.05).slice(0, 5).map((d) => d.part.name).join(', ') || '—';
   return `<div class="wound-head"><b class="${w.outcome}">${verdict}</b><span>${woundNow(w, since)}</span></div>` +
     `<div class="wound-cause">${w.cause}</div><dl>` +
     line('Struck at', `${Math.round(speed)} m/s · ${Math.round(w.energyJ)} J left in`) +
+    (glass ? line('Glass', `${Math.round(glass.lost * 100)} % slower · ${Math.round((glass.yawRad * 180) / Math.PI)}° yaw${glass.stripped ? ' · jacket off' : ''}`) : '') +
     line('Bullet', w.exitSpeed > 0 ? `through, out at ${Math.round(w.exitSpeed)} m/s` : `stayed in, ${Math.round(w.trackM * 100)} cm deep`) +
     line('Hit', organs) +
     line('Falls', w.fallS < Infinity ? time(w.fallS) + (w.reflexFall ? ' (reflex)' : '') : 'stays up') +

@@ -8,6 +8,8 @@ import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, type RifleId } from '../../src/
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from '../../src/scope/wind';
 import { createSound } from './audio';
 import { createComposite } from './composite';
+import { GLAZING, type GlazingId } from '../../src/scope/glass';
+import { createGlass } from './glass';
 import { DRUM_R_MM, DRUM_STEP, createDrum, drumHome } from './drum';
 import { FLAG_DEG_PER_MS } from './flags';
 import { buildRifle, createNearPasses } from './near';
@@ -63,6 +65,9 @@ const state = {
     const z = num('zero', BATTLE_ZERO_M);
     return { pso: z, tree: z, vss: z } as Record<Reticle['id'], number>;
   })(),
+  /** The glass screens in front of the mannequins: the glazing (or off), and how far they are turned (deg). */
+  glass: ((g) => (g && g in GLAZING ? g : 'off'))(params.get('glass')) as GlazingId | 'off',
+  glassAngle: num('glassangle', 0),
   yaw: 0,
   pitch: 0,
 };
@@ -141,7 +146,15 @@ const rifle = buildRifle();
 const near = createNearPasses(renderer, rifle);
 const toSun = range.sun.position.clone().sub(range.sun.target.position).normalize();
 const sound = createSound();
-const shooting = createShooting(range, sound);
+const glass = createGlass(range, eyePos);
+const shooting = createShooting(range, sound, glass);
+/** Glazes the frames afresh (or takes them away); their shadows change, so the shadow map is redrawn. */
+function glaze(): void {
+  glass.set(state.glass === 'off' ? null : state.glass, state.glassAngle);
+  renderer.shadowMap.needsUpdate = true;
+}
+glaze();
+const GLASS_NEXT = { off: 'single', single: 'double', double: 'laminated', laminated: 'tempered', tempered: 'off' } as const satisfies Record<GlazingId | 'off', GlazingId | 'off'>;
 
 function layout(): void {
   const bw = Math.round(W * dpr);
@@ -304,6 +317,10 @@ windDirIn.oninput = () => {
   // Wakes point downwind: bake them again once the dial has stopped moving.
   shelterDue = performance.now() + 250;
 };
+const glassAngleIn = $('glassangle') as HTMLInputElement;
+glassAngleIn.oninput = () => { state.glassAngle = Number(glassAngleIn.value); glaze(); };
+$('glass').onclick = () => { state.glass = GLASS_NEXT[state.glass]; glaze(); syncUi(); };
+$('pane').onclick = () => glaze();
 
 /**
  * The elevation drum on top of the scope (see drum.ts), engraved on the 3D rifle. Each rifle keeps its own drum
@@ -340,6 +357,9 @@ function syncUi(): void {
   sound.enabled = state.sound;
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
+  glassAngleIn.value = String(state.glassAngle);
+  $('glass').textContent = `Glass · ${state.glass}`;
+  $('glass').classList.toggle('on', state.glass !== 'off');
   magIn.value = String(state.mag);
   parIn.value = String(parToSlider(state.parallax));
   exIn.value = String(state.eye.x);
@@ -600,6 +620,7 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (e.code === 'KeyR') { state.reticle = ({ pso: 'tree', tree: 'vss', vss: 'pso' } as const)[state.reticle]; syncUi(); }
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
+  if (e.code === 'KeyG') { state.glass = GLASS_NEXT[state.glass]; glaze(); syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
   if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && !shooting.busy()) {
@@ -840,6 +861,7 @@ function frame(t: number, dt: number): void {
   u.uDustDrift!.value = fx.dustDrift * 0.5;
   u.uDustTop!.value = fx.dustTop;
   if (fx.shadow) renderer.shadowMap.needsUpdate = true;
+  glass.update(t, toSun);
 
   // The rifle from the eye: the head looks along the scope, less the recoil and swing tilt between them.
   const cam = rifle.camera;
@@ -909,6 +931,7 @@ function frame(t: number, dt: number): void {
       ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
       ['Rounds', `${status.rounds} · ${status.state}`],
       ...(state.easy ? [['Wind meter', windText()]] : []),
+      ...(state.glass !== 'off' ? [['Glass', `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? 'right' : 'left'}` : 'square-on'}`]] : []),
       ['Last shot', status.shot],
       ['Aim point', fmt(D)],
       ['Parallax error', `${Math.abs(par).toFixed(2)} ${unit}`],
@@ -917,7 +940,7 @@ function frame(t: number, dt: number): void {
     const w = status.wound;
     woundCard.hidden = !w;
     if (w) {
-      $('wound-text').innerHTML = woundText(w.wound, w.speed, w.since);
+      $('wound-text').innerHTML = woundText(w.wound, w.speed, w.since, w.glass);
       if (woundDrawn !== w.n) { $('wound-svg').innerHTML = woundSvg(w.wound); woundDrawn = w.n; }
     }
   }

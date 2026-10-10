@@ -145,7 +145,7 @@ The mansion module defines no weapon. What it fixes is the shot: prone in a tree
 
 The VSS "Vintorez" is what the job is built for: an integrally suppressed, subsonic sniper rifle designed for covert shots at 200–300 m, with the PSO-1-1 scope cut for its 9×39 round. It keeps the lab's Soviet PSO lineage (same unit, same chevrons and rangefinder), and it makes the shot a skill rather than a formality: at 183 m the bullet drops 2.2 m, so ranging the target and choosing the hold decide the hit, where the 7N1's 0.4 thousandth would barely need a hold at all. Its light recoil keeps the target in the glass, so the shooter sees what the shot did, which a deduction game needs.
 
-So the VSS with SP-5 is the game's rifle. The SVD and the bolt rifle stay as they were, on the 412 m mannequin, as the loud long-range comparisons. A second mannequin stands at 183 m for the VSS. Glass is the next piece (section 10).
+So the VSS with SP-5 is the game's rifle. The SVD and the bolt rifle stay as they were, on the 412 m mannequin, as the loud long-range comparisons. A second mannequin stands at 183 m for the VSS. Glass is section 11.
 
 Sources: [SADJ: the elusive Vintorez](https://sadefensejournal.com/the-elusive-vintorez-9x39-sniper-rifle/2/) (chronograph; sound levels: SP-5 120.8 dB, an unsuppressed 9×39 159.8 dB), [Wikipedia: AS Val and VSS](https://en.wikipedia.org/wiki/AS_Val_and_VSS_Vintorez), [Wikipedia: PSO-1](https://en.wikipedia.org/wiki/PSO-1) (the PSO-1M2-1's single chevron and 400 m rangefinder), [Modern Firearms: VSS](https://modernfirearms.net/en/sniper-rifles/standart-caliber-rifles/russia-standart-caliber-rifles/vss-eng/) (3.41 kg loaded with the scope), [militaryroom: VSS](http://militaryroom.rusff.me/viewtopic.php?id=1848) (SP-5 bullet 36 mm, 16.2 g; 4 shots inside 75 mm at 100 m), [armoury-online: VSS](https://www.armoury-online.ru/articles/sr/ru/vss/) (400 m by day, 300 m at night).
 
@@ -288,7 +288,7 @@ Tests check that every handling ends ready to fire (bolt shut, carrier home, the
 
 ### What it hits
 
-`firstHit()` walks the path in 1 ms (under 1 m) steps. The mannequins, their stakes and tripods, the boulder and the fence posts are raycast only when a step passes near them. The ground is tested against the terrain height and the crossing is bisected to millimetres. Bullets go straight through sagebrush, as .30 calibre bullets do through light brush. Flying stops half a metre into the ground, so a shot costs about 2.5 ms of CPU, once, at the trigger.
+`firstHit()` walks the path in 1 ms (under 1 m) steps. The mannequins, their stakes and tripods, the boulder, the fence posts and the window frames are raycast only when a step passes near them; a pane of glass is a plane test, and a bullet through it flies on from its back face (section 11). The ground is tested against the terrain height and the crossing is bisected to millimetres. Bullets go straight through sagebrush, as .30 calibre bullets do through light brush. Flying stops half a metre into the ground, so a shot costs about 2.5 ms of CPU, once, at the trigger.
 
 ### What the shooter sees
 
@@ -352,12 +352,13 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | F / right-click | Scope in / scope out |
 | Space | Fire. With the chamber empty: work the bolt (bolt rifle) or change the magazine. The head comes off the scope until the hands are back on the grip |
 | R | Switch rifle and reticle: SVD, bolt rifle, VSS |
+| G | Glass in front of the mannequins: off, single, double, laminated, tempered (section 11) |
 | L | Illumination |
 | H | Hide the panel |
 
 The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
@@ -397,10 +398,70 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 
 **Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
 
-## 11. Next steps (not built)
+## 11. Glass (`src/scope/glass.ts`, `demo/reticle/glass.ts`)
+
+The VSS's work is shooting into a house, so its bullets go through windows. **Glass** in the panel (or **G**) puts a glazed window frame 4 m in front of each mannequin: single 4 mm, a double unit 4-16-4, laminated 6.8 mm (3 + 0.76 PVB + 3) or tempered 6 mm. **Pane angle** turns both frames up to 60° either way, and **New pane** glazes them again.
+
+| VSS at 183 m, 16×: single pane · laminated at 30° · tempered 60 ms after the hit · tempered half a second on · double unit at 45° |
+| --- |
+| ![Glass](images/glass.jpg) |
+
+### What the research says
+
+- **Square-on, glass barely turns a rifle bullet.** In the most careful rifle test ([Lambert, 1994, *The Effects of Commercial Tempered Glass on Rifle Bullet Deflection*](https://apps.dtic.mil/sti/html/tr/ADA283575/index.html)), M118 173 gr FMJ at ≈ 760 m/s through 6 mm tempered glass hit 0.59 in (1.5 cm) right of the line 5 yd behind it, SD 0.6 in. Forensic work agrees: "virtually no deflection" square-on.
+- **On a slant it turns and spreads.** Lambert's cores went 1.30 in right at 30° and 2.17 in right at 45° (SD 0.99 and 1.42 in), and 0.7 in high at 45°. The rifle was right of the pane's normal, and they still went right with it on the left: the bullet's spin pushes it to one side whatever the angle. Handgun bullets through windshields turn 1–10° toward the normal (Haag; [BGSU](https://www.bgsu.edu/news/2016/08/path-of-destruction.html), [NCJ 240424](https://www.ncjrs.gov/App/Publications/abstract.aspx?ID=240424)). [Hornady's LE guidance](https://www.hornadyle.com/resources/le-faq/what-can-i-expect-when-shooting-through-glass): past about 15° groups open sharply.
+- **It costs speed, and more for laminated glass.** [Osnes et al., *Perforation of laminated glass*](https://www.sciencedirect.com/science/article/pii/S0734743X21001093) (11.4 mm glass with 3 mm of PVB, 7.62 mm AP): ballistic limit 232 m/s, 520 → 413 m/s. Window glass costs a rifle bullet a few per cent.
+- **It yaws bullets and strips jackets.** Lambert saw keyholes within 5 yd and every jacket off at 45°. Open-tip match bullets break up even square-on: the FBI's 168 gr HPBT through insulated glass kept about 50 gr ([Sniper Central](https://snipercentral.com/glassshooting.htm)).
+- **Too shallow and it glances off.** A 9 mm at 360 m/s ricochets off glass met at 10° and goes through at 20° ([AAFS 2017 B39](https://aafs.org/sites/default/files/media/documents/AAFS-2017-B39.pdf)). Faster bullets break the glass before they can turn.
+
+No one has published yaw or speed loss for the SP-5 through glass, so its numbers come from the model, which is fitted to the tests above.
+
+### The model
+
+Each sheet of glass costs a few microseconds (about 7 µs for a double unit):
+
+1. **Speed.** The glass in the bullet's path is taken up to its speed (an inelastic collision). The work of crushing the glass, the PVB and the bullet's nose then comes off its energy. This reproduces Osnes's 232 m/s limit (model 240) and 520 → 413 m/s (model 414).
+2. **Turn**, with f the share of speed lost and θ the obliquity:
+   - 0.044·f·tan θ toward the normal, as a ray is refracted;
+   - 0.046·f·(1 + 0.67 tan θ) to the side it spins (right, with the lab's right-hand twists);
+   - 0.039·f·tan θ up or down, from the spinning flank that meets the glass first being rubbed back;
+   - a scatter of 0.039·f·(1 + 1.2 tan θ) in the plane of the slant, 0.039·f·(1 + 0.5 tan θ) across it.
+
+   This puts Lambert's means within a millimetre and his spreads within 3 mm (tested), and from the left of the normal his cores still go right.
+3. **Yaw.** The kick sets the bullet yawing up to 1.2·f·(1 + 2 tan θ), ±40 %, more without its jacket. It nutates with a period of twist ÷ ((Ix/Iy)·√(1 − 1/Sg)), a few metres, and dies away over about 80 m. Yaw adds drag (×(1 + 15δ²)), and a bare core has 25 % more. Both go into a second `fly()` from the back face, so the bullet loses speed and drops more on its way to the target. A bullet that hits a person while still yawing turns in the body at once: the wound model takes the yaw and what is left of its mass (section 10).
+4. **Jacket.** It strips with a likelihood that rises with (v / v_strip)² · (1 + 3 tan² θ) · √(glass / 6 mm). The model matches Lambert: none square-on, a third at 30°, all at 45°. A match bullet's core breaks up with it.
+5. **Ricochet** below a grazing angle of 3° + 3000 / v (m/s), at most 20°, leaving at 0.8 of that angle with 85 % of the speed, tumbling.
+
+Glass sheets bonded with PVB count as one sheet. In a double unit the bullet crosses the gap still yawing from the first sheet, so the second costs more. What it does to the lab's rounds at their own ranges (2000 shots each; turn in mrad, with the rifle right of the normal; at a man 4 m behind the window 1 mrad is 4 mm):
+
+| | Square-on | 30° | 45° | 60° |
+| --- | --- | --- | --- | --- |
+| **SP-5** single (261 m/s) | −5.5 %, 2.5 ± 2.2 mrad | −6.4 %, 5.6 ± 4.2 | −7.8 %, 9.3 ± 6.7 | −11 %, 19 ± 13, jacket off 81 % |
+| SP-5 double | −11 %, 5.2 ± 3.1 | −13 %, 12 ± 6 | −16 %, 19 ± 10 | −23 %, 43 ± 21 |
+| SP-5 laminated | −14 %, 6.4 ± 5.5 | −16 %, 15 ± 11 | −20 %, 24 ± 18 | −30 %, 52 ± 36 |
+| SP-5 tempered | −9 %, 4.1 ± 3.6 | −11 %, 9.2 ± 6.9 | −13 %, 15 ± 11 | −18 %, 31 ± 22 |
+| **7N1** single (548 m/s) | −5.8 %, 2.6 ± 2.3 | −6.6 %, 5.8 ± 4.4 | −8 %, 9.6 ± 6.9, jacket off 16 % | −11 %, 20 ± 14, all off |
+| **M118LR** single (559 m/s) | −5.1 %, 2.3 ± 2.0, jacket off 22 % | −5.9 %, 5.2 ± 3.9, all off | −7.2 %, 8.6 ± 6.2 | −10 %, 17 ± 12 |
+
+So for the game: **a VSS shot square-on through a window lands within a few centimetres of where it was aimed** at a man a few metres inside. Through a double unit or laminated glass at a slant it can be off by 5–20 cm: enough to turn a heart shot into a lung shot, or to miss a head. The heavy, slow SP-5 keeps its jacket unless the pane is very steep.
+
+### In the lab
+
+- A bullet that meets a pane is run through the model at its front face. Then it is flown on from the back face with its new speed, direction, yaw drag and spin drift, and can meet the other screen, a frame (wood) or the mannequin. **Last shot** reads "through glass · …", "glanced off the glass · …" or "stopped in the glass". The wound card adds a **Glass** line: share of speed lost, yaw on striking, and whether the jacket came off.
+- **The pane.** Both faces reflect the sky by Fresnel (about 8 % for the two faces square-on, much more at a slant) and the sun glints off it, so a clean window at 183 m is nearly invisible. When the bullet gets there the hole is drawn:
+  - **Annealed glass** breaks into a star of radial cracks with a few concentric ones and a frosted cone round a bullet-sized hole. A slow bullet cracks it further, because the plate has time to bend before the bullet is through.
+  - **Laminated glass** crazes into a denser web round a crushed white disc and keeps its PVB.
+  - **Tempered glass** dices all over at once (its cracks run at about 1500 m/s), goes white, and falls out of the frame from the hole outward.
+- Later shots go through the holes already there: a holed sheet no longer counts there, and fallen tempered glass not at all.
+- **Spray.** Fragments are blown out of the back face, mostly square to it and leaning along the bullet's path, braked hard by the air, glinting as they fall. A few are blown back toward the shooter, and there is a puff of glass dust. Tempered glass pours its dice onto the ground. Everything is a closed-form function of time in the same sprite batch as the impacts.
+- **Sound.** A hard, bright snap and shards ringing as they hit the sill, or the rush of a tempered pane letting go. It is heard after the bullet's time to the glass plus the sound's return.
+
+URL parameters: `glass=single|double|laminated|tempered`, `glassangle=<deg>` (+ turns the pane's face to the shooter's right).
+
+## 12. Next steps (not built)
 
 - The person reacting: falling, crumpling or staying up as the wound model says, in place of the mannequin.
-- Glass, for the game: the VSS's shots go through windows. Deflection and fragments by bullet, pane and angle, and the hole and cracks a pane keeps.
+- Glass in the mansion: the same model on the house's real windows, and glass the shooter's own bullets have already broken.
 - Recordings of the real rifles for every action sound and the reports (the folder and names are ready: `demo/reticle/sounds/README.md`).
 - Gust dust: streamers of dust lifting off the flat in gusts above about 8 m/s.
 - Wind in the mansion demo: hand `matchWind()` to its shot, and its trees and lawn to the sway and sheen shaders.

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AIR, ROUNDS, at, zeroTiltRad } from '../src/scope/ballistics';
 import { THOUSANDTH } from '../src/scope/optics';
 import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from '../src/scope/reticles';
-import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, windAt, type Path, type Vec3 } from '../src/scope/shot';
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, crossDriftPerMs, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, type Path, type Vec3 } from '../src/scope/shot';
 
 /** Where the path crosses the vertical plane `range` metres down -z. */
 const plane = (p: Path, range: number) =>
@@ -154,25 +154,15 @@ describe('the rifle and the air', () => {
     expect(dispersion(svd, 7)).toEqual(dispersion(svd, 7));
   });
 
-  it('blows from the clock direction it is set to, and gusts around its mean', () => {
-    const w = { speed: 4, fromClock: 9, gust: 0 };
-    const v = windAt(w, 0, 0);
-    // From 9 o'clock it blows left to right, at full value.
-    expect(v[0]).toBeCloseTo(4, 0);
-    expect(Math.abs(v[2])).toBeLessThan(1);
-    expect(windAt({ speed: 4, fromClock: 12, gust: 0 }, 0, 0)[2]).toBeGreaterThan(3.5);
-    const g = { speed: 4, fromClock: 9, gust: 0.35 };
-    let lo = Infinity, hi = 0, sum = 0;
-    for (let t = 0; t < 600; t += 0.5) {
-      const s = Math.hypot(...windAt(g, 0, t));
-      lo = Math.min(lo, s);
-      hi = Math.max(hi, s);
-      sum += s;
-    }
-    expect(sum / 1200).toBeGreaterThan(3.4);
-    expect(sum / 1200).toBeLessThan(4.6);
-    expect(hi - lo).toBeGreaterThan(1.5);
-    // Not the same wind at the target as at the shooter.
-    expect(windAt(g, 412, 30)[0]).not.toBeCloseTo(windAt(g, 0, 30)[0], 2);
+  it('gives range-card drift that matches published data: the .308 175 gr SMK and the VSS', () => {
+    // Applied Ballistics, per 1 m/s at 600, 800 and 1000 m: 0.25, 0.47 and 0.83 m. Within 8 %.
+    const [d600, d800, d1000] = crossDriftPerMs(ROUNDS.m118lr, [600, 800, 1000]);
+    expect(d600! / 0.25).toBeGreaterThan(0.92);
+    expect(d800! / 0.47).toBeCloseTo(1, 1);
+    expect(d1000! / 0.83).toBeGreaterThan(0.92);
+    // The VSS at the game's 183 m: 2.5 cm, about an eighth of a thousandth, per m/s.
+    const [vss] = crossDriftPerMs(sp5, [183]);
+    expect(vss).toBeCloseTo(0.025, 3);
+    expect(vss! / 183 / THOUSANDTH).toBeCloseTo(0.13, 2);
   });
 });

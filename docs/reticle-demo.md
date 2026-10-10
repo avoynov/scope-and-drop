@@ -20,9 +20,13 @@ The short version, for players new to scopes. The numbers behind it are in secti
    - **VSS (the game's rifle):** there's a chevron every 50 m. The small ones are 150, 250 and 350. At the game's 183 m, hold a third of the way from the 2 up to the small 150 chevron.
    - **Or dial it instead:** turn the drum to the range and aim with the top chevron. That's exact, but the other chevrons are then wrong until you turn it back to 1.
 4. **Range carefully.** With the slow VSS bullet, 16 m of range error is about 18 cm at 183 m, enough to miss the chest. If unsure, range again.
-5. **Wind.** A crosswind pushes the bullet downwind, so aim into it, using the marks on the horizontal line (one per thousandth). The panel shows the wind where you lie, and gusts change it from shot to shot.
-   - At 2.5 m/s, the default: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
-   - Wind from straight ahead or behind barely matters. Half-angle wind (from 1–2 or 10–11 o'clock) needs about half the hold.
+5. **Wind.** A crosswind pushes the bullet downwind, so aim into it, using the marks on the horizontal line (one per thousandth). Nothing tells you the wind's speed: you read it.
+   - **Read the flags.** A red flag hanging down means calm. Standing out about halfway (45° from the pole) means a moderate wind, 5 m/s. Straight out means 10 m/s or more. In between, the sage shakes and paler patches run across the ground in the gusts. Through the scope the mirage runs with the wind.
+   - **Look the hold up on the wind card** (top right). Pick the column whose flag looks like the one you see and the row for your range. The card assumes wind straight across. From 10–11 or 1–2 o'clock, hold half. From 12 or 6, hold nothing.
+   - **Trust the near flags most.** About half the drift comes from the first third of the way, so a gust at your feet matters more than one at the target.
+   - **Gusts travel.** A gust is carried downwind at the wind's speed, so you can see it coming across the sage and the near flags before it reaches the line. Fire in a lull, or hold for the gust that will be there.
+   - **Easy** puts a wind meter on a mast at your hide, as high as the flags, and adds its m/s under the card's flags. It reads the wind at the hide, not along the way.
+   - For scale, at 2.5 m/s straight across: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
 6. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
 
 **Mil tree (bolt rifle):** the tree isn't made for any round, so work the hold out from the ammo card. Turn the dial to 0 and the hold in mil is 1000 × drop ÷ range, with the drop worked out from the bullet's speed (section 3).
@@ -217,14 +221,40 @@ Space fires a real bullet. It flies through moving air from the bore, hits whate
 
 | Effect | Model | At 412 m (7N1) | At 183 m (SP-5) |
 | --- | --- | --- | --- |
-| Wind | Drag on the air-relative velocity, with the wind sampled along the path every 1 ms | 0.27 thousandth per m/s of full-value crosswind (34 cm in 3 m/s), within 0.1 % of the lag rule `W·(t − R/V₀)` | 7.5 cm in 3 m/s (0.4 thousandth): the heavy bullet barely slows, so there is little lag |
-| Gusts | Speed ±30 % and direction ±12° over 5–15 s. Gusts are carried across the range, so the wind at the target is not the wind at the shooter | Varies shot to shot | Varies shot to shot |
+| Wind | Drag on the air-relative velocity, with the wind sampled along the path every 1 ms from the field in *The wind* below | 0.27 thousandth per m/s of full-value crosswind (34 cm in 3 m/s), within 0.1 % of the lag rule `W·(t − R/V₀)` | 7.5 cm in 3 m/s (0.4 thousandth): the heavy bullet barely slows, so there is little lag |
+| Gusts | Speed ±30 % and direction ±12°, in eddies about 80 m long and 45 m across, carried downwind at the wind's speed. The wind at the target is not the wind at the shooter | Varies shot to shot | Varies shot to shot |
 | Head and tail wind | Same drag model | A few cm lower or higher | A few cm lower or higher |
 | Spin drift | Litz: `1.25·(SG + 1.2)·t^1.83` inches to the right (right-hand twist). Miller stability from the bullet's length and the twist: SVD 1:240 mm gives SG 2.2, the bolt rifle's 1:11.25" gives 1.9, the VSS's 1:210 mm (assumed: it is not published) gives 3.3. Litz fitted supersonic bullets, so for the SP-5 it is an estimate | 4.5 cm right | 7 cm right |
 | Aerodynamic jump | Litz: `(0.01·SG − 0.0024·L + 0.032)` MOA per mph of crosswind. With a right-hand twist a wind from the left throws the bullet up | 0.09 mrad in 3 m/s | 0.11 mrad in 3 m/s |
 | Coriolis | `−2Ω×v` for a range at 38.5° N firing north-west (which puts the sun over the left shoulder, as in the scene) | 1 cm right, 1 cm low | 0.6 cm right, 0.5 cm low |
 
 With no wind and no Earth rotation, a level shot reproduces `trajectory()` to the millimetre (tested), so the ammo card stays true, and a bullet fired from the bore, 70 mm under the scope and tilted by the drum on 1, with the PSO's 4, 6 or 8 chevron, or any of the VSS's chevrons, on a target at that range lands within 1 cm of it (tested). The SP-5 stays below Mach 0.85 all the way to 400 m (tested). In the lab every shot leaves from the bore under the scope, tilted by the drum, so holds work exactly as in section 3. Wind holds come off the PSO's lateral scale or the tree's rows.
+
+### The wind (`src/scope/wind.ts`, `demo/reticle/wind-gl.ts`, `demo/reticle/flags.ts`)
+
+| Wind 1.5 m/s from 9:30 | Wind 8 m/s from 9:30 |
+| --- | --- |
+| ![Light](images/wind-light.jpg) | ![Strong](images/wind-strong.jpg) |
+
+| VSS at 4×, 5 m/s from 9: the 184 m flag beside the target | Wind card with Easy on (SVD) |
+| --- | --- |
+| ![Scope](images/wind-scope.jpg) | ![Card](images/wind-card.jpg) |
+
+One wind field drives the bullet, the flags, the sage, the grass and the Easy meter, so every cue shows the air the bullet will fly through. `windAt(wind, x, y, z, t)` gives it in m/s anywhere.
+
+- **Gusts.** Eddies are frozen into the air and carried downwind at the mean speed (Taylor's hypothesis). They live in a periodic noise tile, 16 eddies each way, each about 80 m along the wind and 45 m across. Every 20 s the tile cross-fades into a fresh slice, with the variance kept steady so the gusts don't pulse. A gust seen shaking the sage 50 m upwind reaches the line 10 s later at 5 m/s (tested). The speed swings about ±30 % and the direction about ±12°.
+- **The ground.** Over open sage the wind follows a log profile (roughness 3 cm), quoted at 3 m, a flag's height: 61 % of it at 0.5 m, more above. Hills follow linear hill-flow theory (Jackson and Hunt 1975, and the WAsP rules of thumb). The air follows the ground, rising up a windward slope and sinking down a lee one (vertical speed = wind × slope, fading over 30 m of height). It speeds up 4.5 % per metre of height above the ground's mean within 50 m, so a crest is windier than a hollow. Behind a lee slope steeper than about 17° it drops by up to 60 %. The terrain is baked once into a grid of heights and slopes (66 ms for the lab's 1.8 × 2.2 km). On a 500 m shot across a valley, the up- and downdrafts move the bullet 1–3 cm. Shooting downhill matters far more, and the flight already has it.
+- **Trees and buildings.** These are baked once per match for its mean wind direction, into a grid that says how much of the wind is lost there and between which heights. There is no wind inside a building below its roof. A crown passes a share of the air (oak 45 %, beech 40 %, poplar 50 %, cedar 30 %, cypress 25 %, yew 20 %). Downwind there is a sheltered wake, as measured behind windbreaks (Heisler and DeWalle 1988; Cornelis and Gabriels 2005): close behind a wall the wind is down to a tenth and it is back by about 10 heights; behind a half-porous belt it is 40 % at 2.5 heights, 80 % at 10 and 95 % at 20. A lone tree shelters less than a long wall, and trees standing close together act as a wider, denser belt. The eddies a building or tree sheds are left out: a bullet crosses one in a few milliseconds. In the lab only the boulder shelters, and changing the wind's direction re-bakes it a moment later. For a mansion, `matchWind(bp, speed, fromClock)` bakes the house, its 800 trees and the terrain in about 0.3 s.
+- **CPU and GPU.** The gust tile and both grids go up as half-float textures, with every value already one a half float holds exactly, and `windAt()` in GLSL does the same sums as on the CPU. So a bush sways to the very gust the bullet meets. A CPU call costs about 0.4 µs, and a VSS shot makes about 700. The textures take about 0.7 MB.
+
+The cues:
+
+- **Flags.** Five red range flags, 1.2 × 0.6 m on 3.5 m poles: left of the 183 m lane at 60, 120 and 184 m, and right of the 412 m lane at 300 and 412 m. The near two stand 5–6 m off the lane, so they stay out of the scope's field. Each flag reads the wind where it flies and stands out at the old range rule's angle (FM 23-10: degrees from the pole ÷ 4 = mph, so about 9° per m/s, straight out from 10 m/s). It flaps faster the harder it blows, from 0.5 Hz to 3.7 Hz, and bunches into folds when slack. Seen end-on, in a head or tail wind, it shows almost nothing of its width, which is the cue that the wind is worth little.
+- **Sage.** Each clump leans and shakes with the wind at half its height, harder as the square of the speed.
+- **Grass sheen.** The gusts brighten the ground by up to 12 % in patches that run downwind, from about 2 m/s up.
+- **Mirage** runs with the crosswind (see *What the shooter sees*).
+- **Wind card.** It gives the hold into the wind for four flag angles (20°, 45°, 70° and straight out), at 100–300 m for the VSS or 200–800 m for the others, in the reticle's own unit, rounded to the quarter a shooter can hold. The holds are the solver's, for a full-value crosswind as a flag reads it. There are no speeds on it, so the shooter reads the flags. On the lab's lanes the card is within 2 % (VSS at 183 m) and 8 % (SVD at 412 m) of what the full field, gusts aside, does to the bullet. On flat ground the bullet flies lower, through slower air, and the card holds too much: about a fifth with the eye 1.1 m up, a third lying prone.
+- **Easy** adds a wind meter on a mast at the hide, 3 m up like the flags, and the m/s each flag column means. It is the one wind number the game shows, and only on Easy.
 
 ### The rifle and the shot
 
@@ -270,7 +300,7 @@ Tests check that every handling ends ready to fire (bolt shut, carrier home, the
 - **The bullet.** Every bullet is also drawn at its true size, spread over the scope's blur circle wherever it is out of focus (`objective × |1 − D/P|` across at its distance D, with the parallax knob at P). Supersonic bullets are past the target before the recoil lets the picture back. The VSS's 9 mm bullet takes 0.68 s to reach 183 m and the rifle hardly moves, so in the last 50 m it is a speck of a pixel or two at 12× on a 1080p screen. On this sunlit sand it is about as bright as the ground, so it shows best against a bush. Below a pixel it fades out rather than vanishing.
 - **Impacts.** At 412 m the bullet comes in well under a degree from the horizontal, so it ploughs the dirt rather than digging. Dirt clods are thrown forward and up and fall back under gravity. The dust is a forward-leaning plume of billows that brakes hard in the air (0.1–0.4 s), swells as √t, lifts slightly and then drifts off at the wind's speed. Dust lingers 2–5 s. Rock throws pale dust. A mannequin hit throws white plastic flecks and a small puff, leaves a true-size hole (7.62 mm, or 9 mm from the VSS; under a pixel even at 20×, as in life), and rocks the mannequin on its stake about 1° at 2.2 Hz. The bullet keeps about a fifth of its 5.4 N·s. Posts give a puff and a ring. Everything is a closed-form function of time since the impact, so the cost is one draw of up to 320 sprites, whatever the frame rate.
 - **Muzzle-blast dust.** Prone on dry ground, the SVD's slotted flash hider lifts dust in front of the muzzle. It is far out of focus, so it shows as a sunlit veil boiling up from the bottom of the view in the first 0.2 s, hazing the field for about a second and drifting off downwind. The bolt rifle raises 60 % as much. Together with recoil, this is why a shooter often cannot see their own impact. The VSS's gas leaves through its suppressor and lifts almost none (5 %).
-- **Running mirage.** The mirage in the glass now moves with the crosswind at roughly its angular rate, weighted toward the near two thirds of the path, and boils in place when the air is still. That is the shooter's main wind cue downrange. The panel's **Wind here** reads the wind at the firing point like a hand-held meter. It is not the wind at the target.
+- **Running mirage.** The mirage in the glass now moves with the crosswind at roughly its angular rate, weighted toward the near two thirds of the path, and boils in place when the air is still. With the flags, it is the shooter's wind cue downrange (see *The wind*).
 
 ### What the shooter hears
 
@@ -278,7 +308,7 @@ The rifle's own sounds are the report and every part of working the action: the 
 
 ### Readouts
 
-**Rounds** (in the magazine and chamber, and what Space will do next), **Wind here**, and **Last shot**: hit, where and the verdict (section 10), or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
+**Rounds** (in the magazine and chamber, and what Space will do next), **Wind meter** (Easy only: the wind at 3 m on a mast at the hide), and **Last shot**: hit, where and the verdict (section 10), or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
 
 ## 7. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
 
@@ -309,7 +339,7 @@ URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsou
 
 ## 8. The range (`demo/reticle/scene.ts`)
 
-A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.5 km, and a ground shader built from band-limited fbm with an integer pcg2d hash (float hashes streak at world coordinates in the hundreds of metres). It has 40k sagebrush clumps, a 4 m boulder, white mannequin torsos on orange stakes at 412 m and at 183 m (the game's range, 3.4° left of the first), a wire fence with T-posts at about 360 m, exponential haze, and a sun over the shooter's shoulder. The sun's shadow box covers one mannequin and its surroundings, whichever the scope points nearest, and moves when the aim crosses over (one redraw of the shadow map).
+A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.5 km, and a ground shader built from band-limited fbm with an integer pcg2d hash (float hashes streak at world coordinates in the hundreds of metres). It has 40k sagebrush clumps, a 4 m boulder, white mannequin torsos on orange stakes at 412 m and at 183 m (the game's range, 3.4° left of the first), a wire fence with T-posts at about 360 m, five range flags (section 6), exponential haze, and a sun over the shooter's shoulder. The boulder now shows its own rock shader: three.js had been caching every procedural material under the same key, so it drew with whichever compiled first. The sun's shadow box covers one mannequin and its surroundings, whichever the scope points nearest, and moves when the aim crosses over (one redraw of the shadow map).
 
 ## 9. Controls
 
@@ -325,9 +355,9 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | L | Illumination |
 | H | Hide the panel |
 
-The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander and sound, a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
+The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`), `nogust`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
@@ -372,6 +402,8 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 - The person reacting: falling, crumpling or staying up as the wound model says, in place of the mannequin.
 - Glass, for the game: the VSS's shots go through windows. Deflection and fragments by bullet, pane and angle, and the hole and cracks a pane keeps.
 - Recordings of the real rifles for every action sound and the reports (the folder and names are ready: `demo/reticle/sounds/README.md`).
+- Gust dust: streamers of dust lifting off the flat in gusts above about 8 m/s.
+- Wind in the mansion demo: hand `matchWind()` to its shot, and its trees and lawn to the sway and sheen shaders.
 - Windage drum, and drum slop: the elevation drum is built (section 3); the windage drum is still fixed at 0.
 - Atmosphere: temperature, pressure and altitude (air density), so the PSO's chevrons stop being exact off standard conditions, as on a real PSO-1.
 - Moving targets and lead (the lateral scale is already there for it).

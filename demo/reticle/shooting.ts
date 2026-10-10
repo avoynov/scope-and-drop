@@ -21,7 +21,8 @@ import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from '../../src/scope/handling';
 import { SCOPE } from '../../src/scope/optics';
 import { assess, type Wound } from '../../src/body/wound';
-import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from '../../src/scope/shot';
+import { windAt, type Wind } from '../../src/scope/wind';
 import type { ImpactSound, Sound } from './audio';
 import { heightAt, type Range } from './scene';
 
@@ -315,14 +316,14 @@ export function createShooting(range: Range, sound: Sound) {
     right.set(1, 0, 0).applyEuler(euler);
     up.set(0, 1, 0).applyEuler(euler);
     const sg = millerStability(rifle, d.mv);
-    windAt(wind, 0, exit, W);
+    windAt(wind, eye.x, eye.y, eye.z, exit, W);
     const jump = aeroJumpRad(rifle, sg, W[0] * right.x + W[2] * right.z);
     // The bore runs under the scope, tilted up by the drum so the bullet climbs to the line of sight at the zero.
     const tilt = zeroTiltRad(round, zeroM, rifle.sightM);
     const dir = fwd.clone().addScaledVector(right, d.dx).addScaledVector(up, d.dy + jump + tilt).normalize();
     const path = fly({
       round, mv: d.mv, origin: [eye.x - up.x * rifle.sightM, eye.y - up.y * rifle.sightM, eye.z - up.z * rifle.sightM], dir: [dir.x, dir.y, dir.z], t0: exit, spin: RANGE_SPIN, sg,
-      wind: (x, _y, z, t, o) => windAt(wind, Math.max(0, Math.hypot(x, z)), t, o),
+      wind: (x, y, z, t, o) => windAt(wind, x, y, z, t, o),
       // Nothing to fly for once it is in the ground.
       until: (x, y, z) => y < heightAt(x, z) - 0.5,
     });
@@ -405,7 +406,7 @@ export function createShooting(range: Range, sound: Sound) {
     let dustDrift = 0;
     let dustTop = 0;
     trace.s = 0;
-    windAt(wind, 0, now, W);
+    windAt(wind, eye.x, eye.y, eye.z, now, W);
     const cross = W[0];
     for (const s of shots) {
       const age = now - s.exit;
@@ -557,7 +558,7 @@ export function createShooting(range: Range, sound: Sound) {
     const e = s.hit.speed * s.hit.speed * 0.5 * ROUNDS[s.rifle.round].bulletGr * 0.0000648;
     const scale = Math.min(1.3, Math.sqrt(e / 1500));
     const g = 9.81;
-    windAt(wind, Math.hypot(hx, hz), now, W);
+    windAt(wind, hx, hy + 0.5, hz, now, W);
     const seed = s.n * 31;
     const kind = s.kind!;
     const dusty = kind === 'dirt' ? 1 : kind === 'rock' ? 0.7 : kind === 'plastic' ? 0.18 : 0.25;

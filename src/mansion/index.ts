@@ -9,6 +9,7 @@ export { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEye, perchEyeAt, perchPlan
 export { STYLES, STYLE_IDS } from './core/styles';
 export { Rng } from './core/rng';
 export { terrainHeight } from './site/terrain';
+export { matchWind, windObstacles } from './site/wind';
 export { SightlineTracer } from './analysis/sightlines';
 export { collectOccluders } from './analysis/occluders';
 export { navCellAt, navComponents } from './analysis/nav';

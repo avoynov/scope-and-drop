@@ -32,16 +32,21 @@
       dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
       .hint { color: var(--muted); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
       body.nohud #hud { display: none; }
-      /* Ammo card: what the shooter knows about the round. Part of the sight picture, so H keeps it. */
-      #dope { position: fixed; top: 16px; right: 16px; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 8px; font-variant-numeric: tabular-nums; }
-      #dope[hidden] { display: none; }
-      #dope .dope-head { display: flex; gap: 6px; align-items: baseline; color: var(--muted); margin-bottom: 6px; }
-      #dope .dope-head b { color: var(--accent); font-weight: 600; letter-spacing: 0.08em; }
-      #dope .dope-head span { margin-left: auto; padding-left: 14px; }
-      #dope table { border-collapse: collapse; }
-      #dope th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
-      #dope td { text-align: right; padding: 1px 0 1px 12px; }
-      #dope tr:first-child td { color: var(--muted); }
+      /* Ammo and wind cards: what the shooter knows about the round and the wind. Part of the sight picture, so H keeps them. */
+      #cards { position: fixed; top: 16px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+      .card { background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 8px; font-variant-numeric: tabular-nums; }
+      .card[hidden] { display: none; }
+      .card .dope-head { display: flex; gap: 6px; align-items: baseline; color: var(--muted); margin-bottom: 6px; }
+      .card .dope-head b { color: var(--accent); font-weight: 600; letter-spacing: 0.08em; }
+      .card .dope-head span { margin-left: auto; padding-left: 14px; }
+      .card table { border-collapse: collapse; }
+      .card th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
+      .card td { text-align: right; padding: 1px 0 1px 12px; }
+      .card tr:first-child td { color: var(--muted); }
+      #windcard td { text-align: center; padding-left: 10px; min-width: 22px; }
+      #windcard tr.card-sub td { color: var(--muted); }
+      #windcard svg { display: block; margin: 0 auto 2px; color: var(--muted); }
+      .card-note { color: var(--muted); margin-top: 6px; max-width: 220px; }
       /* Wound card: what the last hit on a mannequin would have done to a person. */
       #wound { position: fixed; bottom: 16px; right: 16px; width: 252px; max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 10px; }
       #wound[hidden], body.nohud #wound { display: none; }
@@ -60,14 +65,15 @@
         #wound svg { display: none; }
         #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; }
         .hint { display: none; }
-        #dope { left: 16px; right: 16px; font-size: 11px; }
-        #dope td { padding-left: 8px; }
+        #cards { left: 16px; right: 16px; align-items: stretch; font-size: 11px; }
+        .card td { padding-left: 8px; }
+        .card-note { max-width: none; }
       }
     </style>
   </head>
   <body>
     <div id="view"></div>
-    <div id="dope" hidden></div>
+    <div id="cards"><div id="dope" class="card" hidden></div><div id="windcard" class="card"></div></div>
     <div id="wound" hidden><div id="wound-text"></div><div id="wound-svg"></div></div>
     <div id="hud">
       <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
@@ -90,6 +96,7 @@
         <button data-flag="mirage">Mirage</button>
         <button data-flag="drift">Head</button>
         <button data-flag="sound">Sound</button>
+        <button data-flag="easy" title="Easy: a wind meter on a mast at the hide reads the wind at the flags' height">Easy</button>
       </div>
       <div class="seg">
         <button id="center">Centre eye</button>

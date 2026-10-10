@@ -121,52 +121,6 @@ export function aeroJumpRad(rf: Rifle, sg: number, crossFromLeft: number): numbe
   return perMph * (crossFromLeft / 0.44704) * MOA;
 }
 
-/**
- * Wind over the range. `speed` m/s blowing from `fromClock` (12 = from downrange, 3 = from the right,
- * 9 = from the left). Gusts vary the speed by about ±`gust` and swing the direction by ~±12°, over
- * 5–15 s, and the same gust reaches different parts of the range at different times, so the wind at the
- * target is not the wind at the shooter.
- */
-export interface Wind {
-  speed: number;
-  fromClock: number;
-  gust: number;
-}
-
-function hash1(i: number): number {
-  let h = Math.imul(i | 0, 0x27d4eb2d) ^ 0x165667b1;
-  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-/** Smooth 1D value noise in [-1, 1]. */
-function noise1(x: number, seed: number): number {
-  const i = Math.floor(x);
-  const f = x - i;
-  const u = f * f * (3 - 2 * f);
-  const a = hash1(i * 7919 + seed) * 2 - 1;
-  const b = hash1((i + 1) * 7919 + seed) * 2 - 1;
-  return a + (b - a) * u;
-}
-
-/** Air velocity (m/s, scene frame) at downrange distance `down` (m, ≥ 0) and time `t`. */
-export function windAt(w: Wind, down: number, t: number, out: Vec3 = [0, 0, 0]): Vec3 {
-  if (w.speed <= 0) {
-    out[0] = out[1] = out[2] = 0;
-    return out;
-  }
-  // Gusts are frozen into the air and carried across the range; downrange they arrive out of step.
-  const u = t / 9 - down / 260;
-  const g = 0.65 * noise1(u, 11) + 0.35 * noise1(u * 2.7 + 5, 12);
-  const s = Math.max(0, w.speed * (1 + w.gust * g));
-  const a = (w.fromClock * Math.PI) / 6 + 0.21 * (0.7 * noise1(u * 1.3 + 9, 13) + 0.3 * noise1(u * 3.1, 14));
-  // Coming from bearing a (clockwise from downrange), the air blows the other way.
-  out[0] = -Math.sin(a) * s;
-  out[1] = 0;
-  out[2] = Math.cos(a) * s;
-  return out;
-}
-
 /** Earth's rotation in the scene frame, for a range at `latDeg` firing toward azimuth `azDeg` (from north). */
 export function earthSpin(latDeg: number, azDeg: number): Vec3 {
   const w = 7.292115e-5;
@@ -379,4 +333,19 @@ export interface Dispersion {
 export function dispersion(rf: Rifle, seed: number): Dispersion {
   const n = shotRandom(seed + 1013);
   return { dx: n() * rf.sigmaRad, dy: n() * rf.sigmaRad, mv: ROUNDS[rf.round].mv + n() * rf.mvSd };
+}
+
+/**
+ * Sideways drift (m) per 1 m/s of full-value crosswind, at each of `ranges`: a level shot in a steady, even wind,
+ * as a range card gives it. The hold is this ÷ range.
+ */
+export function crossDriftPerMs(round: Round, ranges: readonly number[]): number[] {
+  const p = fly({ round, mv: round.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: (_x, _y, _z, _t, o) => { o[0] = 1; o[1] = 0; o[2] = 0; return o; }, maxT: 6, floor: 1e4 });
+  return ranges.map((r) => {
+    for (let i = 0; i < p.n - 1; i++) {
+      const z0 = -p.pos[i * 3 + 2]!, z1 = -p.pos[(i + 1) * 3 + 2]!;
+      if (z1 >= r) return p.pos[i * 3]! + ((p.pos[(i + 1) * 3]! - p.pos[i * 3]!) * (r - z0)) / (z1 - z0);
+    }
+    return NaN;
+  });
 }

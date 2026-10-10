@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { AIR, ROUNDS, at } from '../src/scope/ballistics';
+import { AIR, ROUNDS, at, zeroTiltRad } from '../src/scope/ballistics';
 import { THOUSANDTH } from '../src/scope/optics';
 import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from '../src/scope/reticles';
-import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, windAt, type Path, type Vec3 } from '../src/scope/shot';
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, windAt, type Path, type Vec3 } from '../src/scope/shot';
 
 /** Where the path crosses the vertical plane `range` metres down -z. */
 const plane = (p: Path, range: number) =>
@@ -32,21 +32,24 @@ describe('3D bullet flight', () => {
     }
   });
 
-  it('lands on the target when the matching PSO chevron is held on it', () => {
+  it('lands on the target when the matching PSO chevron is held on it, drum on 1', () => {
+    const sight = svd.sightM;
     for (const d of PSO_CHEVRON_RANGES) {
-      // Hold the chevron on a target at the marked range: the bore points that far above it.
-      const up = psoChevronY(d) * THOUSANDTH;
-      const p = fly({ round: r7n1, mv: r7n1.mv, origin: [0, 0, 0], dir: [0, Math.sin(up), -Math.cos(up)] });
+      // Hold the chevron on a target at the marked range: the bore leaves 70 mm under the line of sight and
+      // points that far above it, plus the drum's tilt.
+      const up = psoChevronY(d) * THOUSANDTH + zeroTiltRad(r7n1, BATTLE_ZERO_M, sight);
+      const p = fly({ round: r7n1, mv: r7n1.mv, origin: [0, -sight, 0], dir: [0, Math.sin(up), -Math.cos(up)] });
       const h = plane(p, d);
       // Within 1 cm of the line of sight, at every chevron range.
       expect(Math.abs(h.pos[1])).toBeLessThan(0.01 + d * 1e-5);
     }
   });
 
-  it('lands on the target when the matching VSS chevron is held on it', () => {
-    for (const d of VSS_CHEVRON_RANGES) {
-      const up = vssChevronY(d) * THOUSANDTH;
-      const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, Math.sin(up), -Math.cos(up)] }), d);
+  it('lands on the target when the matching VSS chevron is held on it, drum on 1', () => {
+    const s = RIFLES.vss.sightM;
+    for (const d of [BATTLE_ZERO_M, ...VSS_CHEVRON_RANGES]) {
+      const up = vssChevronY(d) * THOUSANDTH + zeroTiltRad(sp5, BATTLE_ZERO_M, s);
+      const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, -s, 0], dir: [0, Math.sin(up), -Math.cos(up)] }), d);
       expect(Math.abs(h.pos[1])).toBeLessThan(0.01 + d * 1e-5);
     }
   });

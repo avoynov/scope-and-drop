@@ -5,6 +5,7 @@
  */
 import { ROUNDS, holdRad, type RoundId } from './ballistics';
 import { MRAD, THOUSANDTH } from './optics';
+import { BATTLE_ZERO_M, RIFLES } from './shot';
 
 export type Prim =
   | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; w: number; dash?: number; lit?: boolean }
@@ -34,12 +35,16 @@ export const psoCurveHeight = (n: number) => 1.7 / (n * 100) / THOUSANDTH;
 /** Ranges marked by the PSO's three holdover chevrons. */
 export const PSO_CHEVRON_RANGES = [400, 600, 800] as const;
 
-/** Where a PSO holdover chevron sits below the aiming chevron: the 7N1's hold with the 0 m zero, in thousandths. */
-export const psoChevronY = (rangeM: number) => holdRad(ROUNDS['7n1'], rangeM, 0) / THOUSANDTH;
+/**
+ * Where a PSO holdover chevron sits below the aiming chevron: the 7N1's hold with the SVD zeroed at 100 m
+ * (drum on 1) and its scope 70 mm over the bore, in thousandths. Glass cannot move, so the chevrons are true
+ * only with the drum on 1.
+ */
+export const psoChevronY = (rangeM: number) => holdRad(ROUNDS['7n1'], rangeM, BATTLE_ZERO_M, RIFLES.svd.sightM) / THOUSANDTH;
 
 /**
  * SVD / PSO-1 style, tailored to the 7N1 round. Main chevron is the aiming point; three holdover chevrons
- * below sit at the 7N1's computed hold for 400, 600 and 800 m with the scope zeroed at 0 m (the
+ * below sit at the 7N1's computed hold for 400, 600 and 800 m with the drum on 1, the 100 m zero (the
  * PSO-1's own chevrons serve 1100–1300 m with the drum on 10). A vertical stadia runs from the last
  * chevron down; a lateral scale every 1 thousandth to ±10 with longer marks at 5 and 10; the
  * stadiametric rangefinder at lower left (base line, dashed 1.7 m curve, ranges 2–10 ×100 m).
@@ -83,21 +88,25 @@ export function psoReticle(): Reticle {
   return { id: 'pso', name: 'SVD · PSO', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: '7n1', illum: 'rgb(255,46,24)' };
 }
 
-/** Ranges marked by the VSS reticle's holdover chevrons: every 100 m numbered, the 50 m steps between plain. */
-export const VSS_CHEVRON_RANGES = [100, 150, 200, 250, 300, 350, 400] as const;
+/**
+ * Ranges marked by the VSS reticle's holdover chevrons: every 100 m numbered, the 50 m steps between plain.
+ * 100 m is the zero, so the aiming chevron is its mark.
+ */
+export const VSS_CHEVRON_RANGES = [150, 200, 250, 300, 350, 400] as const;
 
-/** Where a VSS holdover chevron sits below the aiming chevron: the SP-5's hold with the 0 m zero, in thousandths. */
-export const vssChevronY = (rangeM: number) => holdRad(ROUNDS.sp5, rangeM, 0) / THOUSANDTH;
+/** Where a VSS holdover chevron sits below the aiming chevron: the SP-5's hold with the drum on 1, in thousandths. */
+export const vssChevronY = (rangeM: number) => holdRad(ROUNDS.sp5, rangeM, BATTLE_ZERO_M, RIFLES.vss.sightM) / THOUSANDTH;
 
 /** The VSS rangefinder's marks, ×100 m: 1.7 m curve heights from 100 to 400 m in 50 m steps. */
 export const VSS_RANGEFINDER = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 
 /**
  * VSS / PSO-1-1 style, tailored to the SP-5. The real 9×39 scopes (PSO-1-1, PSO-1M2-1) have a single aiming
- * chevron, a range drum cut for the round and a rangefinder out to 400 m; with the drum left at 0 (the lab's
- * rule) the drum's job moves onto the glass, as on the SVD's PSO. The subsonic bullet drops 6 thousandths by 100 m and 27 by 400 m, so the holdover chevrons run far down
- * the field: one at the SP-5's hold for every 100 m, numbered 1–4, and a smaller plain one at each 50 m step,
- * because between 100 and 200 m the hold changes by a thousandth every 15 m. The vertical stadia starts below
+ * chevron, a range drum cut for the round and a rangefinder out to 400 m; with the drum left on 1 (the 100 m
+ * zero) the drum's job beyond it moves onto the glass, as on the SVD's PSO. Past the zero the subsonic bullet
+ * needs 3 thousandths more at 150 m and 20 at 400 m, so the holdover chevrons run far down the field: one at
+ * the SP-5's hold for every 100 m, numbered 2–4, and a smaller plain one at each 50 m step, because between
+ * 150 and 200 m the hold changes by a thousandth every 16 m. The vertical stadia starts below
  * the last chevron; the lateral scale is the PSO's. The rangefinder is re-cut for 100–400 m, as on those scopes:
  * base line and dashed 1.7 m curve, ticks every 50 m and numbers 1–4 (×100 m).
  */

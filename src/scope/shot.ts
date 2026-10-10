@@ -37,7 +37,17 @@ export interface Rifle {
   cycleS: number;
   /** How much dust the muzzle blast raises off dry ground in front of a prone shooter (SVD = 1). */
   blastDust: number;
+  /** Height of the scope's axis above the bore. */
+  sightM: number;
+  /** The elevation drum's marks, one detent each, in metres: 0 (bore parallel to the sight line), then 100 m up. */
+  drumM: readonly number[];
 }
+
+/** The drum's normal setting: the rifle is zeroed at 100 m, drum on 1, and the cut reticles are cut for it. */
+export const BATTLE_ZERO_M = 100;
+
+/** Drum marks every 50 m from 100 m to `max`, with a 0 below them. */
+const drum = (max: number): number[] => [0, ...Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50)];
 
 const MOA = Math.PI / (180 * 60);
 
@@ -50,21 +60,25 @@ export const RIFLES = {
    * SVD, 7N1. Spec: ≤ 1.24 MOA extreme vertical spread for 5 shots with the 240 mm twist; 7N1 at 300 m
    * puts every shot of a group inside an 80 mm radius. That is σ ≈ 0.4 MOA. Hammer-fired: ≈ 6 ms lock.
    * Barrel 620 mm: ≈ 1.3 ms barrel time. 10-round box magazine, semi-automatic.
+   * Sight height 70 mm: the manual's zeroing check (100 m, drum on 3, hits 14 cm above the aim) comes out at
+   * 14 cm with the 7N1 only for a scope 70 mm over the bore (tested). PSO-1 drum: 100–1000 m in 50 m clicks.
    */
   svd: {
     id: 'svd', name: 'SVD', round: '7n1', twistMm: 240, bulletLenMm: 32.3, bulletDiaMm: 7.92,
     sigmaRad: 0.4 * MOA, mvSd: 8, lockS: 0.006, barrelS: 0.0013,
-    action: 'semi', magazine: 10, reloadS: 3.2, cycleS: 0, blastDust: 1,
+    action: 'semi', magazine: 10, reloadS: 3.2, cycleS: 0, blastDust: 1, sightM: 0.07, drumM: drum(1000),
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
    * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round magazine; working the bolt prone
    * without coming off the gun takes about a second.
+   * Scope 58 mm over the bore, as modelled in the demo. Its elevation turret carries a ballistic dial cut for
+   * the M118LR (as Leupold's CDS dials are), marked in hundreds of metres to 1000 m.
    */
   bolt: {
     id: 'bolt', name: 'Bolt rifle', round: 'm118lr', twistMm: 286, bulletLenMm: 31.5, bulletDiaMm: 7.82,
     sigmaRad: 0.25 * MOA, mvSd: 4, lockS: 0.003, barrelS: 0.0013,
-    action: 'bolt', magazine: 5, reloadS: 4.5, cycleS: 1.1, blastDust: 0.6,
+    action: 'bolt', magazine: 5, reloadS: 4.5, cycleS: 1.1, blastDust: 0.6, sightM: 0.058, drumM: drum(1000),
   },
   /**
    * VSS "Vintorez", SP-5: integrally suppressed and subsonic. Spec: 4 shots inside 75 mm at 100 m, prone off
@@ -73,11 +87,13 @@ export const RIFLES = {
    * the long bullet SG ≈ 3.3. Striker-fired, ≈ 5 ms lock; a 200 mm ported barrel and the suppressor ahead of
    * it, ≈ 1.9 ms until the bullet is out. 10-round magazine, semi-automatic (the automatic mode is left out).
    * The gas leaves through the suppressor, so the blast lifts almost no dust.
+   * The PSO-1-1 sits on the same side rail as the SVD's PSO: 70 mm over the bore assumed. Its drum is cut for
+   * the SP-5 out to 400 m.
    */
   vss: {
     id: 'vss', name: 'VSS', round: 'sp5', twistMm: 210, bulletLenMm: 36, bulletDiaMm: 9.25,
     sigmaRad: 0.45 * MOA, mvSd: 4, lockS: 0.005, barrelS: 0.0019,
-    action: 'semi', magazine: 10, reloadS: 3, cycleS: 0, blastDust: 0.05,
+    action: 'semi', magazine: 10, reloadS: 3, cycleS: 0, blastDust: 0.05, sightM: 0.07, drumM: drum(400),
   },
 } as const satisfies Record<string, Rifle>;
 export type RifleId = keyof typeof RIFLES;

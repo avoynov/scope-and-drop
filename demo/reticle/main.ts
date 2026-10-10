@@ -4,9 +4,10 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
-import { windAt, type RifleId, type Wind } from '../../src/scope/shot';
+import { BATTLE_ZERO_M, RIFLES, windAt, type RifleId, type Wind } from '../../src/scope/shot';
 import { createSound } from './audio';
 import { createComposite } from './composite';
+import { DRUM_STEP, createDrum } from './drum';
 import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
@@ -45,6 +46,11 @@ const state = {
     return { speed, fromClock: from, gust: params.has('nogust') ? 0 : 0.3 } as Wind;
   })(),
   sound: !params.has('mute'),
+  /** Where each rifle's elevation drum is set, in metres: on 1, the 100 m zero, unless `zero=` says otherwise. */
+  zero: (() => {
+    const z = num('zero', BATTLE_ZERO_M);
+    return { pso: z, tree: z, vss: z } as Record<Reticle['id'], number>;
+  })(),
   yaw: 0,
   pitch: 0,
 };
@@ -225,7 +231,7 @@ function syncDope(): void {
   if (!show) return;
   const r = ROUNDS[RETICLES.tree().round];
   dope.innerHTML =
-    `<div class="dope-head"><b>${r.name}</b> ${r.cartridge} · ${r.bulletGr} gr<span>zero 0 m</span></div>` +
+    `<div class="dope-head"><b>${r.name}</b> ${r.cartridge} · ${r.bulletGr} gr<span>zero ${state.zero.tree} m · scope ${Math.round(RIFLES.bolt.sightM * 1000)} mm over bore</span></div>` +
     `<table><tr><th>m</th>${DOPE_RANGES.map((d) => `<td>${d}</td>`).join('')}</tr>` +
     `<tr><th>m/s</th>${DOPE_RANGES.map((d) => `<td>${Math.round(at(r, d).v)}</td>`).join('')}</tr></table>`;
 }
@@ -235,9 +241,35 @@ const windDirIn = $('winddir') as HTMLInputElement;
 windIn.oninput = () => (state.wind.speed = Number(windIn.value));
 windDirIn.oninput = () => (state.wind.fromClock = Number(windDirIn.value));
 
+/**
+ * The elevation drum on top of the scope. Each rifle keeps its own drum where it was left; turning it moves
+ * the bore against the scope, so the zero, and with it every chevron, moves with it.
+ */
+const drumRifle = () => RIFLES[RIFLE[state.reticle]];
+const drum = createDrum($('drum') as HTMLCanvasElement, (i) => {
+  sound.unlock();
+  sound.drumClick();
+  state.zero[state.reticle] = drumRifle().drumM[i]!;
+  syncUi();
+}, shot);
+let drumShown = '';
+function syncDrum(): void {
+  const r = drumRifle();
+  if (drumShown !== r.id) {
+    drumShown = r.id;
+    // A zero between the marks (a `zero=` still) snaps to the nearest one.
+    const z = state.zero[state.reticle];
+    const i = r.drumM.reduce((b, m, k) => (Math.abs(m - z) < Math.abs(r.drumM[b]! - z) ? k : b), 0);
+    state.zero[state.reticle] = r.drumM[i]!;
+    drum.set(r.drumM, i);
+  }
+  shooting.setZero(state.zero[state.reticle]);
+}
+
 function syncUi(): void {
-  syncDope();
   shooting.setRifle(RIFLE[state.reticle]);
+  syncDrum();
+  syncDope();
   sound.enabled = state.sound;
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
@@ -415,6 +447,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
+  if (e.code === 'BracketLeft') drum.turn(-1);
+  if (e.code === 'BracketRight') drum.turn(1);
   if (e.code === 'Space') {
     e.preventDefault();
     if (!e.repeat) fire();
@@ -639,6 +673,7 @@ function frame(t: number, dt: number): void {
   cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
   cam.updateMatrixWorld();
   rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
+  rifle.setDrum((drum.pos - 1) * DRUM_STEP);
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
   const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.
@@ -692,8 +727,8 @@ function frame(t: number, dt: number): void {
       ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ['Exit pupil', `${ep.toFixed(1)} mm`],
       ['Parallax set', fmt(state.parallax)],
-      // Turrets are left at 0: nothing is dialled, so every hold comes from the reticle.
-      ['Zero', '0 m · turrets 0'],
+      // The drum's number is the zero: 1 is 100 m, where the cut reticles are true.
+      ['Zero', `${state.zero[state.reticle]} m · drum ${state.zero[state.reticle] / 100}`],
       ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
       ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
       ['Rounds', `${status.rounds} · ${status.state}`],

@@ -23,7 +23,7 @@ A good, well set-up 4–20×50 FFP scope (`src/scope/optics.ts`, `SCOPE`):
 | Rim softness | ≈1.5 px at the field stop, rising as r⁶ | Field curvature and coma in a good eyepiece: sharp over most of the field, soft only at the very edge. |
 | Pupil aberration | 2.5 mm at the field stop, rising as r² | Bundles from the edge of the field cross the axis a little nearer the eyepiece. An eye that slips sideways sees a crescent come in from that side rather than an even dimming. |
 
-The defaults describe a scope that is good and properly adjusted: the parallax knob is set to the target range and the eye sits on the exit pupil at full eye relief. Zeroing is the exception: the scope is zeroed at 0 m with both turrets at 0, so nothing is dialled and every hold comes from the reticle (shown as "Zero" in the panel). You change power. Everything else is there to experiment with.
+The defaults describe a scope that is good and properly adjusted: the parallax knob is set to the target range and the eye sits on the exit pupil at full eye relief. Each rifle is zeroed at 100 m: its elevation drum sits on 1, where the cut reticles are true, and every hold past that comes from the reticle (the drum at top centre, and "Zero" in the panel). The drum turns in 50 m clicks, down to 0 and up to its last mark (section 3). You change power. Everything else is there to experiment with.
 
 ## 2. Reticles (`src/scope/reticles.ts`)
 
@@ -32,7 +32,7 @@ All three reticles are lists of resolution-free primitives (lines, polylines, do
 ### SVD · PSO-1 (unit: Soviet "thousandth", 2π/6000 ≈ 1.047 mrad)
 
 - **Main chevron** at the aiming point, 1.0 × 1.0 thousandth.
-- **Three holdover chevrons** below it, cut for the 7N1 round at 400, 600 and 800 m with the 0 m zero and marked 4, 6 and 8 (see section 3).
+- **Three holdover chevrons** below it, cut for the 7N1 round at 400, 600 and 800 m with the 100 m zero (drum on 1) and marked 4, 6 and 8 (see section 3).
 - **A vertical stadia** from below the last chevron down to the field stop.
 - **Lateral scale** every thousandth to ±10, with longer marks at 5 and 10 and "10" labels. It is used for windage, lead and ranging.
 - **Stadiametric rangefinder** at lower left: a solid base line and a dashed curve whose height above the line is `1.7 m / range`, marked 2 to 10 (×100 m). Put the feet on the line and slide until the head touches the curve, then read the range. The test `tests/scope.test.ts` checks that the curve brackets a 1.7 m man at exactly its marked ranges. The mannequin on the range is 1.7 m tall overall, so ranging works on it at 412 m.
@@ -41,14 +41,14 @@ All three reticles are lists of resolution-free primitives (lines, polylines, do
 ### VSS · PSO-1-1 (unit: thousandth), the game's rifle
 
 - **Main chevron** at the aiming point, as on the PSO.
-- **Seven holdover chevrons** cut for the subsonic SP-5 with the 0 m zero: numbered ones at 100, 200, 300 and 400 m (6.1, 12.6, 19.5 and 26.7 thousandths down) and smaller plain ones at 150, 250 and 350 m. The real 9×39 scopes (PSO-1-1, PSO-1M2-1) have a single chevron, a range drum cut for the round and a rangefinder out to 400 m. With the drum left at 0 the drum's job moves onto the glass, as it does on the SVD's PSO. The 50 m steps are there because at the game's range the hold changes by a thousandth every 15 m.
+- **Six holdover chevrons** cut for the subsonic SP-5 with the 100 m zero (drum on 1): numbered ones at 200, 300 and 400 m (6.2, 12.9 and 20.0 thousandths down) and smaller plain ones at 150, 250 and 350 m. 100 m is the zero, so the aiming chevron is its mark. The real 9×39 scopes (PSO-1-1, PSO-1M2-1) have a single chevron, a range drum cut for the round and a rangefinder out to 400 m. With the drum left on 1 the drum's job past 100 m moves onto the glass, as it does on the SVD's PSO. The 50 m steps are there because at the game's range the hold changes by a thousandth every 16 m.
 - **Lateral scale** as on the PSO, and the vertical stadia below the last chevron.
 - **Stadiametric rangefinder** re-cut for 100–400 m, as on the 9×39 scopes: base line, dashed 1.7 m curve, a tick every 50 m and numbers 1 to 4 (×100 m). A test checks that the drawn ticks bracket a 1.7 m man at their ranges.
 - **Illumination** lights the whole pattern.
 
 ![VSS at 8×, held for the 183 m mannequin](images/vss-8x.jpg)
 
-VSS at 8×, held for the mannequin at 183 m: the point 11.5 thousandths down, a little above the 200 m chevron, is on the chest.
+VSS at 8×, drum on 1, held for the mannequin at 183 m: the point 5.1 thousandths down, a third of the way from the 200 m chevron up to the 150 m one, is on the chest.
 
 ### Mil tree (unit: mrad), after the reference footage
 
@@ -69,41 +69,58 @@ Each reticle is paired with the round its rifle fires. Bullet flight comes from 
 
 The SP-5's speed is the chronograph's: 905 ft/s (276 m/s) from a VSS, against 270–290 m/s in published tables. No BC is published for it. At Mach 0.8 a boat-tail bullet drags about 1.28 times as much as the G7 shape, which gives G7 ≈ 0.21 (G1 ≈ 0.40 at this speed). The guess hardly matters at the game's range, because the drop there comes from the flight time: G1 0.28 instead would move the 183 m hold by 0.3 thousandth.
 
-The scope is zeroed at 0 m, so the line of sight and the bore are one line. The hold for a target is then its whole drop angle: `hold = drop / range`.
+### Zero and the elevation drum
 
-**SVD: the reticle does the work.** The PSO's three holdover chevrons are cut for the 7N1 at 400, 600 and 800 m, sitting 3.63, 6.39 and 10.28 thousandths under the aiming chevron, and they are marked 4, 6 and 8. Range the target with the curve, then put the matching chevron on it. On a real PSO-1 the same three chevrons serve 1100–1300 m with the drum on 10. With the drum left at 0, they are re-cut for the ranges an SVD actually shoots.
+Every rifle is zeroed at 100 m, as the SVD's manual has it: zeroing is done at 100 m with the drum on 1. The drum's numbers are ranges in hundreds of metres, and on a mark the rifle is zeroed at that range: the bore is tilted up under the scope just enough for the bullet to climb back to the line of sight there. The scope sits above the bore (`sightM`), so the bullet starts below the line of sight and that offset counts too:
 
-**VSS: the reticle does the work, and the range is everything.** The SP-5 leaves at 280 m/s and is still doing 260 m/s at 183 m, so it drops 2.2 m on the way and takes 0.68 s. Range the target with the curve and hold the matching point between the chevrons: 11.5 thousandths at 183 m, a little above the 200 m chevron. A 10 m range error puts the bullet 13 cm high or low, so the 50 m chevrons and the rangefinder carry the shot. Wind matters less than the flight time suggests: the heavy bullet barely slows, so a full 3 m/s crosswind moves it only 7.5 cm (0.4 thousandth) at 183 m.
+`tilt(Z) = (drop(Z) + h) / Z`, and the hold below the line of sight at range R is `(drop(R) + h) / R − tilt(Z)`.
+
+The manual pins the sight height. Its zeroing check is fired at 100 m with the drum on 3 and expects the hits 14 cm above the aim. With the 7N1 model that comes out at 14 cm only for a scope 70 mm over the bore (tested), so the SVD's is 70 mm. The VSS's PSO-1-1 sits on the same side rail (70 mm, assumed) and the bolt rifle's scope is 58 mm up, as modelled.
+
+| Rifle | Drum | Clicks | 100 m zero tilt |
+| --- | --- | --- | --- |
+| SVD · PSO-1 | 0, then 1 to 10 (100–1000 m) | 50 m | 1.45 thousandths |
+| Bolt rifle | Ballistic dial cut for the M118LR (as Leupold's CDS dials are), 0, then 1 to 10 | 50 m | 1.41 mil |
+| VSS · PSO-1-1 | 0, then 1 to 4 (100–400 m) | 50 m | 6.8 thousandths |
+
+The real PSO-1 drum starts at 1 ([Wikipedia](https://en.wikipedia.org/wiki/PSO-1): 100–1000 m in 50 or 100 m steps). The lab adds a 0 below it, where the bore runs parallel to the line of sight. The drum is drawn at top centre as it is read from behind the scope: the side of the knurled drum with its numbers running round past the index line on the body. Drag it sideways, scroll over it, tap either side, or press `[` and `]`; each detent clicks. The 3D drum on the rifle turns with it. Each rifle keeps its own drum setting. A cut reticle is glass, so its chevrons are true only with the drum on 1: on 0 every hold moves down by the zero tilt, 6.8 thousandths on the VSS, and on 3 the SVD's chevrons shoot high. That is how the real PSO-1's own chevrons work, true only with the drum on 10.
+
+Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.ru/rubric/article.php?art=nsd05012024) (100 m, drum on 3, control point 14 cm above the aim), [PSO instruction manual](https://sheldy.ru/userfiles/files/PCO(1).pdf) (zeroing at 100 m with the drum on 1, 5 cm per click at 100 m), [Wikipedia: PSO-1](https://en.wikipedia.org/wiki/PSO-1).
+
+**SVD: the reticle does the work.** The PSO's three holdover chevrons are cut for the 7N1 at 400, 600 and 800 m with the drum on 1, sitting 2.39, 5.10 and 8.96 thousandths under the aiming chevron, and they are marked 4, 6 and 8. Range the target with the curve, then put the matching chevron on it. On a real PSO-1 the same three chevrons serve 1100–1300 m with the drum on 10. With the drum left on 1, they are re-cut for the ranges an SVD actually shoots.
+
+**VSS: the reticle does the work, and the range is everything.** The SP-5 leaves at 280 m/s and is still doing 260 m/s at 183 m, so it drops 2.2 m on the way and takes 0.68 s. Range the target with the curve and hold the matching point between the chevrons: 5.1 thousandths at 183 m with the drum on 1, a third of the way from the 200 m chevron up to the 150 m one. A 10 m range error puts the bullet 13 cm high or low, so the 50 m chevrons and the rangefinder carry the shot. Wind matters less than the flight time suggests: the heavy bullet barely slows, so a full 3 m/s crosswind moves it only 7.5 cm (0.4 thousandth) at 183 m.
 
 **Mil tree: the shooter does the work.** The tree is generic, so when it is selected an ammo card in the top right shows the round and its speed every 200 m, as printed on a box of match ammunition. The intended hand method:
 
 1. Range the target with the mil relation: `range = size (m) × 1000 / mils`.
 2. Flight time ≈ range ÷ the mean of the muzzle speed and the speed at that range.
-3. Drop ≈ ½·g·t². Hold (mil) = 1000 × drop ÷ range.
+3. Drop ≈ ½·g·t². Hold from the bore line (mil) = 1000 × (drop + sight height) ÷ range.
+4. Take off the same for the zero, 100 m: about 1.4 mil with the drum on 1. The card's header gives the zero and the sight height.
 
-Drag also slows the fall a little, so this reads 5–10 % high, from 0.1 mil at 200 m to 1.1 mil at 800 m. That is close enough for a torso at 400 m. Past 600 m the shooter has to learn the rifle. `handHoldRad` encodes the method, and a test pins the gap.
+Drag also slows the fall a little, so step 3 reads 5–10 % high. With the zero taken off, that error is a bigger share of what is left: the method reads 12–20 % high, from 0.1 mil at 200 m to 1.1 mil at 800 m. That is close enough for a torso at 400 m. Past 600 m the shooter has to learn the rifle. `handHoldRad` encodes step 3, and a test pins the gap. Skipping the sight height in steps 3 and 4 adds another 0.4 mil high at 400 m.
 
-| Range | Speed | True hold | Hand estimate |
+| Range | Speed | True hold, drum on 1 | Hand estimate |
 | --- | --- | --- | --- |
-| 200 m | 671 m/s | 1.75 mil | 1.84 mil |
-| 400 m | 563 m/s | 3.96 mil | 4.28 mil |
-| 600 m | 464 m/s | 6.78 mil | 7.48 mil |
-| 800 m | 374 m/s | 10.51 mil | 11.58 mil |
+| 200 m | 671 m/s | 0.63 mil | 0.76 mil |
+| 400 m | 563 m/s | 2.69 mil | 3.06 mil |
+| 600 m | 464 m/s | 5.47 mil | 6.21 mil |
+| 800 m | 374 m/s | 9.18 mil | 10.29 mil |
 
 ### Which rifle the game needs
 
 The mansion module defines no weapon. What it fixes is the shot: prone in a treeline at blue hour, 130–210 m from the house, into a lit party through glass (French windows that are about 70 % glass, sheer curtains, a glass dome over the hall), at one guest among many. The lab's first two rifles were picked for a 412 m desert range instead:
 
-| At the game's range (183 m), 0 m zero | SVD + 7N1 | Bolt rifle + M118LR | VSS + SP-5 |
+| At the game's range (183 m), 100 m zero | SVD + 7N1 | Bolt rifle + M118LR | VSS + SP-5 |
 | --- | --- | --- | --- |
-| Hold | 1.4 thousandths, between the main chevron and the 400 m one | 1.5 mil | 11.5 thousandths, between the 150 and 200 m chevrons |
+| Hold | 0.4 thousandth, just under the main chevron | 0.5 mil | 5.1 thousandths, between the 150 and 200 m chevrons |
 | Flight time | 0.24 s | 0.25 s | 0.68 s |
 | Sound along the path | A supersonic crack heard by everyone near the line of fire | The same | None: the bullet is slower than sound |
 | Report at 1 m | Over 160 dB | Over 160 dB | About 121 dB, measured on a VSS with SP-5 |
 | Free recoil | 18 J | 12 J | 3.2 J |
 | Effective range | 800 m | 800 m and more | 400 m by day, 300 m at night |
 
-The VSS "Vintorez" is what the job is built for: an integrally suppressed, subsonic sniper rifle designed for covert shots at 200–300 m, with the PSO-1-1 scope cut for its 9×39 round. It keeps the lab's Soviet PSO lineage (same unit, same chevrons and rangefinder), and it makes the shot a skill rather than a formality: at 183 m the bullet drops 2.2 m, so ranging the target and choosing the hold decide the hit, where the 7N1's 1.4 thousandths would barely need a hold at all. Its light recoil keeps the target in the glass, so the shooter sees what the shot did, which a deduction game needs.
+The VSS "Vintorez" is what the job is built for: an integrally suppressed, subsonic sniper rifle designed for covert shots at 200–300 m, with the PSO-1-1 scope cut for its 9×39 round. It keeps the lab's Soviet PSO lineage (same unit, same chevrons and rangefinder), and it makes the shot a skill rather than a formality: at 183 m the bullet drops 2.2 m, so ranging the target and choosing the hold decide the hit, where the 7N1's 0.4 thousandth would barely need a hold at all. Its light recoil keeps the target in the glass, so the shooter sees what the shot did, which a deduction game needs.
 
 So the VSS with SP-5 is the game's rifle. The SVD and the bolt rifle stay as they were, on the 412 m mannequin, as the loud long-range comparisons. A second mannequin stands at 183 m for the VSS. Glass is the next piece (section 10).
 
@@ -188,7 +205,7 @@ Space fires a real bullet. It flies through moving air from the bore, hits whate
 | Aerodynamic jump | Litz: `(0.01·SG − 0.0024·L + 0.032)` MOA per mph of crosswind. With a right-hand twist a wind from the left throws the bullet up | 0.09 mrad in 3 m/s | 0.11 mrad in 3 m/s |
 | Coriolis | `−2Ω×v` for a range at 38.5° N firing north-west (which puts the sun over the left shoulder, as in the scene) | 1 cm right, 1 cm low | 0.6 cm right, 0.5 cm low |
 
-With no wind and no Earth rotation, a level shot reproduces `trajectory()` to the millimetre (tested), so the ammo card stays true, and a bullet fired with the PSO's 4, 6 or 8 chevron, or any of the VSS's chevrons, on a target at that range lands within 1 cm of it (tested). The SP-5 stays below Mach 0.85 all the way to 400 m (tested). The scope is still zeroed at 0 m, with the bore on the line of sight, so holds work exactly as in section 3. Wind holds come off the PSO's lateral scale or the tree's rows.
+With no wind and no Earth rotation, a level shot reproduces `trajectory()` to the millimetre (tested), so the ammo card stays true, and a bullet fired from the bore, 70 mm under the scope and tilted by the drum on 1, with the PSO's 4, 6 or 8 chevron, or any of the VSS's chevrons, on a target at that range lands within 1 cm of it (tested). The SP-5 stays below Mach 0.85 all the way to 400 m (tested). In the lab every shot leaves from the bore under the scope, tilted by the drum, so holds work exactly as in section 3. Wind holds come off the PSO's lateral scale or the tree's rows.
 
 ### The rifle and the shot
 
@@ -277,12 +294,12 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 
 The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander and sound, a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`), `nogust`, `mute`, `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`), `nogust`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=0`), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Next steps (not built)
 
 - Glass, for the game: the VSS's shots go through windows. Deflection and fragments by bullet, pane and angle, and the hole and cracks a pane keeps.
-- Turrets: elevation and windage clicks that move the reticle image, plus a zero-stop. This also gives real holdover use for the PSO chevrons.
+- Windage drum, and drum slop: the elevation drum is built (section 3); the windage drum is still fixed at 0.
 - Atmosphere: temperature, pressure and altitude (air density), so the PSO's chevrons stop being exact off standard conditions, as on a real PSO-1.
 - Moving targets and lead (the lateral scale is already there for it).
 - Depth-aware focus, so the foreground and far hills blur separately when parallax is set to the target.

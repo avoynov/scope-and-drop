@@ -72,6 +72,8 @@ export interface NearLayer {
   camera: THREE.PerspectiveCamera;
   /** Light from the range, in the scope's frame. */
   setLight(sunDir: THREE.Vector3): void;
+  /** Turns the elevation drum this far from its 1 (radians, clockwise seen from above). */
+  setDrum(angle: number): void;
 }
 
 export function buildRifle(): NearLayer {
@@ -145,11 +147,15 @@ export function buildRifle(): NearLayer {
   ], anod);
   // Turret saddle with elevation (top), windage (right) and side focus (left).
   add(new THREE.BoxGeometry(mm(34), mm(31), mm(84)), anod, 0, 0, -mm(275));
+  // Elevation drum: it turns about its own axis as it clicks, carrying its white mark round.
+  const drum = new THREE.Group();
+  drum.position.set(0, 0, -mm(272));
+  scene.add(drum);
   const elev = new THREE.CylinderGeometry(mm(19), mm(19), mm(30), 48);
-  add(elev, anod, 0, mm(30), -mm(272));
-  add(new THREE.CylinderGeometry(mm(17.5), mm(19), mm(2), 48), anod, 0, mm(46), -mm(272));
-  // Zero index line on the elevation cap: a white mark that shows through the blur as a fleck.
-  add(new THREE.BoxGeometry(mm(1.2), mm(0.6), mm(9)), paint, 0, mm(47.2), -mm(259));
+  drum.add(add(elev, anod, 0, mm(30), 0));
+  drum.add(add(new THREE.CylinderGeometry(mm(17.5), mm(19), mm(2), 48), anod, 0, mm(46), 0));
+  // Index line on the drum's cap, toward the eye on the drum's 1: a white mark that shows through the blur as a fleck.
+  drum.add(add(new THREE.BoxGeometry(mm(1.2), mm(0.6), mm(9)), paint, 0, mm(47.2), mm(13)));
   const wind = new THREE.CylinderGeometry(mm(16.5), mm(16.5), mm(26), 48);
   wind.rotateZ(Math.PI / 2);
   add(wind, anod, mm(30), 0, -mm(272));
@@ -180,6 +186,9 @@ export function buildRifle(): NearLayer {
     camera,
     setLight(sunDir) {
       for (const m of mats) m.uniforms.uSun!.value.copy(sunDir);
+    },
+    setDrum(angle) {
+      drum.rotation.y = -angle;
     },
   };
 }

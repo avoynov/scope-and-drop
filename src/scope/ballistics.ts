@@ -139,13 +139,22 @@ export function at(r: Round, range: number): Sample {
 }
 
 /**
- * Hold below the line of sight for a target at `range` with the sight zeroed at `zero`.
- * Zero 0 m means sight line and bore are one line: the hold is the whole drop angle.
- * (Sight height is left out; small-angle rifleman's rule for the zero tilt.)
+ * How far the drum tilts the bore up from the line of sight to zero the rifle at `zero` metres, with the
+ * scope `sight` metres above the bore: the bullet climbs to cross the line of sight at the zero range.
+ * Zero 0 m is the drum's 0, the bore parallel to the line of sight. (Small angles throughout.)
  */
-export function holdRad(r: Round, range: number, zero = 0): number {
-  const tilt = zero > 0 ? at(r, zero).drop / zero : 0;
-  return at(r, range).drop / range - tilt;
+export function zeroTiltRad(r: Round, zero: number, sight = 0): number {
+  return zero > 0 ? (at(r, zero).drop + sight) / zero : 0;
+}
+
+/**
+ * Hold below the line of sight for a target at `range` with the sight zeroed at `zero` and the scope
+ * `sight` metres above the bore. The bullet starts `sight` below the line of sight and the drum tilts the
+ * bore up by `zeroTiltRad`. Zero 0 m and sight 0 means sight line and bore are one line: the hold is the
+ * whole drop angle.
+ */
+export function holdRad(r: Round, range: number, zero = 0, sight = 0): number {
+  return (at(r, range).drop + sight) / range - zeroTiltRad(r, zero, sight);
 }
 
 /**

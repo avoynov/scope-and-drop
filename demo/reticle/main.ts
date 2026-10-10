@@ -11,6 +11,7 @@ import { DRUM_R_MM, DRUM_STEP, createDrum, drumHome } from './drum';
 import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
+import { woundSvg, woundText } from './wound-card';
 
 const params = new URLSearchParams(location.search);
 const shot = params.has('shot');
@@ -562,6 +563,8 @@ function windText(): string {
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : '∞');
 const readout = $('readout');
 let lastReadout = 0;
+const woundCard = $('wound');
+let woundDrawn = -1;
 
 const dir = new THREE.Vector3();
 const sunView = new THREE.Vector3();
@@ -832,6 +835,12 @@ function frame(t: number, dt: number): void {
       ['Parallax error', `${Math.abs(par).toFixed(2)} ${unit}`],
       ['Target 1.7 m', `${fig.toFixed(2)} ${unit}`],
     ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+    const w = status.wound;
+    woundCard.hidden = !w;
+    if (w) {
+      $('wound-text').innerHTML = woundText(w.wound, w.speed, w.since);
+      if (woundDrawn !== w.n) { $('wound-svg').innerHTML = woundSvg(w.wound); woundDrawn = w.n; }
+    }
   }
 }
 

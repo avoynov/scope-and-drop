@@ -13,11 +13,13 @@
  *    rock dust; white plastic flecks; a hole in the mannequin, which rocks on its stake;
  *  - muzzle-blast dust: prone on dry ground the blast lifts a veil of dust in front of the muzzle that
  *    hazes the view for a second and drifts off downwind;
- *  - sound, delayed by the bullet's flight and the sound's return (audio.ts).
+ *  - sound, delayed by the bullet's flight and the sound's return (audio.ts);
+ *  - what the hit would have done to a person standing where the mannequin is (src/body/wound.ts).
  */
 import * as THREE from 'three';
 import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
 import { SCOPE } from '../../src/scope/optics';
+import { assess, type Wound } from '../../src/body/wound';
 import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
 import type { ImpactSound, Sound } from './audio';
 import { heightAt, type Range } from './scene';
@@ -45,6 +47,8 @@ interface Shot {
   blast: number;
   /** The hole is in the mannequin. */
   holed: boolean;
+  /** A hit on a mannequin's torso or head: the wound it would have made in a person. */
+  wound: Wound | null;
 }
 
 interface Handling {
@@ -330,7 +334,16 @@ export function createShooting(range: Range, sound: Sound) {
     });
     const kind = KIND[hit.what] ?? null;
     if (kind === 'plastic' || hit.what === 'stake' || hit.what === 'tripod') target = nearestTarget(hit.pos[0], hit.pos[2]);
-    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false };
+    // The mannequin stands in for a person facing the shooter: the wound track runs in its own frame.
+    let wound: Wound | null = null;
+    if (kind === 'plastic') {
+      const m = range.targets[target]!.group;
+      const inv = m.quaternion.clone().invert();
+      const entry = new THREE.Vector3(...hit.pos).sub(m.position).applyQuaternion(inv);
+      const dirL = new THREE.Vector3(...hit.vel).normalize().applyQuaternion(inv);
+      wound = assess({ entry: [entry.x, entry.y, entry.z], dir: [dirL.x, dirL.y, dirL.z], speed: hit.speed, round: rifle.round, seed: n });
+    }
+    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false, wound };
     shots.push(shot);
     if (shots.length > 12) shots.shift();
     // Semi-auto: the action reloads itself while rounds last. Bolt: the spent case stays until the bolt is worked.
@@ -571,6 +584,7 @@ export function createShooting(range: Range, sound: Sound) {
       if (last) {
         const landed = now >= last.exit + last.hit.t;
         if (!landed) shot = 'in flight';
+        else if (last.wound) shot = `hit ${last.what} · ${last.wound.outcome}`;
         else if (last.kind === 'plastic') shot = `hit · ${last.what}`;
         else if (last.miss) {
           const [mx, my] = last.miss;
@@ -584,7 +598,10 @@ export function createShooting(range: Range, sound: Sound) {
       const state = handling
         ? handling.kind === 'reload' ? 'changing magazine' : 'working the bolt'
         : chambered ? 'ready' : mag > 0 ? 'Space: work the bolt' : 'Space: reload';
-      return { rounds: `${mag + (chambered ? 1 : 0)} / ${rifle.magazine}`, state, shot };
+      // The last bullet into a person, once it has struck: the wound, its striking speed, and how long ago.
+      const hurt = [...shots].reverse().find((s) => s.wound && now >= s.exit + s.hit.t);
+      const wound = hurt ? { n: hurt.n, wound: hurt.wound!, speed: hurt.hit.speed, since: now - hurt.exit - hurt.hit.t } : null;
+      return { rounds: `${mag + (chambered ? 1 : 0)} / ${rifle.magazine}`, state, shot, wound };
     },
   };
 }

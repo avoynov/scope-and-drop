@@ -42,7 +42,22 @@
       #dope th { color: var(--muted); font-weight: 400; text-align: left; padding: 1px 10px 1px 0; }
       #dope td { text-align: right; padding: 1px 0 1px 12px; }
       #dope tr:first-child td { color: var(--muted); }
+      /* Wound card: what the last hit on a mannequin would have done to a person. */
+      #wound { position: fixed; bottom: 16px; right: 16px; width: 252px; max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 10px; }
+      #wound[hidden], body.nohud #wound { display: none; }
+      #wound .wound-head { display: flex; align-items: baseline; gap: 8px; }
+      #wound .wound-head b { letter-spacing: 0.14em; font-weight: 700; }
+      #wound .wound-head b.killed { color: #ff5a4d; }
+      #wound .wound-head b.downed { color: var(--accent); }
+      #wound .wound-head b.wounded { color: #9fc79a; }
+      #wound .wound-head span { margin-left: auto; color: var(--muted); }
+      #wound .wound-cause { margin: 3px 0 2px; }
+      #wound dl { margin-top: 6px; padding-top: 6px; }
+      #wound dd { max-width: 150px; }
+      #wound svg { display: block; margin: 8px auto 0; }
       @media (max-width: 640px) {
+        #wound { top: auto; bottom: calc(46vh + 24px); left: 16px; right: 16px; width: auto; font-size: 11px; }
+        #wound svg { display: none; }
         #hud { left: 16px; right: 16px; width: auto; bottom: 16px; max-height: 46vh; }
         .hint { display: none; }
         #dope { left: 16px; right: 16px; font-size: 11px; }
@@ -53,6 +68,7 @@
   <body>
     <div id="view"></div>
     <div id="dope" hidden></div>
+    <div id="wound" hidden><div id="wound-text"></div><div id="wound-svg"></div></div>
     <div id="hud">
       <h1><span>Reticle Lab</span><a href="../">mansion ↗</a></h1>
       <div class="seg three">

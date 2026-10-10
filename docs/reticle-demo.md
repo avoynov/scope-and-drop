@@ -264,7 +264,7 @@ Synthesised in WebAudio (`audio.ts`): the report (blast, crack and thump, sharpe
 
 ### Readouts
 
-**Rounds** (in the magazine and chamber, and what Space will do next), **Wind here**, and **Last shot**: hit and where, or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
+**Rounds** (in the magazine and chamber, and what Space will do next), **Wind here**, and **Last shot**: hit, where and the verdict (section 10), or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
 
 ## 7. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
 
@@ -315,8 +315,47 @@ The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow 
 
 URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`), `nogust`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
-## 10. Next steps (not built)
+## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
+Each mannequin stands in for a person facing the shooter. A hit on its torso or head is run through a wound model that takes the bullet's **striking speed**, its direction and **where it went in**, and decides whether the person is **killed**, **downed** or only **wounded**, and when they fall, lose consciousness and die. The **wound card** (bottom right) shows the verdict, a live state (on their feet, down, unconscious, dead) running from the moment of impact, and the track drawn on the body from the front and the side.
+
+| SP-5 at 183 m through the spleen (killed in 13 min) · SP-5 through the left kidney and pelvis (downed, alive) · 7N1 at 412 m through the head (dead at once) |
+| --- |
+| ![Wound cards](images/wound-cards.jpg) |
+
+### The body
+
+A 1.70 m, 70 kg adult with the mannequin's outline (the scene now builds the torso from the same profile, so the hole in the plastic is the entry wound). Inside: brain, cerebellum and brainstem; the spinal cord in four levels (C1–C4, C5–T1, T2–L1, cauda equina); heart, aorta in three parts, both venae cavae, carotids, jugulars, iliac and femoral arteries; both lung roots and lungs; windpipe; liver, spleen, kidneys, stomach and gut; skull, face, cervical, thoracic and lumbar spine, sternum, ribs (twelve sloping bands in the chest wall), pelvis, hip joints and thigh bones. Sizes and positions follow standard adult anatomy, squeezed slightly front to back to fit the mannequin's 19 cm chest.
+
+### The wound track
+
+The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (density 1060 kg/m³, 1900 in bone, which also resists with ≈60 MPa):
+
+- **Yaw.** It travels point-forward for a neck, then turns sideways over 7 cm and ends base-forward (Fackler's wound profiles): 7N1 ≈ 11 cm (its nose air space makes it yaw sooner than plain 7.62×54R ball, ≈ 16 cm), M118LR ≈ 7 cm, SP-5 ≈ 12 cm (long, air-space nose, made to yaw). Each shot varies ±35 %. **Bone yaws it at once**, as ribs do to 7.62×51 (Mabbott et al.), and throws shards that widen the channel for a few cm.
+- **Fragments.** Above ≈ 580 m/s the MatchKing's open tip breaks where it yaws and sheds up to 30 % of its weight, widening the crush zone. The 7N1 and SP-5 steel cores stay whole.
+- **Permanent channel**: the bullet's presented width (9 mm point-on, 36 mm sideways for the SP-5) plus fragments and shards. Anything it crosses is destroyed.
+- **Temporary cavity**: its radius follows the energy given up per metre, `R = 11 cm × (E′ / 31 kJ/m)^0.4`. A 7.62 mm bullet tumbling at 700 m/s opens ≈ 22 cm (Fackler, 7.62 NATO); the same hit's cavity is ≈ 1.5× wider from 200 m than from 800 m, as in the 2024 study of a 7.62 mm sniper round in chest targets (1.44×, death probability 97 % against 60 %). The SP-5 tumbling at 260 m/s opens ≈ 12–13 cm, like an expanded 9 mm hollow point. **Only inelastic tissue tears**: beyond 2.5 cm from the track liver, spleen and brain tear across the whole cavity, kidney 80 %, heart 50 %, vessel walls 25 %, gut 15 %, lung 10 %. So speed matters, through the organ it is spent in.
+
+### What it does
+
+| Hit | Effect | Basis |
+| --- | --- | --- |
+| Brainstem, or cord at C1–C4 | Drops at once, unconscious; stops breathing (dead in ~½ min, or ~3–4 min for the cord) | Only CNS hits stop someone at once (FBI 1989; Fackler) |
+| Brain | Drops at once, unconscious. Fatal if it destroys > 12 % of the brain, crosses the midline or hits the cerebellum, else 3 in 4 | Penetrating rifle head wounds |
+| Skull only (graze) | 60 %: stunned and down, half of them knocked out | |
+| Cord C5–T1 / T2–L1 / cauda | Drops at once, paralysed, conscious | |
+| Hip joint, sacrum, pubis, thigh bone | Falls in 0.3–0.7 s, cannot stand, conscious. A pelvic wing: half the time | |
+| Heart torn open | Pumping stops. **Conscious for the brain's reserve, 8–15 s** (FBI: "10–15 seconds" of full voluntary action), heart arrest ≈ 1 min | FBI, Handgun Wounding Factors and Effectiveness |
+| Vessels and organs | Bleed at their share of the cardiac output: aorta 70–85 mL/s, lung root 55, vena cava 35–40, iliac 28, liver 30, carotid and femoral 18, kidney and spleen 12, lung tissue 6. Small organ tears and vessels only stretched by the cavity clot over ~8 min; muscle and bone ooze clots over ~5 min | Femoral artery: 2–4 min to bleed out (TEMS) |
+| Blood loss | Blood pressure holds to 15 % lost and falls through class III shock; **down at 33 %**, the brain's reserve runs out below ≈ 45 % pressure (**unconscious**), **heart stops at 58 %** (ATLS classes). Blood volume 4.5–5.5 L and the brain's reserve vary by person | ATLS |
+| Both lungs or the windpipe | Breathing fails from 2 min on | |
+| Anything else | **Most people drop anyway** (pain, shock, expectation): 35–92 %, more for a torso hit and the more energy left in; they could get up. The rest keep going for as long as their body lets them | Psychological incapacitation (FBI) |
+
+**Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
+
+## 11. Next steps (not built)
+
+- The person reacting: falling, crumpling or staying up as the wound model says, in place of the mannequin.
 - Glass, for the game: the VSS's shots go through windows. Deflection and fragments by bullet, pane and angle, and the hole and cracks a pane keeps.
 - Windage drum, and drum slop: the elevation drum is built (section 3); the windage drum is still fixed at 0.
 - Atmosphere: temperature, pressure and altitude (air density), so the PSO's chevrons stop being exact off standard conditions, as on a real PSO-1.

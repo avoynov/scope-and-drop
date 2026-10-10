@@ -12,16 +12,19 @@
  *  - where the eye looks and what it focuses on, and how far the head moves off its head-up spot;
  *  - sound cues at the moments the parts move and stop (audio.ts plays them).
  *
- * How the three actions work:
- *  - Bolt rifle (M24 class, detachable 5-round box): lift the handle 90° (this cocks the striker), pull the bolt
- *    back (the extractor pulls the case and the ejector flicks it out of the port to the right), push it
- *    forward (the bolt face strips the top round out of the magazine and pushes it into the chamber) and turn
- *    it down. A magazine change opens the bolt first, swaps the box, and closes the bolt on a new round.
- *  - SVD: semi-automatic, so only magazine changes. After the last round the empty magazine's follower holds
- *    the bolt carrier back; pulling the magazine lets it slam shut on an empty chamber. The new magazine goes
- *    in front lug first and rocks back until the catch clicks, then the charging handle is pulled fully back
- *    and let go, and the carrier chambers a round.
- *  - VSS: as the SVD, but nothing holds the carrier open, so it is already shut on an empty chamber.
+ * Two things the shooter does, each on its own key: work the action ('cycle') and change the magazine
+ * ('reload'). Neither does the other's job, so a fresh magazine still needs the action worked to chamber a round.
+ *  - Bolt rifle (M24 class, detachable 5-round box). Cycle: lift the handle 90° (this cocks the striker), pull
+ *    the bolt back (the extractor pulls whatever is in the chamber and the ejector flicks it out of the port to
+ *    the right), push it forward (the bolt face strips the top round out of the magazine and pushes it into
+ *    the chamber, if there is one) and turn it down. Reload: the box out and a full one in, bolt untouched.
+ *  - SVD (hammer fired). Cycle: the charging handle pulled fully back and let go; the carrier throws out
+ *    whatever was chambered and strips the next round. After the last round the empty magazine's follower lifts
+ *    the bolt stop, which holds the carrier back; the bolt pressing on it keeps it up when the magazine comes
+ *    out, so it stays open until the handle is pulled back again (SVD manual, §33). Reload: the old magazine
+ *    rocked out, the new one in front lug first and rocked back until the catch clicks.
+ *  - VSS (striker fired): as the SVD, but with no bolt stop found in any source, the carrier shuts on an empty
+ *    chamber after the last round, striker cocked.
  *
  * Frame: the scope's, as in near.ts and ads.ts, in millimetres: x right, y up, z toward the shooter (−z is
  * downrange), origin at the exit pupil. Times in seconds from when the hands start. Angles in radians.
@@ -291,7 +294,9 @@ export type SoundEvent =
   | 'bolt-up' | 'bolt-back' | 'bolt-forward' | 'bolt-down'
   | 'case-land'
   | 'mag-release' | 'mag-out' | 'mag-in'
-  | 'carrier-close' | 'charge-back' | 'charge-release';
+  | 'charge-back' | 'charge-release'
+  // The trigger pulled with nothing to fire: the hammer or striker falling on an empty chamber, or a dead trigger.
+  | 'dry-fire' | 'trigger';
 export interface Cue {
   t: number;
   ev: SoundEvent;
@@ -347,11 +352,21 @@ const POUCH_L = at([-225, -320, 70], [0.28, -0.16, -0.95], [0.87, -0.38, 0.32]);
 /** The support hand on the rear bag under the butt, out of sight. */
 const REST_L = at([-25, -185, 150], [0.3, 0.55, -0.78], [0.2, 0.75, 0.6]);
 
+/** What is in the chamber: a round, a fired case (the bolt rifle, until its bolt is worked) or nothing. */
+export type Chamber = 'live' | 'spent' | 'empty';
+export interface HandlingState {
+  /** What the cycle pulls out of the chamber and throws clear. Default: a fired case on the bolt rifle, else nothing. */
+  chamber?: Chamber;
+  /** The SVD's carrier held open by its bolt stop. Default: on a magazine change with the magazine empty. */
+  held?: boolean;
+}
+
 /**
- * The plan for working the action of `rifle`: a bolt cycle ('cycle', bolt rifle only) or a magazine change.
- * `rounds` is what is left in the magazine in the rifle; `seed` varies the timing a little from one to the next.
+ * The plan for working the action of `rifle` ('cycle': the bolt, or the charging handle) or changing its
+ * magazine ('reload'). `rounds` is what is left in the magazine in the rifle; `seed` varies the timing a little
+ * from one to the next.
  */
-export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number, seed = 0): Plan {
+export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number, seed = 0, state: HandlingState = {}): Plan {
   const g = ACTIONS[rifle];
   const r = (k: number) => rnd(seed, k);
   // A practised shooter's pace varies by some ±6 % from one time to the next.
@@ -408,14 +423,16 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       return { p: knobAt(b, lift, c('boltTravel')), q: qMul(qAxis([0, 0, 1], b.liftRad * lift * 0.25), knobQ) };
     };
     const knobView: V3 = [44, -72, -175];
+    const out = state.chamber ?? 'spent';
     const open = (t: number) => {
       hand('R', t, 0.3, knob, 'pinch', [18, 22, 0]);
       mv('boltLift', t + 0.3, 0.1, 1);
       cue(t + 0.3, 'bolt-up');
       mv('boltTravel', t + 0.42, 0.17, 1);
       cue(t + 0.42, 'bolt-back');
+      if (out === 'empty') return;
       ejects.push((t + 0.56) * k);
-      // The case tumbles out to the right and lands in the dirt a metre away.
+      // The case (or an unfired round) tumbles out to the right and lands in the dirt a metre away.
       cue(t + 0.56 + 0.42 + 0.06 * r(3), 'case-land');
     };
     const close = (t: number, mag: 0 | 1, n: number) => {
@@ -441,40 +458,62 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       headTo(1.0, 0.4, [0, 0, 0]);
       return finish(1.42);
     }
-    headTo(0.1, 0.45, [45, 32, 30]);
-    gaze(0.12, knobView);
-    open(0);
     // The magazine catch: a paddle in front of the trigger guard, pressed with the index finger. The head comes
     // over to the right to see under the stock.
-    headTo(0.6, 0.45, [105, -5, 30]);
-    gaze(0.66, [24, -130, -330]);
-    hand('R', 0.62, 0.3, () => at(g.release, [-0.25, 0.45, -0.86], [-0.92, -0.3, 0.1]), 'press', [30, -10, 0]);
-    cue(0.92, 'mag-release');
-    mv('oldDrop', 0.93, 0.07, 22, 'fall');
-    cue(0.95, 'mag-out');
-    hand('R', 1.0, 0.16, onMag(0, 22, 0), 'mag', [12, -8, 0]);
-    magEvent(0, 1.16, 'R');
-    hand('R', 1.18, 0.5, () => POUCH_R, 'mag', [30, -40, 0]);
-    magEvent(0, 1.68, 'gone');
-    magEvent(1, 1.95, 'R');
-    hand('R', 1.98, 0.55, onMag(1, 42, 0), 'mag', [40, -50, 0]);
-    hand('R', 2.55, 0.15, onMag(1, 0, 0), 'mag');
-    cue(2.55, 'mag-in');
-    magEvent(1, 2.7, 'well');
-    hand('R', 2.74, 0.3, knob, 'pinch', [20, 20, 0]);
-    headTo(2.65, 0.4, [45, 32, 30]);
-    gaze(2.7, knobView);
-    close(3.06, 1, g.mag.rounds);
-    hand('R', 3.36, 0.32, grip, 'grip', [10, 15, 0]);
-    gaze(3.38, null);
-    headTo(3.4, 0.45, [0, 0, 0]);
-    return finish(3.86);
+    headTo(0.05, 0.45, [105, -5, 30]);
+    gaze(0.1, [24, -130, -330]);
+    hand('R', 0.1, 0.3, () => at(g.release, [-0.25, 0.45, -0.86], [-0.92, -0.3, 0.1]), 'press', [30, -10, 0]);
+    cue(0.4, 'mag-release');
+    mv('oldDrop', 0.41, 0.07, 22, 'fall');
+    cue(0.43, 'mag-out');
+    hand('R', 0.48, 0.16, onMag(0, 22, 0), 'mag', [12, -8, 0]);
+    magEvent(0, 0.64, 'R');
+    hand('R', 0.66, 0.5, () => POUCH_R, 'mag', [30, -40, 0]);
+    magEvent(0, 1.16, 'gone');
+    magEvent(1, 1.43, 'R');
+    hand('R', 1.46, 0.55, onMag(1, 42, 0), 'mag', [40, -50, 0]);
+    hand('R', 2.03, 0.15, onMag(1, 0, 0), 'mag');
+    cue(2.03, 'mag-in');
+    magEvent(1, 2.18, 'well');
+    hand('R', 2.22, 0.32, grip, 'grip', [10, 15, 0]);
+    gaze(2.24, null);
+    headTo(2.27, 0.45, [0, 0, 0]);
+    return finish(2.74);
   }
 
   // SVD and VSS: the support hand changes the magazine by its body, thumb on the catch; the firing hand then
   // comes off the grip to rack the charging handle.
   const c = g.carrier!;
-  if (c.holdOpen && rounds === 0) init.carrier = 1;
+  const held = state.held ?? (kind === 'reload' && c.holdOpen && rounds === 0);
+  if (held) init.carrier = 1;
+  // Fingers hooked in front of the knob from the right, palm toward the receiver.
+  const knobFrame: Anchor = (cc) => at([c.knob[0], c.knob[1], c.knob[2] + c.stroke * cc('carrier')], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
+  const knobView: V3 = [c.knob[0] + 5, c.knob[1] - 10, c.knob[2] + 50];
+  const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
+  if (kind === 'cycle') {
+    // The firing hand comes off the grip, hooks the knob and pulls it fully back against the spring.
+    headTo(0.05, 0.4, [55, 25, 20]);
+    gaze(0.1, knobView);
+    hand('R', 0.05, 0.34, knobFrame, 'hook', [30, 25, 0]);
+    mv('carrier', 0.42, 0.16, 1);
+    if (!held) cue(0.42, 'charge-back');
+    // Whatever was chambered comes out of the port and lands in the dirt to the right.
+    if (state.chamber === 'live') cue(0.58 + 0.4 + 0.06 * r(3), 'case-land');
+    if (c.holdOpen && rounds === 0) {
+      // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
+      if (!held) cue(0.62, 'mag-release');
+    } else {
+      // Let go at the back: the spring drives the carrier home, stripping the top round into the chamber.
+      mv('carrier', 0.6, 0.045, 0, 'spring');
+      cue(0.6, 'charge-release');
+      if (rounds > 0) magRounds(0, 0.64, rounds - 1);
+    }
+    hand('R', 0.6, 0.12, () => off, 'open');
+    hand('R', 0.74, 0.34, grip, 'grip', [10, 15, 0]);
+    gaze(0.76, null);
+    headTo(0.79, 0.45, [0, 0, 0]);
+    return finish(1.26);
+  }
   mags[0].grasp = mags[1].grasp = at([0, -72, m.size[2] / 2], [0.1, 0.3, -0.95], [1, 0, 0]);
   const magView: V3 = [14, -150, m.pivot[2] + m.size[2] / 2];
   // Rolled a little onto the left side, the head comes over to the right to see under the receiver.
@@ -485,11 +524,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   // Rocked forward off the catch about its front lug, then down off the lug.
   mv('oldRock', 0.44, 0.13, 0.42);
   cue(0.44, 'mag-out');
-  if (c.holdOpen && rounds === 0) {
-    // The follower lets go of the carrier: it slams home on an empty chamber.
-    mv('carrier', 0.5, 0.05, 0, 'spring');
-    cue(0.5, 'carrier-close');
-  }
+  // A carrier held open stays open: the bolt stop keeps it until the charging handle is pulled again.
   hand('L', 0.44, 0.13, onMag(0, 0, 'oldRock'), 'mag');
   mv('oldDrop', 0.6, 0.14, 34);
   hand('L', 0.6, 0.14, onMag(0, 'oldDrop', 0.42), 'mag');
@@ -504,23 +539,9 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   hand('L', 2.19, 0.13, onMag(1, 0, 0), 'mag');
   magEvent(1, 2.32, 'well');
   hand('L', 2.36, 0.5, () => REST_L, 'relaxed', [-20, -40, 0]);
-  // Fingers hooked in front of the knob from the right, palm toward the receiver.
-  const knobFrame: Anchor = (cc) => at([c.knob[0], c.knob[1], c.knob[2] + c.stroke * cc('carrier')], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
-  headTo(2.1, 0.4, [55, 25, 20]);
-  gaze(2.2, [c.knob[0] + 5, c.knob[1] - 10, c.knob[2] + 50]);
-  hand('R', 2.12, 0.34, knobFrame, 'hook', [30, 25, 0]);
-  mv('carrier', 2.48, 0.16, 1);
-  cue(2.48, 'charge-back');
-  // Let go at the back: the spring drives the carrier home, stripping a round into the chamber.
-  mv('carrier', 2.66, 0.045, 0, 'spring');
-  cue(2.66, 'charge-release');
-  magRounds(1, 2.7, g.mag.rounds - 1);
-  const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
-  hand('R', 2.66, 0.12, () => off, 'open');
-  hand('R', 2.8, 0.34, grip, 'grip', [10, 15, 0]);
-  gaze(2.82, null);
-  headTo(2.85, 0.45, [0, 0, 0]);
-  return finish(3.32);
+  gaze(2.36, null);
+  headTo(2.4, 0.45, [0, 0, 0]);
+  return finish(2.9);
 
   function finish(dur: number): Plan {
     cues.sort((a, b) => a.t - b.t);

@@ -81,8 +81,9 @@ const NOISE = /* glsl */ `
   float vn(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
     return mix(mix(h21(i),h21(i+vec2(1,0)),u.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),u.x), u.y); }
   // Band-limited fbm: octaves finer than a pixel fade out instead of shimmering.
+  // Once an octave is fully faded (w exactly 0) every finer one is too, so stop instead of adding zeros.
   float fbmAA(vec2 p, float px){ float s=0., a=.5, f=1.;
-    for(int i=0;i<7;i++){ float w = 1. - smoothstep(.25,.6, px*f); s += a*w*(vn(p*f)-.5); f*=2.07; a*=.5; }
+    for(int i=0;i<7;i++){ if (px*f >= .6) break; float w = 1. - smoothstep(.25,.6, px*f); s += a*w*(vn(p*f)-.5); f*=2.07; a*=.5; }
     return s; }
 `;
 
@@ -204,8 +205,6 @@ export function buildRange(): Range {
   `);
   const N = 40000;
   const bushes = new THREE.InstancedMesh(sage, sageMat, N);
-  bushes.castShadow = true;
-  bushes.receiveShadow = true;
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const col = new THREE.Color();
@@ -229,8 +228,39 @@ export function buildRange(): Range {
     bushes.setColorAt(placed, col);
     placed++;
   }
-  bushes.count = placed;
-  scene.add(bushes);
+  // Split into tiles by bearing and distance, so a narrow scope view culls the bushes it cannot see instead
+  // of drawing all 22 M triangles. Same instances, matrices and colours, just in separate draws.
+  const BEARINGS = 24;
+  const BANDS = [140, 260, 420, 640, 960, 1360, 1841];
+  const tiles = new Map<number, number[]>();
+  const pos = new THREE.Vector3();
+  for (let i = 0; i < placed; i++) {
+    bushes.getMatrixAt(i, m);
+    pos.setFromMatrixPosition(m);
+    const b = Math.min(BEARINGS - 1, Math.max(0, Math.floor(((Math.atan2(pos.x, -pos.z) / 0.9 + 0.5) * BEARINGS))));
+    const r = Math.hypot(pos.x, pos.z);
+    let band = 0;
+    while (band < BANDS.length - 2 && r >= BANDS[band + 1]!) band++;
+    const key = band * BEARINGS + b;
+    let list = tiles.get(key);
+    if (!list) tiles.set(key, (list = []));
+    list.push(i);
+  }
+  for (const key of [...tiles.keys()].sort((a, b) => a - b)) {
+    const list = tiles.get(key)!;
+    const tile = new THREE.InstancedMesh(sage, sageMat, list.length);
+    list.forEach((src, j) => {
+      bushes.getMatrixAt(src, m);
+      tile.setMatrixAt(j, m);
+      bushes.getColorAt(src, col);
+      tile.setColorAt(j, col);
+    });
+    tile.castShadow = true;
+    tile.receiveShadow = true;
+    tile.computeBoundingSphere();
+    scene.add(tile);
+  }
+  bushes.dispose();
 
   // The boulder.
   const rock = mergeVertices(new THREE.IcosahedronGeometry(1, 6).deleteAttribute('normal').deleteAttribute('uv'));

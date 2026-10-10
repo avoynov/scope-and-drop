@@ -38,6 +38,10 @@ renderer.setPixelRatio(dpr);
 renderer.setSize(W, H);
 renderer.shadowMap.enabled = !params.has('noshadow');
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// The range and the sun never move, so the shadow map is the same every frame: draw it once, on the first
+// render that has the sun in it, instead of before every view.
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.needsUpdate = true;
 renderer.autoClear = true;
 document.getElementById('view')!.appendChild(renderer.domElement);
 
@@ -136,17 +140,25 @@ function drawRet(): void {
   retTex.needsUpdate = true;
 }
 
+/**
+ * Ceiling of `heightAt` at horizontal distance r: each fbm is below 1, so the swells stay under 7 + 0.8 m,
+ * the hide adds at most 6 m and the far hills at most 0.08 m per metre beyond 1.5 km.
+ */
+const terrainCeiling = (r: number) => 13.8 + 0.08 * Math.max(0, r - 1500);
+const toT = new THREE.Vector3();
+const miss = new THREE.Vector3();
+const probe = new THREE.Vector3();
 /** Distance to whatever the reticle centre rests on (ground, or the target board). */
 function aimDistance(dir: THREE.Vector3): number {
-  const tgt = range.targetHead;
-  const toT = tgt.clone().sub(eyePos);
+  toT.copy(range.targetHead).sub(eyePos);
   const along = toT.dot(dir);
-  const miss = toT.clone().addScaledVector(dir, -along);
+  miss.copy(toT).addScaledVector(dir, -along);
   if (along > 0 && Math.abs(miss.x) < 3 && miss.y > -2 && miss.y < 1) return along;
   let d = 5;
   while (d < 9000) {
-    const p = eyePos.clone().addScaledVector(dir, d);
-    if (p.y < heightAt(p.x, p.z)) return d;
+    const p = probe.copy(eyePos).addScaledVector(dir, d);
+    // Above the ceiling the ground cannot be hit here, so the terrain need not be evaluated.
+    if (p.y < terrainCeiling(Math.hypot(p.x, p.z)) && p.y < heightAt(p.x, p.z)) return d;
     d += Math.max(1, d * 0.01);
   }
   return Infinity;
@@ -274,6 +286,20 @@ function imageShare(eye: Eye, tilt: { x: number; y: number }): number {
   }
   return sum / n;
 }
+/**
+ * True when the eyebox passes no light for any direction the composite can show, so the image counts for
+ * nothing. Mirrors glass() in composite.ts: light needs |eye.xy + (eye.z + aberration·r²)·t| < exit + eye
+ * pupil radii, and the field stop zeroes everything past r = 1 + 0.6/R. `sweep` is the eye's travel over
+ * the exposure, which the recoil path samples ±½ of. The 1 % margin covers float32 in the shader.
+ */
+function eyeboxDark(eye: Eye, sweep: THREE.Vector3, exitR: number, pupilR: number, th: number): boolean {
+  const rMax = 1 + 0.6 / R;
+  const tMax = th * rMax;
+  const zMax = Math.abs(eye.z) + Math.abs(sweep.z) / 2 + SCOPE.pupilAberrationMm * rMax * rMax;
+  const lateral = Math.hypot(eye.x, eye.y) - Math.hypot(sweep.x, sweep.y) / 2;
+  return lateral - zMax * tMax > (exitR + pupilR) * 1.01 + 0.01;
+}
+
 /** Light adaptation is quick, dark adaptation slower: the eye takes longer to settle into the dimmer glass. */
 function stepAdapt(target: number, dt: number): void {
   const tau = target > adapt ? 0.45 : 0.2;
@@ -341,6 +367,8 @@ let lastReadout = 0;
 
 const dir = new THREE.Vector3();
 const nearVel = new THREE.Vector2();
+const sunLocal = new THREE.Vector3();
+const rifleFrame = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
   clock = t;
@@ -471,7 +499,7 @@ function frame(t: number, dt: number): void {
   cam.position.set(eye.x / 1000, eye.y / 1000, eye.z / 1000);
   cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
   cam.updateMatrixWorld();
-  rifle.setLight(toSun.clone().applyQuaternion(scopeCam.quaternion.clone().invert()));
+  rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
   const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.
@@ -485,8 +513,12 @@ function frame(t: number, dt: number): void {
   near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97);
 
   drawRet();
-  renderer.setRenderTarget(scopeRT);
-  renderer.render(scene, scopeCam);
+  // The magnified image only reaches the screen through the eyebox. When no direction in the field can send
+  // light into the eye pupil, the composite multiplies the image by exactly zero, so skip rendering it.
+  if (!eyeboxDark(eye, u.uEyeSweep!.value, ep / 2, eye.pupilMm / 2, th)) {
+    renderer.setRenderTarget(scopeRT);
+    renderer.render(scene, scopeCam);
+  }
   const wide = adapt > 0.6 ? wideLoRT : wideRT;
   u.tWide!.value = wide.texture;
   u.uWideLod!.value = wide === wideLoRT ? -Math.log2(3) : 0;

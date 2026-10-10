@@ -157,20 +157,60 @@ function rifle(s: RecoilSpec, v: ShotVariation, t: number): [number, number] {
   return [pitch, yaw];
 }
 
+/**
+ * The head's integration for one shot, kept so each frame continues it instead of starting again from the
+ * trigger: entry k is the state after k + 1 steps of 1 ms, computed in the same order with the same
+ * arithmetic as a fresh loop, so a lookup is bit-identical to recomputing.
+ */
+interface HeadTrack {
+  spec: RecoilSpec;
+  dt: number;
+  a: number;
+  u: number;
+  steps: number[];
+  hp: number[];
+  hy: number[];
+}
+const tracks = new WeakMap<ShotVariation, HeadTrack>();
+
+/** hp, hy after the steps `for (u = dt; u <= t + 1e-9; u += dt) h += (rifle(u) − h)·a` takes, from 0. */
+function headAt(s: RecoilSpec, v: ShotVariation, t: number, dt: number, a: number): [number, number] {
+  let tr = tracks.get(v);
+  if (!tr || tr.spec !== s || tr.dt !== dt || tr.a !== a) {
+    tr = { spec: s, dt, a, u: dt, steps: [], hp: [], hy: [] };
+    tracks.set(v, tr);
+  }
+  // Extend the track to every step the loop would take for this t.
+  let hp = tr.hp.length ? tr.hp[tr.hp.length - 1]! : 0;
+  let hy = tr.hy.length ? tr.hy[tr.hy.length - 1]! : 0;
+  while (tr.u <= t + 1e-9) {
+    const [rp, ry] = rifle(s, v, tr.u);
+    hp += (rp - hp) * tr.a;
+    hy += (ry - hy) * tr.a;
+    tr.steps.push(tr.u);
+    tr.hp.push(hp);
+    tr.hy.push(hy);
+    tr.u += dt;
+  }
+  // Steps the loop would take for this t: the u values are increasing, so binary-search the last one.
+  let lo = 0;
+  let hi = tr.steps.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tr.steps[mid]! <= t + 1e-9) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo === 0 ? [0, 0] : [tr.hp[lo - 1]!, tr.hy[lo - 1]!];
+}
+
 /** The rifle and eye `t` seconds after the shot (t ≤ 0: before it). */
 export function recoilAt(s: RecoilSpec, v: ShotVariation, t: number): RecoilState {
   const [pitch, yaw] = rifle(s, v, t);
   // Head orientation: the rifle's rotation low-passed by the cheek weld, in exact 1 ms followHead steps.
-  let hp = 0;
-  let hy = 0;
   const dt = 0.001;
   const lag = s.headLag * v.headLag;
   const a = 1 - Math.exp(-dt / lag);
-  for (let u = dt; u <= t + 1e-9; u += dt) {
-    const [rp, ry] = rifle(s, v, u);
-    hp += (rp - hp) * a;
-    hy += (ry - hy) * a;
-  }
+  const [hp, hy] = headAt(s, v, t, dt, a);
   const tiltPitch = pitch - hp;
   const tiltYaw = yaw - hy;
   return {

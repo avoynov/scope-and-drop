@@ -124,9 +124,16 @@ function layout(): void {
   rifle.camera.aspect = wideCam.aspect;
   rifle.camera.updateProjectionMatrix();
   retKey = '';
+  wideDrawn = null;
 }
 
 let retKey = '';
+/** The surround last drawn into wideLoRT, and where the naked eye was looking, so a still view can reuse it. */
+let wideDrawn: THREE.WebGLRenderTarget | null = null;
+const wideDrawnQ = new THREE.Quaternion();
+/** Pixels per radian at the centre of a perspective view `px` pixels tall. */
+const pxPerRad = (cam: THREE.PerspectiveCamera, px: number) => px / 2 / Math.tan(((cam.fov / 2) * Math.PI) / 180);
+
 function drawRet(): void {
   const key = `${state.reticle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
   if (key === retKey) return;
@@ -516,14 +523,26 @@ function frame(t: number, dt: number): void {
   // The magnified image only reaches the screen through the eyebox. When no direction in the field can send
   // light into the eye pupil, the composite multiplies the image by exactly zero, so skip rendering it.
   if (!eyeboxDark(eye, u.uEyeSweep!.value, ep / 2, eye.pupilMm / 2, th)) {
+    // Far bushes swap to their low-detail version once the difference is under half a pixel.
+    range.bushLod(scopeCam, pxPerRad(scopeCam, scopeRT.height), 0.5);
     renderer.setRenderTarget(scopeRT);
     renderer.render(scene, scopeCam);
   }
   const wide = adapt > 0.6 ? wideLoRT : wideRT;
   u.tWide!.value = wide.texture;
   u.uWideLod!.value = wide === wideLoRT ? -Math.log2(3) : 0;
-  renderer.setRenderTarget(wide);
-  renderer.render(scene, wideCam);
+  // The range is static, so the surround depends only on where the eye looks. On the glass it is a third of the
+  // resolution and blurred by several of its pixels: keep last frame's until the view has turned half a pixel.
+  const widePx = pxPerRad(wideCam, wide.height);
+  const turned = 2 * Math.acos(Math.min(1, Math.abs(wideDrawnQ.dot(wideCam.quaternion)))) * widePx;
+  if (wide !== wideLoRT || wideDrawn !== wide || turned >= 0.5) {
+    // Behind that blur a whole pixel of bush outline is invisible; in the sharp view, half a pixel.
+    range.bushLod(wideCam, widePx, wide === wideLoRT ? 1 : 0.5);
+    renderer.setRenderTarget(wide);
+    renderer.render(scene, wideCam);
+    wideDrawn = wide;
+    wideDrawnQ.copy(wideCam.quaternion);
+  }
   renderer.setRenderTarget(null);
   renderer.render(quadScene, quadCam);
 

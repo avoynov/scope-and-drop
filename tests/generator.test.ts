@@ -412,6 +412,8 @@ describe('proportions of a great house', () => {
       const gallery = bp.atrium!.galleries.find((g) => g.level === up[0]!.level)!;
       for (const r of up) {
         const shared = bp.walls.filter((w) => (w.neg === r.id && w.pos === gallery.roomId) || (w.pos === r.id && w.neg === gallery.roomId));
+        // Those beside the gallery open onto it; the others are reached by the corridor.
+        if (!shared.length) continue;
         expect(shared.some((w) => w.openings.some((o) => o.passable))).toBe(true);
       }
     }
@@ -519,6 +521,98 @@ describe('orangery style', () => {
     }
     expect(low / houses.length).toBeGreaterThan(0.45);
     expect(high / houses.length).toBeGreaterThan(plainHigh / houses.length + 0.1);
+  });
+});
+
+describe('the programme of rooms', () => {
+  const sizes: MansionSize[] = ['compact', 'grand', 'palatial'];
+  const houses = sizes.flatMap((size) => Array.from({ length: 40 }, (_, i) => generateMansion({ seed: `prog-${size}-${i}`, size })));
+  const share = (t: string) => houses.filter((bp) => bp.rooms.some((r) => r.type === t)).length / houses.length;
+
+  it('every house has the rooms such a house must have', () => {
+    for (const bp of houses) {
+      expect(bp.validation.ok, bp.validation.issues.map((i) => i.message).join('; ')).toBe(true);
+      for (const t of ['ballroom', 'great-room', 'dining-room', 'kitchen', 'library', 'bar', 'drawing-room', 'study']) expect(bp.rooms.some((r) => r.type === t), `${bp.seed} has no ${t}`).toBe(true);
+      expect(bp.rooms.filter((r) => r.type === 'bathroom').length).toBeGreaterThanOrEqual(2);
+      // The great room is not the dining room, and both are on the ground floor.
+      expect(bp.rooms.find((r) => r.type === 'great-room')!.level).toBe(0);
+      expect(bp.rooms.find((r) => r.type === 'dining-room')!.level).toBe(0);
+      expect(bp.rooms.find((r) => r.type === 'kitchen')!.level).toBe(0);
+    }
+  });
+
+  it('the study has its globe, the bar its counter, the kitchen its range', () => {
+    for (const bp of houses) {
+      const has = (type: string, kind: string) => bp.rooms.filter((r) => r.type === type).some((r) => bp.props.some((p) => p.roomId === r.id && p.kind === kind));
+      expect(has('study', 'globe'), `${bp.seed}: study without a globe`).toBe(true);
+      expect(has('bar', 'bar-counter'), `${bp.seed}: bar without a counter`).toBe(true);
+      expect(has('kitchen', 'range') && has('kitchen', 'kitchen-island'), `${bp.seed}: kitchen without range and island`).toBe(true);
+      expect(has('bathroom', 'bathtub')).toBe(true);
+    }
+  });
+
+  it('the ballroom is furnished for a long night; the dance room has its floor and its DJ', () => {
+    for (const bp of houses) {
+      const hall = bp.rooms.find((r) => r.type === 'ballroom')!;
+      const kinds = new Set(bp.props.filter((p) => p.roomId === hall.id).map((p) => p.kind));
+      for (const k of ['dance-floor', 'grand-piano', 'buffet', 'cocktail-table', 'sofa']) expect(kinds.has(k as never), `${bp.seed}: ballroom without ${k}`).toBe(true);
+      // Nothing stands on the dance floor.
+      const f = bp.props.find((p) => p.roomId === hall.id && p.kind === 'dance-floor')!;
+      expect(f.w * f.d).toBeGreaterThan(14);
+      for (const p of bp.props) {
+        if (p.roomId !== hall.id || p === f || !p.blocksNav) continue;
+        expect(Math.abs(p.x - f.x) < f.w / 2 - 0.3 && Math.abs(p.z - f.z) < f.d / 2 - 0.3, `${bp.seed}: ${p.kind} on the dance floor`).toBe(false);
+      }
+      for (const d of bp.rooms.filter((r) => r.type === 'disco')) {
+        const dk = new Set(bp.props.filter((p) => p.roomId === d.id).map((p) => p.kind));
+        expect(dk.has('disco-floor') && dk.has('dj-booth') && dk.has('mirror-ball'), `${bp.seed}: dance room unfurnished`).toBe(true);
+      }
+    }
+  });
+
+  it('optional rooms turn up about as often as asked', () => {
+    expect(share('cinema')).toBeGreaterThan(0.45);
+    expect(share('cinema')).toBeLessThan(0.75);
+    expect(share('grand-salon')).toBeGreaterThan(0.45);
+    expect(share('grand-salon')).toBeLessThan(0.75);
+    expect(share('gym')).toBeGreaterThan(0.35);
+    expect(share('gym')).toBeLessThan(0.65);
+    expect(share('spa')).toBeGreaterThan(0.25);
+    expect(share('spa')).toBeLessThan(0.55);
+    expect(share('disco')).toBeGreaterThan(0.27);
+    expect(share('disco')).toBeLessThan(0.53);
+    expect(share('theatre')).toBeGreaterThan(0.15);
+    expect(share('theatre')).toBeLessThan(0.45);
+    expect(share('conservatory')).toBeGreaterThan(0.35);
+    expect(share('conservatory')).toBeLessThan(0.65);
+  });
+
+  it('no house has two music rooms, two billiard rooms, or two of any one-off room', () => {
+    for (const bp of houses) {
+      for (const t of ['music-room', 'billiard-room', 'gallery', 'great-room', 'dining-room', 'kitchen', 'library', 'bar', 'cinema', 'spa', 'gym', 'theatre', 'disco', 'grand-salon']) {
+        expect(bp.rooms.filter((r) => r.type === t).length, `${bp.seed}: ${t}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('a grand house has more rooms than a compact one, and a ballroom to dance in', () => {
+    const mean = (size: MansionSize, f: (bp: (typeof houses)[number]) => number) => {
+      const hs = houses.filter((bp) => bp.options.size === size);
+      return hs.reduce((a, bp) => a + f(bp), 0) / hs.length;
+    };
+    const ground = (bp: (typeof houses)[number]) => bp.rooms.filter((r) => r.level === 0).length;
+    expect(mean('grand', ground)).toBeGreaterThan(mean('compact', ground) + 1.5);
+    expect(mean('palatial', ground)).toBeGreaterThan(mean('grand', ground) + 2);
+    // Clear floor between the two arms of the stair.
+    const clear = (bp: (typeof houses)[number]) => {
+      const a = bp.atrium!;
+      const arms = bp.stairs.find((q) => q.id === a.stairId)!.arms!;
+      return 2 * (Math.max(...arms.flatMap((arm) => arm.path.map((q) => Math.abs(q.x - a.dome.x)))) - arms[0]!.width / 2);
+    };
+    for (const bp of houses.filter((q) => q.options.size !== 'compact')) {
+      expect(bp.atrium!.inner.x1 - bp.atrium!.inner.x0).toBeGreaterThanOrEqual(24);
+      expect(clear(bp)).toBeGreaterThanOrEqual(9);
+    }
   });
 });
 

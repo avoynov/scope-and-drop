@@ -4,7 +4,7 @@
  * mission objects exist and are reachable, and every room can be walked to.
  */
 import { overlaps } from '../core/geom';
-import type { MansionBlueprint, PoiType, ValidationIssue, ValidationReport } from '../core/types';
+import type { MansionBlueprint, PoiType, RoomType, ValidationIssue, ValidationReport } from '../core/types';
 import { navCellAt, navComponents } from './nav';
 
 export const DEFAULT_REQUIRED_POIS: Partial<Record<PoiType, { min: number; visible: number }>> = {
@@ -16,6 +16,9 @@ export const DEFAULT_REQUIRED_POIS: Partial<Record<PoiType, { min: number; visib
   fireplace: { min: 1, visible: 0 },
   ledger: { min: 1, visible: 0 },
 };
+
+/** Rooms no house is without (and at least two bathrooms, and a globe in the study). */
+export const REQUIRED_ROOMS: RoomType[] = ['ballroom', 'entrance-hall', 'great-room', 'dining-room', 'kitchen', 'library', 'bar', 'drawing-room', 'study'];
 
 /** At least this share of the guests' ground floor must be out of the sniper's sight. */
 export const MIN_HIDDEN = 0.15;
@@ -128,6 +131,13 @@ export function validate(bp: Omit<MansionBlueprint, 'validation' | 'stats'>, ext
     }
     metrics[`nav.L${n.level}.components`] = sizes.size;
   }
+
+  // The rooms every house has.
+  for (const t of REQUIRED_ROOMS) if (!bp.rooms.some((r) => r.type === t)) err('missing-room', `No ${t.replace('-', ' ')}`);
+  const baths = bp.rooms.filter((r) => r.type === 'bathroom').length;
+  metrics.bathrooms = baths;
+  if (baths < 2) err('missing-room', `Only ${baths} bathroom${baths === 1 ? '' : 's'} (min 2)`);
+  if (!bp.pois.some((p) => p.type === 'globe' && bp.rooms.find((r) => r.id === p.roomId)?.type === 'study')) err('missing-room', 'The study has no globe');
 
   // Party capacity.
   const partyArea = bp.rooms.filter((r) => r.role === 'party' && r.type !== 'roof-terrace').reduce((a, r) => a + (r.inner.x1 - r.inner.x0) * (r.inner.z1 - r.inner.z0), 0);

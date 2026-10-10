@@ -286,7 +286,8 @@ function syncUi(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
   $('fire').textContent = shooting.status(clock).state === 'ready' ? 'Fire · Space' : 'Action · Space';
-  $('scope').textContent = adsIn ? 'Scope out · F' : 'Scope in · F';
+  $('scope').textContent = shooting.busy() ? 'Hands on the action' : adsIn ? 'Scope out · F' : 'Scope in · F';
+  rifle.setRifle(RIFLE[state.reticle]);
 }
 magIn.oninput = () => (state.mag = Number(magIn.value));
 parIn.oninput = () => (state.parallax = sliderToPar(Number(parIn.value)));
@@ -327,8 +328,8 @@ function swayAt(t: number): [number, number] {
     b * (Math.sin(t * 3.1 + 0.4) * 0.5 + Math.sin(t * 0.29) * 0.9) - 0.00006 * beat,
   ];
 }
-/** The hands working the action: offsets to the aim and the eye (see shooting.act). */
-let hand: { yaw: number; pitch: number; eye: [number, number, number] } | null = null;
+/** The hands working the action: offsets to the aim (see shooting.act). */
+let hand: { yaw: number; pitch: number } | null = null;
 /** Where the bore points at time t: the aim, sway, the hands on the action and any recoil still running. */
 function aimAt(t: number): Aim {
   const [sy, sp] = swayAt(t);
@@ -337,6 +338,8 @@ function aimAt(t: number): Aim {
 }
 function fire(): void {
   const exit = shooting.press(clock, eyePos, aimAt, state.wind);
+  // Working the action takes the firing hand off the grip, and the head comes up off the scope with it.
+  if (shooting.busy() && adsIn) toggleScope();
   syncUi();
   if (exit === null) return;
   // A second shot before the first settles starts from wherever the rifle is when the bullet leaves.
@@ -360,6 +363,8 @@ function headAt(t: number): Vec3 {
   return ads ? adsEye(ads, t) : headRest;
 }
 function toggleScope(): void {
+  // No settling back onto the scope while the hands are on the action.
+  if (!adsIn && shooting.busy()) return;
   const from = headAt(clock);
   const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
   adsIn = !adsIn;
@@ -421,7 +426,8 @@ const picker = new THREE.Raycaster();
 picker.layers.enableAll();
 const ndc = new THREE.Vector2();
 function pickDrum(e: { clientX: number; clientY: number }): { dist: number; arcPx: number; side: number } | null {
-  if (adsIn) return null;
+  // The drum is turned with the head up, and not while the hands are busy with the action.
+  if (adsIn || shooting.busy()) return null;
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   picker.setFromCamera(ndc, rifle.camera);
@@ -532,7 +538,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
-  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+  if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && !shooting.busy()) {
     drum.turn(e.code === 'BracketLeft' ? -1 : 1);
     lookUntil = clock + LOOK_HOLD;
   }
@@ -591,6 +597,7 @@ function watch(dir: THREE.Vector3): void {
 }
 const sunLocal = new THREE.Vector3();
 const rifleFrame = new THREE.Quaternion();
+const headQ = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
   clock = t;
@@ -613,6 +620,7 @@ function frame(t: number, dt: number): void {
   // where the hands leave it.
   const acted = shooting.act(t);
   hand = acted.hand;
+  const hp = acted.pose;
   if (acted.fold) {
     state.yaw -= acted.fold[0];
     state.pitch += acted.fold[1];
@@ -639,11 +647,6 @@ function frame(t: number, dt: number): void {
   eye.x += rc.eye.x;
   eye.y += rc.eye.y;
   eye.z += rc.eye.z;
-  if (hand) {
-    eye.x += hand.eye[0];
-    eye.y += hand.eye[1];
-    eye.z += hand.eye[2];
-  }
   // How far a swing has carried the scope ahead of the head (up and right), and where that puts the eye.
   const lag = PAN_LAG * state.pan;
   panHead.yaw = followHead(panHead.yaw, state.yaw, dt, lag);
@@ -652,8 +655,9 @@ function frame(t: number, dt: number): void {
   const panYaw = panHead.yaw - state.yaw;
   eye.x += SUPPORT_TO_EYE_MM * panYaw;
   eye.y += SUPPORT_TO_EYE_MM * panPitch;
-  const tiltPitch = rc.tiltPitch + panPitch;
-  const tiltYaw = rc.tiltYaw + panYaw;
+  // Working the action the eyes leave the target for the hands: the head's view turns down and right.
+  const tiltPitch = rc.tiltPitch + panPitch - hp.gaze.pitch;
+  const tiltYaw = rc.tiltYaw + panYaw - hp.gaze.yaw;
   // Head down onto the weld or up off it.
   let roll = 0;
   let adsA: Vec3 = headRest;
@@ -669,9 +673,9 @@ function frame(t: number, dt: number): void {
     }
   }
   const head = headAt(t);
-  eye.x += head.x;
-  eye.y += head.y;
-  eye.z += head.z;
+  eye.x += head.x + hp.head[0];
+  eye.y += head.y + hp.head[1];
+  eye.z += head.z + hp.head[2];
   if (!shot) stepAdapt(imageShare(eye, { x: Math.tan(tiltYaw), y: Math.tan(tiltPitch) }), dt);
 
   // Wobble: breathing and heartbeat, and the hands on the action.
@@ -681,8 +685,9 @@ function frame(t: number, dt: number): void {
   // The scope looks where the rifle points; the naked eye looks where the head points, which lags it.
   euler.set(pitch + rc.pitch, yaw - rc.yaw, 0);
   scopeCam.quaternion.setFromEuler(euler);
-  euler.set(pitch + rc.pitch - tiltPitch, yaw - rc.yaw + tiltYaw, 0);
-  wideCam.quaternion.setFromEuler(euler);
+  // The head's view relative to the scope, which the rifle is drawn from too, so the two line up exactly.
+  headQ.setFromEuler(euler.set(-tiltPitch, tiltYaw, 0));
+  wideCam.quaternion.multiplyQuaternions(scopeCam.quaternion, headQ);
   scopeCam.fov = (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
   scopeCam.updateProjectionMatrix();
   scopeCam.getWorldDirection(dir);
@@ -723,13 +728,15 @@ function frame(t: number, dt: number): void {
   u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x + adsB.x - adsA.x, rcB.eye.y - rcA.eye.y + adsB.y - adsA.y, rcB.eye.z - rcA.eye.z + adsB.z - adsA.z);
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
-  // The eye focuses where it looks: on the drum while the shooter looks at it with the head up (accommodation
-  // takes a few tenths of a second), far away otherwise. Focused on the drum, the range blurs by pupil / distance.
+  // The eye focuses where it looks (accommodation takes a few tenths of a second): on the hands and the action
+  // while it works them (the plan's gaze carries its own focus), on the drum while the shooter looks at it with
+  // the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
   const drumDist = Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
   const looking = drumLook || t < lookUntil;
-  const wantFocus = focusPinned ? 1 / focusPinned : adsIn || !looking ? 0 : 1 / drumDist;
-  focusInv = shot ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
+  const working = acted.busy;
+  const wantFocus = focusPinned ? 1 / focusPinned : working ? hp.invF : adsIn || !looking ? 0 : 1 / drumDist;
+  focusInv = shot || working ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
   u.uWorldBlur!.value = Math.max(9 * dpr * adapt, ((0.5 * eye.pupilMm) / 1000 / th) * focusInv * R);
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.
   u.uMirage!.value = state.mirage ? 0.000025 * toUv * Math.min(1, D / 300) : 0;
@@ -766,8 +773,9 @@ function frame(t: number, dt: number): void {
   // The rifle from the eye: the head looks along the scope, less the recoil and swing tilt between them.
   const cam = rifle.camera;
   cam.position.set(eye.x / 1000, eye.y / 1000, eye.z / 1000);
-  cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
+  cam.quaternion.copy(headQ);
   cam.updateMatrixWorld();
+  rifle.pose(hp);
   rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
   drum.step(shot ? 1 : dt);
   rifle.setDrum((drum.pos - drumHome(drumRifle().drumM)) * DRUM_STEP);
@@ -819,7 +827,7 @@ function frame(t: number, dt: number): void {
     const unit = ret.id === 'tree' ? 'mil' : 'th';
     const status = shooting.status(t);
     readout.innerHTML = [
-      ['Head', ads ? (ads.dir === 'in' ? 'going down' : 'coming up') : adsIn ? 'on the weld' : 'up'],
+      ['Head', acted.busy ? 'up · hands on the action' : ads ? (ads.dir === 'in' ? 'going down' : 'coming up') : adsIn ? 'on the weld' : 'up'],
       ['Magnification', `${state.mag.toFixed(1)}×`],
       ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ['Exit pupil', `${ep.toFixed(1)} mm`],
@@ -865,10 +873,14 @@ if (shot) {
     panHead.yaw = state.yaw + ((right * Math.PI) / 180) * lag;
     panHead.pitch = state.pitch - ((up * Math.PI) / 180) * lag;
   }
+  // act=<s> / reload=<s>: the still is taken that long after the hands start working the bolt (a magazine
+  // change on the SVD and VSS) or changing the magazine; the head comes up off the weld as they start.
+  const handStart = params.has('act') ? t - num('act', 0) : params.has('reload') ? t - num('reload', 0) : null;
+  if (handStart !== null) shooting.handleAt(handStart, params.has('reload'));
   // adsin=<s> / adsout=<s>: the still is taken that long after the head starts down / up.
   for (const [k, inward] of [['adsin', true], ['adsout', false]] as const) {
-    if (!params.has(k)) continue;
-    const start = t - num(k, 0);
+    if (!params.has(k) && !(k === 'adsout' && handStart !== null)) continue;
+    const start = k === 'adsout' && handStart !== null ? handStart : t - num(k, 0);
     headRest = inward ? { ...HEAD_UP } : { ...ON_WELD };
     adsIn = inward;
     ads = (inward ? planScopeIn : planScopeOut)(start, headRest, { x: 0, y: 0, z: 0 }, 0);

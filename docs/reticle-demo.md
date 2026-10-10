@@ -234,13 +234,27 @@ With no wind and no Earth rotation, a level shot reproduces `trajectory()` to th
 | Muzzle velocity spread | SD 8 m/s (military ammunition) | SD 4 m/s (match) | SD 4 m/s. At subsonic speed every m/s is 1.5 cm of height at 183 m |
 | Spread at its mannequin | 412 m: ≈ 5 cm per axis, plus ≈ 3 cm vertical from velocity | 412 m: ≈ 3 cm per axis, plus ≈ 1.5 cm vertical | 183 m: ≈ 2.4 cm per axis, plus ≈ 6 cm vertical |
 | Lock and barrel time | 6 ms (hammer) + 1.3 ms | 3 ms (striker) + 1.3 ms | 5 ms (striker) + 1.9 ms (a 200 mm ported barrel and the suppressor ahead of it) |
-| Action | Semi-automatic, 10-round magazine | Bolt, 5-round magazine. After each shot Space works the bolt (1.1 s) | Semi-automatic, 10-round magazine (the automatic mode is left out) |
-| Magazine change | 3.2 s | 4.5 s | 3 s |
+| Action | Semi-automatic, 10-round magazine | Bolt, 5-round detachable box. After each shot Space works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine (the automatic mode is left out) |
+| Magazine change | About 3.3 s | About 3.9 s | About 3.3 s |
 
 - **The bullet goes where the rifle points when it leaves**, not where it pointed when Space was pressed: breathing sway, the heartbeat and any recoil still running are all sampled at trigger + lock time + barrel time. Break the shot at the bottom of the breath and it goes where the reticle was.
 - **Follow-up shots** fired before the rifle settles start wherever the recoil has put it. Rapid fire from the SVD walks up and right.
-- **Working the bolt or changing magazines** moves the rifle off the aim (about 1 mrad for the bolt, several for a magazine) and slides the cheek on the stock, so the picture shadows and the aim has to be found again. As with recoil, nothing returns on its own.
+- **Working the bolt or changing magazines** takes the head off the scope (below) and moves the rifle off the aim (about 1 mrad for the bolt, several for a magazine), so the aim has to be found again. As with recoil, nothing returns on its own.
 - Each shot's dispersion is seeded by its number, so stills are repeatable.
+
+### Working the action by hand (`src/scope/handling.ts`, `demo/reticle/actions.ts`, `demo/reticle/hands.ts`)
+
+Working the bolt or changing the magazine takes the firing hand off the grip, and the head comes up off the scope with it. Space with the chamber empty starts it: the head comes up (the scope-out of section 7), lifts and leans right to see the action, the eyes glance down at it and focus there, so the range behind goes soft. Before the hands are done the eyes go back downrange and the head returns to its head-up spot. F can't put the head back on the weld until the firing hand is back on the grip; then it settles in as usual.
+
+Each rifle is worked the way it really is:
+
+- **Bolt rifle** (M24 class, 5-round detachable box). The right hand pinches the knob, lifts it 90° (this cocks the striker), pulls the bolt 100 mm back (the extractor draws the case and the ejector flicks it out of the port to the right, tumbling into the dirt), pushes it forward (the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber) and turns it down. About 1.4 s. A magazine change opens the bolt first; the index finger presses the paddle catch in front of the trigger guard, the empty box drops into the hand and goes to the pouch, the full one is pushed straight up the well until the catch clicks, and the bolt closes on a new round. About 3.9 s.
+- **SVD.** After the last round the empty magazine's follower holds the bolt carrier open. The support hand thumbs the catch and rocks the magazine forward about its front lug; with the follower gone the carrier slams home on an empty chamber. The new magazine goes in front lug first and rocks back until the catch snaps over. The firing hand comes over the top, pulls the charging handle fully back and lets it go: the spring drives the carrier home and it chambers a round. About 3.3 s.
+- **VSS.** The same, except nothing holds its carrier open, so it is already shut when the magazine comes out.
+
+The hands are gloved, with jointed fingers and thumbs that shape for each grip (the bolt knob pinched, the charging handle hooked, the magazine held by its body, the catch pressed) on the way in. Each reach is a minimum-jerk stroke (Flash & Hogan), arcing clear of the rifle, after which the hand rides the part it holds: on the knob it follows it up and back. Arms run to the shoulders, about 20 cm behind the eye with the cheek on the stock, with the elbows out, down and a little back. A reach longer than the arm rolls the shoulder forward, up to 13 cm, as it does for the SVD's charging handle. The pace varies by ±6 % from one handling to the next, and everything is a function of the time since the hands started, so stills are exact.
+
+Tests check that every handling ends ready to fire (bolt shut, carrier home, the new magazine in the well one round down, both hands back where they rest, the eyes back on the range), that the hand stays on the knob and the charging handle while they move, that no wrist bends past 80° and the arms keep their length, that each sound is cued in order as its part moves, and that only the SVD's carrier slams shut when the magazine comes out.
 
 ### What it hits
 
@@ -260,7 +274,7 @@ With no wind and no Earth rotation, a level shot reproduces `trajectory()` to th
 
 ### What the shooter hears
 
-Synthesised in WebAudio (`audio.ts`): the report (blast, crack and thump, sharper for the SVD), the bolt or magazine clicks, and the bullet's arrival. That is a slap for the mannequin, a thud for dirt, a ring for a steel post. It is heard after the time of flight plus the sound's return at 343 m/s: about 1.8 s at 412 m. Bang, then a slap 1.8 s later, is a hit. A faint echo comes back from the hills about 9 s after the shot. The VSS is suppressed and subsonic: about 121 dB at a metre, 39 dB below an unsuppressed 9×39, and no crack. The shooter hears a dull thump and the bolt carrier hitting the back of its travel and slamming home, then, 1.2 s later at 183 m, the slap of a hit, which is the loudest part. It is too quiet to echo. **Sound** in the panel mutes it.
+The rifle's own sounds are the report and every part of working the action: the bolt lifting, running back, running forward over a round and turning down, the case landing in the dirt, the magazine catch, the magazine coming out and going in, the SVD's carrier slamming shut, and the charging handle pulled back and let go. Each is cued at the moment its part moves or hits its stop. A recording in `demo/reticle/sounds/` plays when there is one (see the README there for the names). Until then each is synthesised from what makes it (`synth.ts`): the report is a blast wave (a Friedlander pulse, its echo off the ground and the terrain's roll); steel parts that hit a stop ring at their own inharmonic modes after a contact click, heavier parts lower and longer; sliding parts make stick-slip friction noise; springs sing; a case in the dirt is a thud and a short ring. Four variants of each are drawn in turn so no two bolt cycles sound alike. In life the action is 60 to 80 dB quieter than an open-muzzle report at the ear, too wide a gap to play back, so it plays 8 to 18 dB under it. The bullet's arrival is synthesised in WebAudio (`audio.ts`). That is a slap for the mannequin, a thud for dirt, a ring for a steel post. It is heard after the time of flight plus the sound's return at 343 m/s: about 1.8 s at 412 m. Bang, then a slap 1.8 s later, is a hit. A faint echo comes back from the hills about 9 s after the shot. The VSS is suppressed and subsonic: about 121 dB at a metre, 39 dB below an unsuppressed 9×39, and no crack. The shooter hears a dull thump and the bolt carrier hitting the back of its travel and slamming home, then, 1.2 s later at 183 m, the slap of a hit, which is the loudest part. It is too quiet to echo. **Sound** in the panel mutes it.
 
 ### Readouts
 
@@ -283,7 +297,7 @@ Synthesised in WebAudio (`audio.ts`): the report (blast, crack and thump, sharpe
 
 **What the eye sees, in order, going in:**
 
-1. **The rifle, out of focus.** The scope and rifle are modelled to scale: a 47 mm ocular bell with 41 mm of glass recessed 2.5 mm, a ribbed power ring with its throw lever, a 30 mm tube, an elevation drum engraved with its range marks and a white index line on the saddle, a windage turret, a 50 mm objective bell, rings, rail, action, bolt and barrel. They are rendered from the eye and defocused as a 3 mm pupil focused on the target sees them: a point d metres away spreads over pupil/d radians. That is 30–40 px at the eyepiece and a few px at the muzzle. When the eye looks at the elevation drum it focuses there instead, at f = 0.29 m, and the disc becomes pupil·|1/d − 1/f|: the drum sharp, the eyepiece and muzzle soft, the range blurred by pupil/f. The blur is a depth-aware scatter-as-gather (each point spreads over its own disc, with energy conserved), plus a smear along the eyepiece's sweep across the view during the 1/60 s exposure.
+1. **The rifle, out of focus.** The scope and rifle are modelled to scale: a 47 mm ocular bell with 41 mm of glass recessed 2.5 mm, a ribbed power ring with its throw lever, a 30 mm tube, an elevation drum engraved with its range marks and a white index line on the saddle, a windage turret, a 50 mm objective bell and rings. Under them is whichever rifle is chosen: the bolt rifle's rail, receiver with its ejection port, fluted bolt and handle, fibreglass stock, barrel and brake; the SVD's side mount, receiver and cover, charging handle, wooden handguard and skeleton stock; or the VSS with its suppressor; their magazines; and the gloved hands that work them. They are rendered from the eye and defocused as a 3 mm pupil focused on the target sees them: a point d metres away spreads over pupil/d radians. That is 30–40 px at the eyepiece and a few px at the muzzle. When the eye looks at the elevation drum it focuses there instead, at f = 0.29 m (or on the hands and the action while they work it), and the disc becomes pupil·|1/d − 1/f|: the drum sharp, the eyepiece and muzzle soft, the range blurred by pupil/f. The blur is a depth-aware scatter-as-gather (each point spreads over its own disc, with energy conserved), plus a smear along the eyepiece's sweep across the view during the 1/60 s exposure.
 2. **Dark glass.** Until the eye is close to the axis, the eyepiece shows only a faint green-magenta coating sheen of the sky.
 3. **A crescent at the bottom.** The light comes through the exit pupil. Coming in from above and behind, the first light appears in the lower part of the eyepiece, then grows as the eye drops. The image pops in over the last few millimetres, which is what real glass does.
 4. **The tunnel opens.** The primary stroke stops slightly back, so the field is a disc inside a black ring that fills as the corrective stroke closes the eye relief.
@@ -291,7 +305,7 @@ Synthesised in WebAudio (`audio.ts`): the report (blast, crack and thump, sharpe
 
 Drag sensitivity follows adaptation: locked to the glass on the weld, locked to the naked-eye view with the head up.
 
-URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up.
+URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up. `act=<s>` and `reload=<s>` take it that long after the hands start working the bolt or changing the magazine (the SVD and VSS always change the magazine); the head comes up off the weld as they start.
 
 ## 8. The range (`demo/reticle/scene.ts`)
 
@@ -306,7 +320,7 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | W A S D | Move the eye across the exit pupil |
 | Q / E | Eye relief closer / further |
 | F / right-click | Scope in / scope out |
-| Space | Fire. With the chamber empty: work the bolt (bolt rifle) or change the magazine |
+| Space | Fire. With the chamber empty: work the bolt (bolt rifle) or change the magazine. The head comes off the scope until the hands are back on the grip |
 | R | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | L | Illumination |
 | H | Hide the panel |
@@ -357,6 +371,7 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 
 - The person reacting: falling, crumpling or staying up as the wound model says, in place of the mannequin.
 - Glass, for the game: the VSS's shots go through windows. Deflection and fragments by bullet, pane and angle, and the hole and cracks a pane keeps.
+- Recordings of the real rifles for every action sound and the reports (the folder and names are ready: `demo/reticle/sounds/README.md`).
 - Windage drum, and drum slop: the elevation drum is built (section 3); the windage drum is still fixed at 0.
 - Atmosphere: temperature, pressure and altitude (air density), so the PSO's chevrons stop being exact off standard conditions, as on a real PSO-1.
 - Moving targets and lead (the lateral scale is already there for it).

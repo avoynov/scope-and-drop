@@ -18,6 +18,7 @@
  */
 import * as THREE from 'three';
 import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
+import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from '../../src/scope/handling';
 import { SCOPE } from '../../src/scope/optics';
 import { assess, type Wound } from '../../src/body/wound';
 import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
@@ -58,6 +59,10 @@ interface Handling {
   /** Where the rifle is left when it is done (yaw right, pitch up, rad). */
   shift: [number, number];
   seed: number;
+  /** The hands, parts, eyes and sounds, second by second (src/scope/handling.ts). */
+  plan: Plan;
+  /** Stops the action's sounds if the handling is cut short. */
+  hush: () => void;
 }
 
 export interface Aim {
@@ -254,7 +259,26 @@ export function createShooting(range: Range, sound: Sound) {
     rifle = RIFLES[id];
     chambered = true;
     mag = rifle.magazine - 1;
+    handling?.hush();
     handling = null;
+  }
+
+  /** Starts working the action at `now`: the bolt, or a magazine change when the magazine is empty. */
+  function handle(now: number): void {
+    const reload = mag === 0;
+    const kind = reload ? 'reload' : 'cycle';
+    const seed = handlingCount++;
+    const plan = planHandling(rifle.id, kind, mag, seed);
+    handling = {
+      kind,
+      start: now,
+      dur: plan.dur,
+      // Prone, working the action nudges the rifle off the aim, more for a magazine change.
+      shift: [(rnd(seed, 1) - 0.5) * (reload ? 0.006 : 0.0016), (rnd(seed, 2) - 0.35) * (reload ? 0.006 : 0.0014)],
+      seed,
+      plan,
+      hush: sound.cues(plan.cues, rifle.id),
+    };
   }
 
   /**
@@ -267,16 +291,7 @@ export function createShooting(range: Range, sound: Sound) {
     sound.unlock();
     if (handling) return null;
     if (!chambered) {
-      const reload = mag === 0;
-      handling = {
-        kind: reload ? 'reload' : 'cycle',
-        start: now,
-        dur: reload ? rifle.reloadS : rifle.cycleS,
-        // Prone, working the action nudges the rifle off the aim, more for a magazine change.
-        shift: [(rnd(handlingCount, 1) - 0.5) * (reload ? 0.006 : 0.0016), (rnd(handlingCount, 2) - 0.35) * (reload ? 0.006 : 0.0014)],
-        seed: handlingCount++,
-      };
-      sound.action(reload ? 'reload' : 'bolt', handling.dur);
+      handle(now);
       return null;
     }
     const exit = now + rifle.lockS + rifle.barrelS;
@@ -351,6 +366,8 @@ export function createShooting(range: Range, sound: Sound) {
     else chambered = false;
     if (delay !== null) {
       sound.shot(delay, rifle.id);
+      // A semi-automatic throws its case out as it fires; it lands in the dirt to the right half a second later.
+      if (rifle.action === 'semi') sound.cue('case-land', rifle.id, delay + 0.45 + 0.12 * rnd(n, 9));
       if (kind) {
         const dist = Math.hypot(hit.pos[0] - eye.x, hit.pos[1] - eye.y, hit.pos[2] - eye.z);
         sound.impact(delay + hit.t + dist / 343, dist, kind);
@@ -480,14 +497,16 @@ export function createShooting(range: Range, sound: Sound) {
     return { trace, dust, dustDrift, dustTop, shadow };
   }
 
+  let rest: { key: string; pose: HandlingPose } | null = null;
   /**
    * The hands on the rifle at `now`: while the bolt is worked or the magazine changed, how far the rifle is
-   * pushed off the aim (rad, yaw right and pitch up) and the eye shifted on the stock (mm). `fold` comes
-   * once, when the action is done: where it left the rifle, for the aim to keep.
+   * pushed off the aim (rad, yaw right and pitch up), and where the hands, the parts, the head and the eyes
+   * are (`pose`). `fold` comes once, when the action is done: where it left the rifle, for the aim to keep.
    */
   function act(now: number) {
-    let hand: { yaw: number; pitch: number; eye: [number, number, number] } | null = null;
+    let hand: { yaw: number; pitch: number } | null = null;
     let fold: [number, number] | null = null;
+    let pose: HandlingPose | null = null;
     if (handling) {
       const u = (now - handling.start) / handling.dur;
       if (u >= 1) {
@@ -504,12 +523,26 @@ export function createShooting(range: Range, sound: Sound) {
         hand = {
           yaw: handling.shift[0] * e + 0.0012 * big * shake,
           pitch: handling.shift[1] * e + 0.0009 * big * shake * (rnd(handling.seed, 3) - 0.5) * 2,
-          // The cheek shifts on the stock while the hand works the action.
-          eye: [1.6 * big * bump * (rnd(handling.seed, 4) - 0.3), 2.4 * big * bump, 7 * big * bump],
         };
+        pose = poseAt(handling.plan, now - handling.start);
       }
     }
-    return { hand, fold };
+    if (!pose) {
+      // At rest. After the SVD's last round its empty magazine holds the carrier open.
+      const open = rifle.id === 'svd' && !chambered && mag === 0;
+      const key = `${rifle.id}|${mag}|${open}`;
+      if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, mag, open) };
+      pose = rest.pose;
+    }
+    return { hand, fold, pose, busy: !!handling };
+  }
+
+  /** For stills: the rifle `s` seconds into working its action (a magazine change if `reload`). */
+  function handleAt(now: number, reload: boolean): void {
+    chambered = false;
+    // A semi-automatic is only ever handled for a magazine change.
+    mag = reload || rifle.action === 'semi' ? 0 : rifle.magazine - 2;
+    handle(now);
   }
 
   /** One impact's debris and dust, `age` s after it. */
@@ -578,6 +611,9 @@ export function createShooting(range: Range, sound: Sound) {
     fireAt: (exit: number, eye: THREE.Vector3, aim: Aim, wind: Wind) => fireAt(exit, eye, aim, wind, null),
     update,
     act,
+    handleAt,
+    /** Whether the hands are off the grip, working the action. */
+    busy: () => !!handling,
     status(now: number) {
       const last = shots[shots.length - 1];
       let shot = '–';

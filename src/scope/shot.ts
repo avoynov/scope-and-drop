@@ -30,11 +30,8 @@ export interface Rifle {
   lockS: number;
   barrelS: number;
   action: 'semi' | 'bolt';
+  /** Rounds in a full magazine. How long the bolt and a magazine change take is worked out in handling.ts. */
   magazine: number;
-  /** Magazine change, prone, until the rifle is back on the shoulder and loaded. */
-  reloadS: number;
-  /** Working the bolt, prone, staying on the gun. */
-  cycleS: number;
   /** How much dust the muzzle blast raises off dry ground in front of a prone shooter (SVD = 1). */
   blastDust: number;
   /** Height of the scope's axis above the bore. */
@@ -66,12 +63,11 @@ export const RIFLES = {
   svd: {
     id: 'svd', name: 'SVD', round: '7n1', twistMm: 240, bulletLenMm: 32.3, bulletDiaMm: 7.92,
     sigmaRad: 0.4 * MOA, mvSd: 8, lockS: 0.006, barrelS: 0.0013,
-    action: 'semi', magazine: 10, reloadS: 3.2, cycleS: 0, blastDust: 1, sightM: 0.07, drumM: drum(1000),
+    action: 'semi', magazine: 10, blastDust: 1, sightM: 0.07, drumM: drum(1000),
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
-   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round magazine; working the bolt prone
-   * without coming off the gun takes about a second.
+   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round detachable box magazine.
    * Scope 58 mm over the bore, as modelled in the demo. Its elevation turret carries a ballistic dial cut for
    * the M118LR (as Leupold's CDS dials are), marked in hundreds of metres to 1000 m, with a 0 below the 1 that
    * puts the bore parallel to the line of sight: there the hold from the ammo card is simply drop ÷ range.
@@ -79,7 +75,7 @@ export const RIFLES = {
   bolt: {
     id: 'bolt', name: 'Bolt rifle', round: 'm118lr', twistMm: 286, bulletLenMm: 31.5, bulletDiaMm: 7.82,
     sigmaRad: 0.25 * MOA, mvSd: 4, lockS: 0.003, barrelS: 0.0013,
-    action: 'bolt', magazine: 5, reloadS: 4.5, cycleS: 1.1, blastDust: 0.6, sightM: 0.058, drumM: [0, ...drum(1000)],
+    action: 'bolt', magazine: 5, blastDust: 0.6, sightM: 0.058, drumM: [0, ...drum(1000)],
   },
   /**
    * VSS "Vintorez", SP-5: integrally suppressed and subsonic. Spec: 4 shots inside 75 mm at 100 m, prone off
@@ -94,7 +90,7 @@ export const RIFLES = {
   vss: {
     id: 'vss', name: 'VSS', round: 'sp5', twistMm: 210, bulletLenMm: 36, bulletDiaMm: 9.25,
     sigmaRad: 0.45 * MOA, mvSd: 4, lockS: 0.005, barrelS: 0.0019,
-    action: 'semi', magazine: 10, reloadS: 3, cycleS: 0, blastDust: 0.05, sightM: 0.07, drumM: drum(400),
+    action: 'semi', magazine: 10, blastDust: 0.05, sightM: 0.07, drumM: drum(400),
   },
 } as const satisfies Record<string, Rifle>;
 export type RifleId = keyof typeof RIFLES;

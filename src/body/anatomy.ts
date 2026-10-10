@@ -15,11 +15,16 @@
  *  - skull base (foramen magnum) 1.555, C3/C4 1.505, C7/T1 1.455, sternal notch 1.39 (T2/T3), nipples 1.24,
  *    xiphisternal joint 1.19, T12/L1 1.165, L1/L2 1.13 (transpyloric plane, where the cord ends: the conus lies
  *    at L1 in most adults, T12–L2 in nearly all), iliac crests 1.03 (L4), hip joints 0.895, pubis 0.885.
- *  - Heart behind the sternum from the 3rd costal cartilage to the 6th, its apex in the left 5th intercostal
- *    space about 8 cm from the midline; it sits on the diaphragm and against the descending aorta behind.
- *  - Diaphragm domes: right at the 5th rib (≈1.245), left a little lower. The liver fills the right dome and
- *    reaches across to the left; spleen under the left 9th–11th ribs at the back; kidneys T12–L3 against the
- *    back (the right one lower), 4–5 cm under the skin; stomach under the left dome behind the liver's left lobe.
+ *  - Heart behind the sternum from the 3rd costal cartilage to the 6th, its right border 1–2 cm past the
+ *    sternum's right edge, its apex in the left 5th intercostal space 8–9 cm from the midline; it sits on the
+ *    diaphragm and against the descending aorta behind. Those are the lying-down (textbook and CT) figures.
+ *    Standing, the diaphragm sits lower (the lungs hold 0.5–1 L more at rest) and the heart, slung from it by the
+ *    pericardium, hangs about 1 cm lower and more upright (upright CT: its axis turns down and back), the apex
+ *    1.5 cm lower, at the 6th rib.
+ *  - Diaphragm domes, standing: right ≈1.23 (the 5th rib lying down), left a little lower. The liver fills the
+ *    right dome and reaches across to the left; spleen under the left 9th–11th ribs at the back; kidneys T12–L3
+ *    against the back (the right one lower), 4–5 cm under the skin; stomach under the left dome behind the
+ *    liver's left lobe.
  *  - The cord lies 5–6 cm under the skin of the back (as epidural needle depths show), behind vertebral bodies
  *    about 3 cm deep and in front of the laminae and spinous processes.
  *
@@ -112,9 +117,10 @@ export const PARTS: Part[] = [
   { id: 'svc', name: 'vena cava', tissue: 'vein', shape: cap([-0.027, 1.39, 0.042], [-0.025, 1.3, 0.045], 0.01) },
   ...pair('subclavian', 'subclavian artery', 'artery', (s) => cap([s * 0.02, 1.405, 0.025], [s * 0.16, 1.395, 0.03], 0.004)),
   ...pair('clavicle', 'collarbone', 'rib', (s) => cap([s * 0.02, 1.395, 0.08], [s * 0.17, 1.43, 0.03], 0.008)),
-  // The heart lies obliquely, its apex down, left and forward: the base and ventricles, and the apex.
-  { id: 'heart', name: 'heart', tissue: 'heart', shape: e([0.012, 1.258, 0.04], [0.055, 0.055, 0.043]) },
-  { id: 'heart-apex', name: 'heart', tissue: 'heart', shape: e([0.06, 1.215, 0.048], [0.035, 0.03, 0.032]) },
+  // The heart lies obliquely, its apex down, left and forward: the base and ventricles, and the apex. Standing,
+  // it hangs a centimetre lower than the lying-down textbook figures and more upright, its apex lower still.
+  { id: 'heart', name: 'heart', tissue: 'heart', shape: e([0.012, 1.248, 0.04], [0.055, 0.055, 0.043]) },
+  { id: 'heart-apex', name: 'heart', tissue: 'heart', shape: e([0.058, 1.2, 0.046], [0.035, 0.03, 0.032]) },
   { id: 'hilum-l', name: 'left lung root', tissue: 'hilum', shape: e([0.058, 1.315, 0.005], [0.02, 0.03, 0.025]) },
   { id: 'hilum-r', name: 'right lung root', tissue: 'hilum', shape: e([-0.055, 1.3, 0.008], [0.02, 0.03, 0.025]) },
   { id: 'manubrium', name: 'breastbone', tissue: 'sternum', shape: e([0, 1.36, 0.083], [0.025, 0.025, 0.007]) },
@@ -135,12 +141,12 @@ export const PARTS: Part[] = [
   { id: 'spine-l', name: 'lumbar spine', tissue: 'vertebra', shape: cap([0, 1.165, -0.025], [0, 0.985, -0.019], 0.018) },
   { id: 'spine-l-arch', name: 'lumbar spine', tissue: 'vertebra', shape: cap([0, 1.165, -0.076], [0, 0.985, -0.072], 0.015) },
   ...pair('kidney', 'kidney', 'kidney', (s) => e([s * 0.07, s > 0 ? 1.12 : 1.105, -0.027], [0.028, 0.055, 0.019])),
-  { id: 'spleen', name: 'spleen', tissue: 'spleen', shape: e([0.105, 1.185, -0.045], [0.025, 0.05, 0.032]) },
-  { id: 'liver', name: 'liver', tissue: 'liver', shape: e([-0.07, 1.17, 0], [0.068, 0.072, 0.065]) },
-  { id: 'liver-left', name: 'liver', tissue: 'liver', shape: e([0.02, 1.18, 0.05], [0.065, 0.04, 0.035]) },
-  { id: 'stomach', name: 'stomach', tissue: 'stomach', shape: e([0.065, 1.165, 0.03], [0.045, 0.055, 0.035]) },
+  { id: 'spleen', name: 'spleen', tissue: 'spleen', shape: e([0.105, 1.175, -0.045], [0.025, 0.05, 0.032]) },
+  { id: 'liver', name: 'liver', tissue: 'liver', shape: e([-0.07, 1.16, 0], [0.068, 0.072, 0.065]) },
+  { id: 'liver-left', name: 'liver', tissue: 'liver', shape: e([0.02, 1.17, 0.05], [0.065, 0.04, 0.035]) },
+  { id: 'stomach', name: 'stomach', tissue: 'stomach', shape: e([0.065, 1.155, 0.03], [0.045, 0.055, 0.035]) },
   // The lungs fill what the heart, great vessels, liver, spleen and stomach leave of each half of the chest.
-  ...pair('lung', 'lung', 'lung', (s) => e([s * 0.085, 1.3, -0.005], [0.063, 0.14, 0.08])),
+  ...pair('lung', 'lung', 'lung', (s) => e([s * 0.085, 1.295, -0.005], [0.063, 0.145, 0.08])),
 
   // ---- pelvis and legs ----
   ...pair('hipjoint', 'hip joint', 'hip', (s) => e([s * 0.09, 0.895, 0.005], [0.03, 0.03, 0.03])),

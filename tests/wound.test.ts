@@ -35,12 +35,14 @@ describe('anatomy', () => {
 
   it('puts organs at their real heights', () => {
     const at = (p: Vec3) => classify(p)?.id;
-    // Under the right dome at the 5th rib: liver, with lung above it.
+    // Under the right dome (standing, 1.23 m): liver, with lung above it.
     expect(at([-0.07, 1.23, 0])).toBe('liver');
     expect(at([-0.07, 1.27, 0])).toBe('lung-r');
-    // The heart behind the sternum at the nipples, its apex in the left 5th space.
+    // The heart behind the sternum at the nipples, its apex low in the left 5th space 8–9 cm out (standing).
     expect(classify([0.02, 1.25, 0.05])?.tissue).toBe('heart');
-    expect(classify([0.075, 1.21, 0.045])?.tissue).toBe('heart');
+    expect(classify([0.075, 1.2, 0.045])?.tissue).toBe('heart');
+    expect(classify([-0.035, 1.25, 0.05])?.tissue).toBe('heart'); // right border past the sternum's edge
+    expect(classify([0.02, 1.33, 0.05])?.tissue).not.toBe('heart'); // above the 3rd cartilage: great vessels
     // Spleen at the left 10th rib behind, kidneys at L1 against the back.
     expect(at([0.105, 1.19, -0.05])).toBe('spleen');
     expect(at([0.07, 1.12, -0.03])).toBe('kidney-l');
@@ -75,6 +77,10 @@ describe('wound model', () => {
       expect(w.unconsciousS).toBeLessThan(60);
       if (w.unconsciousS < 16) fast++;
       expect(w.fallS).toBeLessThanOrEqual(w.unconsciousS);
+      // Helpless only in the last seconds, as sight greys out.
+      expect(w.incapacitatedS).toBeLessThan(w.unconsciousS);
+      expect(w.unconsciousS - w.incapacitatedS).toBeLessThanOrEqual(3.01);
+      expect(w.incapacitatedS).toBeGreaterThan(3);
       expect(w.deathS).toBeLessThan(180);
     }
     // Now and then a small hole lets the heart beat on a little longer.
@@ -95,6 +101,8 @@ describe('wound model', () => {
     expect(w.damage.some((d) => d.part.tissue === 'hip' && d.direct)).toBe(true);
     expect(w.fallS).toBeLessThan(1);
     expect(w.unconsciousS).toBeGreaterThan(w.fallS);
+    // Down, but hands and head still work.
+    expect(w.incapacitatedS).toBeGreaterThan(60);
   });
 
   it('the spinal cord in the back drops them at once', () => {
@@ -161,6 +169,7 @@ describe('wound model', () => {
     expect(w.damage.some((d) => d.part.level === 'C1-C4' && d.direct)).toBe(true);
     expect(w.cause).toContain('cannot breathe');
     expect(w.fallS).toBe(0);
+    expect(w.incapacitatedS).toBe(0);
     // Sooner than breath-holding alone: the same bullet cut both carotids.
     expect(w.unconsciousS).toBeGreaterThan(25);
     expect(w.unconsciousS).toBeLessThan(130);
@@ -184,5 +193,37 @@ describe('wound model', () => {
     expect(w.unconsciousS).toBeGreaterThan(90);
     expect(w.unconsciousS).toBeLessThan(300);
     expect(w.deathS).toBeLessThan(480);
+    // Class IV shock leaves them confused and helpless well before they faint.
+    expect(w.incapacitatedS).toBeGreaterThan(60);
+    expect(w.unconsciousS - w.incapacitatedS).toBeGreaterThan(10);
+  });
+
+  it('a cord cut low in the neck leaves them awake but helpless for good', () => {
+    const w = assess({ entry: [0, 1.475, -0.2], dir: [0, 0, 1], speed: 260, round: 'sp5', seed: 4 });
+    expect(w.damage.some((d) => d.part.level === 'C5-T1' && d.direct), w.cause).toBe(true);
+    expect(w.incapacitatedS).toBe(0);
+    expect(w.recoverS).toBe(Infinity);
+    expect(w.outcome).not.toBe('wounded');
+  });
+
+  it('incapacitation comes no later than unconsciousness, and a concussion clears after they come round', () => {
+    let grazes = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const x = -0.15 + 0.3 * ((seed * 37) % 40) / 40, y = 0.9 + 0.75 * ((seed * 13) % 40) / 40;
+      const w = assess({ entry: [x, y, 0.3], dir: [0, 0, -1], speed: 300 + 15 * seed, round: seed % 2 ? '7n1' : 'sp5', seed });
+      expect(w.incapacitatedS, w.cause).toBeLessThanOrEqual(w.unconsciousS);
+      if (w.recoverS < Infinity) {
+        expect(w.recoverS).toBeGreaterThan(w.incapacitatedS);
+        if (w.wakeS < Infinity) expect(w.recoverS).toBeGreaterThan(w.wakeS);
+      }
+      if (w.incapacitatedS < Infinity && w.recoverS === Infinity) expect(w.outcome, w.cause).not.toBe('wounded');
+    }
+    for (let seed = 0; seed < 30; seed++) {
+      const w = assess({ entry: [0, 1.699, 0.2], dir: [0, 0, -1], speed: 260, round: 'sp5', seed });
+      if (!w.cause.includes('grazed') || w.incapacitatedS === Infinity) continue;
+      grazes++;
+      expect(w.recoverS, w.cause).toBeLessThan(Infinity);
+    }
+    expect(grazes).toBeGreaterThan(0);
   });
 });

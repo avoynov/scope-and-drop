@@ -152,6 +152,14 @@ export interface Wound {
   unconsciousS: number;
   /** Seconds after the hit they come round again (a concussion), Infinity if they do not. */
   wakeS: number;
+  /**
+   * Seconds after the hit they can no longer do anything on purpose (fight, aim, crawl to cover, call out
+   * sensibly) though they may still be awake: arms paralysed, dazed, confused by shock, the last seconds as
+   * the brain's blood runs out. Never later than unconsciousS. Infinity = not within the hour.
+   */
+  incapacitatedS: number;
+  /** Seconds after the hit they can act again (a concussion clearing), Infinity if they do not. */
+  recoverS: number;
   /** Heart and breathing both stopped (clinical death). */
   deathS: number;
   /** The fall is a reflex or a choice, not forced: they could get up again. */
@@ -350,6 +358,8 @@ export function assess(w: WoundInput): Wound {
   const cordStunned = t.damage.some((d) => d.part.tissue === 'cord' && !d.direct && d.frac > 0.25);
 
   let fallS = Infinity, unconsciousS = Infinity, wakeS = Infinity, deathS = Infinity;
+  // Out of action for good (incapS), or for a while (dazed from dazeS to dazeEnd: a concussion).
+  let incapS = Infinity, dazeS = Infinity, dazeEnd = Infinity;
   let reflexFall = false;
   const causes: string[] = [];
 
@@ -360,7 +370,7 @@ export function assess(w: WoundInput): Wound {
   if (brainstem) {
     // The centres for consciousness, breathing and blood pressure: down and out at once, breathing stops; the
     // heart beats on without oxygen for a few minutes.
-    fallS = unconsciousS = 0;
+    fallS = unconsciousS = incapS = 0;
     deathS = 120 + 180 * R(2);
     causes.push('brainstem destroyed: breathing stops');
   } else if (brain.length) {
@@ -375,8 +385,9 @@ export function assess(w: WoundInput): Wound {
     const massive = brainFrac > 0.25;
     const minor = !deep && !posterior && !bihemispheric && brainFrac < 0.03 && t.energyJ < 700;
     fallS = 0;
-    if (minor && R(15) < 0.3) fallS = 0.3 + R(16);
-    else unconsciousS = 0;
+    // Of the few who stay awake, about half are too stunned to do anything; the rest can still act.
+    if (minor && R(15) < 0.3) { fallS = 0.3 + R(16); if (R(20) < 0.5) incapS = 0; }
+    else unconsciousS = incapS = 0;
     const pFatal = massive || deep || posterior || bihemispheric ? 1 : minor ? 0.25 : Math.min(0.95, 0.3 + 3 * brainFrac + 0.3 * Math.min(1, t.energyJ / 1500));
     if (R(3) < pFatal) {
       // Most die where they fall; some hours later as the brain swells.
@@ -386,9 +397,12 @@ export function assess(w: WoundInput): Wound {
   } else if (has('skull') || hit((d) => d.part.tissue === 'skull' && d.frac > 0.02).length) {
     // Through the scalp and bone but not into the brain: a grazing head wound often stuns, sometimes knocks
     // them out for a while.
+    // Stunned, they are dazed for a minute or two; knocked out, they come round confused and stay so for minutes
+    // (the confusion after a concussion).
     if (R(5) < 0.6) {
-      fallS = 0.2;
-      if (R(6) < 0.5) { unconsciousS = 0.2; wakeS = 20 + 280 * R(18); }
+      fallS = dazeS = 0.2;
+      dazeEnd = 10 + 110 * R(21);
+      if (R(6) < 0.5) { unconsciousS = 0.2; wakeS = 20 + 280 * R(18); dazeEnd = wakeS + 60 + 540 * R(21); }
     }
     causes.push('head: grazed the skull');
   }
@@ -397,14 +411,26 @@ export function assess(w: WoundInput): Wound {
     // The diaphragm's nerves (C3–C5) are cut off: they drop, paralysed from the neck down and unable to breathe,
     // but conscious until their blood runs out of oxygen (sooner for the blood pressure falling as the cord's
     // control of the vessels goes). The heart stops from lack of oxygen a few minutes later.
-    fallS = 0;
+    fallS = incapS = 0;
     unconsciousS = Math.min(unconsciousS, 45 + 75 * R(2));
     deathS = Math.min(deathS, 240 + 240 * R(14));
     causes.push('spinal cord cut high in the neck: cannot breathe');
-  } else if (cord('C5-T1')) { fallS = Math.min(fallS, 0); causes.push('spinal cord cut at the neck: paralysed from the chest down, arms weak'); }
+  } else if (cord('C5-T1')) {
+    // The hands and most of the arms go with it (C5–T1 is the brachial plexus): they cannot hold or use anything.
+    fallS = incapS = 0;
+    causes.push('spinal cord cut at the neck: paralysed from the chest down, hands useless');
+  }
   else if (cord('T2-L1')) { fallS = Math.min(fallS, 0.1); causes.push('spinal cord cut: legs paralysed'); }
   else if (cord('cauda')) { fallS = Math.min(fallS, 0.3); causes.push('nerves to the legs cut'); }
-  else if (cordStunned) { fallS = Math.min(fallS, 0.2); causes.push('spinal cord stunned: limbs give way'); }
+  else if (cordStunned) {
+    fallS = Math.min(fallS, 0.2);
+    // Stunned in the neck, all four limbs go for a while (transient quadriplegia: minutes, sometimes hours).
+    if (t.damage.some((d) => d.part.tissue === 'cord' && !d.direct && d.frac > 0.25 && (d.part.level === 'C1-C4' || d.part.level === 'C5-T1'))) {
+      dazeS = Math.min(dazeS, 0.2);
+      dazeEnd = 600 + 6600 * R(23);
+    }
+    causes.push('spinal cord stunned: limbs give way');
+  }
 
   // ---- the skeleton ----
   // The hip joint and the thigh bone carry the weight: broken, the leg folds. A hole through the pelvic ring
@@ -469,7 +495,10 @@ export function assess(w: WoundInput): Wound {
   // Step the blood volume and the brain's oxygen through the hour. Bleeding follows the pressure, which follows
   // the volume lost (pressureAt).
   let lost = 0, debt = 0, lost60 = 0, lowFor = 0;
-  let bleedFall = Infinity, faint = Infinity, arrest = Infinity;
+  let bleedFall = Infinity, faint = Infinity, arrest = Infinity, shock = Infinity, greying = Infinity;
+  // The last seconds before they faint: sight greys and goes, the eyes fix, the limbs stop obeying (Rossen's
+  // neck-cuff subjects; the pilots' "almost loss of consciousness" under g).
+  const greyAt = Math.max(0.6 * reserveS, reserveS - 3);
   const dt = 0.25;
   for (let time = 0; time <= 3600; time += dt) {
     const loss = lost / blood;
@@ -482,9 +511,11 @@ export function assess(w: WoundInput): Wound {
     if (time <= 60) lost60 = lost;
     // The brain runs on its reserve once pressure falls below what it needs (≈ 45 % of normal).
     debt = Pb < 0.45 ? debt + ((0.45 - Pb) / 0.45) * dt : Math.max(0, debt - dt * 0.2);
+    if (greying === Infinity && debt >= greyAt) greying = time;
     if (faint === Infinity && debt >= reserveS) faint = time;
-    // Class III shock: they can no longer stay on their feet.
+    // Class III shock: they can no longer stay on their feet. Class IV: confused and listless, past doing anything.
     if (bleedFall === Infinity && loss >= 0.35) bleedFall = time;
+    if (shock === Infinity && loss >= 0.4) shock = time;
     // The heart stops once too little pressure has fed it for a while, or the blood is gone.
     lowFor = Pb < 0.2 ? lowFor + dt : 0;
     if (lowFor >= arrestS || loss >= 0.55) { arrest = time; break; }
@@ -496,6 +527,14 @@ export function assess(w: WoundInput): Wound {
   } else if (bleedFall < Infinity) fallS = Math.min(fallS, bleedFall);
   if (arrest < Infinity) deathS = Math.min(deathS, arrest);
   unconsciousS = Math.min(unconsciousS, deathS);
+  // Fighting for breath with both lungs open or the airway full of blood leaves room for nothing else.
+  const breathless = lungs >= 2 || airway ? 30 + 90 * R(22) : Infinity;
+  incapS = Math.min(incapS, greying, shock, breathless, wakeS === Infinity ? unconsciousS : Infinity);
+  // A concussion that clears before anything else puts them out of action is the only incapacity that passes.
+  const passes = dazeEnd < incapS && dazeEnd <= 3600;
+  const incapacitatedS = Math.min(incapS, dazeS, unconsciousS);
+  const recoverS = passes && incapacitatedS < Infinity ? dazeEnd : Infinity;
+  if (incapacitatedS < Infinity && !passes) fallS = Math.min(fallS, incapacitatedS);
   if (pumpFails) causes.push('heart torn open');
   else if (collapse) causes.push(`${t.damage.find((d) => GREAT_VESSELS.has(d.part.id) && d.cut >= 0.6)!.part.name} cut across`);
   else if (bleed + clotting > 1.5 && sources.length) {
@@ -512,13 +551,15 @@ export function assess(w: WoundInput): Wound {
 
   // Most people drop when a rifle bullet hits them, from pain, shock or expectation, whether or not the wound
   // forces it; more often the more it tears. The rest keep going for as long as their body lets them.
+  // A reflex drop before a fall the wound forces later is still a fall they will not get up from.
+  const forced = fallS;
   if (fallS > 2 && t.trackM > 0) {
     const torso = t.track.some((q) => q.p[1] > 0.86 && q.p[1] < 1.47);
     const pDrop = Math.min(0.92, 0.35 + 0.35 * Math.sqrt(Math.min(1, t.energyJ / 1500)) + (torso ? 0.15 : 0));
-    if (R(11) < pDrop) { fallS = 0.3 + 1.2 * R(12); reflexFall = true; }
+    if (R(11) < pDrop) { fallS = 0.3 + 1.2 * R(12); reflexFall = forced === Infinity; }
   }
 
-  const outcome: Outcome = deathS <= 3600 ? 'killed' : fallS < Infinity && !reflexFall ? 'downed' : 'wounded';
+  const outcome: Outcome = deathS <= 3600 ? 'killed' : forced < Infinity ? 'downed' : 'wounded';
   if (!causes.length) causes.push(t.trackM > 0 ? 'flesh wound' : 'no wound');
   return {
     outcome,
@@ -526,6 +567,8 @@ export function assess(w: WoundInput): Wound {
     fallS,
     unconsciousS,
     wakeS: unconsciousS < Infinity ? wakeS : Infinity,
+    incapacitatedS,
+    recoverS,
     deathS,
     reflexFall: reflexFall && outcome === 'wounded',
     bloodLost60: Math.round(lost60),

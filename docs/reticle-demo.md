@@ -381,7 +381,7 @@ URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
-Each mannequin stands in for a person facing the shooter. A hit on its torso or head is run through a wound model that takes the bullet's **striking speed**, its direction and **where it went in**, and decides whether the person is **killed**, **downed** or only **wounded**, and when they fall, lose consciousness and die. The **wound card** (bottom right) shows the verdict, a live state (on their feet, down, unconscious, dead) running from the moment of impact, and the track drawn on the body from the front and the side.
+Each mannequin stands in for a person facing the shooter. A hit on its torso or head is run through a wound model that takes the bullet's **striking speed**, its direction and **where it went in**, and decides whether the person is **killed**, **downed** or only **wounded**, and when they fall, are incapacitated, lose consciousness and die. The **wound card** (bottom right) shows the verdict, a live state (on their feet, down, awake but helpless, unconscious, dead) running from the moment of impact, and the track drawn on the body from the front and the side.
 
 | SP-5 at 183 m through the spleen (killed in 13 min) · SP-5 through the left kidney and pelvis (downed, alive) · 7N1 at 412 m through the head (dead at once) |
 | --- |
@@ -398,8 +398,8 @@ Where things are (heights for 1.70 m, from stature ratios and surface anatomy):
 | | Where |
 | --- | --- |
 | Skull base, C7/T1, sternal notch | 1.555, 1.455, 1.39 m (T2/T3) |
-| Heart | Behind the sternum from the 3rd to the 6th costal cartilage (1.19–1.31 m), apex in the left 5th space 8 cm out, against the descending aorta behind |
-| Diaphragm | Right dome at the 5th rib (1.245 m), left a little lower; the liver fills the right dome, the lungs' bases curve over it |
+| Heart | Behind the sternum from the 3rd to the 6th costal cartilage, right border 1–2 cm past the sternum's edge, apex in the left 5th space 8–9 cm out, against the descending aorta behind. Those are lying-down figures; standing, it hangs about 1 cm lower and more upright, apex 1.5 cm lower at the 6th rib (1.17–1.30 m) |
+| Diaphragm | Standing, right dome at 1.23 m (the 5th rib lying down), left a little lower; the liver fills the right dome, the lungs' bases curve over it |
 | Spleen, kidneys | Spleen under the left 9th–11th ribs at the back (1.14–1.24 m); kidneys T12–L3 (left 1.07–1.18 m, right 1.5 cm lower), 4–5 cm under the skin of the back |
 | Cord | Ends at L1/L2 (1.13 m; the conus lies at L1 in most adults, Th12–L2 in nearly all), 5–6 cm under the skin of the back |
 | Iliac crests, hip joints | 1.03 m (L4), 0.895 m |
@@ -434,6 +434,23 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 | Blood loss | Pressure holds through class II (to 30 % lost, 90 % of normal), falls through class III (65 % at 40 %) and class IV (30 % at 50 %), and is gone at 55 %. **Down at 35 %**; unconscious once the brain's reserve runs out below ≈ 45 % pressure; **heart stops** after 45–120 s with under 20 % pressure, or at 55 % lost. Blood volume 4.5–5.5 L and the brain's reserve vary by person | ATLS classes |
 | Both lungs, or larynx and windpipe torn | Both lungs open: breathing fails from 2 min on. The airway torn open: blood runs into the lungs and swelling closes it, half the time | |
 | Anything else | **Most people drop anyway** (pain, shock, expectation): 35–92 %, more for a torso hit and the more energy left in; they could get up. The rest keep going for as long as their body lets them | Psychological incapacitation (FBI) |
+
+### Incapacitated
+
+**Incapacitated** on the card means they can no longer do anything on purpose (fight, aim, crawl to cover, call out sensibly) though they may still be awake. Unconscious always counts; these come before it or without it:
+
+| Cause | Incapacitated | Basis |
+| --- | --- | --- |
+| Cord cut at C1–C4 | At once, conscious for 45–120 s more | Paralysed from the neck down |
+| Cord cut at C5–T1 | At once, for good, awake | The hands and most of the arms go with it (the brachial plexus) |
+| Cord stunned in the neck | At once; all four limbs come back in 10 min to 2 h | Transient quadriplegia (cervical cord neurapraxia) |
+| Brain, awake | Half of those who stay awake are too stunned to act | |
+| Skull graze | Stunned: dazed for 10 s–2 min. Knocked out: confused for 1–10 min after coming round | Post-concussion confusion |
+| Brain's blood running out (heart, great vessels, both carotids, bleeding out) | The last 3 s before fainting (sooner if the reserve is short: from 60 % of it): sight greys and goes, the eyes fix, the limbs stop obeying | Rossen, Kabat and Anderson's neck cuff; "almost loss of consciousness" under g |
+| Blood loss | At 40 % lost (class IV shock: confused and listless), a few minutes before fainting in a slow bleed | ATLS classes |
+| Both lungs open, or the airway torn | 30–120 s, fighting for breath | |
+
+A broken hip or thigh bone, a cord cut below T1 and one lung holed put them down but leave their hands and head working, so they are not incapacitated. Someone incapacitated for good counts as downed even if they first dropped by reflex.
 
 **Dies** on the card means the heart and breathing have both stopped (clinical death). **Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
 

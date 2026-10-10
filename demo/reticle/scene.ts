@@ -5,7 +5,10 @@
  */
 import * as THREE from 'three';
 import { TORSO_PROFILE } from '../../src/body/anatomy';
+import type { Obstacle } from '../../src/scope/wind';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createFlags, type Flags } from './flags';
+import type { WindGL } from './wind-gl';
 
 function hash(x: number, y: number): number {
   // murmur3-style finaliser over both coordinates; a single multiply-add leaves visible lattice streaks.
@@ -92,16 +95,27 @@ const NOISE = /* glsl */ `
     return s; }
 `;
 
-function proceduralLambert(color: THREE.ColorRepresentation, body: string): THREE.MeshLambertMaterial {
+/**
+ * A Lambert material with a procedural `body` for its colour. With `wind`, the wind field's GLSL is there for
+ * the body and for `vertex`, which may move `transformed`; the texture stays put on the surface (vWPos is
+ * taken before it moves).
+ */
+function proceduralLambert(color: THREE.ColorRepresentation, body: string, wind?: WindGL, vertex = ''): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ color });
+  const windGlsl = wind?.glsl ?? '';
   m.onBeforeCompile = (sh) => {
+    if (wind) Object.assign(sh.uniforms, wind.uniforms);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.)).xyz;\nvONrm = normal;');
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${vertex ? windGlsl : ''}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvec3 restP = transformed;\n${vertex}`)
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(restP,1.)).xyz;\nvONrm = normal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${NOISE}\n${windGlsl}`)
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse, opacity );\n{ ${body} }`);
   };
+  // Every one of these has the same onBeforeCompile source, which is three's default program key: key them by
+  // what differs, or two of them would share one program.
+  m.customProgramCacheKey = () => `${body}|${vertex}|${!!wind}`;
   return m;
 }
 
@@ -137,9 +151,26 @@ export interface Range {
    * true when it moved, and the shadow map then needs drawing again.
    */
   shadowOn: (i: number) => boolean;
+  /** Wind flags beside the lanes, at 60, 120 and 184 m on the near one and 300 and 412 m on the far one. */
+  flags: Flags;
+  /** What shelters the air: the boulder. (Sage is the ground's roughness, already in the wind's profile.) */
+  obstacles: Obstacle[];
 }
 
-export function buildRange(): Range {
+/**
+ * Where the flags stand: left of the 183 m lane, then right of the 412 m one. The near two stand 5–6 m off the
+ * lane, so they stay out of the scope's field even streaming toward it; the far ones show beside the targets.
+ */
+export const FLAG_SPOTS = [
+  { x: -6.5, z: -60 },
+  { x: -8.5, z: -120 },
+  { x: -8.5, z: -184 },
+  { x: 19.5, z: -300 },
+  { x: 26, z: -414 },
+] as const;
+
+/** The range. `wind` drives the cues drawn on the GPU: the sage shakes and the grass shows the gusts. */
+export function buildRange(wind?: WindGL): Range {
   const scene = new THREE.Scene();
   const haze = new THREE.Color(0xc7d0d6);
   scene.background = haze.clone();
@@ -205,8 +236,12 @@ export function buildRange(): Range {
     // Grass tufts: dark bases, sun-bleached tips.
     float tuft = fbmAA(p*27.+9., px*27.);
     c *= 1. + tuft*1.2;
+    ${wind ? `// Wind on the grass: a gust lays the blades over and the patch it is crossing shows paler, travelling
+    // downwind with it (cat's paws). Nothing to see in a light air; plain to see from about 5 m/s at flag height.
+    float v = length(windAt(vec3(vWPos.x, vWPos.y + .3, vWPos.z)).xz);
+    c *= 1. + .12*smoothstep(.8, 3.5, v)*gustAt(vWPos.xz).x;` : ''}
     diffuseColor.rgb = c;
-  `);
+  `, wind);
   const groundMesh = new THREE.Mesh(ground, groundMat);
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
@@ -252,12 +287,34 @@ export function buildRange(): Range {
   }
   const sageFar = mergeVertices(mergeGeometries(farLobes));
   sageFar.computeVertexNormals();
-  const sageMat = proceduralLambert(0xffffff, /* glsl */ `
+  const sageBody = /* glsl */ `
     float px = length(fwidth(vWPos.xz));
     float n = fbmAA(vWPos.xz*9. + vWPos.y*7., px*9.);
     float leaf = fbmAA(vWPos.xz*31. - vWPos.y*23., px*31.);
     diffuseColor.rgb *= .85 + n*1.4 + leaf*1.6;
-  `);
+  `;
+  // The far bushes keep still: they are far only where a bush's shape is off by under the LOD's tolerance,
+  // about the sway in a strong wind, so the wind's texture reads are spent on the near ones alone.
+  const sageFarMat = proceduralLambert(0xffffff, sageBody);
+  const sageMat = proceduralLambert(0xffffff, sageBody, wind, wind ? /* glsl */ `
+    #ifdef USE_INSTANCING
+    {
+      // Wind in the sage. Stiff stems: still in a light breeze; in a strong one (8 m/s at flag height is about
+      // 4 m/s down here) a lean of a few centimetres with the gust and a shake, the top most.
+      vec3 root = instanceMatrix[3].xyz;
+      float tall = length(instanceMatrix[1].xyz);
+      vec3 w = windAt(root + vec3(0., .5*tall, 0.));
+      float v = length(w.xz);
+      vec2 dw = w.xz/max(v, 1e-3);
+      float k = v*v/16.;
+      float ph = fract(sin(dot(floor(root.xz*4.), vec2(12.9898, 78.233)))*43758.5453)*6.2832;
+      float shake = .6*sin(uWindTime*13.1 + ph) + .4*sin(uWindTime*19.7 + 1.7*ph);
+      float up = clamp(transformed.y, 0., 1.2);
+      vec2 off = tall*k*up*up*(dw*(.06 + .025*shake) + vec2(-dw.y, dw.x)*.012*sin(uWindTime*16.3 + 2.3*ph));
+      transformed += inverse(mat3(instanceMatrix))*vec3(off.x, 0., off.y);
+    }
+    #endif
+  ` : '');
   const N = 40000;
   const bushes = new THREE.InstancedMesh(sage, sageMat, N);
   const m = new THREE.Matrix4();
@@ -316,7 +373,7 @@ export function buildRange(): Range {
     tile.computeBoundingSphere();
     scene.add(tile);
     // Its far version: the same instances, never in the shadow map, swapped in per view by bushLod().
-    const far = new THREE.InstancedMesh(sageFar, sageMat, list.length);
+    const far = new THREE.InstancedMesh(sageFar, sageFarMat, list.length);
     far.instanceMatrix.copy(tile.instanceMatrix);
     far.instanceColor = tile.instanceColor!.clone() as THREE.InstancedBufferAttribute;
     far.receiveShadow = true;
@@ -473,5 +530,10 @@ export function buildRange(): Range {
     }
   };
 
-  return { scene, sun, bushLod, targets, boulder, fence, shadowOn };
+  const flags = createFlags(FLAG_SPOTS, heightAt);
+  scene.add(flags.group);
+  // The boulder to the wind: a solid lump about 7 m across and 3 m high.
+  const obstacles: Obstacle[] = [{ x: bx, z: bz, r: 3.5, base: by, height: 3, porosity: 0 }];
+
+  return { scene, sun, bushLod, targets, boulder, fence, shadowOn, flags, obstacles };
 }

@@ -4,13 +4,16 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
-import { BATTLE_ZERO_M, RIFLES, windAt, type RifleId, type Wind } from '../../src/scope/shot';
+import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, type RifleId } from '../../src/scope/shot';
+import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from '../../src/scope/wind';
 import { createSound } from './audio';
 import { createComposite } from './composite';
 import { DRUM_R_MM, DRUM_STEP, createDrum, drumHome } from './drum';
+import { FLAG_DEG_PER_MS } from './flags';
 import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
+import { createWindGL } from './wind-gl';
 import { woundSvg, woundText } from './wound-card';
 
 const params = new URLSearchParams(location.search);
@@ -41,11 +44,19 @@ const state = {
   drift: !params.has('nodrift'),
   /** Pan shadow: how far the head trails a quick swing (0 = glued to the stock, 1 = a firm cheek weld, 2 = loose). */
   pan: num('pan', 1),
-  /** Wind over the range: speed (m/s), the clock direction it blows from, and how much it gusts. */
+  /**
+   * Wind over the range: speed (m/s at 3 m), the clock direction it blows from, and how much it gusts. It
+   * follows the ground (`flatwind` turns that off); the boulder's shelter is baked below, once the range is built.
+   */
   wind: (() => {
     const [speed = 2.5, from = 9.5] = (params.get('wind') ?? '').split(',').filter(Boolean).map(Number);
-    return { speed, fromClock: from, gust: params.has('nogust') ? 0 : 0.3 } as Wind;
+    const w: Wind = { speed, fromClock: from, gust: params.has('nogust') ? 0 : 0.3 };
+    // Everything the scope can see: the sage runs out to 1.84 km over ±26°.
+    if (!params.has('flatwind')) w.terrain = terrainWind(heightAt, -900, -2000, 900, 150, 10);
+    return w;
   })(),
+  /** Easy: a wind meter at the hide gives the wind in m/s. Otherwise only the range itself tells it. */
+  easy: params.has('easy'),
   sound: !params.has('mute'),
   /** Where each rifle's elevation drum is set, in metres: on 1, the 100 m zero, unless `zero=` says otherwise. */
   zero: (() => {
@@ -69,8 +80,16 @@ renderer.shadowMap.needsUpdate = true;
 renderer.autoClear = true;
 document.getElementById('view')!.appendChild(renderer.domElement);
 
-const range = buildRange();
+const windGL = createWindGL(state.wind);
+const range = buildRange(windGL);
 const { scene } = range;
+/** The boulder's shelter, for the mean wind direction. Baked again when the direction changes. */
+const bakeShelter = () => {
+  if (params.has('flatwind')) return;
+  state.wind.shelter = shelterWind(range.obstacles, state.wind.fromClock, heightAt, -60, -560, 100, -300, 2);
+};
+bakeShelter();
+let shelterDue = 0;
 const eyePos = new THREE.Vector3(0, heightAt(0, 0) + EYE_HEIGHT, 0);
 const scopeCam = new THREE.PerspectiveCamera(5, 1, 0.5, 12000);
 const wideCam = new THREE.PerspectiveCamera(30, W / H, 0.3, 12000);
@@ -237,10 +256,54 @@ function syncDope(): void {
     `<tr><th>m/s</th>${DOPE_RANGES.map((d) => `<td>${Math.round(at(r, d).v)}</td>`).join('')}</tr></table>`;
 }
 
+/**
+ * Wind card: how far to hold into the wind for what the flags show, at a few ranges, in the reticle's own
+ * units. No wind speeds on it: the shooter reads the flags, not a number. The holds are the solver's, for a
+ * full-value crosswind as a flag at 3 m reads it, rounded to the quarter mark a shooter can hold.
+ */
+const CARD_FLAGS = [20, 45, 70, 90];
+const CARD_RANGES = { pso: [200, 400, 600, 800], tree: [200, 400, 600, 800], vss: [100, 200, 300] } as const satisfies Record<Reticle['id'], readonly number[]>;
+const windCard = $('windcard');
+let windCardFor = '';
+const quarters = (h: number) => {
+  const q = Math.round(h * 4);
+  if (q === 0) return '0';
+  const whole = Math.floor(q / 4);
+  const part = ['', '¼', '½', '¾'][q % 4]!;
+  return `${whole || ''}${part}` || '0';
+};
+const flagIcon = (deg: number) => {
+  const a = (Math.min(88, deg) * Math.PI) / 180;
+  // The fly streams out at `deg` from the pole: hoist 5 px, fly 11 px.
+  const p = (along: number, down: number) => `${(4 + along * Math.sin(a)).toFixed(1)},${(2 + down + along * Math.cos(a)).toFixed(1)}`;
+  return `<svg width="22" height="20" viewBox="0 0 22 20"><line x1="4" y1="1" x2="4" y2="20" stroke="currentColor" stroke-width="1.2"/>` +
+    `<polygon points="${p(0, 0)} ${p(11, 0)} ${p(11, 5)} ${p(0, 5)}" fill="#f0552a"/></svg>`;
+};
+function syncWindCard(): void {
+  const key = `${state.reticle}|${state.easy}`;
+  if (key === windCardFor) return;
+  windCardFor = key;
+  const ret = RETICLES[state.reticle]();
+  const ranges = CARD_RANGES[state.reticle];
+  const drift = crossDriftPerMs(ROUNDS[ret.round], ranges);
+  const unit = ret.id === 'tree' ? 'mil' : 'thousandths';
+  windCard.innerHTML =
+    `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[ret.round].name}<span>${unit} into the wind</span></div>` +
+    `<table><tr><th>flag</th>${CARD_FLAGS.map((d) => `<td>${flagIcon(d)}</td>`).join('')}</tr>` +
+    // Easy: what the meter reads for each flag, to go from its number to a column.
+    (state.easy ? `<tr class="card-sub"><th>m/s</th>${CARD_FLAGS.map((d) => `<td>${d >= 90 ? 10 : Math.round(d / FLAG_DEG_PER_MS)}</td>`).join('')}</tr>` : '') +
+    ranges.map((r, i) => `<tr><th>${r} m</th>${CARD_FLAGS.map((d) => `<td>${quarters(((d >= 90 ? 10 : d / FLAG_DEG_PER_MS) * drift[i]!) / r / ret.unitRad)}</td>`).join('')}</tr>`).join('') +
+    `</table><div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
+}
+
 const windIn = $('wind') as HTMLInputElement;
 const windDirIn = $('winddir') as HTMLInputElement;
 windIn.oninput = () => (state.wind.speed = Number(windIn.value));
-windDirIn.oninput = () => (state.wind.fromClock = Number(windDirIn.value));
+windDirIn.oninput = () => {
+  state.wind.fromClock = Number(windDirIn.value);
+  // Wakes point downwind: bake them again once the dial has stopped moving.
+  shelterDue = performance.now() + 250;
+};
 
 /**
  * The elevation drum on top of the scope (see drum.ts), engraved on the 3D rifle. Each rifle keeps its own drum
@@ -285,6 +348,7 @@ function syncUi(): void {
   panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
+  syncWindCard();
   $('fire').textContent = shooting.status(clock).state === 'ready' ? 'Fire · Space' : 'Action · Space';
   $('scope').textContent = shooting.busy() ? 'Hands on the action' : adsIn ? 'Scope out · F' : 'Scope in · F';
   rifle.setRifle(RIFLE[state.reticle]);
@@ -555,9 +619,9 @@ addEventListener('keyup', (e) => {
 for (const b of document.querySelectorAll('button')) b.addEventListener('click', () => b.blur());
 addEventListener('resize', () => { if (!shot) location.reload(); });
 
-/** The wind at the shooter's position, as a wind meter there would read it: speed and clock direction. */
+/** Easy: a wind meter on a mast beside the hide, at the flags' height, so its reading goes straight onto the card. */
 function windText(): string {
-  const [x, , z] = windAt(state.wind, 0, clock, windTmp);
+  const [x, , z] = windAt(state.wind, eyePos.x, heightAt(eyePos.x, eyePos.z) + WIND_REF_M, eyePos.z, clock, windTmp);
   const sp = Math.hypot(x, z);
   if (sp < 0.2) return 'calm';
   // It blows toward (x, z); it comes from the opposite bearing, clockwise from downrange.
@@ -601,6 +665,12 @@ const headQ = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function frame(t: number, dt: number): void {
   clock = t;
+  if (shelterDue && performance.now() > shelterDue) {
+    shelterDue = 0;
+    bakeShelter();
+  }
+  windGL.update(t);
+  range.flags.update(t, dt, state.wind);
   // Recoil now, and half an exposure either side of now (for motion blur).
   let rc = REST;
   let rcA = REST;
@@ -743,7 +813,8 @@ function frame(t: number, dt: number): void {
   // A crosswind carries the shimmer sideways at roughly its own angular rate, weighted toward where the
   // heat is (the near two thirds of the path); with little wind across, it boils in place.
   const mirD = Math.min(Number.isFinite(D) ? D : 2000, 2000);
-  const crossM = windAt(state.wind, 0.6 * mirD, t, windTmp)[0];
+  probe.copy(eyePos).addScaledVector(dir, 0.6 * mirD);
+  const crossM = windAt(state.wind, probe.x, probe.y, probe.z, t, windTmp)[0];
   const flowRate = (0.6 * crossM * 1000) / Math.max(50, mirD);
   const boilRate = 1 / (1 + Math.abs(crossM) / 1.5);
   if (shot) {
@@ -837,7 +908,7 @@ function frame(t: number, dt: number): void {
       ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
       ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
       ['Rounds', `${status.rounds} · ${status.state}`],
-      ['Wind here', windText()],
+      ...(state.easy ? [['Wind meter', windText()]] : []),
       ['Last shot', status.shot],
       ['Aim point', fmt(D)],
       ['Parallax error', `${Math.abs(par).toFixed(2)} ${unit}`],

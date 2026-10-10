@@ -389,7 +389,22 @@ Each mannequin stands in for a person facing the shooter. A hit on its torso or 
 
 ### The body
 
-A 1.70 m, 70 kg adult with the mannequin's outline (the scene now builds the torso from the same profile, so the hole in the plastic is the entry wound). Inside: brain, cerebellum and brainstem; the spinal cord in four levels (C1–C4, C5–T1, T2–L1, cauda equina); heart, aorta in three parts, both venae cavae, carotids, jugulars, iliac and femoral arteries; both lung roots and lungs; windpipe; liver, spleen, kidneys, stomach and gut; skull, face, cervical, thoracic and lumbar spine, sternum, ribs (twelve sloping bands in the chest wall), pelvis, hip joints and thigh bones. Sizes and positions follow standard adult anatomy, squeezed slightly front to back to fit the mannequin's 19 cm chest.
+A 1.70 m, 70 kg adult with the mannequin's outline (the scene builds the torso and head from the same profile, so the hole in the plastic is the entry wound). The mannequin is as deep as a lean man: 22 cm through the chest at the nipples, 20 cm at the waist, 23 cm at the hips, flat across the shoulders and with a round neck 11–12 cm deep; the head is 15 cm wide and 19.5 cm long.
+
+Inside: brain (cerebrum, the deep brain and ventricles, cerebellum) and brainstem; the spinal cord in four levels (C1–C4, C5–T1, T2–L1, cauda equina) in its canal, with the vertebral bodies in front and the laminae and spinous processes behind; heart (base and apex), ascending aorta, arch, thoracic and abdominal aorta, pulmonary trunk, both venae cavae, carotid, vertebral, jugular, subclavian, iliac and femoral vessels; both lung roots and lungs; larynx and windpipe; liver (both lobes), spleen, kidneys, stomach and gut; skull, eye sockets, face, collarbones, sternum, ribs, pelvis, hip joints and thigh bones.
+
+Where things are (heights for 1.70 m, from stature ratios and surface anatomy):
+
+| | Where |
+| --- | --- |
+| Skull base, C7/T1, sternal notch | 1.555, 1.455, 1.39 m (T2/T3) |
+| Heart | Behind the sternum from the 3rd to the 6th costal cartilage (1.19–1.31 m), apex in the left 5th space 8 cm out, against the descending aorta behind |
+| Diaphragm | Right dome at the 5th rib (1.245 m), left a little lower; the liver fills the right dome, the lungs' bases curve over it |
+| Spleen, kidneys | Spleen under the left 9th–11th ribs at the back (1.14–1.24 m); kidneys T12–L3 (left 1.07–1.18 m, right 1.5 cm lower), 4–5 cm under the skin of the back |
+| Cord | Ends at L1/L2 (1.13 m; the conus lies at L1 in most adults, Th12–L2 in nearly all), 5–6 cm under the skin of the back |
+| Iliac crests, hip joints | 1.03 m (L4), 0.895 m |
+
+Ribs are 1 cm thick under 1.2 cm of skin and muscle (4 cm beside the spine), running down 8 cm from back to front from the first rib to the twelfth, with cartilage, not bone, beside the sternum and across the lower front of the cage. The skull is the 8 mm shell of bone round the brain; the scalp and the nape below the occiput are soft. Each point inside belongs to one structure only, the first in the list that contains it (so the heart carves its notch out of the lungs and the liver its dome out of the right lung), and damage is counted the same way. The organs come out at their real volumes: brain 1.33 L, heart with its chambers 0.63 L, liver 1.5 L, spleen 170 mL, kidneys 125 mL each.
 
 ### The wound track
 
@@ -398,24 +413,29 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 - **Yaw.** It travels point-forward for a neck, then turns sideways over 7 cm and ends base-forward (Fackler's wound profiles): 7N1 ≈ 11 cm (its nose air space makes it yaw sooner than plain 7.62×54R ball, ≈ 16 cm), M118LR ≈ 7 cm, SP-5 ≈ 12 cm (long, air-space nose, made to yaw). Each shot varies ±35 %. **Bone yaws it at once**, as ribs do to 7.62×51 (Mabbott et al.), and throws shards that widen the channel for a few cm.
 - **Fragments.** Above ≈ 580 m/s the MatchKing's open tip breaks where it yaws and sheds up to 30 % of its weight, widening the crush zone. The 7N1 and SP-5 steel cores stay whole.
 - **Permanent channel**: the bullet's presented width (9 mm point-on, 36 mm sideways for the SP-5) plus fragments and shards. Anything it crosses is destroyed.
-- **Temporary cavity**: its radius follows the energy given up per metre, `R = 11 cm × (E′ / 31 kJ/m)^0.4`. A 7.62 mm bullet tumbling at 700 m/s opens ≈ 22 cm (Fackler, 7.62 NATO); the same hit's cavity is ≈ 1.5× wider from 200 m than from 800 m, as in the 2024 study of a 7.62 mm sniper round in chest targets (1.44×, death probability 97 % against 60 %). The SP-5 tumbling at 260 m/s opens ≈ 12–13 cm, like an expanded 9 mm hollow point. **Only inelastic tissue tears**: beyond 2.5 cm from the track liver, spleen and brain tear across the whole cavity, kidney 80 %, heart 50 %, vessel walls 25 %, gut 15 %, lung 10 %. So speed matters, through the organ it is spent in.
+- **Temporary cavity**: its radius follows the energy given up per metre, `R = 11 cm × (E′ / 31 kJ/m)^0.4`. A 7.62 mm bullet tumbling at 700 m/s opens ≈ 22 cm (Fackler, 7.62 NATO); the cavity's diameter follows the striking speed by about v^0.8, fitted to the 2024 study of a 7.62 mm sniper round in chest targets (1.44×, death probability 97 % against 60 %). The SP-5 tumbling at 260 m/s opens ≈ 12–13 cm, like an expanded 9 mm hollow point. **Only inelastic tissue tears**: beyond 2.5 cm from the track liver, spleen and brain tear across the whole cavity, kidney 80 %, heart 50 %, vessel walls 25 %, gut 15 %, lung 10 %. So speed matters, through the organ it is spent in. Breaking bone takes energy but throws no cavity; its shards widen the channel instead. The disc round the track is sampled point by point, and each point tears or not by the tissue it lies in.
 
 ### What it does
 
 | Hit | Effect | Basis |
 | --- | --- | --- |
-| Brainstem, or cord at C1–C4 | Drops at once, unconscious; stops breathing (dead in ~½ min, or ~3–4 min for the cord) | Only CNS hits stop someone at once (FBI 1989; Fackler) |
-| Brain | Drops at once, unconscious. Fatal if it destroys > 12 % of the brain, crosses the midline or hits the cerebellum, else 3 in 4 | Penetrating rifle head wounds |
-| Skull only (graze) | 60 %: stunned and down, half of them knocked out | |
-| Cord C5–T1 / T2–L1 / cauda | Drops at once, paralysed, conscious | |
-| Hip joint, sacrum, pubis, thigh bone | Falls in 0.3–0.7 s, cannot stand, conscious. A pelvic wing: half the time | |
-| Heart torn open | Pumping stops. **Conscious for the brain's reserve, 8–15 s** (FBI: "10–15 seconds" of full voluntary action), heart arrest ≈ 1 min | FBI, Handgun Wounding Factors and Effectiveness |
-| Vessels and organs | Bleed at their share of the cardiac output: aorta 70–85 mL/s, lung root 55, vena cava 35–40, iliac 28, liver 30, carotid and femoral 18, kidney and spleen 12, lung tissue 6. Small organ tears and vessels only stretched by the cavity clot over ~8 min; muscle and bone ooze clots over ~5 min | Femoral artery: 2–4 min to bleed out (TEMS) |
-| Blood loss | Blood pressure holds to 15 % lost and falls through class III shock; **down at 33 %**, the brain's reserve runs out below ≈ 45 % pressure (**unconscious**), **heart stops at 58 %** (ATLS classes). Blood volume 4.5–5.5 L and the brain's reserve vary by person | ATLS |
-| Both lungs or the windpipe | Breathing fails from 2 min on | |
+| Brainstem | Drops at once, unconscious; breathing stops; the heart beats on without oxygen and stops in 2–5 min | Only brain and brainstem hits stop someone at once (FBI 1989; Fackler) |
+| Cord at C1–C4 | Drops at once, paralysed from the neck down, **cannot breathe but stays conscious** for 45–120 s until the blood's oxygen runs out; heart stops in 4–8 min | The diaphragm's nerves leave the cord at C3–C5 |
+| Brain | Drops at once, unconscious. Always fatal through both hemispheres (a track across both frontal lobes only is not), through the ventricles and deep nuclei, into the posterior fossa, or destroying over a quarter of the brain; otherwise the odds grow with the share destroyed and the energy. Most die within minutes to 40 min, some hours later (still alive at the hour: downed). A small, low-energy wound through one lobe leaves 3 in 10 conscious | Civilian head-wound series (trajectory and pupils predict death); rifle head wounds |
+| Skull only (graze) | 60 %: stunned and down; half of them knocked out, coming round in 20 s–5 min | |
+| Cord C5–T1 / T2–L1 / cauda | Drops at once, paralysed, conscious. The cavity alone only stuns the cord: the limbs give way | |
+| Hip joint, thigh bone | Falls in 0.3–0.7 s, cannot stand, conscious | |
+| Pelvic ring (wing, sacrum, pubis) | A hole leaves it standing: half fall from the pain | Most pelvic gunshot fractures are stable |
+| Heart | A bullet through a chamber stops it pumping 9 times in 10. **Conscious for the brain's reserve, 6–14 s** (blood flow to the brain cut off entirely: 4–10 s, Rossen, Kabat and Anderson; heart destroyed: 10–15 s of action, FBI), heart and breathing stopped in 45–120 s more | FBI, Handgun Wounding Factors and Effectiveness |
+| Aorta or pulmonary trunk cut across | The heart's output pours out through it: the brain gets 15 % of its pressure, so unconscious in about 10–20 s and dead within a minute or two | |
+| Both carotids cut | Only the vertebral arteries feed the brain (35 % of its pressure) | |
+| Vessels | Bleed at their share of the cardiac output: aorta 70–85 mL/s, pulmonary trunk 70, lung root 55, vena cava 35–40, iliac 22–28, carotid and femoral 18, subclavian 15, jugular 10, vertebral 4. A partial cut bleeds as freely as a clean one. All bleeding together is capped at a stressed heart's output, 100 mL/s | Femoral artery: unconscious in about 3 min, dead in about 4 |
+| Organs | Liver 30 mL/s fully torn, spleen 12, kidney 12 (held back in part behind the peritoneum), lung 6, gut 4. A narrow track (a grade III tear) oozes, rising steeply as the organ is torn apart (grade IV–V); tears under a quarter of the organ mostly clot over ~8 min, as most low-grade liver, spleen and kidney injuries do. Muscle and bone ooze, clotting over ~5 min | Trauma grading; non-operative management of solid-organ injury |
+| Blood loss | Pressure holds through class II (to 30 % lost, 90 % of normal), falls through class III (65 % at 40 %) and class IV (30 % at 50 %), and is gone at 55 %. **Down at 35 %**; unconscious once the brain's reserve runs out below ≈ 45 % pressure; **heart stops** after 45–120 s with under 20 % pressure, or at 55 % lost. Blood volume 4.5–5.5 L and the brain's reserve vary by person | ATLS classes |
+| Both lungs, or larynx and windpipe torn | Both lungs open: breathing fails from 2 min on. The airway torn open: blood runs into the lungs and swelling closes it, half the time | |
 | Anything else | **Most people drop anyway** (pain, shock, expectation): 35–92 %, more for a torso hit and the more energy left in; they could get up. The rest keep going for as long as their body lets them | Psychological incapacitation (FBI) |
 
-**Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
+**Dies** on the card means the heart and breathing have both stopped (clinical death). **Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
 
 ## 11. Glass (`src/scope/glass.ts`, `demo/reticle/glass.ts`)
 

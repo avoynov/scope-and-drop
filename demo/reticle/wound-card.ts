@@ -3,7 +3,7 @@
  * front and side with the organs, the permanent channel and the temporary cavity, and a timeline of what
  * happens to them (on their feet, down, unconscious, dead) running from the moment it struck.
  */
-import { HEAD, PARTS, TORSO_BASE, TORSO_DEPTH, TORSO_PROFILE, type Shape } from '../../src/body/anatomy';
+import { HEAD, PARTS, TORSO_BASE, TORSO_PROFILE, type Shape } from '../../src/body/anatomy';
 import type { Tissue } from '../../src/body/anatomy';
 import type { Wound } from '../../src/body/wound';
 
@@ -35,8 +35,7 @@ function shape(view: View, ox: number, s: Shape, attrs: string): string {
 }
 
 function outline(view: View, ox: number): string {
-  const k = view === 'front' ? 1 : TORSO_DEPTH;
-  const pts = TORSO_PROFILE.map(([r, h]) => to(view, ox, r * k, TORSO_BASE + h, -r * k));
+  const pts = TORSO_PROFILE.map(([r, h, f]) => to(view, ox, view === 'front' ? r : r * f, TORSO_BASE + h, -r * f));
   const back = [...pts].reverse().map(([x, y]) => [2 * ox - x, y] as [number, number]);
   const d = [...pts, ...back].map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join('') + 'Z';
   const [hx, hy] = to(view, ox, HEAD.c[0], HEAD.c[1], HEAD.c[2]);
@@ -85,7 +84,7 @@ const time = (s: number) => (s < 1 ? 'at once' : s < 90 ? `${Math.round(s)} s` :
 /** Where they are `since` seconds after the hit. */
 export function woundNow(w: Wound, since: number): string {
   if (since >= w.deathS) return 'dead';
-  if (since >= w.unconsciousS) return 'down, unconscious';
+  if (since >= w.unconsciousS && since < w.wakeS) return 'down, unconscious';
   if (since >= w.fallS) return w.reflexFall ? 'dropped, could get up' : w.outcome === 'wounded' ? 'down' : 'down, conscious';
   return 'on their feet';
 }
@@ -109,7 +108,7 @@ export function woundText(w: Wound, speed: number, since: number, glass?: GlassN
     line('Bullet', w.exitSpeed > 0 ? `through, out at ${Math.round(w.exitSpeed)} m/s` : `stayed in, ${Math.round(w.trackM * 100)} cm deep`) +
     line('Hit', organs) +
     line('Falls', w.fallS < Infinity ? time(w.fallS) + (w.reflexFall ? ' (reflex)' : '') : 'stays up') +
-    line('Unconscious', w.unconsciousS < Infinity ? time(w.unconsciousS) : '—') +
+    line('Unconscious', w.unconsciousS < Infinity ? time(w.unconsciousS) + (w.wakeS < Infinity ? `, comes round at ${time(w.wakeS)}` : '') : '—') +
     line('Dies', w.deathS < Infinity ? time(w.deathS) : 'not within the hour') +
     line('Lost in 1 min', `${w.bloodLost60} mL`) +
     `</dl>`;

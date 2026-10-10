@@ -181,8 +181,9 @@ describe('glass: after the pane', () => {
   });
 
   it('a bullet that arrives yawing turns at once in tissue', () => {
-    const w = { entry: [0.05, 1.2, 0.2] as Vec3, dir: [0, 0, -1] as Vec3, speed: 250, round: 'sp5' as const, seed: 1 };
-    const cavity = (yawRad: number) => woundTrack({ ...w, yawRad }).track.filter((q) => q.p[2] > 0.05).reduce((a, q) => Math.max(a, q.cavity), 0);
+    // Below the ribs, where no bone yaws the bullet anyway.
+    const w = { entry: [0.05, 1.0, 0.2] as Vec3, dir: [0, 0, -1] as Vec3, speed: 250, round: 'sp5' as const, seed: 1 };
+    const cavity = (yawRad: number) => woundTrack({ ...w, yawRad }).track.filter((q) => q.p[2] > 0.06).reduce((a, q) => Math.max(a, q.cavity), 0);
     expect(cavity(0.4)).toBeGreaterThan(cavity(0) * 1.2);
   });
 });

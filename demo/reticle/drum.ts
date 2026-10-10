@@ -3,7 +3,7 @@
  * index line on the saddle is what the rifle is zeroed to (1 = 100 m). It clicks in 50 m detents.
  */
 
-/** Drum rotation per detent. The SVD's 19 clicks then take 285°, leaving a clear gap between its 10 and its 0. */
+/** Drum rotation per detent. The SVD's 18 clicks from 1 to 10 then take 270°, leaving a clear gap between its 10 and its 1. */
 export const DRUM_STEP = (15 * Math.PI) / 180;
 /** Radius of the drum's engraved side. */
 export const DRUM_R_MM = 19;
@@ -20,9 +20,9 @@ export interface Drum {
 }
 
 export function createDrum(onTurn: (index: number) => void): Drum {
-  let marks: readonly number[] = [0, 100];
-  let index = 1;
-  let pos = 1;
+  let marks: readonly number[] = [100];
+  let index = 0;
+  let pos = 0;
   return {
     set(m, i) {
       marks = m;
@@ -48,7 +48,7 @@ export function createDrum(onTurn: (index: number) => void): Drum {
 /**
  * The drum's side as a texture, unrolled: the canvas runs once round the drum (u = angle / 2π from the
  * rear, increasing to the right as the shooter sees it) and from its top (y = 0) to the saddle. Mark i sits
- * (i − 1) detents round from the rear, so the drum's 1 faces the eye when it is not turned. Knurling on the
+ * i detents round from the rear, so the drum's first mark, its 1, faces the eye when it is not turned. Knurling on the
  * top third, numbers on the hundreds, a line on every detent: paint-filled engraving in black anodising.
  */
 export function paintDrum(marks: readonly number[]): HTMLCanvasElement {
@@ -76,7 +76,7 @@ export function paintDrum(marks: readonly number[]): HTMLCanvasElement {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   marks.forEach((m, i) => {
-    let u = ((i - 1) * DRUM_STEP) / (2 * Math.PI);
+    let u = (i * DRUM_STEP) / (2 * Math.PI);
     u -= Math.floor(u);
     for (const x of [u * W, u * W - W, u * W + W]) {
       const whole = m % 100 === 0;

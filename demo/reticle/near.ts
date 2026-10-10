@@ -80,7 +80,7 @@ export interface NearLayer {
   camera: THREE.PerspectiveCamera;
   /** Light from the range, in the scope's frame. */
   setLight(sunDir: THREE.Vector3): void;
-  /** Turns the elevation drum this far from its 1 (radians, clockwise seen from above). */
+  /** Turns the elevation drum this far from its first mark, 1 (radians, clockwise seen from above). */
   setDrum(angle: number): void;
   /** Engraves the drum with these range marks (metres), one per detent. */
   setDrumMarks(marks: readonly number[]): void;

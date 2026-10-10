@@ -39,15 +39,15 @@ export interface Rifle {
   blastDust: number;
   /** Height of the scope's axis above the bore. */
   sightM: number;
-  /** The elevation drum's marks, one detent each, in metres: 0 (bore parallel to the sight line), then 100 m up. */
+  /** The elevation drum's marks, one detent each, in metres, from 100 m (its 1) up. */
   drumM: readonly number[];
 }
 
 /** The drum's normal setting: the rifle is zeroed at 100 m, drum on 1, and the cut reticles are cut for it. */
 export const BATTLE_ZERO_M = 100;
 
-/** Drum marks every 50 m from 100 m to `max`, with a 0 below them. */
-const drum = (max: number): number[] => [0, ...Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50)];
+/** Drum marks every 50 m from 100 m to `max`. Like the real PSO-1's, the drum starts at 1. */
+const drum = (max: number): number[] => Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50);
 
 const MOA = Math.PI / (180 * 60);
 

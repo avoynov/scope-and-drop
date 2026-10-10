@@ -6,6 +6,8 @@
  * with eyebox transmission, field stop, pincushion, lateral colour, mirage, parallax and focus.
  * Recoil and quick swings tilt the scope against the eye. While recoil moves it fast, the inside of the
  * lens is averaged over a 1/60 s exposure.
+ * Shooting adds two things here (see shooting.ts): the bullet's trace, a ripple in the magnified image
+ * only, and the muzzle-blast dust, a veil over everything that drifts off with the wind.
  */
 import * as THREE from 'three';
 
@@ -41,6 +43,19 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uFocus: { value: 0 },
       uTime: { value: 0 },
       uMirage: { value: 0 },
+      // Mirage: how far the crosswind has carried the shimmer (mrad, object space) and how much it boils.
+      uMirFlow: { value: new THREE.Vector2() },
+      uBoil: { value: 0 },
+      // Trace: the wake from tail a to head b in scope uv, its half-width there, strength, and a seed.
+      uTrA: { value: new THREE.Vector2() },
+      uTrB: { value: new THREE.Vector2() },
+      uTrW: { value: new THREE.Vector2(1, 1) },
+      uTrS: { value: 0 },
+      uTrSeed: { value: 0 },
+      // Muzzle-blast dust: density and sideways drift (screen heights).
+      uDust: { value: 0 },
+      uDustDrift: { value: 0 },
+      uDustTop: { value: 1 },
       uCA: { value: 0.006 },
       uDist: { value: 0.025 },
       uEdge: { value: 0 },
@@ -50,7 +65,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
     fragmentShader: /* glsl */ `
       precision highp float;
       uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;
-      uniform vec2 uRes, uPar, uTilt, uSweep, uBlur;
+      uniform vec2 uRes, uPar, uTilt, uSweep, uBlur, uMirFlow, uTrA, uTrB, uTrW;
+      uniform float uBoil, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
       uniform vec3 uEye, uEyeSweep, uRetCol;
       uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
@@ -82,6 +98,25 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         return s/float(n);
       }
 
+      // The bullet's wake bends light like a weak, turbulent cylindrical lens around its path: the image
+      // is pushed out from the axis and back, in eddies that churn as it goes. Image uv in, uv offset out.
+      vec2 trace(vec2 uv){
+        vec2 ab = uTrB - uTrA;
+        float L2 = max(dot(ab, ab), 1e-12);
+        float h = clamp(dot(uv - uTrA, ab)/L2, 0., 1.);
+        vec2 d = uv - (uTrA + ab*h);
+        float w = mix(uTrW.x, uTrW.y, h);
+        float r = length(d)/w;
+        if (r > 3.) return vec2(0.);
+        float along = h*sqrt(L2)/(.5*(uTrW.x + uTrW.y));
+        float eddy = vn(vec2(along*.55 + uTrSeed*7.3, r*.9 - uTime*40.))*1.6 - .55;
+        // Strongest just behind the bullet, thinning toward the tail. A few tenths of the wake's width:
+        // enough to make bushes and the boulder's edge visibly swim as it passes.
+        float s = uTrS*eddy*(.45 + .55*h)*r*exp(-r*r);
+        vec2 n = d/max(length(d), 1e-7);
+        return (n + .6*vec2(-n.y, n.x)*(eddy - .25))*w*s*4.;
+      }
+
       vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.); }
 
       // What the eye gets through the eyepiece from direction ts (tan, from the scope's axis) with the eye
@@ -93,6 +128,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         vec2 qd = q*(1. - uDist*r2);             // pincushion (shared by image and FFP reticle)
         float ca = uCA*r2;
         vec2 uR_ = .5 + .5*qd*(1. + ca), uG_ = .5 + .5*qd, uB_ = .5 + .5*qd*(1. - ca);
+        if (uTrS > 0.) o += trace(uG_);
         // Field curvature / coma: a good eyepiece is sharp over most of the field and softens only at the rim.
         vec2 fr = vec2(uFocus + uEdge*r2*r2*r2);
         vec3 img;
@@ -161,8 +197,10 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         if (aperture > .002) {
           vec2 q = ts/uTanHalf;
           vec2 trueAng = q*(1. - uDist*dot(q, q))*uTanHalf/uMag*1000.;   // mrad, object space
-          vec2 mir = vec2(vn(trueAng*1.6 + vec2(uTime*1.1, uTime*.35)) - .5, vn(trueAng*1.6 + vec2(17. + uTime*.9, 5. - uTime*.5)) - .5);
-          mir += .5*vec2(vn(trueAng*4. + vec2(uTime*2.6, 3.)) - .5, vn(trueAng*4. + vec2(9., uTime*2.)) - .5);
+          // A crosswind carries the shimmer across the field (running mirage); in still air it boils in place.
+          vec2 ma = trueAng - uMirFlow;
+          vec2 mir = vec2(vn(ma*1.6 + vec2(uBoil*1.1, uBoil*.35)) - .5, vn(ma*1.6 + vec2(17. + uBoil*.9, 5. - uBoil*.5)) - .5);
+          mir += .5*vec2(vn(ma*4. + vec2(uBoil*2.6, 3.)) - .5, vn(ma*4. + vec2(9., uBoil*2.)) - .5);
           vec2 mq = mir*uMirage;
           if (length(uBlur) > .002 || length(uSweep) > .5*uTanHalf/uR || length(uEyeSweep) > .3) {
             // Recoil: across the exposure the picture swings in the eye's view, the scene sweeps through it
@@ -179,6 +217,15 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
         }
 
         col += img*aperture;
+        // Muzzle-blast dust a metre or two in front: far out of focus for the eye and the scope alike, so a
+        // soft, sunlit veil, thickest low down where it rose from the ground.
+        if (uDust > 0.) {
+          vec2 dp = vec2(suv.x*uRes.x/uRes.y - uDustDrift, suv.y)*2.4;
+          float m = vn(dp + vec2(3.1, -uTime*.15))*.62 + vn(dp*2.3 + vec2(7.7, -uTime*.3))*.38;
+          float edge = uDustTop + .18*(m - .5);
+          float a = uDust*smoothstep(.12, .7, m)*smoothstep(edge, edge - .4, suv.y);
+          col = mix(col, vec3(1.02, .86, .64), clamp(a, 0., .92));
+        }
         col = aces(col*1.05*uExposure);
         col = pow(col, vec3(1./2.2));
         col += (h21(frag + fract(uTime)*91.) - .5)*.018;

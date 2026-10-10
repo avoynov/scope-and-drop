@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, tanHalfApparent, trueFovRad } from '../src/scope/optics';
 import { ROUNDS, at, handHoldRad, holdRad, type Round } from '../src/scope/ballistics';
-import { RECOIL, followHead, recoilAt, shotVariation } from '../src/scope/recoil';
-import { PSO_CHEVRON_RANGES, psoChevronY, psoCurveHeight, psoReticle, treeReticle } from '../src/scope/reticles';
+import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec } from '../src/scope/recoil';
+import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, VSS_RANGEFINDER, psoChevronY, psoCurveHeight, psoReticle, treeReticle, vssChevronY, vssReticle } from '../src/scope/reticles';
 
 const eye = (x = 0, y = 0, z = 0) => ({ x, y, z, pupilMm: 3 });
 
@@ -57,8 +57,16 @@ describe('reticles', () => {
     }
   });
 
-  it('builds both patterns with a lit aiming point', () => {
-    for (const r of [psoReticle(), treeReticle()]) {
+  it('VSS rangefinder: the drawn ticks bracket a 1.7 m man every 50 m from 100 to 400 m', () => {
+    const lines = vssReticle().prims.flatMap((p) => (p.kind === 'line' ? [p] : []));
+    // The base line is the long horizontal one at lower left; the ticks stand on the curve and point up.
+    const base = lines.find((l) => l.y1 === l.y2 && l.x1 < -10 && l.y1 > 5)!;
+    const ticks = lines.filter((l) => l.x1 === l.x2 && l.x1 < -4 && l.y2 < l.y1 && l.y1 < base.y1).sort((a, b) => a.x1 - b.x1);
+    expect(ticks.map((l) => stadiaRangeM(1.7, (base.y1 - l.y1) * THOUSANDTH))).toEqual(VSS_RANGEFINDER.map((n) => expect.closeTo(n * 100, 6)));
+  });
+
+  it('builds all three patterns with a lit aiming point', () => {
+    for (const r of [psoReticle(), treeReticle(), vssReticle()]) {
       expect(r.prims.length).toBeGreaterThan(30);
       expect(r.prims.some((p) => p.lit)).toBe(true);
     }
@@ -109,6 +117,18 @@ describe('ballistics', () => {
       expect(psoChevronY(d)).toBeGreaterThan(i === 0 ? 1 : psoChevronY(PSO_CHEVRON_RANGES[i - 1]!));
     });
   });
+
+  it('cuts the VSS chevrons for the subsonic SP-5: steep, about a thousandth every 15 m at the game range', () => {
+    const chevrons = vssReticle().prims.filter((p) => p.kind === 'poly').map((p) => (p.kind === 'poly' ? p.pts[1]![1] : 0));
+    expect(chevrons[0]).toBe(0);
+    VSS_CHEVRON_RANGES.forEach((d, i) => expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS.sp5, d) / THOUSANDTH, 9));
+    expect(vssChevronY(100)).toBeCloseTo(6.1, 1);
+    expect(vssChevronY(400)).toBeCloseTo(26.7, 1);
+    // From 150 to 200 m the hold grows 3.3 thousandths: a range error of 15 m is a thousandth, 18 cm at 183 m.
+    expect(vssChevronY(200) - vssChevronY(150)).toBeCloseTo(3.3, 1);
+    // The 7N1 needs a quarter of that hold at 412 m.
+    expect(vssChevronY(183)).toBeGreaterThan(3 * psoChevronY(412));
+  });
 });
 
 describe('recoil', () => {
@@ -121,6 +141,8 @@ describe('recoil', () => {
   });
 
   const v = shotVariation(0);
+  /** The full-bore rifles black the picture out for a while; the suppressed VSS only dims it (its own test below). */
+  const fullBore = (name: string) => name === 'svd' || name === 'bolt';
   for (const [name, spec] of Object.entries(RECOIL)) {
     it(`${name}: kicks high, settles with the rifle left up, and gives the eye back`, () => {
       const end = recoilAt(spec, v, spec.duration);
@@ -138,9 +160,10 @@ describe('recoil', () => {
       // The head lags the rifle, so the scope tilts up against the eye and the eye ends up low.
       const mid = recoilAt(spec, v, 0.05);
       expect(mid.tiltPitch).toBeGreaterThan(0.01);
-      expect(mid.eye.y).toBeLessThan(-2);
+      expect(mid.eye.y).toBeLessThan(fullBore(name) ? -2 : -1.5);
     });
 
+    if (!fullBore(name)) continue;
     it(`${name}: holds the scope too close and the eye low long enough to be seen`, () => {
       let close = 0;
       let low = 0;
@@ -162,9 +185,70 @@ describe('recoil', () => {
     expect(followHead(0, 1, 0, 0.03)).toBe(0);
   });
 
+  it('varies every shot, ties shoulder and cheek together, and never hides the artifacts', () => {
+    const shots = Array.from({ length: 200 }, (_, n) => shotVariation(n));
+    const spread = (k: keyof (typeof shots)[0]) => Math.max(...shots.map((v) => v[k])) - Math.min(...shots.map((v) => v[k]));
+    for (const k of ['rise', 'drift', 'kick', 'kickPeak', 'travel', 'travelRecover', 'headLag', 'shake', 'joltMm'] as const) {
+      expect(spread(k)).toBeGreaterThan(0.1);
+    }
+    expect(shotVariation(7)).toEqual(shotVariation(7));
+    const left = shots.filter((v) => v.drift < 0).length;
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThan(15);
+    // A loose hold lets the scope come further back and the head settle more slowly.
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const mt = mean(shots.map((v) => v.travel));
+    const ml = mean(shots.map((v) => v.headLag));
+    expect(mean(shots.map((v) => (v.travel - mt) * (v.headLag - ml)))).toBeGreaterThan(0);
+    // The full-bore rifles black out for at least a tenth of a second every shot; the VSS still dims.
+    for (const [name, spec] of Object.entries(RECOIL)) {
+      const [far, dip] = fullBore(name) ? [-10, -2] : [-5, -1];
+      for (const v of shots.slice(0, 40)) {
+        let close = 0;
+        let low = 0;
+        for (let t = 0; t < 1; t += 0.004) {
+          const r = recoilAt(spec, v, t);
+          if (r.eye.z < far) close += 0.004;
+          if (r.eye.y < dip) low += 0.004;
+        }
+        expect(close).toBeGreaterThan(0.1);
+        expect(low).toBeGreaterThan(0.1);
+        expect(recoilAt(spec, v, 0).pitch).toBe(0);
+      }
+    }
+  });
+
   it('makes the lighter SVD kick harder than the bolt rifle', () => {
     expect(RECOIL.svd.impulseNs / RECOIL.svd.rifleKg).toBeGreaterThan(RECOIL.bolt.impulseNs / RECOIL.bolt.rifleKg);
     expect(RECOIL.svd.kick).toBeGreaterThan(RECOIL.bolt.kick);
     expect(RECOIL.svd.travelMm).toBeGreaterThan(RECOIL.bolt.travelMm);
+  });
+
+  it('vss: kicks a fifth as hard as the SVD, so the picture only dims and a 183 m target stays in an 8× field', () => {
+    const energy = (s: RecoilSpec) => s.impulseNs ** 2 / (2 * s.rifleKg);
+    expect(energy(RECOIL.vss)).toBeCloseTo(3.2, 1);
+    expect(energy(RECOIL.vss) / energy(RECOIL.svd)).toBeLessThan(0.2);
+    const dims = (spec: RecoilSpec) => {
+      let close = 0, low = 0, nearest = 0;
+      for (let t = 0; t < 1; t += 0.002) {
+        const r = recoilAt(spec, v, t);
+        if (r.eye.z < -5) close += 0.002;
+        if (r.eye.y < -1) low += 0.002;
+        nearest = Math.min(nearest, r.eye.z);
+      }
+      return { close, low, nearest };
+    };
+    const vss = dims(RECOIL.vss);
+    const svd = dims(RECOIL.svd);
+    // Still there to see: the scope comes about 10 mm back and the eye dips under the exit pupil's centre...
+    expect(vss.nearest).toBeLessThan(-8);
+    expect(vss.close).toBeGreaterThan(0.12);
+    expect(vss.low).toBeGreaterThan(0.1);
+    // ...for well under half as long as the SVD's, and less than half as far.
+    expect(vss.close).toBeLessThan(0.5 * svd.close);
+    expect(vss.nearest).toBeGreaterThan(0.5 * svd.nearest);
+    // Held on the 183 m mark, the mannequin is still in an 8× field once the rifle settles.
+    const below = holdRad(ROUNDS.sp5, 183) + recoilAt(RECOIL.vss, v, RECOIL.vss.duration).pitch;
+    expect(below).toBeLessThan(0.8 * (trueFovRad(SCOPE, 8) / 2));
   });
 });

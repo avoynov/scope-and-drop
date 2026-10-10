@@ -151,6 +151,10 @@ export interface FlyOptions {
   spin?: Vec3;
   /** Spin drift: Miller stability, and the sign of the twist (+1 right-hand). Omit for none. */
   sg?: number;
+  /** How long the bullet has already flown (a flight picked up again after glass), so spin drift carries on. */
+  flown?: number;
+  /** Drag multiplier against time from `origin` (a bullet yawing after glass); omit for 1. */
+  drag?: (t: number) => number;
   /** Stop after this long, or once the bullet is this far below the muzzle. */
   maxT?: number;
   floor?: number;
@@ -182,11 +186,12 @@ export function fly(o: FlyOptions): Path {
   const t0 = o.t0 ?? 0;
   const W: Vec3 = [0, 0, 0];
   const sp = o.spin ?? [0, 0, 0];
+  let dk = 1;
   // The air moves slowly next to the bullet: one wind sample per stored step (1 ms, under a metre) is plenty.
   const acc = (vx: number, vy: number, vz: number, a: Float64Array) => {
     const rx = vx - W[0], ry = vy - W[1], rz = vz - W[2];
     const v = Math.hypot(rx, ry, rz);
-    const d = k * v * cdG7(v / AIR.sound);
+    const d = k * dk * v * cdG7(v / AIR.sound);
     // Coriolis: −2 Ω × v.
     a[0] = -d * rx - 2 * (sp[1] * vz - sp[2] * vy);
     a[1] = -d * ry - 2 * (sp[2] * vx - sp[0] * vz) - AIR.g;
@@ -204,8 +209,9 @@ export function fly(o: FlyOptions): Path {
   const rightX = -o.dir[2] / hl, rightZ = o.dir[0] / hl;
   const a1 = new Float64Array(3), a2 = new Float64Array(3), a3 = new Float64Array(3), a4 = new Float64Array(3);
   let n = 0;
+  const flown = o.flown ?? 0;
   const store = (t: number) => {
-    const sd = o.sg ? spinDriftM(o.sg, t) : 0;
+    const sd = o.sg ? spinDriftM(o.sg, flown + t) - spinDriftM(o.sg, flown) : 0;
     pos[n * 3] = x + rightX * sd;
     pos[n * 3 + 1] = y;
     pos[n * 3 + 2] = z + rightZ * sd;
@@ -217,6 +223,7 @@ export function fly(o: FlyOptions): Path {
   let tail = -1;
   while (n < cap && y > o.origin[1] - floor && tail !== 0) {
     if (o.wind) o.wind(x, y, z, t0 + t + h, W);
+    if (o.drag) dk = o.drag(t + h);
     for (let s = 0; s < per; s++) {
       acc(vx, vy, vz, a1);
       acc(vx + a1[0]! * h / 2, vy + a1[1]! * h / 2, vz + a1[2]! * h / 2, a2);

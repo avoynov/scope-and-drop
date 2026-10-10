@@ -431,9 +431,21 @@ function pickDrum(e: { clientX: number; clientY: number }): { dist: number; arcP
   const axis = rifle.drum.getWorldPosition(new THREE.Vector3()).project(rifle.camera);
   return { dist: hit.distance, arcPx: (DRUM_R_MM / 1000) * DRUM_STEP * pxPerM, side: Math.sign(ndc.x - axis.x) };
 }
-/** Accommodation: 1 / the distance the eye is focused at. It follows the drum when the pointer is on it. */
+/**
+ * Where the eye looks, and so focuses. The rifle stays blurred, as the eye is on the range, until the shooter
+ * looks at the drum: the pointer on it, or a click of `[` or `]`. The eye stays on it while the pointer does and
+ * for LOOK_HOLD s after the last click or after the pointer leaves, then goes back to the range.
+ * `focusInv` is 1 / the focus distance, eased like accommodation; `focus=<m>` pins it for stills.
+ */
+const LOOK_HOLD = 1.5;
 let focusInv = 0;
-let focusTarget = params.has('focus') ? 1 / num('focus', 0.31) : 0;
+let drumLook = false;
+let lookUntil = -Infinity;
+const focusPinned = params.has('focus') ? num('focus', 0.29) : 0;
+const lookAway = () => {
+  if (drumLook) lookUntil = clock + LOOK_HOLD;
+  drumLook = false;
+};
 let drumDrag: { x: number; acc: number; moved: number; arcPx: number; side: number } | null = null;
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) { toggleScope(); return; }
@@ -441,20 +453,20 @@ canvas.addEventListener('pointerdown', (e) => {
   const d = pickDrum(e);
   if (d) {
     drumDrag = { x: e.clientX, acc: 0, moved: 0, arcPx: d.arcPx, side: d.side };
-    focusTarget = 1 / d.dist;
+    drumLook = true;
     return;
   }
-  focusTarget = 0;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 const endDrumDrag = () => {
   // A tap without a drag clicks it once, toward the side that was tapped.
   if (drumDrag && drumDrag.moved < 4) drum.turn(drumDrag.side || 1);
+  if (drumDrag) lookAway();
   drumDrag = null;
 };
 canvas.addEventListener('pointerup', (e) => { endDrumDrag(); pointers.delete(e.pointerId); pinch = 0; });
-canvas.addEventListener('pointercancel', (e) => { drumDrag = null; pointers.delete(e.pointerId); pinch = 0; });
+canvas.addEventListener('pointercancel', (e) => { if (drumDrag) lookAway(); drumDrag = null; pointers.delete(e.pointerId); pinch = 0; });
 canvas.addEventListener('pointermove', (e) => {
   if (drumDrag) {
     // Turning by its rim: the side facing the eye follows the finger, so dragging left brings higher numbers in.
@@ -471,7 +483,8 @@ canvas.addEventListener('pointermove', (e) => {
   }
   if (!pointers.size && e.pointerType === 'mouse') {
     const d = pickDrum(e);
-    focusTarget = d ? 1 / d.dist : 0;
+    if (d) drumLook = true;
+    else lookAway();
     canvas.style.cursor = d ? 'ew-resize' : '';
   }
   const prev = pointers.get(e.pointerId);
@@ -497,6 +510,7 @@ let drumWheel = 0;
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (pickDrum(e)) {
+    lookUntil = clock + LOOK_HOLD;
     drumWheel += e.deltaY + e.deltaX;
     while (Math.abs(drumWheel) >= 40) {
       const s = Math.sign(drumWheel);
@@ -517,8 +531,10 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
-  if (e.code === 'BracketLeft') drum.turn(-1);
-  if (e.code === 'BracketRight') drum.turn(1);
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    drum.turn(e.code === 'BracketLeft' ? -1 : 1);
+    lookUntil = clock + LOOK_HOLD;
+  }
   if (e.code === 'Space') {
     e.preventDefault();
     if (!e.repeat) fire();
@@ -704,9 +720,12 @@ function frame(t: number, dt: number): void {
   u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x + adsB.x - adsA.x, rcB.eye.y - rcA.eye.y + adsB.y - adsA.y, rcB.eye.z - rcA.eye.z + adsB.z - adsA.z);
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
-  // The eye focuses where it looks: on the drum when the pointer is on it with the head up (accommodation takes
-  // a few tenths of a second), far away otherwise. Focused on the drum, the range blurs by pupil / distance.
-  const wantFocus = adsIn ? 0 : focusTarget;
+  // The eye focuses where it looks: on the drum while the shooter looks at it with the head up (accommodation
+  // takes a few tenths of a second), far away otherwise. Focused on the drum, the range blurs by pupil / distance.
+  // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
+  const drumDist = Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
+  const looking = drumLook || t < lookUntil;
+  const wantFocus = focusPinned ? 1 / focusPinned : adsIn || !looking ? 0 : 1 / drumDist;
   focusInv = shot ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
   u.uWorldBlur!.value = Math.max(9 * dpr * adapt, ((0.5 * eye.pupilMm) / 1000 / th) * focusInv * R);
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.

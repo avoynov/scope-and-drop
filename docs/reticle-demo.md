@@ -8,6 +8,25 @@
 | --- | --- |
 | ![PSO](images/reticle-pso.jpg) | ![Eyebox](images/reticle-eyebox.jpg) |
 
+## How to aim
+
+The short version, for players new to scopes. The numbers behind it are in section 3.
+
+1. **Leave the drum on 1.** The rifle is then zeroed at 100 m, and that is the only setting the chevrons are made for.
+2. **Find the range.** Use the curve at lower left: put the man's feet on the straight line, then move until his head touches the dashed curve. The number there is the range in hundreds of metres. The mannequins are 1.7 m tall, like the man the curve is drawn for.
+3. **Pick your hold.** Each chevron below the centre is for one range. Put the matching chevron on the chest, not the top one.
+   - **At a marked range**, use its chevron. The top chevron is for 100 m.
+   - **Between two marks**, hold between their chevrons in proportion. For 500 m on the SVD, hold halfway between the 4 and the 6. Holding the nearest chevron instead can miss by over half a metre.
+   - **VSS (the game's rifle):** there's a chevron every 50 m. The small ones are 150, 250 and 350. At the game's 183 m, hold a third of the way from the 2 up to the small 150 chevron.
+   - **Or dial it instead:** turn the drum to the range and aim with the top chevron. That's exact, but the other chevrons are then wrong until you turn it back to 1.
+4. **Range carefully.** With the slow VSS bullet, 16 m of range error is about 18 cm at 183 m, enough to miss the chest. If unsure, range again.
+5. **Wind.** A crosswind pushes the bullet downwind, so aim into it, using the marks on the horizontal line (one per thousandth). The panel shows the wind where you lie, and gusts change it from shot to shot.
+   - At 2.5 m/s, the default: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
+   - Wind from straight ahead or behind barely matters. Half-angle wind (from 1–2 or 10–11 o'clock) needs about half the hold.
+6. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
+
+**Mil tree (bolt rifle):** the tree isn't made for any round, so work the hold out from the ammo card. Turn the dial to 0 and the hold in mil is 1000 × drop ÷ range, with the drop worked out from the bullet's speed (section 3).
+
 ## 1. The scope being simulated
 
 A good, well set-up 4–20×50 FFP scope (`src/scope/optics.ts`, `SCOPE`):
@@ -83,7 +102,7 @@ The manual pins the sight height. Its zeroing check is fired at 100 m with the d
 | Bolt rifle | Ballistic dial cut for the M118LR (as Leupold's CDS dials are), 0, then 1 to 10 | 50 m | 1.41 mil |
 | VSS · PSO-1-1 | 1 to 4 (100–400 m) | 50 m | 6.8 thousandths |
 
-As on the real PSO-1, the drum starts at 1 ([Wikipedia](https://en.wikipedia.org/wiki/PSO-1): 100–1000 m in 50 or 100 m steps). On the SVD and VSS a 0 (bore parallel to the line of sight) would only throw the cut chevrons off, so they have none. The bolt rifle's dial keeps one: its tree is not cut for a round, and on 0 the mil-tree hold is simply drop ÷ range (step 4 below drops out). The drum is part of the 3D scope: a knurled drum with its numbers engraved round its side (15° a detent, so the SVD's 10 and 1 sit far apart), read against a white index line on the saddle behind it. With the head up (F) the shooter looks down at it: put the pointer on it and the eye focuses on it, 0.29 m away, over a few tenths of a second, so the numbers come sharp and the range behind goes soft. Drag it sideways, scroll over it or tap either side of it; each detent clicks. On the weld it can't be seen, but `[` and `]` still click it by feel, as shooters count clicks. Each rifle keeps its own drum setting. A cut reticle is glass, so its chevrons are true only with the drum on 1: on 3 the SVD's chevrons shoot high, and the shooter on a higher drum setting aims with the top chevron at that range instead. That is how the real PSO-1's own chevrons work, true only with the drum on 10.
+As on the real PSO-1, the drum starts at 1 ([Wikipedia](https://en.wikipedia.org/wiki/PSO-1): 100–1000 m in 50 or 100 m steps). On the SVD and VSS a 0 (bore parallel to the line of sight) would only throw the cut chevrons off, so they have none. The bolt rifle's dial keeps one: its tree is not cut for a round, and on 0 the mil-tree hold is simply drop ÷ range (step 4 below drops out). The drum is part of the 3D scope: a knurled drum with its numbers engraved round its side (15° a detent, so the SVD's 10 and 1 sit far apart), read against a white index line on the saddle behind it. The rifle stays blurred, as the eye is on the range. With the head up (F) the shooter looks down at the drum when the pointer is on it or `[` or `]` clicks it: the eye focuses on it, 0.29 m away, over a few tenths of a second, so the numbers come sharp and the range behind goes soft. It stays there while the pointer does and for 1.5 s after the last click or after the pointer leaves, then the eye goes back to the range. Drag the drum sideways, scroll over it or tap either side of it; each detent clicks. On the weld it can't be seen, but `[` and `]` still click it by feel, as shooters count clicks. Each rifle keeps its own drum setting. A cut reticle is glass, so its chevrons are true only with the drum on 1: on 3 the SVD's chevrons shoot high, and the shooter on a higher drum setting aims with the top chevron at that range instead. That is how the real PSO-1's own chevrons work, true only with the drum on 10.
 
 Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.ru/rubric/article.php?art=nsd05012024) (100 m, drum on 3, control point 14 cm above the aim), [PSO instruction manual](https://sheldy.ru/userfiles/files/PCO(1).pdf) (zeroing at 100 m with the drum on 1, 5 cm per click at 100 m), [Wikipedia: PSO-1](https://en.wikipedia.org/wiki/PSO-1).
 

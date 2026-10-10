@@ -53,8 +53,8 @@ Requires Node 22+.
 
 ```bash
 npm install
-npm run dev              # demo viewer at http://127.0.0.1:5173
-npm test                 # 213 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab, wounds, glass
+npm run dev              # demo viewer at http://127.0.0.1:5173 (scope lab at /reticle/, party lab at /party/)
+npm test                 # 229 tests: determinism, validity, nav, sightlines, dome hall, bearing, geometry, scope lab, wounds, glass, party
 npm run typecheck
 npm run gen -- --seed match-42 --plan            # print a blueprint summary and room list
 npm run render -- --seed match-42 --views scope,wide   # headless screenshots into ./renders
@@ -95,6 +95,12 @@ It has two overlays: a sightline heat map and mission POI markers. It also takes
 `npm run dev`, then open http://127.0.0.1:5173/reticle/ (on Pages: `/demo/reticle/`). It is a stand-alone scope simulator: a 4–20×50 first-focal-plane scope on one of three rifles, over a high-desert range with 1.7 m mannequins at 412 m and 183 m. The game's rifle is a suppressed **VSS** firing the subsonic SP-5, with a **PSO-1-1**-style reticle cut for it: holdover chevrons every 50 m from 150 to 400 m and a 100–400 m stadiametric rangefinder. At the game's 130–210 m the bullet drops 1.1–2.9 m and takes up to 0.8 s, so ranging decides the hit. For comparison there is an **SVD · PSO-1** (chevrons cut for the 7N1 at 400, 600 and 800 m, lateral scale, 1.7 m rangefinder) and a bolt rifle with a **mil tree** and an ammo card that shows the bullet's speed every 200 m, so the shooter can work out the hold. It models the eyebox (scope shadow and crescents from the real exit-pupil geometry), parallax and focus, pincushion, lateral colour, rim softness, mirage and breathing sway. Each scope is zeroed at 100 m, with its elevation drum on 1. The drum is engraved on the 3D scope and read against an index line: the rifle stays blurred until, with the head up, the pointer goes on the drum or `[` `]` click it: the eye focuses on it for as long as you look and 1.5 s after. Drag or scroll it in 50 m clicks from 1 (100 m) up (`[` `]` also click it by feel on the weld). Space fires a real bullet: a 3D point-mass flight through gusting wind that follows the hills and drops behind trees and buildings, with spin drift, aerodynamic jump and Coriolis, from wherever the swaying rifle points when the shot breaks. It brings dirt splashes that drift downwind, a trace through the glass behind supersonic bullets, the VSS's slow bullet as a speck in flight, hits that rock the mannequin, muzzle-blast dust, a wound card that says what the hit would do to a person (killed, downed or wounded, from the bullet's striking speed and where it went through, with times to fall, black out and die), and sound delayed by the flight and the return trip (a crack and a boom from the full-bore rifles, a thump and the clack of the action from the VSS). The SVD and the VSS are semi-automatic with 10-round magazines; the bolt rifle needs its bolt worked. Space only pulls the trigger: **B** works the action and **R** changes the magazine, and keeping the rifle loaded is the shooter's job. A pull with nothing to fire clicks or does nothing, as on the real rifle, and the SVD stays open after its last round until it is racked. Working the action or changing a magazine takes the head off the scope while gloved hands do it as on the real rifle: the bolt lifted, run back and home with the case flying out and the next round chambered; the magazine rocked out and a full one in; the charging handle racked. Every part's sound is cued as it moves, synthesised until recordings go in `demo/reticle/sounds/`. Recoil slams the scope toward the eye, the picture tunnels and blacks out for about a third of a second, and the rifle settles high, so you bring it back down yourself. The VSS kicks a fifth as hard: the picture only dims for a moment and the target stays in view, so you watch the hit. A quick swing brings a crescent in from the leading edge, and the Pan shadow slider sets how strong it is. No number gives the wind away: range flags, shaking sage, gusts running across the ground and the mirage show it, and a wind card turns what the flags show into a hold. **Easy** adds a wind meter at the hide. **Glass** (G) stands a window frame in front of each mannequin: single, double, laminated or tempered, turned up to 60°. A bullet through it is slowed, turned, set yawing and may lose its jacket, by a model calibrated against published tests, and the pane cracks, crazes or dices and falls when the bullet gets there. New to scopes? Read [How to aim](docs/reticle-demo.md#how-to-aim). The research, numbers and plan are in [docs/reticle-demo.md](docs/reticle-demo.md).
 
 ![reticle lab](docs/images/reticle-tree.jpg)
+
+### Party lab
+
+`npm run dev`, then open http://127.0.0.1:5173/party/ (on Pages: `/demo/party/`). It plays one evening at the generated house: 20–30 guests, waiters, a bartender, a cook and the host, from arrival at 19:00 through champagne, the toast, dinner, dancing and evening games to the last toasts and departures at 22:00. The three hours play in one real hour at 1×; only the clock is compressed, so people walk at real speed. Guests run on needs (thirst, hunger, the bathroom, company, dancing, rest, air, curiosity, their partner) weighed against the programme, so the toast gathers the room and dinner seats the table while the rest of the evening stays loose. Watch through the scope or from above, one storey at a time, at up to 60×; click the timeline to jump, click anyone to follow them and see their needs. How it works, the URL parameters and the numbers are in [docs/party.md](docs/party.md); the full design (the spy, gossip, the search and the endings still to come) is in the [design spec](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52).
+
+![party lab](docs/images/party-plan.jpg)
 
 ---
 
@@ -312,12 +318,13 @@ src/mansion/
   build/                three.js renderer: textures, lighting, materials, geometry,
                         arch, atrium, roofs, stairs, props, site, sky, grade, index (buildMansion)
 src/body/               anatomy (a 1.70 m person on the mannequin's outline) and wound (track, cavity, bleeding: killed / downed / wounded)
+src/party/              the party: clock and programme, cast, places read from the blueprint, A* walking, needs-based minds, the sim (Party) and render/crowd (instanced people)
 src/scope/              optics (exit pupil, eyebox, parallax), ballistics (G7 point-mass), shot (3D flight, wind, rifles), glass (bullets through windows), recoil, action (chamber, cocking and what the trigger does), handling (working the action by hand) and reticle patterns (PSO-1, PSO-1-1, mil tree)
-demo/                   dev viewer (Vite) with the mission briefing; demo/reticle/ is the scope lab
+demo/                   dev viewer (Vite) with the mission briefing; demo/reticle/ is the scope lab, demo/party/ the party lab
 artifact/               published viewer page (field-dossier UI, mil-dot scope)
 scripts/                gen, batch, stress, debug, render, texsheet, png, reticle (scope lab stills)
-tests/                  generator.test.ts, builder.test.ts, scope.test.ts, shot.test.ts, ads.test.ts, wound.test.ts, handling.test.ts, glass.test.ts
-docs/                   mansion-generation.md (design doc), reticle-demo.md, images/
+tests/                  generator.test.ts, builder.test.ts, scope.test.ts, shot.test.ts, ads.test.ts, wound.test.ts, handling.test.ts, glass.test.ts, party.test.ts
+docs/                   mansion-generation.md (design doc), reticle-demo.md, party.md, images/
 ```
 
 ---
@@ -326,12 +333,12 @@ docs/                   mansion-generation.md (design doc), reticle-demo.md, ima
 
 | Command | Purpose |
 |---|---|
-| `npm test` | 220 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics, 3D bullet flight and recoil, working the action by hand and its synthesised sounds, the trigger, action and magazine each doing only their own job, the wound model, and bullets through glass (calibrated against published tests). |
+| `npm test` | 229 Vitest tests. Covers byte-identical determinism, validity of 3 seeds for each of the 48 style × plan × size combinations, 100 random seeds, structure (walls/openings/rooms), single connected nav per storey, stairs linking storeys, POIs on walkable floor, sightline sanity (terrace visible, back of house hidden), indoor visibility and cover, the dome hall (stair, galleries, both shapes), bearing choice (`movePerch`), roof terraces, performance budget, renderer geometry (no NaNs, triangle budget, every bucket has a material, correct light scopes), terrain coverage, texture range and tiling, and the scope lab's optics, reticles, ballistics, 3D bullet flight and recoil, working the action by hand and its synthesised sounds, the trigger, action and magazine each doing only their own job, the wound model, bullets through glass (calibrated against published tests), and the party: its programme, cast, determinism and a whole evening (the toast gathers the crowd, dinner seats everyone with a chair, nobody steps off the walkable floor, everyone has left by 22:00). |
 | `npm run gen -- --seed X [--style] [--massing] [--size] [--plan] [--json out.json]` | Summary, validation issues, room list, JSON export |
 | `npm run stress -- 5` | Every style × plan × size, N seeds each |
 | `npx tsx scripts/batch.ts 100` | Failure codes per attempt, attempts needed, timing |
 | `npx tsx scripts/debug.ts <seed> <attempt>` | Issues, POI and prop counts, nav components per storey |
-| `npm run render -- --seed a,b --views scope,wide,orbit,iso,plan [--params "sight=1"] [--format jpeg] [--name file]` | Headless Chromium (SwiftShader) screenshots |
+| `npm run render -- --seed a,b --views scope,wide,orbit,iso,plan [--params "sight=1"] [--format jpeg] [--name file] [--page party/]` | Headless Chromium (SwiftShader) screenshots; `--page party/` captures the party lab |
 | `npx tsx scripts/texsheet.ts out.png` | Contact sheet of all procedural textures |
 
 ---
@@ -376,7 +383,7 @@ Measured in this environment: Node 22; headless Chromium with SwiftShader softwa
 
 ## Known limitations and next steps
 
-- No NPCs or crowd yet. The next step is a party simulation and spy AI on top of `nav`, `pois` and `vis`.
+- The party ([docs/party.md](docs/party.md)) is milestone 1 of six: guests, staff and the programme. Senses and gossip, the spy, the endings, detailed bodies and tuning come next (see the design spec).
 - Texture synthesis and geometry run on the main thread. Moving them to a Web Worker and caching textures in IndexedDB would cut build time.
 - Interactive state (curtains drawn, lights switched off, doors closed) is per opening and per light in the data but not yet toggleable at runtime.
 - More parti: bow-fronted salons, quadrant links to pavilions, courtyard plans, a modernist villa style.

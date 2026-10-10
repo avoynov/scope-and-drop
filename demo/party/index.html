@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Party Lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --ink: #e9e4d8;
+        --muted: #9a9486;
+        --line: rgba(233, 228, 216, 0.14);
+        --panel: rgba(12, 14, 20, 0.74);
+        --accent: #e0b56a;
+      }
+      html, body { margin: 0; height: 100%; background: #07080c; color: var(--ink); font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; overflow: hidden; }
+      canvas { display: block; }
+      .panel { position: fixed; top: 16px; background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; box-sizing: border-box; z-index: 2; }
+      #panel { left: 16px; width: 316px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; }
+      #side { right: 16px; width: 290px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+      h1, h2 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; color: var(--accent); }
+      .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+      input, select, button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+      input { flex: 1; min-width: 0; }
+      button { cursor: pointer; }
+      button.on { border-color: var(--accent); color: var(--accent); }
+      #clock { display: flex; align-items: baseline; gap: 10px; margin: 2px 0 8px; }
+      #time { font-size: 26px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+      #phase { color: var(--accent); }
+      #count { color: var(--muted); margin-left: auto; }
+      /* The evening's programme: one segment per phase, the cursor at the clock. Click to jump. */
+      #timeline { position: relative; display: flex; height: 18px; border-radius: 4px; overflow: hidden; cursor: pointer; margin-bottom: 10px; border: 1px solid var(--line); }
+      #timeline i { display: block; height: 100%; border-right: 1px solid rgba(7, 8, 12, 0.7); box-sizing: border-box; }
+      #timeline b { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); box-shadow: 0 0 4px #000; pointer-events: none; }
+      #events { color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; min-height: 7.25em; white-space: pre-wrap; }
+      #events em { color: var(--ink); font-style: normal; }
+      #stats { color: var(--muted); white-space: pre-wrap; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+      #people { overflow: auto; flex: 1; min-height: 0; margin: 0 -6px; }
+      .person { display: grid; grid-template-columns: 10px 1fr; column-gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 4px 6px; border-radius: 6px; }
+      .person:hover { background: rgba(255, 255, 255, 0.04); }
+      .person.sel { border-color: var(--accent); }
+      .person.away { opacity: 0.38; }
+      .person i { grid-row: span 2; width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+      .person .who small { color: var(--muted); }
+      .person .doing { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #detail { border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-bottom: 8px; display: none; }
+      #detail.on { display: block; }
+      #detail .name { font-size: 14px; }
+      #detail .meta { color: var(--muted); margin: 2px 0 6px; }
+      #needs { display: grid; grid-template-columns: 74px 1fr; gap: 3px 8px; align-items: center; }
+      #needs span { color: var(--muted); }
+      #needs div { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+      #needs div i { display: block; height: 100%; background: var(--accent); }
+      #tag { position: fixed; transform: translate(-50%, -100%); pointer-events: none; z-index: 1; padding: 2px 6px; border-radius: 3px; background: rgba(7, 8, 12, 0.78); color: var(--accent); white-space: nowrap; display: none; }
+      #tag.on { display: block; }
+      #reticle { position: fixed; inset: 0; pointer-events: none; display: none; }
+      #reticle.on { display: block; }
+      #reticle::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0 34vmin, rgba(0, 0, 0, 0.94) 35vmin); }
+      #reticle .h, #reticle .v { position: absolute; background: rgba(10, 10, 10, 0.85); }
+      #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
+      #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
+      #plan-labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+      #plan-labels span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 3px; background: rgba(7, 8, 12, 0.6); color: var(--muted); }
+      #plan-labels span.party { color: var(--ink); }
+      #floors, #plan-hint { display: none; }
+      body.plan #floors { display: flex; }
+      body.plan #plan-hint { display: block; color: var(--muted); }
+      #busy { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: none; z-index: 3; }
+      #busy.on { display: block; }
+      body.shot:not(.ui) #panel, body.shot:not(.ui) #side { display: none; }
+      @media (max-width: 760px) {
+        #side { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 34vh; }
+        #panel { max-height: calc(66vh - 40px); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="reticle"><div class="h"></div><div class="v"></div></div>
+    <div id="plan-labels" aria-hidden="true"></div>
+    <div id="tag"></div>
+    <div id="busy">simulating…</div>
+    <div id="panel" class="panel">
+      <h1>Party lab · one evening</h1>
+      <div class="row"><input id="seed" spellcheck="false" aria-label="Seed" /><button id="go">Build</button><button id="rnd" title="Random seed">⟳</button></div>
+      <div id="clock"><span id="time">19:00</span><span id="phase"></span><span id="count"></span></div>
+      <div id="timeline" title="The programme. Click to jump"></div>
+      <div class="row" id="speeds"></div>
+      <div class="row" id="views"></div>
+      <div class="row" id="floors"></div>
+      <div class="row" id="plan-hint">scroll to zoom · drag to move · double-click to reset · click a marker to pick</div>
+      <div id="events"></div>
+      <div id="stats"></div>
+    </div>
+    <div id="side" class="panel">
+      <div id="detail">
+        <div class="name"></div>
+        <div class="meta"></div>
+        <div class="row"><button id="follow" title="Keep the scope on this person">follow</button><button id="unsel">close</button></div>
+        <div id="needs"></div>
+      </div>
+      <h2>People</h2>
+      <div id="people"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 /**
  * Headless renders of the demo (SwiftShader WebGL2).
  *   npx tsx scripts/render.ts --seed gala-night --views scope,wide,iso --out renders
+ *   npx tsx scripts/render.ts --page party/ --views plan --params t=90
  */
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -19,6 +20,8 @@ const h = get('h', '720');
 const extra = get('params', '');
 const format = get('format', 'png') as 'png' | 'jpeg';
 const name = get('name', '');
+/** Demo page under demo/, e.g. party/ (default: the mansion viewer). */
+const pagePath = get('page', '');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ configFile: 'vite.config.ts', logLevel: 'error', server: { port: 5199, host: '127.0.0.1' } });
@@ -35,7 +38,7 @@ try {
       page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && logs.push(`[${m.type()}] ${m.text()}`));
       page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
       const t0 = Date.now();
-      await page.goto(`http://127.0.0.1:5199/?shot=1&seed=${encodeURIComponent(seed)}&view=${view}&w=${w}&h=${h}${extra ? '&' + extra : ''}`);
+      await page.goto(`http://127.0.0.1:5199/${pagePath}?shot=1&seed=${encodeURIComponent(seed)}&view=${view}&w=${w}&h=${h}${extra ? '&' + extra : ''}`);
       try {
         await page.waitForFunction(() => (window as unknown as { __ready?: boolean }).__ready === true, null, { timeout: 600_000, polling: 500 });
       } catch (e) {

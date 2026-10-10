@@ -4,9 +4,10 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
 import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
-import { windAt, type RifleId, type Wind } from '../../src/scope/shot';
+import { BATTLE_ZERO_M, RIFLES, windAt, type RifleId, type Wind } from '../../src/scope/shot';
 import { createSound } from './audio';
 import { createComposite } from './composite';
+import { DRUM_R_MM, DRUM_STEP, createDrum, drumHome } from './drum';
 import { buildRifle, createNearPasses } from './near';
 import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
 import { createShooting, type Aim } from './shooting';
@@ -46,6 +47,11 @@ const state = {
     return { speed, fromClock: from, gust: params.has('nogust') ? 0 : 0.3 } as Wind;
   })(),
   sound: !params.has('mute'),
+  /** Where each rifle's elevation drum is set, in metres: on 1, the 100 m zero, unless `zero=` says otherwise. */
+  zero: (() => {
+    const z = num('zero', BATTLE_ZERO_M);
+    return { pso: z, tree: z, vss: z } as Record<Reticle['id'], number>;
+  })(),
   yaw: 0,
   pitch: 0,
 };
@@ -226,7 +232,7 @@ function syncDope(): void {
   if (!show) return;
   const r = ROUNDS[RETICLES.tree().round];
   dope.innerHTML =
-    `<div class="dope-head"><b>${r.name}</b> ${r.cartridge} · ${r.bulletGr} gr<span>zero 0 m</span></div>` +
+    `<div class="dope-head"><b>${r.name}</b> ${r.cartridge} · ${r.bulletGr} gr<span>zero ${state.zero.tree} m · scope ${Math.round(RIFLES.bolt.sightM * 1000)} mm over bore</span></div>` +
     `<table><tr><th>m</th>${DOPE_RANGES.map((d) => `<td>${d}</td>`).join('')}</tr>` +
     `<tr><th>m/s</th>${DOPE_RANGES.map((d) => `<td>${Math.round(at(r, d).v)}</td>`).join('')}</tr></table>`;
 }
@@ -236,9 +242,38 @@ const windDirIn = $('winddir') as HTMLInputElement;
 windIn.oninput = () => (state.wind.speed = Number(windIn.value));
 windDirIn.oninput = () => (state.wind.fromClock = Number(windDirIn.value));
 
+/**
+ * The elevation drum on top of the scope (see drum.ts), engraved on the 3D rifle. Each rifle keeps its own drum
+ * where it was left; turning it moves the bore against the scope, so the zero, and with it every chevron,
+ * moves with it. With the head up the shooter looks down at it and turns it by hand; on the weld `[` and `]`
+ * click it by feel.
+ */
+const drumRifle = () => RIFLES[RIFLE[state.reticle]];
+const drum = createDrum((i) => {
+  sound.unlock();
+  sound.drumClick();
+  state.zero[state.reticle] = drumRifle().drumM[i]!;
+  syncUi();
+});
+let drumShown = '';
+function syncDrum(): void {
+  const r = drumRifle();
+  if (drumShown !== r.id) {
+    drumShown = r.id;
+    // A zero between the marks (a `zero=` still) snaps to the nearest one.
+    const z = state.zero[state.reticle];
+    const i = r.drumM.reduce((b, m, k) => (Math.abs(m - z) < Math.abs(r.drumM[b]! - z) ? k : b), 0);
+    state.zero[state.reticle] = r.drumM[i]!;
+    drum.set(r.drumM, i);
+    rifle.setDrumMarks(r.drumM);
+  }
+  shooting.setZero(state.zero[state.reticle]);
+}
+
 function syncUi(): void {
-  syncDope();
   shooting.setRifle(RIFLE[state.reticle]);
+  syncDrum();
+  syncDope();
   sound.enabled = state.sound;
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
@@ -378,15 +413,81 @@ function stepAdapt(target: number, dt: number): void {
 const canvas = renderer.domElement;
 const pointers = new Map<number, { x: number; y: number }>();
 let pinch = 0;
+/**
+ * The drum under the pointer, with the head up: where the ray from the eye meets it, its distance (m) and
+ * how many screen px one detent of the drum's rim moves.
+ */
+const picker = new THREE.Raycaster();
+picker.layers.enableAll();
+const ndc = new THREE.Vector2();
+function pickDrum(e: { clientX: number; clientY: number }): { dist: number; arcPx: number; side: number } | null {
+  if (adsIn) return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  picker.setFromCamera(ndc, rifle.camera);
+  const hit = picker.intersectObject(rifle.drum, true).find((h) => h.object.name === 'drum');
+  if (!hit) return null;
+  const pxPerM = r.height / 2 / Math.tan((rifle.camera.fov * Math.PI) / 360) / hit.distance;
+  // Which side of the drum's axis the pointer is on, as the shooter sees it.
+  const axis = rifle.drum.getWorldPosition(new THREE.Vector3()).project(rifle.camera);
+  return { dist: hit.distance, arcPx: (DRUM_R_MM / 1000) * DRUM_STEP * pxPerM, side: Math.sign(ndc.x - axis.x) };
+}
+/**
+ * Where the eye looks, and so focuses. The rifle stays blurred, as the eye is on the range, until the shooter
+ * looks at the drum: the pointer on it, or a click of `[` or `]`. The eye stays on it while the pointer does and
+ * for LOOK_HOLD s after the last click or after the pointer leaves, then goes back to the range.
+ * `focusInv` is 1 / the focus distance, eased like accommodation; `focus=<m>` pins it for stills.
+ */
+const LOOK_HOLD = 1.5;
+let focusInv = 0;
+let drumLook = false;
+let lookUntil = -Infinity;
+const focusPinned = params.has('focus') ? num('focus', 0.29) : 0;
+const lookAway = () => {
+  if (drumLook) lookUntil = clock + LOOK_HOLD;
+  drumLook = false;
+};
+let drumDrag: { x: number; acc: number; moved: number; arcPx: number; side: number } | null = null;
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) { toggleScope(); return; }
   canvas.setPointerCapture(e.pointerId);
+  const d = pickDrum(e);
+  if (d) {
+    drumDrag = { x: e.clientX, acc: 0, moved: 0, arcPx: d.arcPx, side: d.side };
+    drumLook = true;
+    return;
+  }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-canvas.addEventListener('pointerup', (e) => { pointers.delete(e.pointerId); pinch = 0; });
-canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); pinch = 0; });
+const endDrumDrag = () => {
+  // A tap without a drag clicks it once, toward the side that was tapped.
+  if (drumDrag && drumDrag.moved < 4) drum.turn(drumDrag.side || 1);
+  if (drumDrag) lookAway();
+  drumDrag = null;
+};
+canvas.addEventListener('pointerup', (e) => { endDrumDrag(); pointers.delete(e.pointerId); pinch = 0; });
+canvas.addEventListener('pointercancel', (e) => { if (drumDrag) lookAway(); drumDrag = null; pointers.delete(e.pointerId); pinch = 0; });
 canvas.addEventListener('pointermove', (e) => {
+  if (drumDrag) {
+    // Turning by its rim: the side facing the eye follows the finger, so dragging left brings higher numbers in.
+    const dx = e.clientX - drumDrag.x;
+    drumDrag.x = e.clientX;
+    drumDrag.moved += Math.abs(dx);
+    drumDrag.acc -= dx;
+    while (Math.abs(drumDrag.acc) >= drumDrag.arcPx) {
+      const s = Math.sign(drumDrag.acc);
+      drum.turn(s);
+      drumDrag.acc -= s * drumDrag.arcPx;
+    }
+    return;
+  }
+  if (!pointers.size && e.pointerType === 'mouse') {
+    const d = pickDrum(e);
+    if (d) drumLook = true;
+    else lookAway();
+    canvas.style.cursor = d ? 'ew-resize' : '';
+  }
   const prev = pointers.get(e.pointerId);
   if (!prev) return;
   if (pointers.size === 1) {
@@ -406,7 +507,22 @@ canvas.addEventListener('pointermove', (e) => {
     syncUi();
   }
 });
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); state.mag = clampMag(state.mag * Math.pow(1.0015, -e.deltaY)); syncUi(); }, { passive: false });
+let drumWheel = 0;
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (pickDrum(e)) {
+    lookUntil = clock + LOOK_HOLD;
+    drumWheel += e.deltaY + e.deltaX;
+    while (Math.abs(drumWheel) >= 40) {
+      const s = Math.sign(drumWheel);
+      drum.turn(-s);
+      drumWheel -= s * 40;
+    }
+    return;
+  }
+  state.mag = clampMag(state.mag * Math.pow(1.0015, -e.deltaY));
+  syncUi();
+}, { passive: false });
 const clampMag = (m: number) => Math.max(SCOPE.minMag, Math.min(SCOPE.maxMag, m));
 const keys = new Set<string>();
 addEventListener('keydown', (e) => {
@@ -416,6 +532,10 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
   if (e.code === 'KeyF' && !e.repeat) toggleScope();
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    drum.turn(e.code === 'BracketLeft' ? -1 : 1);
+    lookUntil = clock + LOOK_HOLD;
+  }
   if (e.code === 'Space') {
     e.preventDefault();
     if (!e.repeat) fire();
@@ -603,7 +723,14 @@ function frame(t: number, dt: number): void {
   u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x + adsB.x - adsA.x, rcB.eye.y - rcA.eye.y + adsB.y - adsA.y, rcB.eye.z - rcA.eye.z + adsB.z - adsA.z);
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
-  u.uWorldBlur!.value = 9 * dpr * adapt;
+  // The eye focuses where it looks: on the drum while the shooter looks at it with the head up (accommodation
+  // takes a few tenths of a second), far away otherwise. Focused on the drum, the range blurs by pupil / distance.
+  // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
+  const drumDist = Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
+  const looking = drumLook || t < lookUntil;
+  const wantFocus = focusPinned ? 1 / focusPinned : adsIn || !looking ? 0 : 1 / drumDist;
+  focusInv = shot ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
+  u.uWorldBlur!.value = Math.max(9 * dpr * adapt, ((0.5 * eye.pupilMm) / 1000 / th) * focusInv * R);
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.
   u.uMirage!.value = state.mirage ? 0.000025 * toUv * Math.min(1, D / 300) : 0;
   // A crosswind carries the shimmer sideways at roughly its own angular rate, weighted toward where the
@@ -642,6 +769,8 @@ function frame(t: number, dt: number): void {
   cam.rotation.set(-tiltPitch, tiltYaw, 0, 'YXZ');
   cam.updateMatrixWorld();
   rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
+  drum.step(shot ? 1 : dt);
+  rifle.setDrum((drum.pos - drumHome(drumRifle().drumM)) * DRUM_STEP);
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
   const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.
@@ -652,7 +781,7 @@ function frame(t: number, dt: number): void {
   const [ax, ay] = ocular(adsA, rcA);
   const [bx, by] = ocular(adsB, rcB);
   nearVel.set(((bx! - ax!) / th) * (R / 2), ((by! - ay!) / th) * (R / 2));
-  near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97);
+  near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97, focusInv);
 
   drawRet();
   // The magnified image only reaches the screen through the eyebox. When no direction in the field can send
@@ -695,8 +824,8 @@ function frame(t: number, dt: number): void {
       ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ['Exit pupil', `${ep.toFixed(1)} mm`],
       ['Parallax set', fmt(state.parallax)],
-      // Turrets are left at 0: nothing is dialled, so every hold comes from the reticle.
-      ['Zero', '0 m · turrets 0'],
+      // The drum's number is the zero: 1 is 100 m, where the cut reticles are true.
+      ['Zero', `${state.zero[state.reticle]} m · drum ${state.zero[state.reticle] / 100}`],
       ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
       ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
       ['Rounds', `${status.rounds} · ${status.state}`],

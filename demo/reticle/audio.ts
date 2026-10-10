@@ -22,6 +22,8 @@ export interface Sound {
   impact(delay: number, dist: number, kind: ImpactSound): void;
   /** Working the bolt, or a magazine change, starting now and lasting `dur` s. */
   action(kind: 'bolt' | 'reload', dur: number): void;
+  /** One detent of the elevation drum: a small, dry click, right at the ear. */
+  drumClick(): void;
 }
 
 export function createSound(): Sound {
@@ -102,6 +104,11 @@ export function createSound(): Sound {
       // Metal on metal: short clicks at the moments the parts stop.
       const at = kind === 'bolt' ? [0.12, 0.3, 0.62, 0.86] : [0.25, 0.4, 0.62, 0.78, 0.9, 0.95];
       for (const f of at) burst(t + f * dur, 0.35, 0.0005, 0.03, 'bandpass', 3200, 2400, 0.02);
+    },
+    drumClick() {
+      if (!s.enabled || !ctx) return;
+      // A spring-loaded ball dropping into the next notch: quieter and higher than the action's clicks.
+      burst(ctx.currentTime, 0.12, 0.0003, 0.012, 'bandpass', 5200, 4200, 0.01);
     },
   };
   /** Filtered noise with an attack, an exponential decay, and a cutoff swept from f0 to f1 over `sweep` s. */

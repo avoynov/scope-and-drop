@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, tanHalfApparent, trueFovRad } from '../src/scope/optics';
-import { ROUNDS, at, handHoldRad, holdRad, type Round } from '../src/scope/ballistics';
+import { ROUNDS, at, handHoldRad, holdRad, zeroTiltRad, type Round } from '../src/scope/ballistics';
+import { BATTLE_ZERO_M, RIFLES } from '../src/scope/shot';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec } from '../src/scope/recoil';
 import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, VSS_RANGEFINDER, psoChevronY, psoCurveHeight, psoReticle, treeReticle, vssChevronY, vssReticle } from '../src/scope/reticles';
 
@@ -98,6 +99,29 @@ describe('ballistics', () => {
     expect(holdRad(r, 300, 300)).toBeCloseTo(0, 9);
     expect(holdRad(r, 412)).toBeCloseTo(at(r, 412).drop / 412, 12);
     expect(holdRad(r, 800)).toBeGreaterThan(holdRad(r, 400) * 2);
+    // With the scope over the bore too: nothing at the zero, and the drum's 0 adds the sight height's angle.
+    expect(holdRad(r, 100, 100, 0.058)).toBeCloseTo(0, 9);
+    expect(zeroTiltRad(r, 0, 0.058)).toBe(0);
+    expect(holdRad(r, 412, 0, 0.058)).toBeCloseTo((at(r, 412).drop + 0.058) / 412, 12);
+  });
+
+  it("matches the SVD manual's zeroing check: 100 m, drum on 3, hits 14 cm above the aim", () => {
+    const r = ROUNDS['7n1'];
+    const h = RIFLES.svd.sightM;
+    // The bullet's height over the line of sight at 100 m with the drum on 3.
+    const high = 100 * zeroTiltRad(r, 300, h) - at(r, 100).drop - h;
+    expect(high).toBeCloseTo(0.14, 2);
+  });
+
+  it('gives every rifle a drum from 1 (100 m) up in 50 m clicks, and the bolt rifle a 0 below it', () => {
+    for (const rifle of Object.values(RIFLES)) {
+      const one = rifle.drumM.indexOf(BATTLE_ZERO_M);
+      expect(one).toBe(rifle.id === 'bolt' ? 1 : 0);
+      if (rifle.id === 'bolt') expect(rifle.drumM[0]).toBe(0);
+      for (let i = one + 1; i < rifle.drumM.length; i++) expect(rifle.drumM[i]! - rifle.drumM[i - 1]!).toBe(50);
+    }
+    expect(RIFLES.vss.drumM.at(-1)).toBe(400);
+    expect(RIFLES.svd.drumM.at(-1)).toBe(1000);
   });
 
   it('lets a mil-tree shooter work the hold out from the ammo card to within about a tenth', () => {
@@ -113,7 +137,7 @@ describe('ballistics', () => {
     const chevrons = psoReticle().prims.filter((p) => p.kind === 'poly').map((p) => (p.kind === 'poly' ? p.pts[1]![1] : 0));
     expect(chevrons[0]).toBe(0);
     PSO_CHEVRON_RANGES.forEach((d, i) => {
-      expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS['7n1'], d) / THOUSANDTH, 9);
+      expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS['7n1'], d, BATTLE_ZERO_M, RIFLES.svd.sightM) / THOUSANDTH, 9);
       expect(psoChevronY(d)).toBeGreaterThan(i === 0 ? 1 : psoChevronY(PSO_CHEVRON_RANGES[i - 1]!));
     });
   });
@@ -121,13 +145,15 @@ describe('ballistics', () => {
   it('cuts the VSS chevrons for the subsonic SP-5: steep, about a thousandth every 15 m at the game range', () => {
     const chevrons = vssReticle().prims.filter((p) => p.kind === 'poly').map((p) => (p.kind === 'poly' ? p.pts[1]![1] : 0));
     expect(chevrons[0]).toBe(0);
-    VSS_CHEVRON_RANGES.forEach((d, i) => expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS.sp5, d) / THOUSANDTH, 9));
-    expect(vssChevronY(100)).toBeCloseTo(6.1, 1);
-    expect(vssChevronY(400)).toBeCloseTo(26.7, 1);
-    // From 150 to 200 m the hold grows 3.3 thousandths: a range error of 15 m is a thousandth, 18 cm at 183 m.
-    expect(vssChevronY(200) - vssChevronY(150)).toBeCloseTo(3.3, 1);
-    // The 7N1 needs a quarter of that hold at 412 m.
-    expect(vssChevronY(183)).toBeGreaterThan(3 * psoChevronY(412));
+    VSS_CHEVRON_RANGES.forEach((d, i) => expect(chevrons[i + 1]).toBeCloseTo(holdRad(ROUNDS.sp5, d, BATTLE_ZERO_M, RIFLES.vss.sightM) / THOUSANDTH, 9));
+    // 100 m is the zero: the aiming chevron.
+    expect(vssChevronY(100)).toBeCloseTo(0, 9);
+    expect(vssChevronY(150)).toBeCloseTo(3.0, 1);
+    expect(vssChevronY(400)).toBeCloseTo(20.0, 1);
+    // From 150 to 200 m the hold grows 3.2 thousandths: a range error of 16 m is a thousandth, 18 cm at 183 m.
+    expect(vssChevronY(200) - vssChevronY(150)).toBeCloseTo(3.2, 1);
+    // The 7N1 needs half that hold at 412 m.
+    expect(vssChevronY(183)).toBeGreaterThan(1.9 * psoChevronY(412));
   });
 });
 

@@ -17,10 +17,10 @@
  *  - what the hit would have done to a person standing where the mannequin is (src/body/wound.ts).
  */
 import * as THREE from 'three';
-import { AIR, ROUNDS } from '../../src/scope/ballistics';
+import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
 import { SCOPE } from '../../src/scope/optics';
 import { assess, type Wound } from '../../src/body/wound';
-import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, windAt, type Hit, type Path, type Rifle, type RifleId, type Vec3, type Wind } from '../../src/scope/shot';
 import type { ImpactSound, Sound } from './audio';
 import { heightAt, type Range } from './scene';
 
@@ -192,6 +192,8 @@ export function createShooting(range: Range, sound: Sound) {
   let mag = rifle.magazine - 1;
   let handling: Handling | null = null;
   let handlingCount = 0;
+  /** What the elevation drum is set to, in metres. */
+  let zeroM = BATTLE_ZERO_M;
 
   // ---- what a bullet can hit ----
   const ray = new THREE.Raycaster();
@@ -300,9 +302,11 @@ export function createShooting(range: Range, sound: Sound) {
     const sg = millerStability(rifle, d.mv);
     windAt(wind, 0, exit, W);
     const jump = aeroJumpRad(rifle, sg, W[0] * right.x + W[2] * right.z);
-    const dir = fwd.clone().addScaledVector(right, d.dx).addScaledVector(up, d.dy + jump).normalize();
+    // The bore runs under the scope, tilted up by the drum so the bullet climbs to the line of sight at the zero.
+    const tilt = zeroTiltRad(round, zeroM, rifle.sightM);
+    const dir = fwd.clone().addScaledVector(right, d.dx).addScaledVector(up, d.dy + jump + tilt).normalize();
     const path = fly({
-      round, mv: d.mv, origin: [eye.x, eye.y, eye.z], dir: [dir.x, dir.y, dir.z], t0: exit, spin: RANGE_SPIN, sg,
+      round, mv: d.mv, origin: [eye.x - up.x * rifle.sightM, eye.y - up.y * rifle.sightM, eye.z - up.z * rifle.sightM], dir: [dir.x, dir.y, dir.z], t0: exit, spin: RANGE_SPIN, sg,
       wind: (x, _y, z, t, o) => windAt(wind, Math.max(0, Math.hypot(x, z)), t, o),
       // Nothing to fly for once it is in the ground.
       until: (x, y, z) => y < heightAt(x, z) - 0.5,
@@ -567,6 +571,8 @@ export function createShooting(range: Range, sound: Sound) {
 
   return {
     setRifle,
+    /** Sets the elevation drum to a range mark (metres). */
+    setZero: (m: number) => (zeroM = m),
     press,
     /** For stills: a bullet that left the muzzle at `exit`. */
     fireAt: (exit: number, eye: THREE.Vector3, aim: Aim, wind: Wind) => fireAt(exit, eye, aim, wind, null),

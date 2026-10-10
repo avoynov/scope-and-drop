@@ -21,6 +21,7 @@
 import * as THREE from 'three';
 import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from '../../src/scope/handling';
+import { cycle, loaded, pull, reload, type ActionState } from '../../src/scope/action';
 import { SCOPE } from '../../src/scope/optics';
 import { assess, type Wound } from '../../src/body/wound';
 import { dragAfter, throughGlass, yawAfter, type Through } from '../../src/scope/glass';
@@ -233,8 +234,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   const shots: Shot[] = [];
   let shotCount = 0;
   let rifle: Rifle = RIFLES.svd;
-  let chambered = true;
-  let mag = rifle.magazine - 1;
+  /** The action's state, as the shooter has to keep track of it (src/scope/action.ts). */
+  let gun: ActionState = loaded(rifle.id);
   let handling: Handling | null = null;
   let handlingCount = 0;
   /** What the elevation drum is set to, in metres. */
@@ -299,18 +300,16 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   function setRifle(id: RifleId): void {
     if (rifle.id === id) return;
     rifle = RIFLES[id];
-    chambered = true;
-    mag = rifle.magazine - 1;
+    gun = loaded(id);
     handling?.hush();
     handling = null;
   }
 
-  /** Starts working the action at `now`: the bolt, or a magazine change when the magazine is empty. */
-  function handle(now: number): void {
-    const reload = mag === 0;
-    const kind = reload ? 'reload' : 'cycle';
+  /** Starts working the action ('cycle': the bolt or the charging handle) or changing the magazine at `now`. */
+  function handle(now: number, kind: 'cycle' | 'reload'): void {
+    const reload = kind === 'reload';
     const seed = handlingCount++;
-    const plan = planHandling(rifle.id, kind, mag, seed);
+    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held });
     handling = {
       kind,
       start: now,
@@ -324,16 +323,31 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   }
 
   /**
-   * Space / the Fire button. Fires if a round is chambered, works the bolt if the rifle needs it, changes
-   * the magazine if it is empty. `aimAt(t)` is where the bore points at time t (sway and any recoil still
-   * running included); the bullet leaves after the lock time and barrel time, wherever the rifle points
-   * then. Returns the moment it left, or null when the press did something else.
+   * B and R: work the action, or change the magazine, whenever the hands are free, needed or not. Working it
+   * with a round chambered throws that round out; a magazine change keeps whatever is in the chamber.
+   */
+  function work(now: number, kind: 'cycle' | 'reload'): boolean {
+    sound.unlock();
+    if (handling) return false;
+    handle(now, kind);
+    return true;
+  }
+
+  /**
+   * Space / the Fire button: the trigger, and only the trigger. It fires if a round is chambered and the hammer
+   * or striker is cocked. Otherwise it does what the real rifle does: a cocked hammer or striker falls on an
+   * empty chamber with a click (and stays down until the action is worked); a fired bolt rifle whose bolt was
+   * not worked, a hammer or striker already down, or the SVD's carrier held open (its auto sear holds the
+   * hammer until the carrier is home) give a dead trigger. `aimAt(t)` is where
+   * the bore points at time t (sway and any recoil still running included); the bullet leaves after the lock
+   * time and barrel time, wherever the rifle points then. Returns the moment it left, or null.
    */
   function press(now: number, eye: THREE.Vector3, aimAt: (t: number) => Aim, wind: Wind): number | null {
     sound.unlock();
     if (handling) return null;
-    if (!chambered) {
-      handle(now);
+    const r = pull(gun, rifle.id);
+    if (r !== 'fire') {
+      sound.cue(r === 'click' ? 'dry-fire' : 'trigger', rifle.id, r === 'click' ? rifle.lockS * 0.5 : 0);
       return null;
     }
     const exit = now + rifle.lockS + rifle.barrelS;
@@ -436,9 +450,6 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false, wound, glass: passes };
     shots.push(shot);
     if (shots.length > 12) shots.shift();
-    // Semi-auto: the action reloads itself while rounds last. Bolt: the spent case stays until the bolt is worked.
-    if (rifle.action === 'semi' && mag > 0) mag--;
-    else chambered = false;
     if (delay !== null) {
       sound.shot(delay, rifle.id);
       // A semi-automatic throws its case out as it fires; it lands in the dirt to the right half a second later.
@@ -594,9 +605,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const u = (now - handling.start) / handling.dur;
       if (u >= 1) {
         fold = handling.shift;
-        if (handling.kind === 'reload') mag = rifle.magazine - 1;
-        else mag--;
-        chambered = true;
+        if (handling.kind === 'reload') reload(gun, rifle.id);
+        else cycle(gun, rifle.id);
         handling = null;
       } else {
         const e = u * u * (3 - 2 * u);
@@ -612,9 +622,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     }
     if (!pose) {
       // At rest. After the SVD's last round its empty magazine holds the carrier open.
-      const open = rifle.id === 'svd' && !chambered && mag === 0;
-      const key = `${rifle.id}|${mag}|${open}`;
-      if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, mag, open) };
+      const key = `${rifle.id}|${gun.mag}|${gun.held}`;
+      if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, gun.mag, gun.held) };
       pose = rest.pose;
     }
     return { hand, fold, pose, busy: !!handling };
@@ -622,10 +631,11 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
 
   /** For stills: the rifle `s` seconds into working its action (a magazine change if `reload`). */
   function handleAt(now: number, reload: boolean): void {
-    chambered = false;
-    // A semi-automatic is only ever handled for a magazine change.
-    mag = reload || rifle.action === 'semi' ? 0 : rifle.magazine - 2;
-    handle(now);
+    // A magazine change after the last round; working the action after a shot with rounds left.
+    gun = loaded(rifle.id);
+    gun.mag = reload ? 0 : rifle.magazine - 2;
+    pull(gun, rifle.id);
+    handle(now, reload ? 'reload' : 'cycle');
   }
 
   /** One impact's debris and dust, `age` s after it. */
@@ -690,8 +700,12 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     /** Sets the elevation drum to a range mark (metres). */
     setZero: (m: number) => (zeroM = m),
     press,
+    work,
     /** For stills: a bullet that left the muzzle at `exit`. */
-    fireAt: (exit: number, eye: THREE.Vector3, aim: Aim, wind: Wind) => fireAt(exit, eye, aim, wind, null),
+    fireAt: (exit: number, eye: THREE.Vector3, aim: Aim, wind: Wind) => {
+      pull(gun, rifle.id);
+      fireAt(exit, eye, aim, wind, null);
+    },
     update,
     act,
     handleAt,
@@ -718,9 +732,10 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         if (landed && pane === 'through') shot = `through glass · ${shot}`;
         if (landed && pane === 'ricochet') shot = `glanced off the glass · ${shot}`;
       }
+      // What the shooter is doing; at rest, nothing: keeping track of the chamber is the shooter's job.
       const state = handling
-        ? handling.kind === 'reload' ? 'changing magazine' : 'working the bolt'
-        : chambered ? 'ready' : mag > 0 ? 'Space: work the bolt' : 'Space: reload';
+        ? handling.kind === 'reload' ? 'changing magazine' : rifle.action === 'bolt' ? 'working the bolt' : 'racking'
+        : '';
       // The last bullet into a person, once it has struck: the wound, its striking speed, and how long ago.
       const hurt = [...shots].reverse().find((s) => s.wound && now >= s.exit + s.hit.t);
       const g = hurt?.glass.at(-1)?.th;
@@ -733,7 +748,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
           yawRad: yawAfter(g.yawMax, g.swingM, Math.hypot(hurt.hit.pos[0] - g.pos[0], hurt.hit.pos[1] - g.pos[1], hurt.hit.pos[2] - g.pos[2])),
         } : null,
       } : null;
-      return { rounds: `${mag + (chambered ? 1 : 0)} / ${rifle.magazine}`, state, shot, wound };
+      // Rounds counted as a shooter counts them: what was loaded, less what was fired or thrown out.
+      return { rounds: `${gun.mag + (gun.chamber === 'live' ? 1 : 0)}`, state, shot, wound };
     },
   };
 }

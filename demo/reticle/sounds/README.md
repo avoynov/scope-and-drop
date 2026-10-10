@@ -25,11 +25,12 @@ Each file is one sound, trimmed so it starts at its first transient (within 5 ms
 | `mag-release` | The magazine catch pressed | ✓ | ✓ | ✓ |
 | `mag-out` | The magazine coming out of the well (rocked forward off its lug on the SVD and VSS) | ✓ | ✓ | ✓ |
 | `mag-in` | A full magazine going in until the catch clicks (front lug first and rocked back on the SVD and VSS) | ✓ | ✓ | ✓ |
-| `carrier-close` | The bolt carrier slamming home on an empty chamber when the empty magazine comes out | | ✓ | |
 | `charge-back` | The charging handle pulled fully back against the spring | | ✓ | ✓ |
 | `charge-release` | The charging handle let go: the carrier slams home and chambers a round | | ✓ | ✓ |
+| `dry-fire` | The trigger pulled on an empty chamber: the striker (bolt rifle, VSS) or hammer (SVD) snapping forward | ✓ | ✓ | ✓ |
+| `trigger` | A dead trigger: pulled with the striker or hammer already down, or the SVD's carrier held open | ✓ | ✓ | ✓ |
 
-That is 24 files for every sound on every rifle. Any subset works; the rest stay synthesised.
+That is 29 files for every sound on every rifle. Any subset works; the rest stay synthesised.
 
 A recording of a whole sequence (a full bolt cycle, a whole magazine change) is useful too: put it in this folder with any name and it can be cut into the pieces above.
 

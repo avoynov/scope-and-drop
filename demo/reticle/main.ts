@@ -369,7 +369,6 @@ function syncUi(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
   syncWindCard();
-  $('fire').textContent = shooting.status(clock).state === 'ready' ? 'Fire · Space' : 'Action · Space';
   $('scope').textContent = shooting.busy() ? 'Hands on the action' : adsIn ? 'Scope out · F' : 'Scope in · F';
   rifle.setRifle(RIFLE[state.reticle]);
 }
@@ -422,8 +421,6 @@ function aimAt(t: number): Aim {
 }
 function fire(): void {
   const exit = shooting.press(clock, eyePos, aimAt, state.wind);
-  // Working the action takes the firing hand off the grip, and the head comes up off the scope with it.
-  if (shooting.busy() && adsIn) toggleScope();
   syncUi();
   if (exit === null) return;
   // A second shot before the first settles starts from wherever the rifle is when the bullet leaves.
@@ -431,6 +428,15 @@ function fire(): void {
   recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(shots++) };
 }
 $('fire').onclick = () => fire();
+/** B works the action (the bolt, or the charging handle), R changes the magazine: whenever asked, needed or not. */
+function work(kind: 'cycle' | 'reload'): void {
+  if (!shooting.work(clock, kind)) return;
+  // The hands leave the grip, and the head comes up off the scope with them.
+  if (adsIn) toggleScope();
+  syncUi();
+}
+$('bolt').onclick = () => work('cycle');
+$('reload').onclick = () => work('reload');
 
 /**
  * Scope-in and scope-out (see src/scope/ads.ts). The rifle stays on its bipod and the head moves: down onto
@@ -618,7 +624,9 @@ const keys = new Set<string>();
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
-  if (e.code === 'KeyR') { state.reticle = ({ pso: 'tree', tree: 'vss', vss: 'pso' } as const)[state.reticle]; syncUi(); }
+  if (e.code === 'KeyT') { state.reticle = ({ pso: 'tree', tree: 'vss', vss: 'pso' } as const)[state.reticle]; syncUi(); }
+  if (e.code === 'KeyB' && !e.repeat) work('cycle');
+  if (e.code === 'KeyR' && !e.repeat) work('reload');
   if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
   if (e.code === 'KeyG') { state.glass = GLASS_NEXT[state.glass]; glaze(); syncUi(); }
   if (e.code === 'KeyH') document.body.classList.toggle('nohud');
@@ -929,7 +937,7 @@ function frame(t: number, dt: number): void {
       ['Zero', `${state.zero[state.reticle]} m · drum ${state.zero[state.reticle] / 100}`],
       ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
       ...(ret.id === 'tree' ? [['Bullet speed', `${ROUNDS[ret.round].mv} m/s`]] : []),
-      ['Rounds', `${status.rounds} · ${status.state}`],
+      ['Rounds', status.state ? `${status.rounds} · ${status.state}` : status.rounds],
       ...(state.easy ? [['Wind meter', windText()]] : []),
       ...(state.glass !== 'off' ? [['Glass', `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? 'right' : 'left'}` : 'square-on'}`]] : []),
       ['Last shot', status.shot],

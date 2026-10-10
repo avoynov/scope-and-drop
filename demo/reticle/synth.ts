@@ -155,7 +155,8 @@ class Buf {
 /** Seconds of buffer each sound needs. */
 const LENGTH: Record<Synth, number> = {
   shot: 2.2, 'bolt-up': 0.2, 'bolt-back': 0.32, 'bolt-forward': 0.32, 'bolt-down': 0.18, 'case-land': 0.22,
-  'mag-release': 0.08, 'mag-out': 0.3, 'mag-in': 0.45, 'carrier-close': 0.35, 'charge-back': 0.3, 'charge-release': 0.4,
+  'mag-release': 0.08, 'mag-out': 0.3, 'mag-in': 0.45, 'charge-back': 0.3, 'charge-release': 0.4,
+  'dry-fire': 0.2, trigger: 0.06,
 };
 
 /** One take of a sound, `seed` choosing the variant, at `sr` samples per second. */
@@ -259,13 +260,6 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
         b.thump(0.245, 0.25, 170, 0.035);
       }
       break;
-    case 'carrier-close':
-      // The follower lets the carrier go: the recoil spring drives it home on an empty chamber.
-      b.spring(0, 0.045, 0.06, 1650 * p);
-      b.scrape(0, 0.045, 0.1, 1800, 2400, 0.4);
-      b.modes(0.045, 0.75, [[1150, 0.06, 1], [1950, 0.045, 0.8], [3100, 0.028, 0.55], [4700, 0.014, 0.35]], p);
-      b.thump(0.045, 0.28, 140, 0.04);
-      break;
     case 'charge-back':
       // Hand-pulled against the recoil spring until the carrier hits the back of its travel.
       b.spring(0, 0.16, 0.05, 1500 * p);
@@ -280,6 +274,23 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
       b.scrape(0.018, 0.02, 0.18, 3000, 4200, 0.9, 2);
       b.modes(0.046, 0.85, [[1250, 0.055, 1], [2100, 0.04, 0.75], [3300, 0.025, 0.5], [5200, 0.012, 0.3]], p);
       b.thump(0.046, 0.3, 150, 0.04);
+      break;
+    case 'dry-fire':
+      if (rifle !== 'svd') {
+        // The striker snaps forward onto an empty chamber: a sharp click and its spring buzzing out.
+        b.click(0, 0.5, 0.0002);
+        b.modes(0, 0.5, [[3900, 0.012, 1], [6400, 0.008, 0.6], [9100, 0.004, 0.3]], p);
+        b.spring(0, 0.012, 0.15, 2600 * p);
+      } else {
+        // The hammer falls on the firing pin of an empty chamber: a heavier snap, ringing in the receiver.
+        b.click(0, 0.6, 0.0003);
+        b.modes(0, 0.6, [[2700, 0.018, 1], [4500, 0.012, 0.6], [7200, 0.006, 0.35]], p);
+        b.thump(0, 0.12, 260, 0.015);
+      }
+      break;
+    case 'trigger':
+      // A dead trigger: the blade comes back against its stop with nothing to let go.
+      b.modes(0, 0.3, [[5200, 0.004, 1], [8100, 0.003, 0.5]], p);
       break;
   }
   // Every take peaks at full scale: how loud each sound plays against the others is set where it is played.

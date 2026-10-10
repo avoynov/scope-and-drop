@@ -24,7 +24,9 @@ import { render, type Synth } from '../demo/reticle/synth';
 const CASES: [RifleId, HandlingKind][] = [
   ['bolt', 'cycle'],
   ['bolt', 'reload'],
+  ['svd', 'cycle'],
   ['svd', 'reload'],
+  ['vss', 'cycle'],
   ['vss', 'reload'],
 ];
 const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -38,7 +40,7 @@ const sample = (plan: Plan, f: (p: HandlingPose, t: number) => void) => {
 };
 
 describe('working the action', () => {
-  it('ends with the rifle ready: action shut, magazine home, hands back, eyes downrange', () => {
+  it('ends with the action shut (or the SVD\'s held open), magazine home, hands back, eyes downrange', () => {
     for (const [rifle, kind] of CASES) {
       for (let seed = 0; seed < 6; seed++) {
         const rounds = kind === 'reload' ? 0 : 3;
@@ -47,16 +49,17 @@ describe('working the action', () => {
         const rest = restPose(rifle, rounds);
         expect(end.bolt.lift).toBe(0);
         expect(end.bolt.travel).toBe(0);
-        expect(end.carrier).toBe(0);
+        // A magazine change leaves the SVD's carrier where its bolt stop holds it, back after the last round.
+        expect(end.carrier).toBe(rifle === 'svd' && kind === 'reload' ? 1 : 0);
         expect(Math.hypot(...end.head)).toBeLessThan(0.01);
         expect(Math.abs(end.gaze.yaw) + Math.abs(end.gaze.pitch) + end.invF).toBeLessThan(1e-6);
         for (const s of ['R', 'L'] as const) expect(dist(end.hands[s].wrist.p, rest.hands[s].wrist.p)).toBeLessThan(0.01);
         if (kind === 'reload') {
           expect(end.mags[0].visible).toBe(false);
           expect(end.mags[1].visible).toBe(true);
-          // In the well, where the old one was, one round down for the one chambered.
+          // In the well, where the old one was, and full: changing it chambers nothing.
           expect(dist(end.mags[1].frame.p, rest.mags[0].frame.p)).toBeLessThan(0.01);
-          expect(end.mags[1].rounds).toBe(ACTIONS[rifle].mag.rounds - 1);
+          expect(end.mags[1].rounds).toBe(ACTIONS[rifle].mag.rounds);
         } else {
           expect(end.mags[0].rounds).toBe(rounds - 1);
         }
@@ -67,12 +70,17 @@ describe('working the action', () => {
   });
 
   it('takes a practised shooter about as long as it does on the range', () => {
-    const dur = (r: RifleId, k: HandlingKind) => planHandling(r, k, 0, 3).dur;
+    const dur = (r: RifleId, k: HandlingKind) => planHandling(r, k, 3, 3).dur;
     expect(dur('bolt', 'cycle')).toBeGreaterThan(1.2);
     expect(dur('bolt', 'cycle')).toBeLessThan(1.7);
+    for (const r of ['svd', 'vss'] as const) {
+      // Off the grip, rack, and back on: a second or so.
+      expect(dur(r, 'cycle')).toBeGreaterThan(0.9);
+      expect(dur(r, 'cycle')).toBeLessThan(1.6);
+    }
     for (const r of ['bolt', 'svd', 'vss'] as const) {
-      expect(dur(r, 'reload')).toBeGreaterThan(2.8);
-      expect(dur(r, 'reload')).toBeLessThan(4.5);
+      expect(dur(r, 'reload')).toBeGreaterThan(2.2);
+      expect(dur(r, 'reload')).toBeLessThan(3.5);
     }
   });
 
@@ -92,7 +100,7 @@ describe('working the action', () => {
   it('hooks the charging handle and rides it back', () => {
     for (const rifle of ['svd', 'vss'] as const) {
       const c = ACTIONS[rifle].carrier!;
-      const plan = planHandling(rifle, 'reload', 0, 2);
+      const plan = planHandling(rifle, 'cycle', 3, 2);
       const back = plan.cues.find((q) => q.ev === 'charge-back')!.t;
       const release = plan.cues.find((q) => q.ev === 'charge-release')!.t;
       for (let t = back; t < release; t += 0.01) {
@@ -136,7 +144,7 @@ describe('working the action', () => {
       expect(t[0]).toBeGreaterThanOrEqual(0);
       expect(t.at(-1)!).toBeLessThan(plan.dur);
       const at = (ev: string) => plan.cues.find((c) => c.ev === ev)?.t;
-      if (rifle === 'bolt') {
+      if (rifle === 'bolt' && kind === 'cycle') {
         expect(poseAt(plan, at('bolt-back')! - 0.01).bolt.lift).toBeCloseTo(1, 6);
         expect(poseAt(plan, at('bolt-down')! - 0.01).bolt.travel).toBe(0);
       }
@@ -144,15 +152,30 @@ describe('working the action', () => {
     }
   });
 
-  it('lets the SVD carrier slam shut when the empty magazine comes out, and only the SVD', () => {
+  it('keeps the SVD carrier held open through a magazine change, until the handle is pulled', () => {
     const svd = planHandling('svd', 'reload', 0, 0);
-    expect(poseAt(svd, 0).carrier).toBe(1);
-    expect(svd.cues.some((c) => c.ev === 'carrier-close')).toBe(true);
-    const out = svd.cues.find((c) => c.ev === 'mag-out')!.t;
-    expect(poseAt(svd, out + 0.2).carrier).toBe(0);
+    for (let t = 0; t <= svd.dur; t += 0.05) expect(poseAt(svd, t).carrier).toBe(1);
+    // Racked with the new magazine in: back the last bit, let go, and home on a round.
+    const rack = planHandling('svd', 'cycle', 10, 0, { held: true });
+    expect(poseAt(rack, 0).carrier).toBe(1);
+    expect(poseAt(rack, rack.dur).carrier).toBe(0);
+    expect(poseAt(rack, rack.dur).mags[0].rounds).toBe(9);
+    // Racked over an empty magazine, the bolt stop catches it again.
+    const dry = planHandling('svd', 'cycle', 0, 0);
+    expect(poseAt(dry, dry.dur).carrier).toBe(1);
+    // The VSS has no bolt stop: shut after its last round, and through a magazine change.
     const vss = planHandling('vss', 'reload', 0, 0);
     expect(poseAt(vss, 0).carrier).toBe(0);
-    expect(vss.cues.some((c) => c.ev === 'carrier-close')).toBe(false);
+    expect(poseAt(vss, vss.dur).carrier).toBe(0);
+  });
+
+  it('changes the bolt rifle\'s box without touching the bolt', () => {
+    const plan = planHandling('bolt', 'reload', 0, 0);
+    sample(plan, (p) => {
+      expect(p.bolt.lift).toBe(0);
+      expect(p.bolt.travel).toBe(0);
+    });
+    expect(plan.cues.some((c) => c.ev.startsWith('bolt-'))).toBe(false);
   });
 
   it('throws the bolt rifle\'s case out to the right and strips a round into the chamber', () => {
@@ -167,11 +190,15 @@ describe('working the action', () => {
     expect(late.p[1]).toBeGreaterThan(early.p[1]);
     // No round to feed from an empty magazine.
     expect(planHandling('bolt', 'cycle', 0, 0).feeds).toHaveLength(0);
+    // Nothing to throw out of an empty chamber.
+    const empty = planHandling('bolt', 'cycle', 3, 0, { chamber: 'empty' });
+    expect(empty.ejects).toHaveLength(0);
+    expect(empty.cues.some((c) => c.ev === 'case-land')).toBe(false);
   });
 });
 
 describe('synthesised action sounds', () => {
-  const EVENTS: Synth[] = ['shot', 'bolt-up', 'bolt-back', 'bolt-forward', 'bolt-down', 'case-land', 'mag-release', 'mag-out', 'mag-in', 'carrier-close', 'charge-back', 'charge-release'];
+  const EVENTS: Synth[] = ['shot', 'bolt-up', 'bolt-back', 'bolt-forward', 'bolt-down', 'case-land', 'mag-release', 'mag-out', 'mag-in', 'charge-back', 'charge-release', 'dry-fire', 'trigger'];
   it('are finite and peak at full scale', () => {
     for (const rifle of ['bolt', 'svd', 'vss'] as const) {
       for (const ev of EVENTS) {

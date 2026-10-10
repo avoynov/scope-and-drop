@@ -27,7 +27,8 @@ The short version, for players new to scopes. The numbers behind it are in secti
    - **Gusts travel.** A gust is carried downwind at the wind's speed, so you can see it coming across the sage and the near flags before it reaches the line. Fire in a lull, or hold for the gust that will be there.
    - **Easy** puts a wind meter on a mast at your hide, as high as the flags, and adds its m/s under the card's flags. It reads the wind at the hide, not along the way.
    - For scale, at 2.5 m/s straight across: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
-6. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
+6. **Keep the rifle loaded yourself.** Space only pulls the trigger. **B** works the bolt (or, on the SVD and VSS, the charging handle) and **R** changes the magazine. Neither does the other's job. After each shot from the bolt rifle, press B, or the next pull does nothing. A fresh magazine needs B to chamber a round. A pull on an empty chamber gives a click, and after that the trigger is dead until you work the action. The SVD stays open after its last round until you change the magazine and press B. The VSS closes on an empty chamber, so you only get a click.
+7. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
 
 **Mil tree (bolt rifle):** the tree isn't made for any round, so work the hold out from the ammo card. Turn the dial to 0 and the hold in mil is 1000 × drop ÷ range, with the drop worked out from the bullet's speed (section 3).
 
@@ -264,27 +265,43 @@ The cues:
 | Muzzle velocity spread | SD 8 m/s (military ammunition) | SD 4 m/s (match) | SD 4 m/s. At subsonic speed every m/s is 1.5 cm of height at 183 m |
 | Spread at its mannequin | 412 m: ≈ 5 cm per axis, plus ≈ 3 cm vertical from velocity | 412 m: ≈ 3 cm per axis, plus ≈ 1.5 cm vertical | 183 m: ≈ 2.4 cm per axis, plus ≈ 6 cm vertical |
 | Lock and barrel time | 6 ms (hammer) + 1.3 ms | 3 ms (striker) + 1.3 ms | 5 ms (striker) + 1.9 ms (a 200 mm ported barrel and the suppressor ahead of it) |
-| Action | Semi-automatic, 10-round magazine | Bolt, 5-round detachable box. After each shot Space works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine (the automatic mode is left out) |
-| Magazine change | About 3.3 s | About 3.9 s | About 3.3 s |
+| Action | Semi-automatic, 10-round magazine, hammer fired. Held open after the last round | Bolt, 5-round detachable box, striker fired. After each shot B works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine, striker fired (the automatic mode is left out). Shuts on an empty chamber after the last round |
+| Working the action (B) | Rack the charging handle, about 1.2 s | About 1.4 s | Rack the charging handle, about 1.2 s |
+| Magazine change (R) | About 2.9 s | About 2.7 s | About 2.9 s |
 
 - **The bullet goes where the rifle points when it leaves**, not where it pointed when Space was pressed: breathing sway, the heartbeat and any recoil still running are all sampled at trigger + lock time + barrel time. Break the shot at the bottom of the breath and it goes where the reticle was.
 - **Follow-up shots** fired before the rifle settles start wherever the recoil has put it. Rapid fire from the SVD walks up and right.
+- **The trigger only fires** (`src/scope/action.ts`). Working the action and changing the magazine are separate controls, and each can be used at any time, needed or not. Working the action with a round chambered throws that round out. A magazine change leaves the chamber as it was. When there is nothing to fire, the trigger does what the real rifle's does:
+  - A cocked striker or hammer falls on an empty chamber with a click, and the trigger is dead after that until the action is worked.
+  - After a shot from the bolt rifle, the striker stays down and the fired case stays in the chamber until the bolt is worked. Opening the bolt cocks it. Until then the trigger is dead, with no click.
+  - On the SVD, after the last round the magazine's follower lifts the bolt stop and the carrier stays back, even when the magazine comes out, until the charging handle is pulled again (SVD manual, §33). While it is back, the auto sear holds the hammer, so the trigger is dead.
+  - The VSS is striker fired, and no source describes a bolt stop on it. After the last round it closes on an empty chamber with the striker cocked, so the next pull is a click.
 - **Working the bolt or changing magazines** takes the head off the scope (below) and moves the rifle off the aim (about 1 mrad for the bolt, several for a magazine), so the aim has to be found again. As with recoil, nothing returns on its own.
 - Each shot's dispersion is seeded by its number, so stills are repeatable.
 
 ### Working the action by hand (`src/scope/handling.ts`, `demo/reticle/actions.ts`, `demo/reticle/hands.ts`)
 
-Working the bolt or changing the magazine takes the firing hand off the grip, and the head comes up off the scope with it. Space with the chamber empty starts it: the head comes up (the scope-out of section 7), lifts and leans right to see the action, the eyes glance down at it and focus there, so the range behind goes soft. Before the hands are done the eyes go back downrange and the head returns to its head-up spot. F can't put the head back on the weld until the firing hand is back on the grip; then it settles in as usual.
+Working the action (B) or changing the magazine (R) takes a hand off the rifle, and the head comes up off the scope with it: the head comes up (the scope-out of section 7), lifts and leans right to see the action, the eyes glance down at it and focus there, so the range behind goes soft. Before the hands are done the eyes go back downrange and the head returns to its head-up spot. F can't put the head back on the weld until the firing hand is back on the grip; then it settles in as usual.
 
 Each rifle is worked the way it really is:
 
-- **Bolt rifle** (M24 class, 5-round detachable box). The right hand pinches the knob, lifts it 90° (this cocks the striker), pulls the bolt 100 mm back (the extractor draws the case and the ejector flicks it out of the port to the right, tumbling into the dirt), pushes it forward (the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber) and turns it down. About 1.4 s. A magazine change opens the bolt first; the index finger presses the paddle catch in front of the trigger guard, the empty box drops into the hand and goes to the pouch, the full one is pushed straight up the well until the catch clicks, and the bolt closes on a new round. About 3.9 s.
-- **SVD.** After the last round the empty magazine's follower holds the bolt carrier open. The support hand thumbs the catch and rocks the magazine forward about its front lug; with the follower gone the carrier slams home on an empty chamber. The new magazine goes in front lug first and rocks back until the catch snaps over. The firing hand comes over the top, pulls the charging handle fully back and lets it go: the spring drives the carrier home and it chambers a round. About 3.3 s.
-- **VSS.** The same, except nothing holds its carrier open, so it is already shut when the magazine comes out.
+- **Bolt rifle** (M24 class, 5-round detachable box).
+  - Working the bolt: the right hand pinches the knob and lifts it 90°, which cocks the striker. It pulls the bolt 100 mm back: the extractor draws out the case (or an unfired round), and the ejector flicks it out of the port to the right, into the dirt. It pushes the bolt forward, and the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber, if there is a round. Then it turns the handle down. About 1.4 s.
+  - Changing the magazine: the index finger presses the paddle catch in front of the trigger guard. The box drops into the hand and goes to the pouch, and the full one is pushed straight up the well until the catch clicks. The bolt isn't touched. About 2.7 s.
+- **SVD.**
+  - Working the action: the firing hand comes over the top, pulls the charging handle fully back and lets it go. The spring drives the carrier home, and it chambers a round. If it was held open, the pull lowers the bolt stop first. Over an empty magazine, the bolt stop catches the carrier again. About 1.2 s.
+  - Changing the magazine: the support hand thumbs the catch and rocks the magazine forward about its front lug. The new one goes in front lug first and rocks back until the catch snaps over. A carrier held open stays open. About 2.9 s.
+- **VSS.** The same, except that it has no bolt stop, so its carrier is always shut.
 
 The hands are gloved, with jointed fingers and thumbs that shape for each grip (the bolt knob pinched, the charging handle hooked, the magazine held by its body, the catch pressed) on the way in. Each reach is a minimum-jerk stroke (Flash & Hogan), arcing clear of the rifle, after which the hand rides the part it holds: on the knob it follows it up and back. Arms run to the shoulders, about 20 cm behind the eye with the cheek on the stock, with the elbows out, down and a little back. A reach longer than the arm rolls the shoulder forward, up to 13 cm, as it does for the SVD's charging handle. The pace varies by ±6 % from one handling to the next, and everything is a function of the time since the hands started, so stills are exact.
 
-Tests check that every handling ends ready to fire (bolt shut, carrier home, the new magazine in the well one round down, both hands back where they rest, the eyes back on the range), that the hand stays on the knob and the charging handle while they move, that no wrist bends past 80° and the arms keep their length, that each sound is cued in order as its part moves, and that only the SVD's carrier slams shut when the magazine comes out.
+Tests check that:
+- every handling ends with the action shut (or the SVD's held open after its last round), the new magazine full in the well, both hands back where they rest, and the eyes back on the range;
+- a magazine change never touches the bolt, and the SVD's held carrier stays back through it;
+- the hand stays on the knob and the charging handle while they move;
+- no wrist bends past 80°, and the arms keep their length;
+- each sound is cued in order as its part moves;
+- the trigger, the action and the magazine each do only their own job, with the click or dead trigger each rifle really gives.
 
 ### What it hits
 
@@ -304,11 +321,11 @@ Tests check that every handling ends ready to fire (bolt shut, carrier home, the
 
 ### What the shooter hears
 
-The rifle's own sounds are the report and every part of working the action: the bolt lifting, running back, running forward over a round and turning down, the case landing in the dirt, the magazine catch, the magazine coming out and going in, the SVD's carrier slamming shut, and the charging handle pulled back and let go. Each is cued at the moment its part moves or hits its stop. A recording in `demo/reticle/sounds/` plays when there is one (see the README there for the names). Until then each is synthesised from what makes it (`synth.ts`): the report is a blast wave (a Friedlander pulse, its echo off the ground and the terrain's roll); steel parts that hit a stop ring at their own inharmonic modes after a contact click, heavier parts lower and longer; sliding parts make stick-slip friction noise; springs sing; a case in the dirt is a thud and a short ring. Four variants of each are drawn in turn so no two bolt cycles sound alike. In life the action is 60 to 80 dB quieter than an open-muzzle report at the ear, too wide a gap to play back, so it plays 8 to 18 dB under it. The bullet's arrival is synthesised in WebAudio (`audio.ts`). That is a slap for the mannequin, a thud for dirt, a ring for a steel post. It is heard after the time of flight plus the sound's return at 343 m/s: about 1.8 s at 412 m. Bang, then a slap 1.8 s later, is a hit. A faint echo comes back from the hills about 9 s after the shot. The VSS is suppressed and subsonic: about 121 dB at a metre, 39 dB below an unsuppressed 9×39, and no crack. The shooter hears a dull thump and the bolt carrier hitting the back of its travel and slamming home, then, 1.2 s later at 183 m, the slap of a hit, which is the loudest part. It is too quiet to echo. **Sound** in the panel mutes it.
+The rifle's own sounds are the report and every part of working the action: the bolt lifting, running back, running forward over a round and turning down, the case landing in the dirt, the magazine catch, the magazine coming out and going in, the charging handle pulled back and let go, the hammer or striker snapping onto an empty chamber, and a dead trigger. Each is cued at the moment its part moves or hits its stop. A recording in `demo/reticle/sounds/` plays when there is one (see the README there for the names). Until then each is synthesised from what makes it (`synth.ts`): the report is a blast wave (a Friedlander pulse, its echo off the ground and the terrain's roll); steel parts that hit a stop ring at their own inharmonic modes after a contact click, heavier parts lower and longer; sliding parts make stick-slip friction noise; springs sing; a case in the dirt is a thud and a short ring. Four variants of each are drawn in turn so no two bolt cycles sound alike. In life the action is 60 to 80 dB quieter than an open-muzzle report at the ear, too wide a gap to play back, so it plays 8 to 18 dB under it. The bullet's arrival is synthesised in WebAudio (`audio.ts`). That is a slap for the mannequin, a thud for dirt, a ring for a steel post. It is heard after the time of flight plus the sound's return at 343 m/s: about 1.8 s at 412 m. Bang, then a slap 1.8 s later, is a hit. A faint echo comes back from the hills about 9 s after the shot. The VSS is suppressed and subsonic: about 121 dB at a metre, 39 dB below an unsuppressed 9×39, and no crack. The shooter hears a dull thump and the bolt carrier hitting the back of its travel and slamming home, then, 1.2 s later at 183 m, the slap of a hit, which is the loudest part. It is too quiet to echo. **Sound** in the panel mutes it.
 
 ### Readouts
 
-**Rounds** (in the magazine and chamber, and what Space will do next), **Wind meter** (Easy only: the wind at 3 m on a mast at the hide), and **Last shot**: hit, where and the verdict (section 10), or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
+**Rounds** (in the magazine and chamber, and what the hands are doing; at rest it gives no hint of what the rifle needs), **Wind meter** (Easy only: the wind at 3 m on a mast at the hide), and **Last shot**: hit, where and the verdict (section 10), or the miss distance against the chest in the plane of whichever mannequin the bullet passed closest to. Last shot appears only once the bullet has arrived. It is a lab readout and gives no speeds, so the SVD and VSS players still need no numbers.
 
 ## 7. Scope-in and scope-out (`src/scope/ads.ts`, `demo/reticle/near.ts`)
 
@@ -335,7 +352,7 @@ The rifle's own sounds are the report and every part of working the action: the 
 
 Drag sensitivity follows adaptation: locked to the glass on the weld, locked to the naked-eye view with the head up.
 
-URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up. `act=<s>` and `reload=<s>` take it that long after the hands start working the bolt or changing the magazine (the SVD and VSS always change the magazine); the head comes up off the weld as they start.
+URL parameters for stills: `out` starts with the head up; `adsin=<s>` and `adsout=<s>` take the still that long after the head starts down or up. `act=<s>` and `reload=<s>` take it that long after the hands start working the action (the bolt, or racking the charging handle) or changing the magazine; the head comes up off the weld as they start.
 
 ## 8. The range (`demo/reticle/scene.ts`)
 
@@ -350,13 +367,15 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | W A S D | Move the eye across the exit pupil |
 | Q / E | Eye relief closer / further |
 | F / right-click | Scope in / scope out |
-| Space | Fire. With the chamber empty: work the bolt (bolt rifle) or change the magazine. The head comes off the scope until the hands are back on the grip |
-| R | Switch rifle and reticle: SVD, bolt rifle, VSS |
+| Space | Pull the trigger, and nothing else. It fires if a round is chambered; otherwise there's a click or a dead trigger, as on the real rifle |
+| B | Work the action: the bolt, or the charging handle. Any time; with a round chambered it throws that round out |
+| R | Change the magazine. Any time; the chamber stays as it was |
+| T | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | G | Glass in front of the mannequins: off, single, double, laminated, tempered (section 11) |
 | L | Illumination |
 | H | Hide the panel |
 
-The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), a Fire button, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
+The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), Fire, Bolt and Reload buttons, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
 URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (every drum on that mark, e.g. `zero=300`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 

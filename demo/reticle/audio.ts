@@ -49,7 +49,7 @@ for (const [path, url] of Object.entries(FILES)) {
 /** Where each sound comes from, left (−1) to right (1): the bolt and charging handle are on the right. */
 const PAN: Partial<Record<Synth, number>> = {
   'bolt-up': 0.3, 'bolt-back': 0.35, 'bolt-forward': 0.3, 'bolt-down': 0.3, 'case-land': 0.7,
-  'charge-back': 0.3, 'charge-release': 0.25, 'carrier-close': 0.15,
+  'charge-back': 0.3, 'charge-release': 0.25, 'dry-fire': 0.1, trigger: 0.1,
 };
 /**
  * How loud each sound peaks against an open-muzzle report, at the shooter's ear. Every take, recorded or
@@ -59,7 +59,8 @@ const PAN: Partial<Record<Synth, number>> = {
  */
 const LEVEL: Record<Synth, number> = {
   shot: 1, 'bolt-up': 0.22, 'bolt-back': 0.3, 'bolt-forward': 0.3, 'bolt-down': 0.25, 'case-land': 0.12,
-  'mag-release': 0.12, 'mag-out': 0.2, 'mag-in': 0.3, 'carrier-close': 0.4, 'charge-back': 0.25, 'charge-release': 0.4,
+  'mag-release': 0.12, 'mag-out': 0.2, 'mag-in': 0.3, 'charge-back': 0.25, 'charge-release': 0.4,
+  'dry-fire': 0.22, trigger: 0.06,
 };
 const VSS_SHOT = 0.55;
 const VARIANTS = 4;

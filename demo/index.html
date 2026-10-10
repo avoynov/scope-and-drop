@@ -60,12 +60,22 @@
         #brief-dial { height: 170px; }
       }
       /* Storey switch: only meaningful in the plan view. */
+      /* Room names over the plan view. They never take the pointer: wheel and drag go to the plan. */
+      #plan-labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+      #panel { z-index: 2; }
+      #plan-labels span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 3px; background: rgba(7, 8, 12, 0.72); color: var(--ink); }
+      #plan-labels span.party { color: var(--accent); }
+      #plan-labels span.service, #plan-labels span.private { color: var(--muted); }
+      body.plan canvas { cursor: grab; }
       #floors { display: none; }
       body.plan #floors { display: flex; }
+      #plan-hint { display: none; color: var(--muted); }
+      body.plan #plan-hint { display: block; }
     </style>
   </head>
   <body>
     <div id="reticle"><div class="h"></div><div class="v"></div></div>
+    <div id="plan-labels" aria-hidden="true"></div>
     <div id="panel">
       <h1>Mansion · twilight</h1>
       <div class="row"><input id="seed" spellcheck="false" /><button id="go">Build</button><button id="rnd">⟳</button></div>
@@ -91,6 +101,7 @@
       </div>
       <div class="row" id="views"></div>
       <div class="row" id="floors"></div>
+      <div class="row" id="plan-hint">scroll to zoom · drag to move · double-click to reset</div>
       <div class="row" id="overlays"></div>
       <div id="stats"></div>
     </div>
@@ -117,6 +128,7 @@
           <dt>Mission objects you can watch</dt><dd id="brief-pois"></dd>
         </dl>
         <div class="key">unseen <i></i> in view</div>
+        <div class="key">Scroll over the plan to zoom, drag to move it, double-click to reset.</div>
         <div class="key">Bars show how much of the party each bearing or elevation sees. Low looks through the windows; high looks down through the glass roof. Dots are mission objects: white when you can watch them.</div>
       </aside>
     </section>

@@ -4,12 +4,12 @@
  * The flight uses the same G7 drag and ICAO air as `trajectory()` in ballistics.ts, but in three dimensions
  * and relative to the wind, with gravity, Coriolis, spin drift (Litz) and crosswind aerodynamic jump
  * (Litz). With no wind and no Earth rotation a level shot reproduces `trajectory()`, so the PSO chevrons
- * and the ammo card stay true.
+ * and the DOPE card stay true.
  *
  * Frame: the demo's scene frame. x right, y up, z toward the shooter (the range runs down -z). Metres,
  * seconds, radians.
  */
-import { AIR, ROUNDS, cdG7, type Round, type RoundId } from './ballistics';
+import { AIR, ROUNDS, cdG7, zeroTiltRad, type Round, type RoundId } from './ballistics';
 
 export type Vec3 = [number, number, number];
 
@@ -36,15 +36,43 @@ export interface Rifle {
   blastDust: number;
   /** Height of the scope's axis above the bore. */
   sightM: number;
-  /** The elevation drum's marks, one detent each, in metres: 100 m (its 1) up, below it a 0 on the bolt rifle. */
-  drumM: readonly number[];
+  /** The elevation drum or turret on the scope. */
+  dial: Dial;
 }
+
+/**
+ * The scope's elevation adjustment. A range drum is cut for one load and engraved in hundreds of metres (a BDC
+ * dial, the PSO-1's): each detent puts the zero at its mark. A mil turret moves the reticle by a fixed angle a
+ * click, the same for any load; its 0 is the rifle's 100 m zero and a zero stop keeps it from going below.
+ */
+export type Dial =
+  | { kind: 'range'; marksM: readonly number[] }
+  | { kind: 'mil'; clickMil: number; clicksPerRev: number; clicks: number };
+
+/** How many detents the dial has. */
+export const dialDetents = (d: Dial): number => (d.kind === 'range' ? d.marksM.length : d.clicks + 1);
+/** The detent of the 100 m zero: the range drum's 1, the mil turret's 0. */
+export const dialHome = (d: Dial): number => (d.kind === 'range' ? Math.max(0, d.marksM.indexOf(BATTLE_ZERO_M)) : 0);
+
+/**
+ * How far the dial on `detent` tilts the bore up from the line of sight. A range drum zeroes the rifle at its
+ * mark; a mil turret adds its clicks to the 100 m zero.
+ */
+export function dialTiltRad(rf: Rifle, detent: number): number {
+  const d = rf.dial;
+  const r = ROUNDS[rf.round];
+  if (d.kind === 'range') return zeroTiltRad(r, d.marksM[detent]!, rf.sightM);
+  return zeroTiltRad(r, BATTLE_ZERO_M, rf.sightM) + detent * d.clickMil * 0.001;
+}
+
+/** The dial's reading on `detent`, as its engraving gives it: metres on a range drum, mils on a turret. */
+export const dialReading = (d: Dial, detent: number): number => (d.kind === 'range' ? d.marksM[detent]! : detent * d.clickMil);
 
 /** The drum's normal setting: the rifle is zeroed at 100 m, drum on 1, and the cut reticles are cut for it. */
 export const BATTLE_ZERO_M = 100;
 
 /** Drum marks every 50 m from 100 m to `max`. Like the real PSO-1's, the drum starts at 1. */
-const drum = (max: number): number[] => Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50);
+const drum = (max: number): Dial => ({ kind: 'range', marksM: Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50) });
 
 const MOA = Math.PI / (180 * 60);
 
@@ -63,19 +91,19 @@ export const RIFLES = {
   svd: {
     id: 'svd', name: 'SVD', round: '7n1', twistMm: 240, bulletLenMm: 32.3, bulletDiaMm: 7.92,
     sigmaRad: 0.4 * MOA, mvSd: 8, lockS: 0.006, barrelS: 0.0013,
-    action: 'semi', magazine: 10, blastDust: 1, sightM: 0.07, drumM: drum(1000),
+    action: 'semi', magazine: 10, blastDust: 1, sightM: 0.07, dial: drum(1000),
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
    * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round detachable box magazine.
-   * Scope 58 mm over the bore, as modelled in the demo. Its elevation turret carries a ballistic dial cut for
-   * the M118LR (as Leupold's CDS dials are), marked in hundreds of metres to 1000 m, with a 0 below the 1 that
-   * puts the bore parallel to the line of sight: there the hold from the ammo card is simply drop ÷ range.
+   * Scope 58 mm over the bore, as modelled in the demo. Its scope is a modern FFP mil scope (Leupold Mark 5HD
+   * class): an M5C3-style turret, 0.1 mil a click, 10 mil a turn over three turns (29 mil), zero stop at 0, the
+   * 100 m zero. Nothing on it or on the reticle is cut for the load: the shooter dials from the DOPE card.
    */
   bolt: {
     id: 'bolt', name: 'Bolt rifle', round: 'm118lr', twistMm: 286, bulletLenMm: 31.5, bulletDiaMm: 7.82,
     sigmaRad: 0.25 * MOA, mvSd: 4, lockS: 0.003, barrelS: 0.0013,
-    action: 'bolt', magazine: 5, blastDust: 0.6, sightM: 0.058, drumM: [0, ...drum(1000)],
+    action: 'bolt', magazine: 5, blastDust: 0.6, sightM: 0.058, dial: { kind: 'mil', clickMil: 0.1, clicksPerRev: 100, clicks: 290 },
   },
   /**
    * VSS "Vintorez", SP-5: integrally suppressed and subsonic. Spec: 4 shots inside 75 mm at 100 m, prone off
@@ -90,7 +118,7 @@ export const RIFLES = {
   vss: {
     id: 'vss', name: 'VSS', round: 'sp5', twistMm: 210, bulletLenMm: 36, bulletDiaMm: 9.25,
     sigmaRad: 0.45 * MOA, mvSd: 4, lockS: 0.005, barrelS: 0.0019,
-    action: 'semi', magazine: 10, blastDust: 0.05, sightM: 0.07, drumM: drum(400),
+    action: 'semi', magazine: 10, blastDust: 0.05, sightM: 0.07, dial: drum(400),
   },
 } as const satisfies Record<string, Rifle>;
 export type RifleId = keyof typeof RIFLES;

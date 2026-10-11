@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, parallaxShiftRad, stadiaRangeM, tanHalfApparent, trueFovRad } from '../src/scope/optics';
-import { ROUNDS, at, handHoldRad, holdRad, zeroTiltRad, type Round } from '../src/scope/ballistics';
-import { BATTLE_ZERO_M, RIFLES } from '../src/scope/shot';
+import { ROUNDS, at, holdRad, zeroTiltRad, type Round } from '../src/scope/ballistics';
+import { BATTLE_ZERO_M, RIFLES, dialDetents, dialHome, dialReading, dialTiltRad } from '../src/scope/shot';
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec } from '../src/scope/recoil';
 import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, VSS_RANGEFINDER, psoChevronY, psoCurveHeight, psoReticle, treeReticle, vssChevronY, vssReticle } from '../src/scope/reticles';
 
@@ -113,24 +113,33 @@ describe('ballistics', () => {
     expect(high).toBeCloseTo(0.14, 2);
   });
 
-  it('gives every rifle a drum from 1 (100 m) up in 50 m clicks, and the bolt rifle a 0 below it', () => {
-    for (const rifle of Object.values(RIFLES)) {
-      const one = rifle.drumM.indexOf(BATTLE_ZERO_M);
-      expect(one).toBe(rifle.id === 'bolt' ? 1 : 0);
-      if (rifle.id === 'bolt') expect(rifle.drumM[0]).toBe(0);
-      for (let i = one + 1; i < rifle.drumM.length; i++) expect(rifle.drumM[i]! - rifle.drumM[i - 1]!).toBe(50);
+  it('gives the SVD and VSS a drum from 1 (100 m) up in 50 m clicks', () => {
+    for (const rifle of [RIFLES.svd, RIFLES.vss]) {
+      const d = rifle.dial;
+      if (d.kind !== 'range') throw new Error('range drum expected');
+      expect(d.marksM[0]).toBe(BATTLE_ZERO_M);
+      expect(dialHome(d)).toBe(0);
+      for (let i = 1; i < d.marksM.length; i++) expect(d.marksM[i]! - d.marksM[i - 1]!).toBe(50);
+      // Each detent zeroes the rifle at its mark.
+      expect(dialTiltRad(rifle, 4)).toBeCloseTo(zeroTiltRad(ROUNDS[rifle.round], d.marksM[4]!, rifle.sightM), 12);
     }
-    expect(RIFLES.vss.drumM.at(-1)).toBe(400);
-    expect(RIFLES.svd.drumM.at(-1)).toBe(1000);
+    expect(dialReading(RIFLES.vss.dial, dialDetents(RIFLES.vss.dial) - 1)).toBe(400);
+    expect(dialReading(RIFLES.svd.dial, dialDetents(RIFLES.svd.dial) - 1)).toBe(1000);
   });
 
-  it('lets a mil-tree shooter work the hold out from the ammo card to within about a tenth', () => {
-    const r = ROUNDS.m118lr;
-    for (const d of [200, 400, 600, 800]) {
-      const hand = handHoldRad(r.mv, at(r, d).v, d);
-      expect(hand / holdRad(r, d)).toBeGreaterThan(1);
-      expect(hand / holdRad(r, d)).toBeLessThan(1.12);
-    }
+  it('gives the bolt rifle a mil turret: 0 is the 100 m zero, 0.1 mil a click, 10 mil a turn, 29 mil in all', () => {
+    const rf = RIFLES.bolt;
+    const d = rf.dial;
+    if (d.kind !== 'mil') throw new Error('mil turret expected');
+    expect(dialHome(d)).toBe(0);
+    expect(dialReading(d, dialDetents(d) - 1)).toBeCloseTo(29, 9);
+    expect(d.clicksPerRev * d.clickMil).toBeCloseTo(10, 9);
+    expect(dialTiltRad(rf, 0)).toBeCloseTo(zeroTiltRad(ROUNDS.m118lr, BATTLE_ZERO_M, rf.sightM), 12);
+    // Clicks are angle, so the same at any range: 1 cm at 100 m, 10 cm at 1000 m.
+    expect((dialTiltRad(rf, 1) - dialTiltRad(rf, 0)) * 100).toBeCloseTo(0.01, 9);
+    expect((dialTiltRad(rf, 10) - dialTiltRad(rf, 0)) * 1000).toBeCloseTo(1, 9);
+    // The turret reaches 1000 m on the M118LR with turns to spare.
+    expect(holdRad(ROUNDS.m118lr, 1000, BATTLE_ZERO_M, rf.sightM) * 1000).toBeLessThan(dialReading(d, d.clicks));
   });
 
   it('cuts the PSO chevrons for the 7N1 at their marked ranges', () => {

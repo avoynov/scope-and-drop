@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { AIR, ROUNDS, at, zeroTiltRad } from '../src/scope/ballistics';
+import { AIR, ROUNDS, at, holdRad, zeroTiltRad } from '../src/scope/ballistics';
 import { THOUSANDTH } from '../src/scope/optics';
 import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from '../src/scope/reticles';
-import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, crossDriftPerMs, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, type Path, type Vec3 } from '../src/scope/shot';
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, dialTiltRad, aeroJumpRad, crossDriftPerMs, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, type Path, type Vec3 } from '../src/scope/shot';
 
 /** Where the path crosses the vertical plane `range` metres down -z. */
 const plane = (p: Path, range: number) =>
@@ -13,7 +13,7 @@ const sp5 = ROUNDS.sp5;
 const steady = (x: number, y: number, z: number) => (_x: number, _y: number, _z: number, _t: number, o: Vec3) => { o[0] = x; o[1] = y; o[2] = z; return o; };
 
 describe('3D bullet flight', () => {
-  it('reproduces the 2D solver (and so the ammo card and chevrons) in still air without Earth rotation', () => {
+  it('reproduces the 2D solver (and so the DOPE card and chevrons) in still air without Earth rotation', () => {
     for (const r of [r7n1, ROUNDS.m118lr]) {
       const p = fly({ round: r, mv: r.mv, origin: [0, 0, 0], dir: [0, 0, -1] });
       for (const d of [100, 412, 800]) {
@@ -52,6 +52,44 @@ describe('3D bullet flight', () => {
       const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, -s, 0], dir: [0, Math.sin(up), -Math.cos(up)] }), d);
       expect(Math.abs(h.pos[1])).toBeLessThan(0.01 + d * 1e-5);
     }
+  });
+
+  it('lands on the target with the DOPE card dialled on the bolt rifle, to the nearest click', () => {
+    const rf = RIFLES.bolt;
+    const r = ROUNDS.m118lr;
+    for (const d of [200, 400, 600, 800, 1000]) {
+      // The card's elevation, rounded to a click as the shooter dials it.
+      const clicks = Math.round((holdRad(r, d, BATTLE_ZERO_M, rf.sightM) * 1000) / 0.1);
+      const up = dialTiltRad(rf, clicks);
+      const h = plane(fly({ round: r, mv: r.mv, origin: [0, -rf.sightM, 0], dir: [0, Math.sin(up), -Math.cos(up)] }), d);
+      // Within half a click of the line of sight.
+      expect(Math.abs(h.pos[1]) / d).toBeLessThan(0.05e-3 + 1e-6);
+    }
+  });
+
+  it("shows the rifleman's rule as real shooters find it: close in, low at long range on steep slopes", () => {
+    const rf = RIFLES.bolt;
+    const r = ROUNDS.m118lr;
+    /** Where the bullet passes the target (mil above the line of sight) dialled for slant × cos(angle). */
+    const miss = (slant: number, deg: number) => {
+      const a = (deg * Math.PI) / 180;
+      const up = a + dialTiltRad(rf, 0) + holdRad(r, slant * Math.cos(a), BATTLE_ZERO_M, rf.sightM);
+      // The bore leaves square under the line of sight, which runs up or down the slope.
+      const p = fly({ round: r, mv: r.mv, origin: [0, -rf.sightM * Math.cos(a), -rf.sightM * Math.sin(a)], dir: [0, Math.sin(up), -Math.cos(up)], floor: 1e4 });
+      const ty = slant * Math.sin(a), tz = -slant * Math.cos(a);
+      const along = (q: Vec3) => (q[1] - ty) * Math.sin(a) - (q[2] - tz) * Math.cos(a);
+      const h = firstHit(p, () => -1e9, (A, B) => (along(A) < 0 && along(B) >= 0 ? { f: -along(A) / (along(B) - along(A)), what: 'plane' } : null));
+      return (((h.pos[1] - ty) * Math.cos(a) + (h.pos[2] - tz) * Math.sin(a)) / slant) * 1000;
+    };
+    for (const deg of [-30, -15, 15, 30]) {
+      // Within a click at 400 m; at 800 m and 30° it leaves the bullet most of a mil low (drag stretches the
+      // flight over the slant range, which the rule ignores).
+      expect(miss(400, deg)).toBeLessThan(0);
+      expect(miss(400, deg)).toBeGreaterThan(-0.1);
+      expect(miss(800, deg)).toBeLessThan(-0.15);
+    }
+    expect(miss(800, 30)).toBeGreaterThan(-0.9);
+    expect(miss(800, 30)).toBeLessThan(-0.6);
   });
 
   it('keeps the SP-5 subsonic all the way, so it leaves no shock and no trace', () => {

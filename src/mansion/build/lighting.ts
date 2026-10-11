@@ -75,8 +75,15 @@ export class ScopedLighting {
   readonly texture: THREE.DataTexture;
   readonly uniforms: ScopedLightingUniforms;
   readonly roomCount: number;
-  /** Per-room bounce irradiance (linear RGB), useful for lighting dynamic actors. */
+  /** Per-room bounce irradiance (linear RGB), useful for lighting dynamic actors. Follows `setScopeScale`. */
   readonly ambient: THREE.Color[] = [];
+  /** The light data as built, so a switched room can be restored exactly. */
+  private readonly base: Float32Array;
+  private readonly baseAmbient: THREE.Color[];
+  /** Current switch scale per room scope. */
+  private readonly scales: Float64Array;
+  /** Floats per scope row. */
+  private readonly stride: number;
 
   constructor(bp: MansionBlueprint, intensityScale = 1) {
     const rooms = bp.rooms;
@@ -163,6 +170,10 @@ export class ScopedLighting {
         put(scope, 0, 0, 0, 0, 1);
       }
     }
+    this.base = data.slice();
+    this.baseAmbient = this.ambient.map((c) => c.clone());
+    this.scales = new Float64Array(rooms.length).fill(1);
+    this.stride = width * 4;
     this.texture = new THREE.DataTexture(data, width, scopes, THREE.RGBAFormat, THREE.FloatType);
     this.texture.magFilter = THREE.NearestFilter;
     this.texture.minFilter = THREE.NearestFilter;
@@ -174,6 +185,32 @@ export class ScopedLighting {
       uExtInfo: { value: new THREE.Vector2(rows, rooms.length) },
       uLightScale: { value: intensityScale },
     };
+  }
+
+  /**
+   * Switch a room's lights: its bounce and every light's colour become the built value × s
+   * (0 = off, 1 = as built, exactly). The sky term and light positions are left alone, and
+   * exterior scopes are not switched. Takes effect at the next texture upload.
+   */
+  setScopeScale(scope: number, s: number): void {
+    if (!(scope >= 0 && scope < this.roomCount) || this.scales[scope] === s) return;
+    this.scales[scope] = s;
+    const data = this.texture.image.data as Float32Array;
+    const row = scope * this.stride;
+    // Ambient texel: rgb only, its alpha is the sky term.
+    for (let c = 0; c < 3; c++) data[row + c] = this.base[row + c]! * s;
+    for (let i = 0; i < SCOPE_MAX; i++) {
+      const o = row + (2 + i * TEXELS) * 4;
+      for (let c = 0; c < 3; c++) data[o + c] = this.base[o + c]! * s;
+    }
+    const amb = this.baseAmbient[scope];
+    if (amb) this.ambient[scope]!.copy(amb).multiplyScalar(s);
+    this.texture.needsUpdate = true;
+  }
+
+  /** A room's current switch scale (1 for exterior scopes). */
+  scopeScale(scope: number): number {
+    return scope >= 0 && scope < this.roomCount ? this.scales[scope]! : 1;
   }
 
   /** Install scoped lighting on a standard/physical material (shares uniforms). */

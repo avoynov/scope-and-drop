@@ -153,14 +153,22 @@ export interface Wound {
   /** Seconds after the hit they come round again (a concussion), Infinity if they do not. */
   wakeS: number;
   /**
+   * What they can still do, lost stage by stage (seconds after the hit; Infinity = not within twelve hours):
+   * walk or run away, crawl or drag themselves away, sit up (after which they lie where they are). Each comes no
+   * later than the next, and all of them no later than incapacitatedS.
+   */
+  cannotWalkS: number;
+  cannotCrawlS: number;
+  lyingS: number;
+  /**
    * Seconds after the hit they can no longer do anything on purpose (fight, aim, crawl to cover, call out
    * sensibly) though they may still be awake: arms paralysed, dazed, confused by shock, the last seconds as
    * the brain's blood runs out. Never later than unconsciousS. Infinity = not within the hour.
    */
   incapacitatedS: number;
-  /** Seconds after the hit they can act again (a concussion clearing), Infinity if they do not. */
+  /** Seconds after the hit what a concussion or a stunned cord took comes back, Infinity if it does not. */
   recoverS: number;
-  /** Heart and breathing both stopped (clinical death). */
+  /** Heart and breathing both stopped (clinical death), untreated; may be hours or days away. */
   deathS: number;
   /** The fall is a reflex or a choice, not forced: they could get up again. */
   reflexFall: boolean;
@@ -358,8 +366,12 @@ export function assess(w: WoundInput): Wound {
   const cordStunned = t.damage.some((d) => d.part.tissue === 'cord' && !d.direct && d.frac > 0.25);
 
   let fallS = Infinity, unconsciousS = Infinity, wakeS = Infinity, deathS = Infinity;
-  // Out of action for good (incapS), or for a while (dazed from dazeS to dazeEnd: a concussion).
-  let incapS = Infinity, dazeS = Infinity, dazeEnd = Infinity;
+  // What they can still do, lost stage by stage (for good): walk away, crawl or drag themselves, sit up, do
+  // anything on purpose at all. A concussion or a stunned cord takes some of them for a while instead (from dazeS
+  // to dazeEnd): all of them (dazeAll), or only the legs.
+  let walkS = Infinity, crawlS = Infinity, sitS = Infinity, incapS = Infinity;
+  let dazeS = Infinity, dazeEnd = Infinity, dazeAll = true;
+  const out = (at: number) => { walkS = Math.min(walkS, at); crawlS = Math.min(crawlS, at); sitS = Math.min(sitS, at); incapS = Math.min(incapS, at); };
   let reflexFall = false;
   const causes: string[] = [];
 
@@ -370,7 +382,8 @@ export function assess(w: WoundInput): Wound {
   if (brainstem) {
     // The centres for consciousness, breathing and blood pressure: down and out at once, breathing stops; the
     // heart beats on without oxygen for a few minutes.
-    fallS = unconsciousS = incapS = 0;
+    fallS = unconsciousS = 0;
+    out(0);
     deathS = 120 + 180 * R(2);
     causes.push('brainstem destroyed: breathing stops');
   } else if (brain.length) {
@@ -386,13 +399,13 @@ export function assess(w: WoundInput): Wound {
     const minor = !deep && !posterior && !bihemispheric && brainFrac < 0.03 && t.energyJ < 700;
     fallS = 0;
     // Of the few who stay awake, about half are too stunned to do anything; the rest can still act.
-    if (minor && R(15) < 0.3) { fallS = 0.3 + R(16); if (R(20) < 0.5) incapS = 0; }
-    else unconsciousS = incapS = 0;
+    if (minor && R(15) < 0.3) { fallS = walkS = 0.3 + R(16); if (R(20) < 0.5) out(0); }
+    else { unconsciousS = 0; out(0); }
     const pFatal = massive || deep || posterior || bihemispheric ? 1 : minor ? 0.25 : Math.min(0.95, 0.3 + 3 * brainFrac + 0.3 * Math.min(1, t.energyJ / 1500));
     if (R(3) < pFatal) {
       // Most die where they fall; some hours later as the brain swells.
-      deathS = massive ? 60 + 240 * R(4) : R(17) < 0.7 ? 180 + 2400 * R(4) : Infinity;
-      causes.push(massive ? 'head: brain destroyed' : deathS < Infinity ? 'head: fatal brain wound' : 'head: brain wound, fatal within hours');
+      deathS = massive ? 60 + 240 * R(4) : R(17) < 0.7 ? 180 + 2400 * R(4) : 7200 + 36000 * R(4);
+      causes.push(massive ? 'head: brain destroyed' : deathS < 3600 ? 'head: fatal brain wound' : 'head: brain wound, fatal within hours');
     } else causes.push('head: brain wound');
   } else if (has('skull') || hit((d) => d.part.tissue === 'skull' && d.frac > 0.02).length) {
     // Through the scalp and bone but not into the brain: a grazing head wound often stuns, sometimes knocks
@@ -411,23 +424,32 @@ export function assess(w: WoundInput): Wound {
     // The diaphragm's nerves (C3–C5) are cut off: they drop, paralysed from the neck down and unable to breathe,
     // but conscious until their blood runs out of oxygen (sooner for the blood pressure falling as the cord's
     // control of the vessels goes). The heart stops from lack of oxygen a few minutes later.
-    fallS = incapS = 0;
+    fallS = 0;
+    out(0);
     unconsciousS = Math.min(unconsciousS, 45 + 75 * R(2));
     deathS = Math.min(deathS, 240 + 240 * R(14));
     causes.push('spinal cord cut high in the neck: cannot breathe');
   } else if (cord('C5-T1')) {
-    // The hands and most of the arms go with it (C5–T1 is the brachial plexus): they cannot hold or use anything.
-    fallS = incapS = 0;
+    // The hands and most of the arms go with it (C5–T1 is the brachial plexus), and the trunk: they cannot hold
+    // anything, drag themselves or sit up.
+    fallS = 0;
+    out(0);
     causes.push('spinal cord cut at the neck: paralysed from the chest down, hands useless');
   }
-  else if (cord('T2-L1')) { fallS = Math.min(fallS, 0.1); causes.push('spinal cord cut: legs paralysed'); }
-  else if (cord('cauda')) { fallS = Math.min(fallS, 0.3); causes.push('nerves to the legs cut'); }
+  // Paraplegic: the legs are gone but the arms still drag them and prop them up.
+  else if (cord('T2-L1')) { fallS = Math.min(fallS, 0.1); walkS = Math.min(walkS, 0.1); causes.push('spinal cord cut: legs paralysed'); }
+  else if (cord('cauda')) { fallS = Math.min(fallS, 0.3); walkS = Math.min(walkS, 0.3); causes.push('nerves to the legs cut'); }
   else if (cordStunned) {
     fallS = Math.min(fallS, 0.2);
     // Stunned in the neck, all four limbs go for a while (transient quadriplegia: minutes, sometimes hours).
     if (t.damage.some((d) => d.part.tissue === 'cord' && !d.direct && d.frac > 0.25 && (d.part.level === 'C1-C4' || d.part.level === 'C5-T1'))) {
       dazeS = Math.min(dazeS, 0.2);
       dazeEnd = 600 + 6600 * R(23);
+    } else {
+      // Lower down only the legs go, and come back in minutes to an hour.
+      dazeS = Math.min(dazeS, 0.2);
+      dazeEnd = 300 + 3300 * R(23);
+      dazeAll = false;
     }
     causes.push('spinal cord stunned: limbs give way');
   }
@@ -436,14 +458,14 @@ export function assess(w: WoundInput): Wound {
   // The hip joint and the thigh bone carry the weight: broken, the leg folds. A hole through the pelvic ring
   // itself (wing, sacrum, pubis) leaves it standing; whether they stay up is down to the pain.
   if (has('hip') || has('femur')) {
-    fallS = Math.min(fallS, 0.3 + 0.4 * R(7));
+    fallS = walkS = Math.min(fallS, 0.3 + 0.4 * R(7));
     causes.push(has('hip') ? 'hip joint broken: cannot stand' : 'thigh bone broken: cannot stand');
   } else if (hit((d) => d.part.tissue === 'pelvis' && d.direct).length) {
-    if (R(8) < 0.5) fallS = Math.min(fallS, 0.5 + R(8));
+    if (R(8) < 0.5) fallS = walkS = Math.min(fallS, 0.5 + R(8));
     causes.push('pelvis broken');
   }
   if (has('vertebra') && !causes.some((c) => c.includes('cord'))) {
-    if (R(9) < 0.6) fallS = Math.min(fallS, 0.3);
+    if (R(9) < 0.6) fallS = walkS = Math.min(fallS, 0.3);
     causes.push('spine broken');
   }
 
@@ -456,10 +478,15 @@ export function assess(w: WoundInput): Wound {
   const pumpFails = !!heart && (heart.frac > 0.12 || (heart.direct && heart.frac > 0.008 && R(10) < 0.9));
   // The aorta or pulmonary trunk cut across: the heart's output pours out through it and none reaches the brain.
   const collapse = t.damage.some((d) => GREAT_VESSELS.has(d.part.id) && d.direct && d.cut >= 0.6);
+  // A small hole the heart beats on through mostly bleeds into the sac round it, which holds it in: 100–200 mL
+  // there stops the heart filling (tamponade), over a minute or a few. A wider tear drains into the chest.
+  const tamponade = !!heart && heart.direct && !pumpFails && R(24) < 0.6;
   let bleed = 0, clotting = 0;
   const sources: { name: string; q: number }[] = [];
+  // Where the bleeding goes: into each side of the chest (it fills it and crushes the lung), or elsewhere.
+  const chest = { l: 0, r: 0 };
   // The heart's two parts bleed as one.
-  const organs: Damage[] = [...t.damage.filter((d) => d.part.tissue !== 'heart'), ...(heart ? [{ ...hearts[0]!, frac: heart.frac, direct: heart.direct }] : [])];
+  const organs: Damage[] = [...t.damage.filter((d) => d.part.tissue !== 'heart'), ...(heart && !tamponade ? [{ ...hearts[0]!, frac: heart.frac, direct: heart.direct }] : [])];
   for (const d of organs) {
     const vesselQ = VESSEL_BLEED[d.part.id];
     let q: number;
@@ -477,64 +504,117 @@ export function assess(w: WoundInput): Wound {
       if (!d.direct) q *= 0.5;
     }
     // Small tears in an organ (and vessels only stretched by the cavity) mostly clot within minutes: most low-grade
-    // liver, spleen and kidney injuries stop by themselves. Big ones keep bleeding.
-    const clots = vesselQ !== undefined ? (d.direct ? 0 : 1) : Math.max(0, 1 - d.frac / 0.25);
+    // liver, spleen and kidney injuries stop by themselves. Big ones keep bleeding. Lung tissue bleeds at low
+    // pressure and mostly stops (most lung wounds need only a chest drain), but a rifle's track keeps oozing.
+    const clots = vesselQ !== undefined ? (d.direct ? 0 : 1) : d.part.tissue === 'lung' ? Math.max(0, 0.85 - d.frac) : Math.max(0, 1 - d.frac / 0.25);
     bleed += q * (1 - clots);
     clotting += q * clots;
-    if (q > 0.5 && d.part.tissue !== 'heart') sources.push({ name: d.part.name, q });
+    const id = d.part.id;
+    const side = id === 'aorta-t' || id.endsWith('-l') && (d.part.tissue === 'lung' || d.part.tissue === 'hilum' || id.startsWith('subclavian')) ? 'l'
+      : id.endsWith('-r') && (d.part.tissue === 'lung' || d.part.tissue === 'hilum' || id.startsWith('subclavian')) ? 'r' : null;
+    if (side) chest[side] += q;
+    if (q > 0.5 && d.part.tissue !== 'heart' && !sources.some((x) => x.name === d.part.name)) sources.push({ name: d.part.name, q });
+    else if (q > 0.5) { const x = sources.find((y) => y.name === d.part.name); if (x) x.q += q; }
   }
   sources.sort((a, b2) => b2.q - a.q);
+  const qAll = Math.max(1e-6, bleed + clotting);
+  const into = { l: chest.l / qAll, r: chest.r / qAll };
   // Muscle, broken bone, and the entry and exit wounds: small vessels, which clot over minutes.
   const ooze = 0.3 + 0.6 * t.trackM + 1.2 * t.damage.filter((d) => BONE.has(d.part.tissue) && d.direct).length;
-  const lungs = new Set(hit((d) => d.part.tissue === 'lung' && d.direct).map((d) => d.part.id)).size;
+  // Each lung holed: air leaks into its side of the chest and it collapses part or all the way over minutes
+  // (wide open, a sucking chest wound, it goes in a minute). A quarter turn into tension pneumothorax: the leak
+  // only lets air in, the pressure shoves the heart and great veins aside and the circulation fails (minutes to
+  // half an hour after the hit, death within ten minutes of it untreated).
+  const holedLung = (s: 'l' | 'r') => t.damage.some((d) => (d.part.id === `lung-${s}` || d.part.id === `hilum-${s}`) && d.direct);
+  const lungSide = (s: 'l' | 'r', i: number) => holedLung(s)
+    ? { collapse: 0.4 + 0.6 * R(25 + i), tau: 40 + 260 * R(27 + i), tension: R(29 + i) < 0.25 ? 300 + 1500 * R(31 + i) : Infinity }
+    : { collapse: 0, tau: 1, tension: Infinity };
+  const L = lungSide('l', 0), Rt = lungSide('r', 1);
+  const lungs = (holedLung('l') ? 1 : 0) + (holedLung('r') ? 1 : 0);
   // The larynx or windpipe torn open: blood runs into the lungs and swelling closes it, about half the time.
   const airway = t.damage.some((d) => d.part.tissue === 'airway' && d.direct && d.frac > 0.2) && R(19) < 0.5;
   // Both carotids cut: only the vertebral arteries feed the brain.
   const carotids = t.damage.filter((d) => d.part.id.startsWith('carotid') && d.direct && d.cut > 0.3).length;
 
-  // Step the blood volume and the brain's oxygen through the hour. Bleeding follows the pressure, which follows
-  // the volume lost (pressureAt).
-  let lost = 0, debt = 0, lost60 = 0, lowFor = 0;
-  let bleedFall = Infinity, faint = Infinity, arrest = Infinity, shock = Infinity, greying = Infinity;
+  // Step the blood, the lungs and the brain's oxygen through twelve hours (finely through the first). Bleeding
+  // follows the pressure, which follows the volume lost (pressureAt), the lungs set how much oxygen the blood
+  // carries, and the brain and limbs run on what reaches them: pressure × oxygen (Pe).
+  let lost = 0, debt = 0, lost60 = 0, lowFor = 0, sac = 0, ox = 1;
+  const pleura = { l: 0, r: 0 };
+  let faint = Infinity, arrest = Infinity, greying = Infinity;
+  let walkC = Infinity, crawlC = Infinity, sitC = Infinity, incapC = Infinity;
+  const stageDebt = [0, 0, 0];
   // The last seconds before they faint: sight greys and goes, the eyes fix, the limbs stop obeying (Rossen's
   // neck-cuff subjects; the pilots' "almost loss of consciousness" under g).
   const greyAt = Math.max(0.6 * reserveS, reserveS - 3);
-  const dt = 0.25;
-  for (let time = 0; time <= 3600; time += dt) {
+  // Blood pressure × oxygen below which they can no longer walk, crawl and sit up. Lost once they have been
+  // short for half the brain's reserve, so a heart shot still leaves a few seconds; a slow bleed or failing
+  // lungs cross them minute by minute. ATLS: up to 30 % lost they can walk; class III (30–40 %) they faint if
+  // they stand; class IV (over 40 %) they are confused, lethargic and barely move.
+  const STAGE_PE = [0.8, 0.65, 0.55], STAGE_LOSS = [0.33, 0.4, 0.44];
+  const tensionAt = Math.min(L.tension, Rt.tension);
+  for (let time = 0, dt = 0.25; time <= 43200; time += dt) {
+    if (time >= 3600) dt = 2;
     const loss = lost / blood;
     let P = pumpFails ? 0 : pressureAt(loss);
-    // Both lungs open to the air, or the airway: breathing fails over a few minutes.
-    if (lungs >= 2 || airway) P *= time > 120 ? Math.max(0.2, 1 - (time - 120) / 600) : 1;
+    // Blood in the heart's sac squeezes it: 100 mL starts to tell, 200 mL is near arrest.
+    if (tamponade) { sac += (1.5 + 4 * R(26)) * Math.max(P, 0.2) * dt; P /= 1 + (sac / 160) ** 3; }
+    if (time > tensionAt) P *= Math.max(0.05, 1 - (time - tensionAt) / 420);
     // What reaches the brain and the heart's own arteries.
     const Pb = (collapse ? 0.15 : 1) * (carotids >= 2 ? 0.35 : 1) * P;
-    lost += Math.min(MAX_BLEED, bleed + clotting * Math.exp(-time / 480) + ooze * Math.exp(-time / 300)) * Math.max(P, 0.05) * dt;
+    const flow = Math.min(MAX_BLEED, bleed + clotting * Math.exp(-time / 480) + ooze * Math.exp(-time / 300)) * Math.max(P, 0.05) * dt;
+    lost += flow;
+    pleura.l += flow * into.l; pleura.r += flow * into.r;
     if (time <= 60) lost60 = lost;
-    // The brain runs on its reserve once pressure falls below what it needs (≈ 45 % of normal).
-    debt = Pb < 0.45 ? debt + ((0.45 - Pb) / 0.45) * dt : Math.max(0, debt - dt * 0.2);
+    // Each lung: what air and blood in its side of the chest leave of it (a side holds about 3 L; 1.5 L of blood
+    // is a massive haemothorax). With one lung gone the other keeps the blood ~85–90 % saturated at rest.
+    const side = (x: typeof L, blood: number, s: number) => Math.min(1, x.collapse * (1 - Math.exp(-time / x.tau)) + blood / 2500 + (time > s ? 1 : 0));
+    let F = 1 - 0.5 * (side(L, pleura.l, L.tension) + side(Rt, pleura.r, Rt.tension));
+    if (airway && time > 60) F *= Math.max(0.15, 1 - (time - 60) / 400);
+    // The blood's oxygen follows the lungs over about a minute (what the lungs and blood hold).
+    const oxTarget = F >= 0.5 ? Math.min(1, 0.85 + 0.3 * (F - 0.5)) : 1.7 * F;
+    ox += ((oxTarget - ox) * dt) / 60;
+    const Pe = Pb * ox;
+    // The brain runs on its reserve once what reaches it falls below what it needs (≈ 45 % of normal).
+    debt = Pe < 0.45 ? debt + ((0.45 - Pe) / 0.45) * dt : Math.max(0, debt - dt * 0.2);
     if (greying === Infinity && debt >= greyAt) greying = time;
     if (faint === Infinity && debt >= reserveS) faint = time;
-    // Class III shock: they can no longer stay on their feet. Class IV: confused and listless, past doing anything.
-    if (bleedFall === Infinity && loss >= 0.35) bleedFall = time;
-    if (shock === Infinity && loss >= 0.4) shock = time;
-    // The heart stops once too little pressure has fed it for a while, or the blood is gone.
-    lowFor = Pb < 0.2 ? lowFor + dt : 0;
+    const at = [walkC, crawlC, sitC];
+    for (let k = 0; k < 3; k++) {
+      stageDebt[k] = Pe < STAGE_PE[k]! ? stageDebt[k]! + ((STAGE_PE[k]! - Pe) / STAGE_PE[k]!) * dt : Math.max(0, stageDebt[k]! - dt * 0.2);
+      if (at[k] === Infinity && (stageDebt[k]! >= 0.5 * reserveS || loss >= STAGE_LOSS[k]!)) at[k] = time;
+    }
+    [walkC, crawlC, sitC] = at as [number, number, number];
+    if (incapC === Infinity && (greying <= time || loss >= 0.46)) incapC = time;
+    // The heart stops once too little oxygen has fed it for a while, or the blood is gone.
+    lowFor = Pe < 0.2 ? lowFor + dt : 0;
     if (lowFor >= arrestS || loss >= 0.55) { arrest = time; break; }
   }
-  if (faint < Infinity) {
-    unconsciousS = Math.min(unconsciousS, faint);
-    wakeS = Infinity;
-    fallS = Math.min(fallS, faint, bleedFall);
-  } else if (bleedFall < Infinity) fallS = Math.min(fallS, bleedFall);
+  if (faint < Infinity) { unconsciousS = Math.min(unconsciousS, faint); wakeS = Infinity; }
   if (arrest < Infinity) deathS = Math.min(deathS, arrest);
+  // Days, not hours: the gut's contents in the belly (peritonitis), or a lung's wound festering (empyema), kill
+  // most of those left untreated (before surgery and antibiotics, most belly wounds died).
+  const gutHoled = t.damage.some((d) => (d.part.tissue === 'gut' || d.part.tissue === 'stomach') && d.direct);
+  if (deathS === Infinity && gutHoled && R(32) < 0.8) deathS = 86400 * (1 + 3 * R(33));
+  if (deathS === Infinity && lungs && R(34) < 0.35) deathS = 86400 * (2 + 5 * R(35));
   unconsciousS = Math.min(unconsciousS, deathS);
-  // Fighting for breath with both lungs open or the airway full of blood leaves room for nothing else.
-  const breathless = lungs >= 2 || airway ? 30 + 90 * R(22) : Infinity;
-  incapS = Math.min(incapS, greying, shock, breathless, wakeS === Infinity ? unconsciousS : Infinity);
-  // A concussion that clears before anything else puts them out of action is the only incapacity that passes.
-  const passes = dazeEnd < incapS && dazeEnd <= 3600;
-  const incapacitatedS = Math.min(incapS, dazeS, unconsciousS);
-  const recoverS = passes && incapacitatedS < Infinity ? dazeEnd : Infinity;
-  if (incapacitatedS < Infinity && !passes) fallS = Math.min(fallS, incapacitatedS);
+  // Each stage comes no later than the next: helpless before unconscious, lying before helpless.
+  const unc = wakeS === Infinity ? unconsciousS : Infinity;
+  incapS = Math.min(incapS, incapC, unc);
+  sitS = Math.min(sitS, sitC, incapS);
+  crawlS = Math.min(crawlS, crawlC, sitS);
+  walkS = Math.min(walkS, walkC, crawlS);
+  // A concussion or a stunned cord that clears before the wound takes the same things for good.
+  const dazedFor = dazeAll ? Math.min(walkS, crawlS, sitS, incapS) : walkS;
+  const passes = dazeS < Infinity && dazeEnd < dazedFor && dazeEnd <= 43200;
+  const recoverS = passes ? dazeEnd : Infinity;
+  const [walkAt, crawlAt, sitAt, incapAt] = [walkS, ...(dazeAll ? [crawlS, sitS, incapS] : [Infinity, Infinity, Infinity])]
+    .map((v) => Math.min(v, dazeS)) as [number, number, number, number];
+  const incapacitatedS = Math.min(dazeAll ? incapAt : incapS, unconsciousS);
+  const lieS = Math.min(dazeAll ? sitAt : sitS, incapacitatedS);
+  const noCrawlS = Math.min(dazeAll ? crawlAt : crawlS, lieS);
+  const noWalkS = Math.min(walkAt, noCrawlS);
+  fallS = Math.min(fallS, noWalkS);
   if (pumpFails) causes.push('heart torn open');
   else if (collapse) causes.push(`${t.damage.find((d) => GREAT_VESSELS.has(d.part.id) && d.cut >= 0.6)!.part.name} cut across`);
   else if (bleed + clotting > 1.5 && sources.length) {
@@ -542,7 +622,8 @@ export function assess(w: WoundInput): Wound {
     const q = bleed + 0.3 * clotting;
     causes.push(`${q > 25 ? 'massive' : q > 6 ? 'heavy' : 'slow'} bleeding from the ${from}`);
   }
-  if (lungs) causes.push(lungs >= 2 ? 'both lungs holed' : 'a lung holed');
+  if (tamponade) causes.push('heart holed: its sac fills with blood');
+  if (lungs) causes.push(`${lungs >= 2 ? 'both lungs' : 'a lung'} holed and collapsing${tensionAt < Infinity ? ', tension pneumothorax' : ''}`);
   if (airway) causes.push('airway torn: chokes on blood');
   // Organs holed without much bleeding still count: the gut leaks, a kidney bleeds into its own space.
   const holed = [...new Set(t.damage.filter((d) => d.direct && PARENCHYMA.has(d.part.tissue) && d.part.tissue !== 'lung' && d.part.tissue !== 'face' && !(airway && d.part.tissue === 'airway')
@@ -556,10 +637,10 @@ export function assess(w: WoundInput): Wound {
   if (fallS > 2 && t.trackM > 0) {
     const torso = t.track.some((q) => q.p[1] > 0.86 && q.p[1] < 1.47);
     const pDrop = Math.min(0.92, 0.35 + 0.35 * Math.sqrt(Math.min(1, t.energyJ / 1500)) + (torso ? 0.15 : 0));
-    if (R(11) < pDrop) { fallS = 0.3 + 1.2 * R(12); reflexFall = forced === Infinity; }
+    if (R(11) < pDrop) { fallS = 0.3 + 1.2 * R(12); reflexFall = forced > 3600; }
   }
 
-  const outcome: Outcome = deathS <= 3600 ? 'killed' : forced < Infinity ? 'downed' : 'wounded';
+  const outcome: Outcome = deathS <= 3600 ? 'killed' : forced <= 3600 && recoverS > 3600 ? 'downed' : 'wounded';
   if (!causes.length) causes.push(t.trackM > 0 ? 'flesh wound' : 'no wound');
   return {
     outcome,
@@ -567,6 +648,9 @@ export function assess(w: WoundInput): Wound {
     fallS,
     unconsciousS,
     wakeS: unconsciousS < Infinity ? wakeS : Infinity,
+    cannotWalkS: noWalkS,
+    cannotCrawlS: noCrawlS,
+    lyingS: lieS,
     incapacitatedS,
     recoverS,
     deathS,

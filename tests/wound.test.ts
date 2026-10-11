@@ -216,7 +216,11 @@ describe('wound model', () => {
         expect(w.recoverS).toBeGreaterThan(w.incapacitatedS);
         if (w.wakeS < Infinity) expect(w.recoverS).toBeGreaterThan(w.wakeS);
       }
-      if (w.incapacitatedS < Infinity && w.recoverS === Infinity) expect(w.outcome, w.cause).not.toBe('wounded');
+      if (w.incapacitatedS <= 3600 && w.recoverS === Infinity) expect(w.outcome, w.cause).not.toBe('wounded');
+      // The stages come in order: on their feet, then crawling, lying, helpless, unconscious.
+      expect(w.cannotWalkS).toBeLessThanOrEqual(w.cannotCrawlS);
+      expect(w.cannotCrawlS).toBeLessThanOrEqual(w.lyingS);
+      expect(w.lyingS).toBeLessThanOrEqual(w.incapacitatedS);
     }
     for (let seed = 0; seed < 30; seed++) {
       const w = assess({ entry: [0, 1.699, 0.2], dir: [0, 0, -1], speed: 260, round: 'sp5', seed });
@@ -225,5 +229,34 @@ describe('wound model', () => {
       expect(w.recoverS, w.cause).toBeLessThan(Infinity);
     }
     expect(grazes).toBeGreaterThan(0);
+  });
+
+  it('a holed lung collapses and kills slowly: a tension pneumothorax within the hour, otherwise over hours or days', () => {
+    let tension = 0, walksAwhile = 0;
+    for (let seed = 0; seed < 16; seed++) {
+      const w = front(0.12, 1.32, '7n1', 547, seed);
+      expect(w.cause).toContain('lung holed');
+      if (w.cause.includes('tension')) { tension++; expect(w.deathS).toBeLessThan(3600); }
+      if (w.cannotWalkS > 600) walksAwhile++;
+    }
+    expect(tension).toBeGreaterThan(0);
+    expect(tension).toBeLessThan(10);
+    expect(walksAwhile).toBeGreaterThan(4);
+  });
+
+  it('a paralysed man can still drag himself; a neck cut cannot even sit up', () => {
+    // Low in the back: the legs go at once, the arms drag them on until the bleeding takes that too.
+    const t = assess({ entry: [0, 1.0, -0.2], dir: [0, 0, 1], speed: 200, round: 'sp5', seed: 1 });
+    expect(t.cause).toContain('nerves to the legs cut');
+    expect(t.cannotWalkS).toBeLessThan(1);
+    expect(t.cannotCrawlS).toBeGreaterThan(30);
+    const n = assess({ entry: [0, 1.475, -0.2], dir: [0, 0, 1], speed: 260, round: 'sp5', seed: 4 });
+    expect(n.lyingS).toBe(0);
+  });
+
+  it('a bleed takes their legs before their wits', () => {
+    const w = front(0.07, 0.88, 'sp5', 260, 0);
+    expect(w.cannotCrawlS).toBeGreaterThan(60);
+    expect(w.incapacitatedS - w.cannotCrawlS).toBeGreaterThan(10);
   });
 });

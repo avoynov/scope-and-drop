@@ -10,8 +10,8 @@
  * term, and indoor fragments mute the sky IBL. Any MeshStandard/Physical
  * material can be patched.
  */
-import * as THREE from 'three';
-import type { LightSpec, MansionBlueprint } from '../core/types';
+import * as THREE from "three";
+import type { LightSpec, MansionBlueprint } from "../core/types";
 
 export const SCOPE_MAX = 8;
 /** Texels per light: position+range, colour, spot direction+cone. */
@@ -38,7 +38,19 @@ interface PackedLight {
 
 function pack(l: LightSpec): PackedLight {
   const d = l.dir ?? [0, -1, 0];
-  return { x: l.x, y: l.y, z: l.z, range: l.range, r: l.color[0] * l.intensity, g: l.color[1] * l.intensity, b: l.color[2] * l.intensity, dx: d[0], dy: d[1], dz: d[2], cone: l.dir ? (l.cone ?? 0.5) : -2 };
+  return {
+    x: l.x,
+    y: l.y,
+    z: l.z,
+    range: l.range,
+    r: l.color[0] * l.intensity,
+    g: l.color[1] * l.intensity,
+    b: l.color[2] * l.intensity,
+    dx: d[0],
+    dy: d[1],
+    dz: d[2],
+    cone: l.dir ? (l.cone ?? 0.5) : -2,
+  };
 }
 
 /** Keep the strongest lights; fold the rest into one at their weighted centroid. */
@@ -95,7 +107,7 @@ export class ScopedLighting {
       list.push(l);
     }
     // Exterior grid over the reach of exterior lights.
-    const ext = byScope.get('exterior') ?? [];
+    const ext = byScope.get("exterior") ?? [];
     let x0 = Infinity;
     let z0 = Infinity;
     let x1 = -Infinity;
@@ -222,14 +234,14 @@ export class ScopedLighting {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
         .replace(
-          '#include <common>',
+          "#include <common>",
           `#include <common>
 attribute float aScope;
 flat varying float vScope;
 varying vec3 vScopeWorld;`,
         )
         .replace(
-          '#include <project_vertex>',
+          "#include <project_vertex>",
           `#include <project_vertex>
 {
   vec4 sw = vec4( transformed, 1.0 );
@@ -245,7 +257,7 @@ varying vec3 vScopeWorld;`,
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
-          '#include <common>',
+          "#include <common>",
           `#include <common>
 uniform highp sampler2D uLightTex;
 uniform vec4 uExtGrid;
@@ -255,7 +267,7 @@ flat varying float vScope;
 varying vec3 vScopeWorld;`,
         )
         .replace(
-          '#include <lights_fragment_begin>',
+          "#include <lights_fragment_begin>",
           `#include <lights_fragment_begin>
 vec3 scopeAmbient = vec3( 0.0 );
 float scopeSky = 1.0;
@@ -299,7 +311,7 @@ float scopeSky = 1.0;
 }`,
         )
         .replace(
-          '#include <lights_fragment_end>',
+          "#include <lights_fragment_end>",
           `#if defined( RE_IndirectDiffuse )
 irradiance += scopeAmbient;
 iblIrradiance *= scopeSky;

@@ -14,12 +14,12 @@
  *     reaches this pixel if its disc covers it, weighted by (gather radius / its radius)² so a disc's
  *     light is conserved whatever its size. Head motion adds a smear along the ocular's screen velocity.
  */
-import * as THREE from 'three';
-import type { HandlingPose } from '../../src/scope/handling';
-import { SCOPE } from '../../src/scope/optics';
-import type { Dial, RifleId } from '../../src/scope/shot';
-import { buildActions } from './actions';
-import { DRUM_R_MM, paintDrum } from './drum';
+import * as THREE from "three";
+import type { HandlingPose } from "../../src/scope/handling";
+import { SCOPE } from "../../src/scope/optics";
+import type { Dial, RifleId } from "../../src/scope/shot";
+import { buildActions } from "./actions";
+import { DRUM_R_MM, paintDrum } from "./drum";
 
 const mm = (v: number) => v / 1000;
 const EYEPIECE = 1;
@@ -145,7 +145,10 @@ export function buildRifle(): NearLayer {
   };
   /** A body of revolution about the bore line from (radius, distance ahead of the exit pupil) pairs in mm. */
   const lathe = (pts: [number, number][], m: THREE.Material, y = 0) => {
-    const g = new THREE.LatheGeometry(pts.map(([r, h]) => new THREE.Vector2(mm(r), mm(h))), 64);
+    const g = new THREE.LatheGeometry(
+      pts.map(([r, h]) => new THREE.Vector2(mm(r), mm(h))),
+      64,
+    );
     g.rotateX(-Math.PI / 2); // lathe height +Y → down the bore, −Z
     return add(g, m, 0, y);
   };
@@ -160,18 +163,30 @@ export function buildRifle(): NearLayer {
   // Scope body, rear to front. Eyepiece glass 41 mm across, recessed 2.5 mm in a 47 mm ocular bell.
   const ribs: [number, number][] = [];
   for (let h = 150; h < 174; h += 2) ribs.push([21.6, h], [22.4, h + 1]);
-  lathe([
-    [20.5, relief + 2.5], [20.5, relief + 0.6], [21.6, relief], [23.2, relief + 0.4], [23.6, relief + 1.5],
-    [23.6, relief + 52], [22.6, relief + 56], [21.6, 148], ...ribs, [21.6, 175], [19.5, 178],
-  ], anod);
+  lathe(
+    [[20.5, relief + 2.5], [20.5, relief + 0.6], [21.6, relief], [23.2, relief + 0.4], [23.6, relief + 1.5], [23.6, relief + 52], [22.6, relief + 56], [21.6, 148], ...ribs, [21.6, 175], [19.5, 178]],
+    anod,
+  );
   add(new THREE.CircleGeometry(mm(20.5), 64), glass, 0, 0, -mm(relief + 2.5));
   // Throw lever on the power ring, at 3 o'clock.
   add(new THREE.BoxGeometry(mm(14), mm(5), mm(8)), polymer, mm(27), mm(2), -mm(162));
   layer = BODY;
-  lathe([
-    [19.5, 178], [15.2, 186], [15, 190], [15, 400], [17, 410], [24, 428], [28.6, 444], [29.6, 452], [29.6, 497],
-    [28.2, 500], [26, 500],
-  ], anod);
+  lathe(
+    [
+      [19.5, 178],
+      [15.2, 186],
+      [15, 190],
+      [15, 400],
+      [17, 410],
+      [24, 428],
+      [28.6, 444],
+      [29.6, 452],
+      [29.6, 497],
+      [28.2, 500],
+      [26, 500],
+    ],
+    anod,
+  );
   // Turret saddle with elevation (top), windage (right) and side focus (left).
   add(new THREE.BoxGeometry(mm(34), mm(31), mm(84)), anod, 0, 0, -mm(275));
   // Elevation drum: range numbers engraved round its side, read against the index line on the saddle behind it.
@@ -179,16 +194,16 @@ export function buildRifle(): NearLayer {
   const drum = new THREE.Group();
   drum.position.set(0, 0, -mm(272));
   scene.add(drum);
-  const drumTex = new THREE.CanvasTexture(document.createElement('canvas'));
+  const drumTex = new THREE.CanvasTexture(document.createElement("canvas"));
   drumTex.colorSpace = THREE.SRGBColorSpace;
   drumTex.anisotropy = 8;
   const engraved = mat(0xffffff, 30, 0.22, 0, drumTex);
   const elev = new THREE.CylinderGeometry(mm(DRUM_R_MM), mm(DRUM_R_MM), mm(30), 96, 1, true);
   const drumSide = add(elev, engraved, 0, mm(30), 0);
-  drumSide.name = 'drum';
+  drumSide.name = "drum";
   drum.add(drumSide);
   const capTop = add(new THREE.CylinderGeometry(mm(17.5), mm(DRUM_R_MM), mm(2), 48), anod, 0, mm(46), 0);
-  capTop.name = 'drum';
+  capTop.name = "drum";
   drum.add(capTop);
   // Under the drum's skirt, on the turret's core: one white line per turn, hidden until the drum climbs its
   // thread far enough to uncover it (the mil turret only; a range drum never makes a full turn).
@@ -226,7 +241,10 @@ export function buildRifle(): NearLayer {
     housing.rotateX(Math.PI / 2);
     const h = add(housing, anod, 0, 0, -mm(4.2));
     const face = add(new THREE.CircleGeometry(mm(10.5), 64), mat(0xffffff, 4, 0.05, 0, aciTex), 0, 0, mm(0.05));
-    for (const o of [h, face]) { o.name = 'aci'; aci.add(o); }
+    for (const o of [h, face]) {
+      o.name = "aci";
+      aci.add(o);
+    }
     // Arm from the ring cap.
     add(new THREE.BoxGeometry(mm(8), mm(14), mm(10)), steel, -mm(23), mm(6), -mm(208));
   }
@@ -244,7 +262,11 @@ export function buildRifle(): NearLayer {
   const below = new THREE.Group();
   below.scale.setScalar(0.001);
   scene.add(below);
-  const actions = buildActions(below, (b, g, s) => mat(b, g, s), (o) => o.layers.set(BODY));
+  const actions = buildActions(
+    below,
+    (b, g, s) => mat(b, g, s),
+    (o) => o.layers.set(BODY),
+  );
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.004, 5);
   return {
@@ -282,16 +304,16 @@ const ACI_MAX = (60 * Math.PI) / 180;
  */
 function paintAci(): HTMLCanvasElement {
   const S = 512;
-  const c = document.createElement('canvas');
+  const c = document.createElement("canvas");
   c.width = c.height = S;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#0b0b0c';
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#0b0b0c";
   g.fillRect(0, 0, S, S);
   g.translate(S / 2, S / 2);
-  g.fillStyle = '#e4e4dc';
-  g.strokeStyle = '#e4e4dc';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
+  g.fillStyle = "#e4e4dc";
+  g.strokeStyle = "#e4e4dc";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
   g.font = `600 ${S * 0.085}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
   const R = S * 0.47;
   for (let d = -60; d <= 60; d++) {
@@ -300,7 +322,8 @@ function paintAci(): HTMLCanvasElement {
     if (!five && Math.abs(d) > 20) continue;
     // Canvas y runs down the face's texture (v up), so a positive angle here is clockwise as seen.
     const a = (d * ACI_GEAR * Math.PI) / 180;
-    const sx = Math.sin(a), cy = -Math.cos(a);
+    const sx = Math.sin(a),
+      cy = -Math.cos(a);
     const l = ten ? 0.17 : five ? 0.11 : 0.065;
     g.lineWidth = ten ? S * 0.012 : S * 0.007;
     g.beginPath();
@@ -310,11 +333,11 @@ function paintAci(): HTMLCanvasElement {
     if (ten && d !== 0) g.fillText(String(Math.abs(d)), sx * R * 0.68, cy * R * 0.68);
   }
   g.font = `600 ${S * 0.06}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
-  g.fillText('DEG', 0, S * 0.2);
+  g.fillText("DEG", 0, S * 0.2);
   return c;
 }
 
-const FULLSCREEN_VS = 'void main(){ gl_Position = vec4(position.xy, 0., 1.); }';
+const FULLSCREEN_VS = "void main(){ gl_Position = vec4(position.xy, 0., 1.); }";
 
 const TILE_FS = /* glsl */ `
   precision highp float;
@@ -385,7 +408,7 @@ const BOKEH_FS = /* glsl */ `
 /** Half-resolution render targets and passes that turn the rifle into what an eye focused far away sees. */
 export function createNearPasses(renderer: THREE.WebGLRenderer, rifle: NearLayer) {
   const TILE = 16;
-  const tri = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+  const tri = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
   const quadCam = new THREE.Camera();
   const pass = (fs: string, uniforms: Record<string, THREE.IUniform>) => {
     const m = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: FULLSCREEN_VS, fragmentShader: fs, uniforms, depthTest: false, depthWrite: false });
@@ -400,11 +423,22 @@ export function createNearPasses(renderer: THREE.WebGLRenderer, rifle: NearLayer
     const tileRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
     const out = new THREE.WebGLRenderTarget(1, 1, { count: 2, type: THREE.HalfFloatType });
     const tile = pass(TILE_FS, {
-      tAux: { value: rt.textures[1] }, uSrc: { value: new THREE.Vector2() }, uK: { value: 1 }, uTile: { value: TILE }, uReach: { value: 40 }, uInvF: { value: 0 },
+      tAux: { value: rt.textures[1] },
+      uSrc: { value: new THREE.Vector2() },
+      uK: { value: 1 },
+      uTile: { value: TILE },
+      uReach: { value: 40 },
+      uInvF: { value: 0 },
     });
     const bokeh = pass(BOKEH_FS, {
-      tCol: { value: rt.textures[0] }, tAux: { value: rt.textures[1] }, tTile: { value: tileRT.texture },
-      uRes: { value: new THREE.Vector2() }, uVel: { value: new THREE.Vector2() }, uK: { value: 1 }, uSeed: { value: 0 }, uInvF: { value: 0 },
+      tCol: { value: rt.textures[0] },
+      tAux: { value: rt.textures[1] },
+      tTile: { value: tileRT.texture },
+      uRes: { value: new THREE.Vector2() },
+      uVel: { value: new THREE.Vector2() },
+      uK: { value: 1 },
+      uSeed: { value: 0 },
+      uInvF: { value: 0 },
     });
     return { id, rt, tileRT, out, tile, bokeh };
   });

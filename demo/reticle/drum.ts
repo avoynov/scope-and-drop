@@ -4,10 +4,10 @@
  * 50 m detents. The bolt rifle's mil turret clicks 0.1 mil, 10 mil a turn, and climbs its thread as it turns,
  * uncovering a line on the saddle for each full turn.
  */
-import { dialHome, type Dial } from '../../src/scope/shot';
+import { dialHome, type Dial } from "../../src/scope/shot";
 
-/** Dial rotation per detent: 15° on a range drum, 3.6° (100 clicks a turn) on the mil turret. */
-export const drumStep = (d: Dial) => (d.kind === 'range' ? 15 : 360 / d.clicksPerRev) * (Math.PI / 180);
+/** Dial rotation per detent: 15deg on a range drum, 3.6deg (100 clicks a turn) on the mil turret. */
+export const drumStep = (d: Dial) => (d.kind === "range" ? 15 : 360 / d.clicksPerRev) * (Math.PI / 180);
 /** The detent of the 100 m zero, which faces the index when the dial is not turned. */
 export const drumHome = dialHome;
 /** Radius of the drum's engraved side. */
@@ -59,31 +59,31 @@ export function createDrum(onTurn: (index: number) => void): Drum {
  * turned. Knurling on the top, paint-filled engraving in black anodising.
  */
 export function paintDrum(dial: Dial): HTMLCanvasElement {
-  return dial.kind === 'range' ? paintRangeDrum(dial.marksM, dial) : paintMilTurret(dial);
+  return dial.kind === "range" ? paintRangeDrum(dial.marksM, dial) : paintMilTurret(dial);
 }
 
 function blankDrum(knurl: number): [HTMLCanvasElement, CanvasRenderingContext2D, number, number] {
   const W = 2048;
   const H = 512;
-  const c = document.createElement('canvas');
+  const c = document.createElement("canvas");
   c.width = W;
   c.height = H;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#0b0b0c';
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#0b0b0c";
   g.fillRect(0, 0, W, H);
   // Straight knurling: ridges every 3°.
   const ridge = W / 120;
   for (let x = 0; x < W; x += ridge) {
-    g.fillStyle = '#1d1d20';
+    g.fillStyle = "#1d1d20";
     g.fillRect(x, 0, ridge * 0.45, H * knurl);
-    g.fillStyle = '#040404';
+    g.fillStyle = "#040404";
     g.fillRect(x + ridge * 0.55, 0, ridge * 0.3, H * knurl);
   }
-  g.fillStyle = '#000';
+  g.fillStyle = "#000";
   g.fillRect(0, H * knurl, W, H * 0.02);
-  g.fillStyle = '#d8d8d0';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
+  g.fillStyle = "#d8d8d0";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
   return [c, g, W, H];
 }
 
@@ -92,7 +92,7 @@ function blankDrum(knurl: number): [HTMLCanvasElement, CanvasRenderingContext2D,
  * numbers, one per turn (0–9, 10–19, 20–29), so the row that matches the lines showing on the saddle gives the
  * mils dialled without counting turns.
  */
-function paintMilTurret(d: Extract<Dial, { kind: 'mil' }>): HTMLCanvasElement {
+function paintMilTurret(d: Extract<Dial, { kind: "mil" }>): HTMLCanvasElement {
   const [c, g, W, H] = blankDrum(0.22);
   const perMil = Math.round(1 / d.clickMil);
   const turns = Math.ceil(d.clicks / d.clicksPerRev);

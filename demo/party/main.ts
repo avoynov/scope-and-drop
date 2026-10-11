@@ -4,47 +4,47 @@
  *   /party/?seed=gala-night&t=90&speed=5&view=plan&sel=4&follow=1&ov=sight,map
  *
  * t is minutes after 19:00 (or a clock time such as 20:30); speed multiplies the
- * game's own pace, where 1× plays the three-hour party in one real hour. ov turns on
+ * game's own pace, where 1x plays the three-hour party in one real hour. ov turns on
  * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
  * tension and energy= scales everyone's energy at time t.
  */
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { generateMansion, type MansionBlueprint, type MansionOptions } from '../../src/mansion';
-import { buildMansion, type BuiltMansion, type Quality } from '../../src/mansion/build';
-import { createGradePass } from '../../src/mansion/build/grade';
-import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from '../../src/party';
-import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from '../../src/party/memory';
-import type { MoodOverride, RoomMood } from '../../src/party/mood';
-import { DETAIL_FOV, DETAIL_RANGE, FOV } from '../../src/party/senses';
-import { CASES, type CaseKind } from '../../src/party/register';
-import type { Provocation } from '../../src/party/sim';
-import { ringRadius } from '../../src/party/groups';
-import { Crowd, type Flash, type FrameState } from '../../src/party/render/crowd';
-import { Fixtures } from '../../src/party/render/fixtures';
-import type { TaskKind } from '../../src/party/tasks';
-import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from '../../src/party/types';
-import { labelForms } from '../briefing';
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { generateMansion, type MansionBlueprint, type MansionOptions } from "../../src/mansion";
+import { buildMansion, type BuiltMansion, type Quality } from "../../src/mansion/build";
+import { createGradePass } from "../../src/mansion/build/grade";
+import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from "../../src/party";
+import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from "../../src/party/memory";
+import type { MoodOverride, RoomMood } from "../../src/party/mood";
+import { DETAIL_FOV, DETAIL_RANGE, FOV } from "../../src/party/senses";
+import { CASES, type CaseKind } from "../../src/party/register";
+import type { Provocation } from "../../src/party/sim";
+import { ringRadius } from "../../src/party/groups";
+import { Crowd, type Flash, type FrameState } from "../../src/party/render/crowd";
+import { Fixtures } from "../../src/party/render/fixtures";
+import type { TaskKind } from "../../src/party/tasks";
+import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
+import { labelForms } from "../briefing";
 
-type View = 'scope' | 'wide' | 'plan' | 'orbit';
+type View = "scope" | "wide" | "plan" | "orbit";
 
 const params = new URLSearchParams(location.search);
-const shot = params.has('shot');
-if (shot) document.body.classList.add('shot');
-if (params.has('ui')) document.body.classList.add('ui');
-const W = Number(params.get('w') ?? 0) || innerWidth;
-const H = Number(params.get('h') ?? 0) || innerHeight;
-const viewSize = (): { w: number; h: number } => (params.has('w') ? { w: W, h: H } : { w: innerWidth, h: innerHeight });
+const shot = params.has("shot");
+if (shot) document.body.classList.add("shot");
+if (params.has("ui")) document.body.classList.add("ui");
+const W = Number(params.get("w") ?? 0) || innerWidth;
+const H = Number(params.get("h") ?? 0) || innerHeight;
+const viewSize = (): { w: number; h: number } => (params.has("w") ? { w: W, h: H } : { w: innerWidth, h: innerHeight });
 
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: shot });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: shot });
 renderer.setPixelRatio(shot ? 1 : Math.min(devicePixelRatio, 2));
 renderer.setSize(W, H);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = Number(params.get('exposure') ?? 1.4);
+renderer.toneMappingExposure = Number(params.get("exposure") ?? 1.4);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -60,7 +60,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false;
 controls.enableDamping = true;
 
-const rt = new THREE.WebGLRenderTarget(W * renderer.getPixelRatio(), H * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: Number(params.get('msaa') ?? 4) });
+const rt = new THREE.WebGLRenderTarget(W * renderer.getPixelRatio(), H * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: Number(params.get("msaa") ?? 4) });
 const composer = new EffectComposer(renderer, rt);
 const renderPass = new RenderPass(scene, camera);
 composer.addPass(renderPass);
@@ -69,139 +69,139 @@ composer.addPass(createGradePass({ splitStrength: 0.18, saturation: 1.12 }));
 composer.addPass(new OutputPass());
 
 const $ = (id: string) => document.getElementById(id)!;
-const seedInput = $('seed') as HTMLInputElement;
-seedInput.value = params.get('seed') ?? 'gala-night';
+const seedInput = $("seed") as HTMLInputElement;
+seedInput.value = params.get("seed") ?? "gala-night";
 
-const LEVEL_NAMES = ['ground', 'first', 'second', 'third'];
+const LEVEL_NAMES = ["ground", "first", "second", "third"];
 const PHASE_COLOR: Record<PhaseId, string> = {
-  arrival: '#4f6f93',
-  mingle: '#6d604c',
-  champagne: '#c9a15c',
-  toast: '#e6c98a',
-  dinner: '#97553f',
-  dancing: '#7b58a0',
-  games: '#4a7e64',
-  farewell: '#565c72',
+  arrival: "#4f6f93",
+  mingle: "#6d604c",
+  champagne: "#c9a15c",
+  toast: "#e6c98a",
+  dinner: "#97553f",
+  dancing: "#7b58a0",
+  games: "#4a7e64",
+  farewell: "#565c72",
 };
 const ROLE_LABEL: Record<RoleId, string> = {
-  host: 'host',
-  butler: 'butler',
-  cloakroom: 'cloakroom',
-  kitchenHand: 'kitchen hand',
-  musician: 'musician',
-  photographer: 'photographer',
-  waiter: 'waiter',
-  bartender: 'bartender',
-  cook: 'cook',
-  politician: 'politician',
-  pianist: 'pianist',
-  doctor: 'doctor',
-  dancer: 'dancer',
-  billiards: 'billiards player',
-  guest: '',
+  host: "host",
+  butler: "butler",
+  cloakroom: "cloakroom",
+  kitchenHand: "kitchen hand",
+  musician: "musician",
+  photographer: "photographer",
+  waiter: "waiter",
+  bartender: "bartender",
+  cook: "cook",
+  politician: "politician",
+  pianist: "pianist",
+  doctor: "doctor",
+  dancer: "dancer",
+  billiards: "billiards player",
+  guest: "",
 };
 const ACTION_LABEL: Record<ActionId, string> = {
-  arrive: 'arriving',
-  mingle: 'in conversation',
-  drink: 'at the bar',
-  champagne: 'getting champagne',
-  toilet: 'in the bathroom',
-  sit: 'sitting',
-  art: 'looking at the art',
-  terrace: 'on the terrace',
-  dance: 'dancing',
-  dinner: 'at dinner',
-  toast: 'at the toast',
-  ask: 'asking someone',
-  games: 'at the games',
-  wander: 'wandering',
-  leave: 'leaving',
-  staff: 'working',
-  greet: 'saying hello',
-  snack: 'at the buffet',
-  use: 'about the house',
-  task: 'busy',
+  arrive: "arriving",
+  mingle: "in conversation",
+  drink: "at the bar",
+  champagne: "getting champagne",
+  toilet: "in the bathroom",
+  sit: "sitting",
+  art: "looking at the art",
+  terrace: "on the terrace",
+  dance: "dancing",
+  dinner: "at dinner",
+  toast: "at the toast",
+  ask: "asking someone",
+  games: "at the games",
+  wander: "wandering",
+  leave: "leaving",
+  staff: "working",
+  greet: "saying hello",
+  snack: "at the buffet",
+  use: "about the house",
+  task: "busy",
 };
 const NOTE_LABEL: Record<string, string> = {
-  bar: 'tending the bar',
-  load: 'loading a tray',
-  serve: 'serving',
-  cook: 'cooking',
-  door: 'at the door',
-  queue: 'queueing for the bathroom',
-  supper: 'at supper in the ballroom',
-  billiards: 'playing billiards',
-  cards: 'playing cards',
-  cinema: 'watching a film',
+  bar: "tending the bar",
+  load: "loading a tray",
+  serve: "serving",
+  cook: "cooking",
+  door: "at the door",
+  queue: "queueing for the bathroom",
+  supper: "at supper in the ballroom",
+  billiards: "playing billiards",
+  cards: "playing cards",
+  cinema: "watching a film",
   // Conversations: walking up, waiting to be let in, lingering after a closed answer.
-  edge: 'at the edge of a conversation',
-  hover: 'hovering by a conversation',
+  edge: "at the edge of a conversation",
+  hover: "hovering by a conversation",
   // Things in the house.
-  fire: 'by the fire',
-  browse: 'browsing the shelves',
-  globe: 'spinning the globe',
-  rail: 'at the gallery rail',
-  plants: 'among the plants',
-  pool: 'by the pool',
-  fountain: 'by the fountain',
-  kitchen: 'in the kitchen',
-  buffet: 'at the buffet',
+  fire: "by the fire",
+  browse: "browsing the shelves",
+  globe: "spinning the globe",
+  rail: "at the gallery rail",
+  plants: "among the plants",
+  pool: "by the pool",
+  fountain: "by the fountain",
+  kitchen: "in the kitchen",
+  buffet: "at the buffet",
   // Staff.
-  coats: 'at the door with the coats',
-  cloakroom: 'in the cloakroom',
-  hang: 'hanging a coat',
-  band: 'playing in the band',
-  'band-rest': 'resting at the bandstand',
-  break: 'on a break',
-  watch: 'keeping an eye on things',
-  sideboard: 'at the sideboard',
-  wash: 'washing up',
-  smoke: 'a cigarette out the back',
+  coats: "at the door with the coats",
+  cloakroom: "in the cloakroom",
+  hang: "hanging a coat",
+  band: "playing in the band",
+  "band-rest": "resting at the bandstand",
+  break: "on a break",
+  watch: "keeping an eye on things",
+  sideboard: "at the sideboard",
+  wash: "washing up",
+  smoke: "a cigarette out the back",
 };
 
 /** What each task is, and each step of it. */
 const TASK_LABEL: Record<TaskKind, string> = {
-  tour: 'showing guests round',
-  errand: 'on an errand',
-  search: 'looking for their partner',
-  photo: 'the group photograph',
-  candid: 'taking photographs',
-  leave: 'going home',
-  check: 'checking on something',
-  chore: 'seeing to something',
+  tour: "showing guests round",
+  errand: "on an errand",
+  search: "looking for their partner",
+  photo: "the group photograph",
+  candid: "taking photographs",
+  leave: "going home",
+  check: "checking on something",
+  chore: "seeing to something",
 };
 const STEP_LABEL: Record<string, string> = {
-  'to-room': 'on the way',
-  show: 'showing a room',
-  'wrong-room': 'in the wrong room',
-  unlock: 'unlocking a door',
-  lock: 'locking up again',
-  'to-door': 'to the door',
-  pick: 'picking it up',
-  bring: 'bringing it over',
-  give: 'handing it over',
-  asked: 'asked to fetch it',
-  fetch: 'fetching it',
-  agree: 'agreeing to',
-  'last-seen': 'where they were last seen',
-  'look-round': 'looking round',
-  found: 'found them',
-  hello: 'together again',
-  'set-up': 'setting up the camera',
-  'line-up': 'lining everyone up',
-  flashes: 'flash, flash',
-  frame: 'framing a shot',
-  shoot: 'taking a picture',
-  'to-host': 'to say goodbye to the host',
-  goodbye: 'saying goodbye',
-  cloakroom: 'for the coats',
-  coat: 'coats on',
-  out: 'out of the door',
-  'to-cabinet': 'to the cabinet',
-  'look-in': 'looking in the cabinet',
-  'to-table': 'to the table',
-  'check-table': 'checking the table',
-  'dinner-ready': 'dinner is ready',
+  "to-room": "on the way",
+  show: "showing a room",
+  "wrong-room": "in the wrong room",
+  unlock: "unlocking a door",
+  lock: "locking up again",
+  "to-door": "to the door",
+  pick: "picking it up",
+  bring: "bringing it over",
+  give: "handing it over",
+  asked: "asked to fetch it",
+  fetch: "fetching it",
+  agree: "agreeing to",
+  "last-seen": "where they were last seen",
+  "look-round": "looking round",
+  found: "found them",
+  hello: "together again",
+  "set-up": "setting up the camera",
+  "line-up": "lining everyone up",
+  flashes: "flash, flash",
+  frame: "framing a shot",
+  shoot: "taking a picture",
+  "to-host": "to say goodbye to the host",
+  goodbye: "saying goodbye",
+  cloakroom: "for the coats",
+  coat: "coats on",
+  out: "out of the door",
+  "to-cabinet": "to the cabinet",
+  "look-in": "looking in the cabinet",
+  "to-table": "to the table",
+  "check-table": "checking the table",
+  "dinner-ready": "dinner is ready",
 };
 
 let bp: MansionBlueprint;
@@ -210,10 +210,10 @@ let party: Party;
 let crowd: Crowd | null = null;
 /** Door leaves and the curtains people can draw, moved from the sim each frame. */
 let fixtures: Fixtures | null = null;
-let view: View = (params.get('view') as View) ?? 'scope';
-let aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 4) };
-let planLevel = Math.max(0, Math.floor(Number(params.get('level') ?? 0)) || 0);
-let planZoom = Math.max(1, Math.min(14, Number(params.get('zoom') ?? 1) || 1));
+let view: View = (params.get("view") as View) ?? "scope";
+let aim = { yaw: 0, pitch: 0, fov: Number(params.get("fov") ?? 4) };
+let planLevel = Math.max(0, Math.floor(Number(params.get("level") ?? 0)) || 0);
+let planZoom = Math.max(1, Math.min(14, Number(params.get("zoom") ?? 1) || 1));
 const planPan = { x: 0, z: 0 };
 const PLAN_ZOOM_MAX = 14;
 
@@ -230,15 +230,15 @@ let prev: Snap[] = [];
 /** In-game seconds banked toward the next sim step. */
 let acc = 0;
 const SPEEDS = [0, 1, 5, 20, 60];
-let speed = Number(params.get('speed') ?? (shot ? 0 : 1));
-let selected = params.has('sel') ? Number(params.get('sel')) : -1;
-let follow = params.has('follow');
+let speed = Number(params.get("speed") ?? (shot ? 0 : 1));
+let selected = params.has("sel") ? Number(params.get("sel")) : -1;
+let follow = params.has("follow");
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'cases' | 'circles' | 'tasks' | 'map' | 'mood';
-const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'cases', 'circles', 'tasks', 'map', 'mood'];
-const overlays = new Set<Overlay>((params.get('ov') ?? '').split(',').filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
+type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "map" | "mood";
+const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "map", "mood"];
+const overlays = new Set<Overlay>((params.get("ov") ?? "").split(",").filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
 /** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
 let planted: Provocation[] = [];
@@ -250,10 +250,10 @@ let nudges: MoodOverride[] = [];
 
 /** The URL's mood: everyone's tension set, or their energy scaled, at time t. */
 function urlNudges(): MoodOverride[] {
-  const tension = params.get('tension');
-  const energy = params.get('energy');
+  const tension = params.get("tension");
+  const energy = params.get("energy");
   if (tension === null && energy === null) return [];
-  return [{ t: parseTime(params.get('t')), target: 'all', tension: tension !== null ? Number(tension) : undefined, energy: energy !== null ? Number(energy) : undefined }];
+  return [{ t: parseTime(params.get("t")), target: "all", tension: tension !== null ? Number(tension) : undefined, energy: energy !== null ? Number(energy) : undefined }];
 }
 
 /**
@@ -262,13 +262,13 @@ function urlNudges(): MoodOverride[] {
  */
 function urlProvocations(): Provocation[] {
   const out: Provocation[] = [];
-  for (const g of (params.get('gone') ?? '').split(',').filter(Boolean)) {
-    const [t, room] = g.split(':').map(Number);
-    if (Number.isFinite(t) && Number.isFinite(room)) out.push({ t: t! * 60, kind: 'gone', subject: -1, room });
+  for (const g of (params.get("gone") ?? "").split(",").filter(Boolean)) {
+    const [t, room] = g.split(":").map(Number);
+    if (Number.isFinite(t) && Number.isFinite(room)) out.push({ t: t! * 60, kind: "gone", subject: -1, room });
   }
-  for (const g of (params.get('seen') ?? '').split(',').filter(Boolean)) {
-    const [t, who, room] = g.split(':').map(Number);
-    if (Number.isFinite(t) && Number.isFinite(who) && Number.isFinite(room)) out.push({ t: t! * 60, kind: 'seen', subject: who!, room });
+  for (const g of (params.get("seen") ?? "").split(",").filter(Boolean)) {
+    const [t, who, room] = g.split(":").map(Number);
+    if (Number.isFinite(t) && Number.isFinite(who) && Number.isFinite(room)) out.push({ t: t! * 60, kind: "seen", subject: who!, room });
   }
   return out.sort((a, b) => a.t - b.t);
 }
@@ -276,13 +276,13 @@ function urlProvocations(): Provocation[] {
 // ------------------------------------------------------------------ setup
 
 function build(): void {
-  const seed = seedInput.value.trim() || 'gala-night';
-  bp = generateMansion({ seed, size: (params.get('size') as MansionOptions['size']) ?? undefined });
+  const seed = seedInput.value.trim() || "gala-night";
+  bp = generateMansion({ seed, size: (params.get("size") as MansionOptions["size"]) ?? undefined });
   if (built) {
     scene.remove(built.root);
     built.dispose();
   }
-  built = buildMansion(bp, { renderer, quality: (params.get('quality') as Quality) ?? 'high', dynamicDoors: true, dynamicCurtains: (r) => MOVABLE_CURTAINS.has(r.type) });
+  built = buildMansion(bp, { renderer, quality: (params.get("quality") as Quality) ?? "high", dynamicDoors: true, dynamicCurtains: (r) => MOVABLE_CURTAINS.has(r.type) });
   scene.add(built.root);
   if (fixtures) {
     scene.remove(fixtures.root);
@@ -297,21 +297,27 @@ function build(): void {
   // A new house is a new cast: what was planted in the last one doesn't carry over (the URL's own, on the first build, does).
   planted = built0 ? urlProvocations() : [];
   built0 = false;
-  goneRoom = [...planted].reverse().find((v) => v.kind === 'gone')?.room ?? -1;
+  goneRoom = [...planted].reverse().find((v) => v.kind === "gone")?.room ?? -1;
   nudges = urlNudges();
   newParty();
   if (selected >= party.people.length) selected = -1;
   setView(view);
   if (!shot) {
     const url = new URL(location.href);
-    url.searchParams.set('seed', seed);
-    history.replaceState(null, '', url);
+    url.searchParams.set("seed", seed);
+    history.replaceState(null, "", url);
   }
 }
 
 /** A fresh evening in the current house (the same seed always gives the same evening). */
 function newParty(): void {
-  party = new Party(bp, { seed: params.get('party') ?? bp.seed, guests: params.has('guests') ? Number(params.get('guests')) : undefined, provoke: planted, mood: nudges, profile: params.has('profile') });
+  party = new Party(bp, {
+    seed: params.get("party") ?? bp.seed,
+    guests: params.has("guests") ? Number(params.get("guests")) : undefined,
+    provoke: planted,
+    mood: nudges,
+    profile: params.has("profile"),
+  });
   if (crowd) {
     scene.remove(crowd.root);
     crowd.dispose();
@@ -340,11 +346,11 @@ function seek(t: number): void {
 
 /** Seek with a "simulating" note painted first: replaying a whole evening takes a moment. */
 function seekSoon(t: number): void {
-  $('busy').classList.add('on');
+  $("busy").classList.add("on");
   requestAnimationFrame(() =>
     setTimeout(() => {
       seek(t);
-      $('busy').classList.remove('on');
+      $("busy").classList.remove("on");
     }, 0),
   );
 }
@@ -359,13 +365,13 @@ function parseTime(s: string | null): number {
 // ------------------------------------------------------------------ views
 
 function buildFloorButtons(): void {
-  const row = $('floors');
+  const row = $("floors");
   row.replaceChildren();
   for (const lv of bp.levels) {
-    const b = document.createElement('button');
+    const b = document.createElement("button");
     b.textContent = LEVEL_NAMES[lv.index] ?? `level ${lv.index}`;
     b.dataset.level = String(lv.index);
-    b.classList.toggle('on', lv.index === planLevel);
+    b.classList.toggle("on", lv.index === planLevel);
     b.onclick = () => setPlanLevel(lv.index);
     row.appendChild(b);
   }
@@ -378,31 +384,31 @@ function planFrame(): { half: number; x: number; z: number } {
 
 function setView(v: View): void {
   view = v;
-  document.body.classList.toggle('plan', v === 'plan');
+  document.body.classList.toggle("plan", v === "plan");
   if (!built) return;
-  controls.enabled = v === 'orbit';
-  scene.fog = v === 'plan' ? null : built.fog;
-  $('reticle').classList.toggle('on', v === 'scope');
-  planLight.intensity = v === 'plan' ? 0.6 : 0;
+  controls.enabled = v === "orbit";
+  scene.fog = v === "plan" ? null : built.fog;
+  $("reticle").classList.toggle("on", v === "scope");
+  planLight.intensity = v === "plan" ? 0.6 : 0;
   const cut = bp.levels[planLevel]!;
-  renderer.clippingPlanes = v === 'plan' ? [new THREE.Plane(new THREE.Vector3(0, -1, 0), cut.floorY + Math.min(2.6, cut.height * 0.75))] : [];
+  renderer.clippingPlanes = v === "plan" ? [new THREE.Plane(new THREE.Vector3(0, -1, 0), cut.floorY + Math.min(2.6, cut.height * 0.75))] : [];
   if (crowd) {
-    crowd.markerLevel = v === 'plan' ? planLevel : null;
+    crowd.markerLevel = v === "plan" ? planLevel : null;
     // At least 9 px across, whatever the zoom.
     crowd.markerScale = Math.max(1, 9 / (0.76 * (viewSize().h / (2 * planFrame().half))));
   }
   const fp = bp.stats.footprint;
   const cx = (fp.x0 + fp.x1) / 2;
   const cz = (fp.z0 + fp.z1) / 2;
-  if (v === 'scope' || v === 'wide') {
+  if (v === "scope" || v === "wide") {
     renderPass.camera = camera;
     camera.position.copy(built.perch.position);
-    camera.fov = v === 'wide' ? 26 : aim.fov;
+    camera.fov = v === "wide" ? 26 : aim.fov;
     camera.near = 1;
     camera.far = 9000;
     camera.updateProjectionMatrix();
     aimCamera();
-  } else if (v === 'orbit') {
+  } else if (v === "orbit") {
     renderPass.camera = camera;
     camera.fov = 35;
     camera.near = 0.5;
@@ -423,14 +429,14 @@ function setView(v: View): void {
     ortho.lookAt(f.x, 0, f.z);
     ortho.updateProjectionMatrix();
   }
-  for (const b of document.querySelectorAll<HTMLButtonElement>('#views button')) b.classList.toggle('on', b.dataset.v === v);
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#views button")) b.classList.toggle("on", b.dataset.v === v);
   layoutPlanLabels();
 }
 
 function layoutPlanLabels(): void {
-  const box = $('plan-labels');
+  const box = $("plan-labels");
   box.replaceChildren();
-  if (view !== 'plan' || !built) return;
+  if (view !== "plan" || !built) return;
   const f = planFrame();
   const { w, h } = viewSize();
   const pxPerM = h / (2 * f.half);
@@ -444,7 +450,7 @@ function layoutPlanLabels(): void {
     const x = w / 2 + ((r.inner.x0 + r.inner.x1) / 2 - f.x) * pxPerM;
     const y = h / 2 + (r.inner.z0 - f.z) * pxPerM + 10;
     if (x < 0 || x > w || y < 0 || y > h) continue;
-    const el = document.createElement('span');
+    const el = document.createElement("span");
     el.textContent = text;
     el.className = r.role;
     el.style.left = `${x}px`;
@@ -499,17 +505,17 @@ function frameStates(): FrameState[] {
       z: q.z + (p.z - q.z) * k,
       yaw: angleLerp(q.yaw, p.yaw, k),
       pose: p.pose,
-      speaking: p.pose === 'talk' && speaking.has(p.id),
+      speaking: p.pose === "talk" && speaking.has(p.id),
       room: p.room,
       visible: p.present && !p.gone,
       gesture: party.t < p.gestureUntil ? p.gesture : null,
       // A glance, or the way someone is pointing.
-      headYaw: party.t < p.lookUntil || (p.gesture === 'point' && party.t < p.gestureUntil) ? angleLerp(0, Math.atan2(p.lookX - p.x, p.lookZ - p.z) - p.yaw, 1) : 0,
+      headYaw: party.t < p.lookUntil || (p.gesture === "point" && party.t < p.gestureUntil) ? angleLerp(0, Math.atan2(p.lookX - p.x, p.lookZ - p.z) - p.yaw, 1) : 0,
     };
   });
 }
 
-const activeCamera = (): THREE.Camera => (view === 'plan' ? ortho : camera);
+const activeCamera = (): THREE.Camera => (view === "plan" ? ortho : camera);
 
 /** Screen position of a world point in the current view, or null behind the camera. */
 function toScreen(x: number, y: number, z: number): { x: number; y: number } | null {
@@ -524,7 +530,7 @@ function syncFixtures(): void {
   if (!fixtures || !built) return;
   const w = party.world;
   for (const d of w.doors) fixtures.setDoor(d.opening, d.open);
-  for (const c of w.curtains) if (c.movable) fixtures.setCurtain(c.opening, c.state === 'drawn' ? 1 : 0, c.state === 'sheer');
+  for (const c of w.curtains) if (c.movable) fixtures.setCurtain(c.opening, c.state === "drawn" ? 1 : 0, c.state === "sheer");
   fixtures.update();
   // A room built dark has no lamps to switch on, so only rooms lit at the start can go dark.
   for (let r = 0; r < bp.rooms.length; r++) built.lighting.setScopeScale(r, w.lightOn[r] || !w.litAtStart(r) ? 1 : LIGHT_OFF);
@@ -535,7 +541,7 @@ function draw(): void {
   const states = frameStates();
   const sel = party.people[selected];
   const s = sel ? states[selected] : undefined;
-  if (follow && s?.visible && (view === 'scope' || view === 'wide')) aimAt(s.x, s.y + 1.2, s.z);
+  if (follow && s?.visible && (view === "scope" || view === "wide")) aimAt(s.x, s.y + 1.2, s.z);
   if (crowd) {
     crowd.selected = selected;
     crowd.update(states, animClock);
@@ -544,26 +550,34 @@ function draw(): void {
   }
   drawOverlays(states);
   // Name tag over the selected person.
-  const tag = $('tag');
-  const at = sel && s?.visible && (view !== 'plan' || sel.level === planLevel) ? toScreen(s.x, s.y + (view === 'plan' ? 2.2 : sel.look.height + 0.25), s.z) : null;
-  tag.classList.toggle('on', !!at);
+  const tag = $("tag");
+  const at = sel && s?.visible && (view !== "plan" || sel.level === planLevel) ? toScreen(s.x, s.y + (view === "plan" ? 2.2 : sel.look.height + 0.25), s.z) : null;
+  tag.classList.toggle("on", !!at);
   if (at) {
     tag.textContent = sel!.name;
     tag.style.left = `${at.x}px`;
-    tag.style.top = `${at.y - (view === 'plan' ? 12 : 4)}px`;
+    tag.style.top = `${at.y - (view === "plan" ? 12 : 4)}px`;
   }
 }
 
 // ------------------------------------------------------------------ overlays
 
-const overlay = $('overlay') as HTMLCanvasElement;
-const octx = overlay.getContext('2d')!;
+const overlay = $("overlay") as HTMLCanvasElement;
+const octx = overlay.getContext("2d")!;
 let overlayDrawn = false;
 
-const MOOD_RGB: Record<RoomMood, string> = { festive: '224,181,106', relaxed: '111,163,200', uneasy: '217,137,74', tense: '212,82,74' };
-const KIND_COLOR: Record<FactKind, string> = { romance: '#e58fb0', odd: '#e0b56a', mishap: '#8fc7e5', house: '#a9b6c8', request: '#b6e58f', whereabouts: '#9a9486', case: '#c99ae0' };
-const CASE_RGB = '201, 154, 224';
-const CASE_LABEL: Record<CaseKind, string> = { gone: 'something gone', 'person-gone': 'someone missing', dark: 'lights out', locked: 'a door locked', noise: 'a crash', cheating: 'cheating?', 'not-themselves': 'not themselves' };
+const MOOD_RGB: Record<RoomMood, string> = { festive: "224,181,106", relaxed: "111,163,200", uneasy: "217,137,74", tense: "212,82,74" };
+const KIND_COLOR: Record<FactKind, string> = { romance: "#e58fb0", odd: "#e0b56a", mishap: "#8fc7e5", house: "#a9b6c8", request: "#b6e58f", whereabouts: "#9a9486", case: "#c99ae0" };
+const CASE_RGB = "201, 154, 224";
+const CASE_LABEL: Record<CaseKind, string> = {
+  gone: "something gone",
+  "person-gone": "someone missing",
+  dark: "lights out",
+  locked: "a door locked",
+  noise: "a crash",
+  cheating: "cheating?",
+  "not-themselves": "not themselves",
+};
 /** How long a sound or a piece of gossip stays drawn (in-game s). */
 const SOUND_FADE = 20;
 const GOSSIP_FADE = 40;
@@ -578,14 +592,14 @@ function planPx(x: number, z: number): [number, number] {
 
 /** A small label on a dark ground; skipped when it won't fit in `room` px. */
 function chip(text: string, x: number, y: number, color: string, room = Infinity): void {
-  octx.font = '11px ui-monospace, Menlo, monospace';
+  octx.font = "11px ui-monospace, Menlo, monospace";
   const w = octx.measureText(text).width + 8;
   if (w > room) return;
-  octx.fillStyle = 'rgba(7, 8, 12, 0.66)';
+  octx.fillStyle = "rgba(7, 8, 12, 0.66)";
   octx.fillRect(x - w / 2, y - 8, w, 15);
   octx.fillStyle = color;
-  octx.textAlign = 'center';
-  octx.textBaseline = 'middle';
+  octx.textAlign = "center";
+  octx.textBaseline = "middle";
   octx.fillText(text, x, y);
 }
 
@@ -605,7 +619,7 @@ function line(a: [number, number], b: [number, number], color: string, width: nu
  * and who heard them, gossip as it passes, and each room's mood.
  */
 function drawOverlays(states: FrameState[]): void {
-  if (view !== 'plan' || !overlays.size) {
+  if (view !== "plan" || !overlays.size) {
     if (overlayDrawn) octx.clearRect(0, 0, overlay.width, overlay.height);
     overlayDrawn = false;
     return;
@@ -638,27 +652,27 @@ function drawOverlays(states: FrameState[]): void {
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     // The room's name sits at its top edge; these go in the middle, one above the other when there's room.
-    const both = overlays.has('mood') && overlays.has('map') && sel && y1 - y0 > 64;
+    const both = overlays.has("mood") && overlays.has("map") && sel && y1 - y0 > 64;
     const fits = y1 - y0 > 40 ? x1 - x0 - 4 : 0;
-    if (overlays.has('mood')) {
+    if (overlays.has("mood")) {
       const m = party.mood.room(i);
       if (m) {
         octx.fillStyle = `rgba(${MOOD_RGB[m.label]}, 0.16)`;
         octx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        if (both || !(overlays.has('map') && sel)) chip(m.label, cx, cy + (both ? 9 : 4), `rgb(${MOOD_RGB[m.label]})`, fits);
+        if (both || !(overlays.has("map") && sel)) chip(m.label, cx, cy + (both ? 9 : 4), `rgb(${MOOD_RGB[m.label]})`, fits);
       }
     }
-    if (overlays.has('map') && sel) {
+    if (overlays.has("map") && sel) {
       const k = party.familiarity(sel, i);
       // Rooms they couldn't find their way to go dark.
-      octx.fillStyle = k < KNOWN ? 'rgba(0, 0, 0, 0.5)' : `rgba(120, 180, 255, ${0.06 + 0.22 * k})`;
+      octx.fillStyle = k < KNOWN ? "rgba(0, 0, 0, 0.5)" : `rgba(120, 180, 255, ${0.06 + 0.22 * k})`;
       octx.fillRect(x0, y0, x1 - x0, y1 - y0);
-      chip(`${Math.round(k * 100)}%`, cx, cy - (both ? 9 : -4), k < KNOWN ? '#9a9486' : '#bcd8ff', fits);
+      chip(`${Math.round(k * 100)}%`, cx, cy - (both ? 9 : -4), k < KNOWN ? "#9a9486" : "#bcd8ff", fits);
     }
   });
 
   // Sight: the field of view, the sharper cone for detail, and who is in view.
-  if (overlays.has('sight') && sel) {
+  if (overlays.has("sight") && sel) {
     const from = here(sel.id);
     const st = states[sel.id]!;
     if (from) {
@@ -673,26 +687,26 @@ function drawOverlays(states: FrameState[]): void {
         octx.closePath();
         octx.fillStyle = fill;
         octx.fill();
-        octx.strokeStyle = 'rgba(224, 181, 106, 0.55)';
+        octx.strokeStyle = "rgba(224, 181, 106, 0.55)";
         octx.lineWidth = 1;
         octx.stroke();
       };
-      wedge(party.senses.range(sel.room), FOV, 'rgba(255, 236, 190, 0.16)');
-      wedge(DETAIL_RANGE, DETAIL_FOV, 'rgba(255, 236, 190, 0.2)');
+      wedge(party.senses.range(sel.room), FOV, "rgba(255, 236, 190, 0.16)");
+      wedge(DETAIL_RANGE, DETAIL_FOV, "rgba(255, 236, 190, 0.2)");
       // Solid: taken in on their last look. Dashed: in view, but their mind was elsewhere.
       const took = new Set(party.senses.seenLast[sel.id]);
       for (const q of party.people) {
         if (q === sel || !q.present) continue;
         const to = here(q.id);
         if (!to) continue;
-        if (took.has(q.id)) line(from, to, 'rgba(224, 181, 106, 0.9)', 1.5);
-        else if (party.senses.canSee(sel, q)) line(from, to, 'rgba(224, 181, 106, 0.45)', 1, [3, 4]);
+        if (took.has(q.id)) line(from, to, "rgba(224, 181, 106, 0.9)", 1.5);
+        else if (party.senses.canSee(sel, q)) line(from, to, "rgba(224, 181, 106, 0.45)", 1, [3, 4]);
       }
     }
   }
 
   // Sounds: a ring where each was made, fading, and a line to everyone who heard it.
-  if (overlays.has('sound')) {
+  if (overlays.has("sound")) {
     for (const snd of party.senses.recent) {
       const age = (t - snd.t) / SOUND_FADE;
       if (age < 0 || age > 1 || snd.level !== planLevel) continue;
@@ -706,32 +720,32 @@ function drawOverlays(states: FrameState[]): void {
         const to = here(i);
         if (to) line(at, to, `rgba(143, 199, 229, ${0.6 * (1 - age)})`, 1, [2, 3]);
       }
-      chip(snd.kind.replace('-', ' '), at[0], at[1] - 14, `rgba(143, 199, 229, ${Math.max(0.4, 1 - age)})`);
+      chip(snd.kind.replace("-", " "), at[0], at[1] - 14, `rgba(143, 199, 229, ${Math.max(0.4, 1 - age)})`);
     }
   }
 
   // Gossip: speaker to listeners, coloured by the kind of fact.
-  if (overlays.has('gossip')) {
+  if (overlays.has("gossip")) {
     for (let k = party.events.length - 1; k >= 0; k--) {
       const e = party.events[k]!;
       if (t - e.t > GOSSIP_FADE) break;
-      if (e.kind !== 'gossip') continue;
+      if (e.kind !== "gossip") continue;
       const from = here(e.actors[0]!);
       if (!from) continue;
-      const color = KIND_COLOR[VERBS[e.note as Verb]?.kind ?? 'odd'];
+      const color = KIND_COLOR[VERBS[e.note as Verb]?.kind ?? "odd"];
       octx.globalAlpha = 1 - (t - e.t) / GOSSIP_FADE;
       for (const i of e.actors.slice(1)) {
         const to = here(i);
         if (to) line(from, to, color, 2);
       }
-      chip((e.note ?? '').replace(/-/g, ' '), from[0], from[1] - 16, color);
+      chip((e.note ?? "").replace(/-/g, " "), from[0], from[1] - 16, color);
       octx.globalAlpha = 1;
     }
   }
 
   // Cases: the picked person's (their rooms outlined, a line to each candidate with their share),
   // or, with nobody picked, how many hold an open case about each room.
-  if (overlays.has('cases')) {
+  if (overlays.has("cases")) {
     const outline = (room: number, a: number) => {
       const r = bp.rooms[room];
       if (!r || r.level !== planLevel) return null;
@@ -748,20 +762,20 @@ function drawOverlays(states: FrameState[]): void {
     };
     if (sel) {
       for (const c of party.register.casesOf(sel.id)) {
-        if (c.state === 'closed' || c.room < 0) continue;
-        const mid = outline(c.room, c.state === 'settled' ? 1 : 0.6);
+        if (c.state === "closed" || c.room < 0) continue;
+        const mid = outline(c.room, c.state === "settled" ? 1 : 0.6);
         if (!mid) continue;
-        chip(`${CASE_LABEL[c.kind]}${c.state === 'settled' ? ' · settled' : ''}`, mid[0], mid[1] + 20, `rgb(${CASE_RGB})`);
+        chip(`${CASE_LABEL[c.kind]}${c.state === "settled" ? " · settled" : ""}`, mid[0], mid[1] + 20, `rgb(${CASE_RGB})`);
         for (const k of c.candidates) {
           const to = here(k.who);
           if (!to || k.p < 0.05) continue;
-          line(mid, to, `rgba(${CASE_RGB}, ${0.35 + 0.65 * Math.min(1, k.p / CASES[c.kind].settle)})`, 1 + 3 * k.p, c.state === 'settled' ? undefined : [4, 3]);
+          line(mid, to, `rgba(${CASE_RGB}, ${0.35 + 0.65 * Math.min(1, k.p / CASES[c.kind].settle)})`, 1 + 3 * k.p, c.state === "settled" ? undefined : [4, 3]);
           chip(pct(k.p), to[0], to[1] - 16, `rgb(${CASE_RGB})`);
         }
       }
     } else {
       const holders = new Map<number, number>();
-      for (const q of party.people) for (const c of party.register.casesOf(q.id)) if (c.state !== 'closed' && c.room >= 0) holders.set(c.room, (holders.get(c.room) ?? 0) + 1);
+      for (const q of party.people) for (const c of party.register.casesOf(q.id)) if (c.state !== "closed" && c.room >= 0) holders.set(c.room, (holders.get(c.room) ?? 0) + 1);
       for (const [room, k] of holders) {
         const mid = outline(room, Math.min(1, k / 10));
         if (mid) chip(`${k} know`, mid[0], mid[1] + 20, `rgb(${CASE_RGB})`);
@@ -770,52 +784,52 @@ function drawOverlays(states: FrameState[]): void {
   }
 
   // Conversations: each circle's ring, its members, who is speaking, and who waits at its edge.
-  if (overlays.has('circles')) {
+  if (overlays.has("circles")) {
     for (const g of party.groups.values()) {
       if (g.level !== planLevel) continue;
       const mid = planPx(g.x, g.z);
       const r = (ringRadius(g.members.length) + 0.35) * pxPerM;
-      octx.strokeStyle = 'rgba(182, 229, 143, 0.75)';
+      octx.strokeStyle = "rgba(182, 229, 143, 0.75)";
       octx.lineWidth = 1.5;
       octx.beginPath();
       octx.arc(mid[0], mid[1], r, 0, Math.PI * 2);
       octx.stroke();
       for (const m of g.members) {
         const at = here(m);
-        if (at) line(mid, at, m === g.speaker && t < g.speakerUntil ? 'rgba(182, 229, 143, 0.95)' : 'rgba(182, 229, 143, 0.35)', m === g.speaker ? 2 : 1);
+        if (at) line(mid, at, m === g.speaker && t < g.speakerUntil ? "rgba(182, 229, 143, 0.95)" : "rgba(182, 229, 143, 0.35)", m === g.speaker ? 2 : 1);
       }
-      chip(String(g.members.length), mid[0], mid[1] - r - 9, '#b6e58f');
+      chip(String(g.members.length), mid[0], mid[1] - r - 9, "#b6e58f");
     }
     for (const q of party.people) {
       const a = q.action;
-      if (!q.present || a?.id !== 'mingle' || (a.note !== 'edge' && a.note !== 'hover')) continue;
+      if (!q.present || a?.id !== "mingle" || (a.note !== "edge" && a.note !== "hover")) continue;
       const g = party.groups.get(a.ref ?? -1);
       const at = here(q.id);
       if (!g || !at || g.level !== planLevel) continue;
-      line(at, planPx(g.x, g.z), a.note === 'hover' ? 'rgba(229, 143, 143, 0.7)' : 'rgba(182, 229, 143, 0.6)', 1, [3, 3]);
-      chip(a.note === 'hover' ? 'hovering' : 'waiting', at[0], at[1] - 16, a.note === 'hover' ? '#e58f8f' : '#b6e58f');
+      line(at, planPx(g.x, g.z), a.note === "hover" ? "rgba(229, 143, 143, 0.7)" : "rgba(182, 229, 143, 0.6)", 1, [3, 3]);
+      chip(a.note === "hover" ? "hovering" : "waiting", at[0], at[1] - 16, a.note === "hover" ? "#e58f8f" : "#b6e58f");
     }
   }
 
   // Tasks: who leads, who follows, and what step they're on.
-  if (overlays.has('tasks')) {
+  if (overlays.has("tasks")) {
     for (const tk of party.tasks.list) {
       if (tk.outcome !== null) continue;
       const own = here(tk.owner);
       for (const m of tk.party) {
         const at = here(m);
-        if (own && at) line(own, at, 'rgba(143, 199, 229, 0.7)', 1.5, [5, 3]);
+        if (own && at) line(own, at, "rgba(143, 199, 229, 0.7)", 1.5, [5, 3]);
       }
       if (!own) continue;
       const step = tk.steps[tk.i];
-      const label = step ? (STEP_LABEL[step.label] ?? step.label.replace(/-/g, ' ')) : '';
-      chip(`${tk.kind}${label ? ` · ${label}` : ''}`, own[0], own[1] - 16, '#8fc7e5');
+      const label = step ? (STEP_LABEL[step.label] ?? step.label.replace(/-/g, " ")) : "";
+      chip(`${tk.kind}${label ? ` · ${label}` : ""}`, own[0], own[1] - 16, "#8fc7e5");
     }
   }
 
   // Suspicion: how much the picked person suspects each other person, or, with nobody picked,
   // how suspected each person is on average by everyone there.
-  if (overlays.has('suspicion')) {
+  if (overlays.has("suspicion")) {
     const present = party.people.filter((q) => q.present);
     for (const q of present) {
       if (q === sel) continue;
@@ -830,60 +844,60 @@ function drawOverlays(states: FrameState[]): void {
       octx.beginPath();
       octx.arc(at[0], at[1], r, 0, Math.PI * 2);
       octx.stroke();
-      chip(`${Math.round(v * 100)}`, at[0], at[1] + r + 9, '#e98a80');
+      chip(`${Math.round(v * 100)}`, at[0], at[1] + r + 9, "#e98a80");
     }
   }
 }
 
 function buildOverlayButtons(): void {
   for (const o of OVERLAYS) {
-    const b = document.createElement('button');
+    const b = document.createElement("button");
     b.textContent = o;
-    b.classList.toggle('on', overlays.has(o));
+    b.classList.toggle("on", overlays.has(o));
     b.onclick = () => {
       if (overlays.has(o)) overlays.delete(o);
       else overlays.add(o);
-      b.classList.toggle('on', overlays.has(o));
+      b.classList.toggle("on", overlays.has(o));
     };
-    $('overlays').appendChild(b);
+    $("overlays").appendChild(b);
   }
 }
 
 // ------------------------------------------------------------------ panel
 
 function buildTimeline(): void {
-  const box = $('timeline');
+  const box = $("timeline");
   box.replaceChildren();
   for (const ph of party.programme) {
-    const i = document.createElement('i');
+    const i = document.createElement("i");
     i.style.width = `${((ph.end - ph.start) / PARTY_LENGTH) * 100}%`;
     i.style.background = PHASE_COLOR[ph.id];
     i.title = `${ph.label} ${clockLabel(ph.start)}–${clockLabel(ph.end)}`;
     box.appendChild(i);
   }
-  box.appendChild(document.createElement('b'));
+  box.appendChild(document.createElement("b"));
 }
 
 let rows: { b: HTMLButtonElement; doing: HTMLElement }[] = [];
 
 function buildPeople(): void {
-  const box = $('people');
+  const box = $("people");
   box.replaceChildren();
   rows = party.people.map((p) => {
-    const b = document.createElement('button');
-    b.className = 'person';
-    const dot = document.createElement('i');
+    const b = document.createElement("button");
+    b.className = "person";
+    const dot = document.createElement("i");
     dot.style.background = p.look.color;
-    const who = document.createElement('span');
-    who.className = 'who';
+    const who = document.createElement("span");
+    who.className = "who";
     who.textContent = p.name;
     if (ROLE_LABEL[p.role]) {
-      const r = document.createElement('small');
+      const r = document.createElement("small");
       r.textContent = ` ${ROLE_LABEL[p.role]}`;
       who.appendChild(r);
     }
-    const doing = document.createElement('span');
-    doing.className = 'doing';
+    const doing = document.createElement("span");
+    doing.className = "doing";
     b.append(dot, who, doing);
     b.onclick = () => select(p.id === selected ? -1 : p.id);
     box.appendChild(b);
@@ -896,61 +910,62 @@ function select(id: number): void {
   selected = id;
   follow = id >= 0;
   const p = party.people[id];
-  if (p?.present && view === 'plan' && p.level !== planLevel) setPlanLevel(p.level);
+  if (p?.present && view === "plan" && p.level !== planLevel) setPlanLevel(p.level);
   refreshPanel();
-  rows[id]?.b.scrollIntoView({ block: 'nearest' });
+  rows[id]?.b.scrollIntoView({ block: "nearest" });
 }
 
 function setPlanLevel(level: number): void {
   planLevel = level;
-  for (const b of document.querySelectorAll<HTMLButtonElement>('#floors button')) b.classList.toggle('on', Number(b.dataset.level) === level);
-  setView('plan');
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#floors button")) b.classList.toggle("on", Number(b.dataset.level) === level);
+  setView("plan");
 }
 
 function describe(p: Person): string {
-  if (p.gone) return 'gone home';
+  if (p.gone) return "gone home";
   if (!p.present) return `arrives ${clockLabel(p.arriveAt)}`;
   const a = p.action;
-  if (!a) return 'standing about';
-  const note = a.note ?? '';
+  if (!a) return "standing about";
+  const note = a.note ?? "";
   let s = NOTE_LABEL[note] ?? ACTION_LABEL[a.id];
-  if (a.id === 'games' && note === 'piano') s = a.pose === 'play' ? 'playing the piano' : 'listening to the piano';
-  if (a.id === 'toilet') s = note === 'queue' ? (p.pose === 'knock' ? 'knocking on the bathroom door' : 'queueing for the bathroom') : note === 'inside' && a.startedAt !== null ? 'in the bathroom' : 'to the bathroom';
-  if (a.id === 'drink') s = note === 'bar-wait' ? 'waiting at the bar' : note === 'bar' ? 'having a drink at the bar' : 'to the bar';
-  if (a.id === 'mingle' && p.pose === 'talk' && party.groups.get(a.ref ?? -1)?.speaker === p.id) s = 'talking';
-  if (a.id === 'greet') s = `saying hello to ${party.people[a.ref ?? -1]?.name ?? 'someone'}`;
-  if (a.id === 'task') {
+  if (a.id === "games" && note === "piano") s = a.pose === "play" ? "playing the piano" : "listening to the piano";
+  if (a.id === "toilet")
+    s = note === "queue" ? (p.pose === "knock" ? "knocking on the bathroom door" : "queueing for the bathroom") : note === "inside" && a.startedAt !== null ? "in the bathroom" : "to the bathroom";
+  if (a.id === "drink") s = note === "bar-wait" ? "waiting at the bar" : note === "bar" ? "having a drink at the bar" : "to the bar";
+  if (a.id === "mingle" && p.pose === "talk" && party.groups.get(a.ref ?? -1)?.speaker === p.id) s = "talking";
+  if (a.id === "greet") s = `saying hello to ${party.people[a.ref ?? -1]?.name ?? "someone"}`;
+  if (a.id === "task") {
     const t = party.tasks.of(p);
-    if (t) s = t.owner === p.id ? `${TASK_LABEL[t.kind]}: ${STEP_LABEL[note] ?? note.replace(/-/g, ' ')}` : `${TASK_LABEL[t.kind]} with ${party.people[t.owner]?.name ?? '?'}`;
+    if (t) s = t.owner === p.id ? `${TASK_LABEL[t.kind]}: ${STEP_LABEL[note] ?? note.replace(/-/g, " ")}` : `${TASK_LABEL[t.kind]} with ${party.people[t.owner]?.name ?? "?"}`;
   }
-  return (p.pose === 'walk' || p.pose === 'climb') && a.id !== 'leave' && !s.startsWith('to ') ? `→ ${s}` : s;
+  return (p.pose === "walk" || p.pose === "climb") && a.id !== "leave" && !s.startsWith("to ") ? `→ ${s}` : s;
 }
 
 /** The task someone is part of: its steps so far, and who's along. */
 function taskText(p: Person): string {
   const t = party.tasks.of(p);
-  if (!t) return '';
-  const others = [t.owner, ...t.party].filter((i) => i !== p.id).map((i) => party.people[i]?.name ?? '?');
-  return `${t.kind} · step ${Math.min(t.i + 1, t.steps.length)} of ${t.steps.length}${others.length ? ` · with ${others.join(', ')}` : ''}`;
+  if (!t) return "";
+  const others = [t.owner, ...t.party].filter((i) => i !== p.id).map((i) => party.people[i]?.name ?? "?");
+  return `${t.kind} · step ${Math.min(t.i + 1, t.steps.length)} of ${t.steps.length}${others.length ? ` · with ${others.join(", ")}` : ""}`;
 }
 
-const DRINK_NAME: Partial<Record<Held, string>> = { champagne: 'champagne', red: 'red wine', white: 'white wine', beer: 'beer', whisky: 'whisky', water: 'water' };
+const DRINK_NAME: Partial<Record<Held, string>> = { champagne: "champagne", red: "red wine", white: "white wine", beer: "beer", whisky: "whisky", water: "water" };
 
 /** What's in their hand, how full, and how much they've had. */
 function inHand(p: Person): string {
   const parts: string[] = [];
   if (p.held && DRINKS.has(p.held)) {
     const fill = party.glassFill(p);
-    parts.push(`${DRINK_NAME[p.held]}, ${fill > 0.75 ? 'full' : fill > 0.4 ? 'half full' : 'nearly finished'}`);
-  } else if (p.held) parts.push(`holding ${p.held === 'tray' ? `a tray of ${party.body.trayCount(p)} ${DRINK_NAME[party.body.trayDrink(p) ?? 'champagne']}` : p.held}`);
-  if (p.drinkLog.length) parts.push(`${p.drinkLog.length} drink${p.drinkLog.length > 1 ? 's' : ''} so far`);
-  if (p.tipsy >= 0.05) parts.push(p.tipsy > 0.6 ? 'drunk' : p.tipsy > 0.3 ? 'tipsy' : 'merry');
-  return parts.join(' · ');
+    parts.push(`${DRINK_NAME[p.held]}, ${fill > 0.75 ? "full" : fill > 0.4 ? "half full" : "nearly finished"}`);
+  } else if (p.held) parts.push(`holding ${p.held === "tray" ? `a tray of ${party.body.trayCount(p)} ${DRINK_NAME[party.body.trayDrink(p) ?? "champagne"]}` : p.held}`);
+  if (p.drinkLog.length) parts.push(`${p.drinkLog.length} drink${p.drinkLog.length > 1 ? "s" : ""} so far`);
+  if (p.tipsy >= 0.05) parts.push(p.tipsy > 0.6 ? "drunk" : p.tipsy > 0.3 ? "tipsy" : "merry");
+  return parts.join(" · ");
 }
 
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 /** Facts that name a second person. */
-const PAIRED: ReadonlySet<Verb> = new Set(['flirting', 'couple', 'cheating', 'spill', 'slapped']);
+const PAIRED: ReadonlySet<Verb> = new Set(["flirting", "couple", "cheating", "spill", "slapped"]);
 
 function factText(f: number): string {
   const m = party.memory;
@@ -958,29 +973,29 @@ function factText(f: number): string {
   const subj = m.subject[f]!;
   const obj = m.object[f]!;
   const room = m.room[f]!;
-  const where = room === -2 ? 'terrace' : room >= 0 ? bp.rooms[room]?.label.toLowerCase() : null;
-  if (verb === 'gone') return `something of ${party.people[subj]?.name ?? 'the house'}'s gone${where ? ` · ${where}` : ''}`;
-  if (verb === 'blamed') return `${party.people[subj]?.name ?? '?'} took it${where ? ` · ${where}` : ''}`;
+  const where = room === -2 ? "terrace" : room >= 0 ? bp.rooms[room]?.label.toLowerCase() : null;
+  if (verb === "gone") return `something of ${party.people[subj]?.name ?? "the house"}'s gone${where ? ` · ${where}` : ""}`;
+  if (verb === "blamed") return `${party.people[subj]?.name ?? "?"} took it${where ? ` · ${where}` : ""}`;
   return [
-    subj >= 0 ? `${party.people[subj]?.name ?? '?'}:` : null,
-    verb.replace(/-/g, ' '),
-    PAIRED.has(verb) && obj >= 0 ? `with ${party.people[obj]?.name ?? '?'}` : null,
+    subj >= 0 ? `${party.people[subj]?.name ?? "?"}:` : null,
+    verb.replace(/-/g, " "),
+    PAIRED.has(verb) && obj >= 0 ? `with ${party.people[obj]?.name ?? "?"}` : null,
     where ? `· ${where}` : null,
   ]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 }
 
 /** What's on their mind: mood, the house as they know it, whom they doubt or suspect, what they know. */
 function mindText(p: Person): string {
-  if (!p.present && !p.gone) return '';
+  if (!p.present && !p.gone) return "";
   const m = party.memory;
-  const name = (i: number) => party.people[i]?.name ?? '?';
+  const name = (i: number) => party.people[i]?.name ?? "?";
   const lines: string[] = [];
   let known = 0;
   for (let r = 0; r < bp.rooms.length; r++) if (party.familiarity(p, r) >= KNOWN) known++;
   lines.push(`energy ${pct(party.energy(p))} · tension ${pct(party.tension(p))}`);
-  const tie = party.memory.household[p.id] ? 'lives here' : p.staff ? 'works here' : p.regular ? 'been here before' : 'first time here';
+  const tie = party.memory.household[p.id] ? "lives here" : p.staff ? "works here" : p.regular ? "been here before" : "first time here";
   lines.push(`${tie} · knows ${known} of ${bp.rooms.length} rooms`);
   const top = (f: (q: Person) => number, min: number, k: number) =>
     party.people
@@ -990,166 +1005,191 @@ function mindText(p: Person): string {
       .sort((a, b) => b[1] - a[1])
       .slice(0, k);
   const doubts = top((q) => party.ident.doubtOf(p.id, q.id, party.t), 0.05, 3);
-  if (doubts.length) lines.push(`not sure it's really ${doubts.map(([i, v]) => `${name(i)} ${pct(v)}`).join(', ')}`);
+  if (doubts.length) lines.push(`not sure it's really ${doubts.map(([i, v]) => `${name(i)} ${pct(v)}`).join(", ")}`);
   const sus = top((q) => party.suspects(p.id, q.id), 0.005, 5);
-  lines.push(sus.length ? `suspects ${sus.map(([i, v]) => `${name(i)} ${pct(v)}`).join(', ')}` : 'suspects nobody');
+  lines.push(sus.length ? `suspects ${sus.map(([i, v]) => `${name(i)} ${pct(v)}`).join(", ")}` : "suspects nobody");
   const facts: Array<{ f: number; c: number; from: number }> = [];
   for (let sl = p.id * SLOTS; sl < p.id * SLOTS + m.held[p.id]!; sl++) {
     const c = m.confAt(p.id, sl);
     if (c >= 0.05) facts.push({ f: m.sFact[sl]!, c, from: m.sFrom[sl]! });
   }
   facts.sort((a, b) => b.c - a.c);
-  lines.push(facts.length ? `knows ${facts.length} thing${facts.length > 1 ? 's' : ''}:` : 'knows nothing worth telling');
-  for (const x of facts.slice(0, 6)) lines.push(`  ${factText(x.f)} (${x.from < 0 ? 'saw it' : `from ${name(x.from)}`}, ${pct(x.c)})`);
+  lines.push(facts.length ? `knows ${facts.length} thing${facts.length > 1 ? "s" : ""}:` : "knows nothing worth telling");
+  for (const x of facts.slice(0, 6)) lines.push(`  ${factText(x.f)} (${x.from < 0 ? "saw it" : `from ${name(x.from)}`}, ${pct(x.c)})`);
   // Connecting the dots: open cases first, each with its room, window and who it points at.
   const reg = party.register;
-  const cases = reg.casesOf(p.id).filter((c) => c.state !== 'closed');
+  const cases = reg.casesOf(p.id).filter((c) => c.state !== "closed");
   const entries = reg.entriesOf(p.id);
   const claims = entries.filter((e) => e.claim).length;
-  lines.push(`register: ${entries.length - claims} sightings · ${claims} claims${cases.length ? ' · cases:' : ''}`);
+  lines.push(`register: ${entries.length - claims} sightings · ${claims} claims${cases.length ? " · cases:" : ""}`);
   for (const c of cases.slice(0, 4)) {
-    const where = c.room === -2 ? 'terrace' : c.room >= 0 ? bp.rooms[c.room]?.label.toLowerCase() : null;
-    const what = c.kind === 'gone' && c.subject >= 0 ? `something of ${name(c.subject)}'s gone` : `${CASE_LABEL[c.kind]}${c.subject >= 0 && c.kind !== 'noise' ? `: ${name(c.subject)}` : ''}`;
-    const span = c.room >= 0 || c.room === -2 ? ` · ${clockLabel(c.from)}–${clockLabel(c.to)}` : '';
+    const where = c.room === -2 ? "terrace" : c.room >= 0 ? bp.rooms[c.room]?.label.toLowerCase() : null;
+    const what = c.kind === "gone" && c.subject >= 0 ? `something of ${name(c.subject)}'s gone` : `${CASE_LABEL[c.kind]}${c.subject >= 0 && c.kind !== "noise" ? `: ${name(c.subject)}` : ""}`;
+    const span = c.room >= 0 || c.room === -2 ? ` · ${clockLabel(c.from)}–${clockLabel(c.to)}` : "";
     const who = c.candidates.filter((k) => k.p >= 0.05).slice(0, 3);
-    lines.push(`  ${what}${where ? ` · ${where}` : ''}${span}${c.state === 'settled' ? ' · settled' : ''}${c.firstHand ? ' (saw it)' : c.teller >= 0 ? ` (from ${name(c.teller)})` : ''}`);
-    lines.push(`    ${who.length ? who.map((k) => `${name(k.who)} ${pct(k.p)}`).join(', ') : 'nobody in mind yet'}`);
+    lines.push(`  ${what}${where ? ` · ${where}` : ""}${span}${c.state === "settled" ? " · settled" : ""}${c.firstHand ? " (saw it)" : c.teller >= 0 ? ` (from ${name(c.teller)})` : ""}`);
+    lines.push(`    ${who.length ? who.map((k) => `${name(k.who)} ${pct(k.p)}`).join(", ") : "nobody in mind yet"}`);
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function roomName(p: Person): string {
-  if (p.room === -2) return 'terrace';
+  if (p.room === -2) return "terrace";
   const r = bp.rooms[p.room];
-  return r ? r.label : 'outside';
+  return r ? r.label : "outside";
 }
 
-type Kinds = ReadonlySet<PartyEvent['kind']>;
+type Kinds = ReadonlySet<PartyEvent["kind"]>;
 /** The event log's filters. */
 const LOG_FILTERS: Record<string, Kinds> = {
-  'the evening': new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump', 'double-take', 'test', 'gossip', 'wrong-turn', 'hush', 'ask', 'heard', 'case', 'blame', 'tell', 'conflict']),
-  gossip: new Set(['gossip']),
-  'connecting the dots': new Set(['case', 'ask-around', 'lead', 'blame', 'tell', 'conflict', 'recognised']),
-  noticing: new Set(['double-take', 'test', 'hush', 'heard']),
-  'finding the way': new Set(['wrong-turn', 'ask']),
-  'the house': new Set(['bathroom-taken', 'knock', 'bump', 'light']),
-  programme: new Set(['phase', 'announce', 'arrive', 'leave', 'toast', 'beat']),
-  'everyday life': new Set(['greet', 'join', 'split', 'task', 'photo', 'goodbye', 'breach', 'beat']),
+  "the evening": new Set([
+    "phase",
+    "arrive",
+    "leave",
+    "toast",
+    "bathroom-taken",
+    "knock",
+    "bump",
+    "double-take",
+    "test",
+    "gossip",
+    "wrong-turn",
+    "hush",
+    "ask",
+    "heard",
+    "case",
+    "blame",
+    "tell",
+    "conflict",
+  ]),
+  gossip: new Set(["gossip"]),
+  "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
+  noticing: new Set(["double-take", "test", "hush", "heard"]),
+  "finding the way": new Set(["wrong-turn", "ask"]),
+  "the house": new Set(["bathroom-taken", "knock", "bump", "light"]),
+  programme: new Set(["phase", "announce", "arrive", "leave", "toast", "beat"]),
+  "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
 };
-let logFilter = params.get('log') ?? 'the evening';
-if (!LOG_FILTERS[logFilter]) logFilter = 'the evening';
+let logFilter = params.get("log") ?? "the evening";
+if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
 
 /** " in the study", for an event that names a room. */
 function roomOf(e: PartyEvent): string {
-  if (e.room === undefined || e.room === -1) return '';
-  return e.room === -2 ? ' on the terrace' : ` in the ${bp.rooms[e.room]?.label.toLowerCase() ?? 'room'}`;
+  if (e.room === undefined || e.room === -1) return "";
+  return e.room === -2 ? " on the terrace" : ` in the ${bp.rooms[e.room]?.label.toLowerCase() ?? "room"}`;
 }
 
 function eventText(e: PartyEvent): string {
-  const n = (i: number | undefined) => (i !== undefined ? (party.people[i]?.name ?? '?') : '?');
+  const n = (i: number | undefined) => (i !== undefined ? (party.people[i]?.name ?? "?") : "?");
   switch (e.kind) {
-    case 'phase':
+    case "phase":
       return `— ${e.note} —`;
-    case 'arrive':
+    case "arrive":
       return `${n(e.actors[0])} arrives`;
-    case 'leave':
+    case "leave":
       return `${n(e.actors[0])} leaves`;
-    case 'toast':
+    case "toast":
       return `${n(e.actors[0])} raises a glass`;
-    case 'bathroom-taken':
+    case "bathroom-taken":
       return `${n(e.actors[0])} finds the bathroom taken`;
-    case 'knock':
+    case "knock":
       return `${n(e.actors[0])} knocks on the bathroom door`;
-    case 'bump':
-      return `${n(e.actors[0])} bumps into ${n(e.actors[1])}${e.note === 'slop' ? ', drink slops' : ''}`;
-    case 'announce':
-      return `${n(e.actors[0])} announces ${e.note?.toLowerCase() ?? ''}`;
-    case 'light':
-      return `lights ${e.note} in the ${e.room !== undefined ? (bp.rooms[e.room]?.label.toLowerCase() ?? 'room') : 'room'}`;
-    case 'double-take':
+    case "bump":
+      return `${n(e.actors[0])} bumps into ${n(e.actors[1])}${e.note === "slop" ? ", drink slops" : ""}`;
+    case "announce":
+      return `${n(e.actors[0])} announces ${e.note?.toLowerCase() ?? ""}`;
+    case "light":
+      return `lights ${e.note} in the ${e.room !== undefined ? (bp.rooms[e.room]?.label.toLowerCase() ?? "room") : "room"}`;
+    case "double-take":
       return `${n(e.actors[0])} looks twice at ${n(e.actors[1])}`;
-    case 'test':
+    case "test":
       return `${n(e.actors[0])} tries a shared joke on ${n(e.actors[1])}: it's them`;
-    case 'gossip': {
+    case "gossip": {
       const to = e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1]);
-      return `${n(e.actors[0])} tells ${to}: ${(e.note ?? '').replace(/-/g, ' ')}`;
+      return `${n(e.actors[0])} tells ${to}: ${(e.note ?? "").replace(/-/g, " ")}`;
     }
-    case 'wrong-turn':
-      return `${n(e.actors[0])} takes a wrong turn${e.note === 'door' ? ' and tries a locked door' : ''}`;
-    case 'hush':
+    case "wrong-turn":
+      return `${n(e.actors[0])} takes a wrong turn${e.note === "door" ? " and tries a locked door" : ""}`;
+    case "hush":
       return `talk stops as ${n(e.actors[0])} joins`;
-    case 'ask':
-      return `${n(e.actors[0])} asks ${n(e.actors[1])} the way${e.note === 'shrug' ? ", who doesn't know" : ''}`;
-    case 'heard':
-      return `${n(e.actors[0])} hears a ${(e.note ?? 'noise').replace('-', ' ')} and goes to look`;
-    case 'case':
-      return `${n(e.actors[0])} notices ${e.note === 'gone' ? `something of ${e.actors[1] === e.actors[0] ? 'theirs' : `${n(e.actors[1])}'s`} gone` : CASE_LABEL[e.note as CaseKind] ?? e.note}${roomOf(e)}`;
-    case 'ask-around':
-      return `${n(e.actors[0])} asks round about ${CASE_LABEL[e.note as CaseKind] ?? e.note}${e.actors.length > 1 ? `: ${e.actors.slice(1).map(n).join(', ')} saw something` : ', nobody saw anything'}`;
-    case 'lead':
+    case "ask":
+      return `${n(e.actors[0])} asks ${n(e.actors[1])} the way${e.note === "shrug" ? ", who doesn't know" : ""}`;
+    case "heard":
+      return `${n(e.actors[0])} hears a ${(e.note ?? "noise").replace("-", " ")} and goes to look`;
+    case "case":
+      return `${n(e.actors[0])} notices ${e.note === "gone" ? `something of ${e.actors[1] === e.actors[0] ? "theirs" : `${n(e.actors[1])}'s`} gone` : (CASE_LABEL[e.note as CaseKind] ?? e.note)}${roomOf(e)}`;
+    case "ask-around":
+      return `${n(e.actors[0])} asks round about ${CASE_LABEL[e.note as CaseKind] ?? e.note}${e.actors.length > 1 ? `: ${e.actors.slice(1).map(n).join(", ")} saw something` : ", nobody saw anything"}`;
+    case "lead":
       return `${n(e.actors[0])} says it points at ${n(e.actors[1])}`;
-    case 'blame':
-      return `${n(e.actors[0])} puts it together: ${n(e.actors[1])}${e.note === 'gone' ? ' took it' : ''}${roomOf(e)}`;
-    case 'tell':
+    case "blame":
+      return `${n(e.actors[0])} puts it together: ${n(e.actors[1])}${e.note === "gone" ? " took it" : ""}${roomOf(e)}`;
+    case "tell":
       return `${n(e.actors[0])} tells ${n(e.actors[1])} what they worked out`;
-    case 'conflict':
-      return e.note === 'claim' ? `${n(e.actors[0])} catches ${n(e.actors[1])} out: not where they said` : e.note === 'not-themselves' ? `${n(e.actors[0])}: ${n(e.actors[1])} seen in two places at once?` : `${n(e.actors[0])} hears ${n(e.actors[1])} was somewhere they can't have been`;
-    case 'recognised':
+    case "conflict":
+      return e.note === "claim"
+        ? `${n(e.actors[0])} catches ${n(e.actors[1])} out: not where they said`
+        : e.note === "not-themselves"
+          ? `${n(e.actors[0])}: ${n(e.actors[1])} seen in two places at once?`
+          : `${n(e.actors[0])} hears ${n(e.actors[1])} was somewhere they can't have been`;
+    case "recognised":
       return `${n(e.actors[0])} realises who they saw: ${n(e.actors[1])}`;
-    case 'greet':
-      return `${n(e.actors[0])} ${e.note === 'wave' ? 'waves to' : e.note === 'kiss' ? 'kisses' : 'shakes hands with'} ${n(e.actors[1])}`;
-    case 'join':
-      return e.note === 'open' ? `${n(e.actors[0])} joins ${e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1])}` : `${n(e.actors[0])} isn't let into ${n(e.actors[1])}'s conversation`;
-    case 'split':
-      return `a conversation splits: ${e.actors.map(n).join(', ')} move off`;
-    case 'task': {
-      const [kind, how] = (e.note ?? '').split(':');
+    case "greet":
+      return `${n(e.actors[0])} ${e.note === "wave" ? "waves to" : e.note === "kiss" ? "kisses" : "shakes hands with"} ${n(e.actors[1])}`;
+    case "join":
+      return e.note === "open"
+        ? `${n(e.actors[0])} joins ${e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1])}`
+        : `${n(e.actors[0])} isn't let into ${n(e.actors[1])}'s conversation`;
+    case "split":
+      return `a conversation splits: ${e.actors.map(n).join(", ")} move off`;
+    case "task": {
+      const [kind, how] = (e.note ?? "").split(":");
       const what = TASK_LABEL[kind as TaskKind] ?? kind;
-      const with_ = e.actors.length > 1 ? ` with ${e.actors.slice(1).map(n).join(', ')}` : '';
-      return how ? `${n(e.actors[0])}: ${what} ${how === 'done' ? 'done' : how === 'found' ? '(found them)' : '(gave up)'}` : `${n(e.actors[0])} sets off ${what}${with_}`;
+      const with_ = e.actors.length > 1 ? ` with ${e.actors.slice(1).map(n).join(", ")}` : "";
+      return how ? `${n(e.actors[0])}: ${what} ${how === "done" ? "done" : how === "found" ? "(found them)" : "(gave up)"}` : `${n(e.actors[0])} sets off ${what}${with_}`;
     }
-    case 'photo':
-      return `${n(e.actors[0])} takes a ${e.note === 'group' ? 'group photograph' : 'photograph'}${e.actors.length > 1 ? ` of ${e.actors.length > 3 ? `${e.actors.length - 1} people` : e.actors.slice(1).map(n).join(' and ')}` : ''}`;
-    case 'goodbye':
-      return `${e.actors.slice(0, -1).map(n).join(' and ')} say${e.actors.length > 2 ? '' : 's'} goodbye to ${n(e.actors[e.actors.length - 1])}`;
-    case 'breach':
-      return `${n(e.actors[0])} ${e.note === 'quiet' ? 'talks through the speech' : 'sits before the host'}${e.actors.length > 1 ? `; ${e.actors.slice(1).map(n).join(', ')} frown${e.actors.length > 2 ? '' : 's'}` : ''}`;
-    case 'beat':
-      return `· ${BEAT_LABEL[e.note ?? ''] ?? (e.note ?? '').replace(/-/g, ' ')} ·`;
+    case "photo":
+      return `${n(e.actors[0])} takes a ${e.note === "group" ? "group photograph" : "photograph"}${e.actors.length > 1 ? ` of ${e.actors.length > 3 ? `${e.actors.length - 1} people` : e.actors.slice(1).map(n).join(" and ")}` : ""}`;
+    case "goodbye":
+      return `${e.actors.slice(0, -1).map(n).join(" and ")} say${e.actors.length > 2 ? "" : "s"} goodbye to ${n(e.actors[e.actors.length - 1])}`;
+    case "breach":
+      return `${n(e.actors[0])} ${e.note === "quiet" ? "talks through the speech" : "sits before the host"}${e.actors.length > 1 ? `; ${e.actors.slice(1).map(n).join(", ")} frown${e.actors.length > 2 ? "" : "s"}` : ""}`;
+    case "beat":
+      return `· ${BEAT_LABEL[e.note ?? ""] ?? (e.note ?? "").replace(/-/g, " ")} ·`;
     default:
       return e.kind;
   }
 }
 
 const BEAT_LABEL: Record<string, string> = {
-  tap: 'a spoon on a glass',
-  hush: 'the room goes quiet',
-  'photo-call': 'everyone out for the group photograph',
-  'dinner-cue': 'dinner is served',
-  procession: 'in to dinner',
-  'host-sits': 'the host sits; everyone sits',
-  'table-turn': 'the table turns',
-  'open-dance': 'the hosts open the dancing',
-  surge: 'the floor fills',
-  'band-break': 'the band takes a break',
-  'band-back': 'the band is back',
-  'last-call': 'last orders at the bar',
-  thanks: 'the host thanks everyone',
+  tap: "a spoon on a glass",
+  hush: "the room goes quiet",
+  "photo-call": "everyone out for the group photograph",
+  "dinner-cue": "dinner is served",
+  procession: "in to dinner",
+  "host-sits": "the host sits; everyone sits",
+  "table-turn": "the table turns",
+  "open-dance": "the hosts open the dancing",
+  surge: "the floor fills",
+  "band-break": "the band takes a break",
+  "band-back": "the band is back",
+  "last-call": "last orders at the bar",
+  thanks: "the host thanks everyone",
 };
 
 let lastPanel = 0;
 
 function refreshPanel(): void {
   const t = party.t + acc;
-  $('time').textContent = clockLabel(t);
+  $("time").textContent = clockLabel(t);
   const ph = party.programme[phaseIndexAt(party.programme, t)]!;
-  $('phase').textContent = party.over ? 'Over' : ph.label;
-  const guests = party.people.filter((p) => !p.staff && p.role !== 'host');
+  $("phase").textContent = party.over ? "Over" : ph.label;
+  const guests = party.people.filter((p) => !p.staff && p.role !== "host");
   const inside = guests.filter((p) => p.present).length;
-  $('count').textContent = `${inside}/${guests.length} in`;
-  const cur = $('timeline').querySelector('b');
+  $("count").textContent = `${inside}/${guests.length} in`;
+  const cur = $("timeline").querySelector("b");
   if (cur) cur.style.left = `${(t / PARTY_LENGTH) * 100}%`;
-  for (const b of document.querySelectorAll<HTMLButtonElement>('#speeds button[data-speed]')) b.classList.toggle('on', Number(b.dataset.speed) === speed);
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#speeds button[data-speed]")) b.classList.toggle("on", Number(b.dataset.speed) === speed);
 
   // The latest few events worth reading.
   const lines: string[] = [];
@@ -1157,63 +1197,67 @@ function refreshPanel(): void {
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
     // Bumps are many; only one that slops a drink is worth a line.
-    if (kinds.has(e.kind) && (e.kind !== 'bump' || e.note === 'slop')) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop")) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
-  $('events').textContent = lines.join('\n');
+  $("events").textContent = lines.join("\n");
 
   const count = (f: (p: Person) => boolean) => guests.filter((p) => p.present && f(p)).length;
   const st = party.stats;
   const talking = [...party.groups.values()].filter((g) => g.members.length > 1).length;
-  $('stats').textContent = [
-    `${talking} conversations · ${count((p) => p.pose === 'dance')} dancing · ${count((p) => p.pose === 'sit')} seated · ${count((p) => p.pose === 'walk' || p.pose === 'climb')} walking`,
+  $("stats").textContent = [
+    `${talking} conversations · ${count((p) => p.pose === "dance")} dancing · ${count((p) => p.pose === "sit")} seated · ${count((p) => p.pose === "walk" || p.pose === "climb")} walking`,
     `${party.body.stats.taken} found a bathroom taken · ${party.body.stats.knocks} knocks · ${party.body.stats.bumps} bumps`,
     `${st.told} things told · ${st.overheard} overheard · ${st.doubleTakes} double takes · ${st.tests} tests · ${st.hushes} hushes`,
-    `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} planted` : ''}`,
+    `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} planted` : ""}`,
     `${st.cases} cases · ${st.askedAround} asked round · ${st.blames} settled on someone · ${st.conflicts} didn't fit · ${st.recognised} faces put a name to · ${st.claims} said where they'd been`,
     `${st.greetings} hellos · ${st.joins} joined a conversation · ${st.rebuffs} turned away · ${st.splits} splits · ${st.breaches} breaches`,
-    `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? '' : 's'} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
+    `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
-    party.profile ? `ms ${Object.entries(party.profile).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ')}` : '',
+    party.profile
+      ? `ms ${Object.entries(party.profile)
+          .map(([k, v]) => `${k} ${Math.round(v)}`)
+          .join(" · ")}`
+      : "",
   ]
     .filter(Boolean)
-    .join('\n');
+    .join("\n");
 
   party.people.forEach((p, i) => {
     const r = rows[i];
     if (!r) return;
     r.doing.textContent = describe(p);
-    r.b.classList.toggle('away', !p.present);
-    r.b.classList.toggle('sel', i === selected);
+    r.b.classList.toggle("away", !p.present);
+    r.b.classList.toggle("sel", i === selected);
   });
 
-  const card = $('detail');
+  const card = $("detail");
   const p = party.people[selected];
-  card.classList.toggle('on', !!p);
-  $('follow').classList.toggle('on', follow);
+  card.classList.toggle("on", !!p);
+  $("follow").classList.toggle("on", follow);
   if (!p) return;
-  card.querySelector('.name')!.textContent = p.name;
+  card.querySelector(".name")!.textContent = p.name;
   const partner = p.partner !== null ? party.people[p.partner]?.name : null;
-  card.querySelector('.meta')!.textContent = [
-    [ROLE_LABEL[p.role] || 'guest', p.look.outfit.replace('-', ' '), `${p.look.height.toFixed(2)} m`].join(' · '),
-    p.quirks.length ? p.quirks.join(', ').replace(/-/g, ' ') : 'no habits',
-    partner ? `with ${partner}` : 'came alone',
+  card.querySelector(".meta")!.textContent = [
+    [ROLE_LABEL[p.role] || "guest", p.look.outfit.replace("-", " "), `${p.look.height.toFixed(2)} m`].join(" · "),
+    p.quirks.length ? p.quirks.join(", ").replace(/-/g, " ") : "no habits",
+    partner ? `with ${partner}` : "came alone",
     describe(p),
     taskText(p),
     inHand(p),
-    p.present ? `${roomName(p)} · ${LEVEL_NAMES[p.level] ?? p.level} floor · ${Math.round(party.visibility(p) * 100)}% in view of the perch` : '',
+    p.present ? `${roomName(p)} · ${LEVEL_NAMES[p.level] ?? p.level} floor · ${Math.round(party.visibility(p) * 100)}% in view of the perch` : "",
   ]
     .filter(Boolean)
-    .join('\n');
-  card.querySelector('.mind')!.textContent = mindText(p);
-  const needs = $('needs');
+    .join("\n");
+  card.querySelector(".mind")!.textContent = mindText(p);
+  const needs = $("needs");
   needs.replaceChildren();
   if (!p.staff) {
     for (const id of NEED_IDS) {
-      const label = document.createElement('span');
+      const label = document.createElement("span");
       label.textContent = id;
-      const bar = document.createElement('div');
-      const fill = document.createElement('i');
+      const bar = document.createElement("div");
+      const fill = document.createElement("i");
       fill.style.width = `${Math.round(p.needs[id] * 100)}%`;
       bar.appendChild(fill);
       needs.append(label, bar);
@@ -1224,57 +1268,57 @@ function refreshPanel(): void {
 // ------------------------------------------------------------------ input
 
 for (const s of SPEEDS) {
-  const b = document.createElement('button');
-  b.textContent = s ? `${s}×` : '❚❚';
-  b.title = s ? `${s}× (1× plays the evening in one hour)` : 'pause';
+  const b = document.createElement("button");
+  b.textContent = s ? `${s}×` : "❚❚";
+  b.title = s ? `${s}× (1× plays the evening in one hour)` : "pause";
   b.dataset.speed = String(s);
   b.onclick = () => {
     speed = s;
     refreshPanel();
   };
-  $('speeds').appendChild(b);
+  $("speeds").appendChild(b);
 }
 {
-  const restart = document.createElement('button');
-  restart.textContent = '⏮';
-  restart.title = 'back to 19:00';
+  const restart = document.createElement("button");
+  restart.textContent = "⏮";
+  restart.title = "back to 19:00";
   restart.onclick = () => seekSoon(0);
-  const next = document.createElement('button');
-  next.textContent = 'next ›';
-  next.title = 'skip to the next part of the programme';
+  const next = document.createElement("button");
+  next.textContent = "next ›";
+  next.title = "skip to the next part of the programme";
   next.onclick = () => {
     const t = party.t;
     const ph = party.programme.find((p) => p.start > t + 1);
     seekSoon(ph ? ph.start + 1 : PARTY_LENGTH);
   };
-  $('speeds').append(restart, next);
+  $("speeds").append(restart, next);
 }
-for (const v of ['scope', 'wide', 'plan', 'orbit'] as View[]) {
-  const b = document.createElement('button');
+for (const v of ["scope", "wide", "plan", "orbit"] as View[]) {
+  const b = document.createElement("button");
   b.textContent = v;
   b.dataset.v = v;
   b.onclick = () => setView(v);
-  $('views').appendChild(b);
+  $("views").appendChild(b);
 }
-$('timeline').addEventListener('click', (e) => {
-  const r = $('timeline').getBoundingClientRect();
+$("timeline").addEventListener("click", (e) => {
+  const r = $("timeline").getBoundingClientRect();
   seekSoon(((e.clientX - r.left) / r.width) * PARTY_LENGTH);
 });
-$('go').onclick = build;
-$('rnd').onclick = () => {
+$("go").onclick = build;
+$("rnd").onclick = () => {
   seedInput.value = Math.random().toString(36).slice(2, 8);
   build();
 };
-seedInput.onkeydown = (e) => e.key === 'Enter' && build();
-$('follow').onclick = () => {
+seedInput.onkeydown = (e) => e.key === "Enter" && build();
+$("follow").onclick = () => {
   follow = !follow;
-  if (follow && view !== 'scope' && view !== 'wide') setView('scope');
+  if (follow && view !== "scope" && view !== "wide") setView("scope");
   refreshPanel();
 };
-$('unsel').onclick = () => select(-1);
+$("unsel").onclick = () => select(-1);
 buildOverlayButtons();
 {
-  const sel = $('evfilter') as HTMLSelectElement;
+  const sel = $("evfilter") as HTMLSelectElement;
   for (const k of Object.keys(LOG_FILTERS)) sel.add(new Option(k, k, k === logFilter, k === logFilter));
   sel.onchange = () => {
     logFilter = sel.value;
@@ -1287,35 +1331,36 @@ const provoke = (v: Provocation) => {
   party.plant(v);
   refreshPanel();
 };
-$('rumour').onclick = () => {
+$("rumour").onclick = () => {
   if (party.people[selected]) provoke({ t: party.t, subject: selected });
 };
-$('gone').onclick = () => {
+$("gone").onclick = () => {
   const p = party.people[selected];
   if (!p?.present || p.room === -1) return;
   goneRoom = p.room;
-  provoke({ t: party.t, kind: 'gone', subject: -1, witness: p.id, room: p.room });
+  provoke({ t: party.t, kind: "gone", subject: -1, witness: p.id, room: p.room });
 };
-$('seen').onclick = () => {
+$("seen").onclick = () => {
   const p = party.people[selected];
   if (!p?.present) return;
-  provoke({ t: party.t, kind: 'seen', subject: p.id, room: goneRoom !== -1 ? goneRoom : p.room });
+  provoke({ t: party.t, kind: "seen", subject: p.id, room: goneRoom !== -1 ? goneRoom : p.room });
 };
 {
-  const who = document.createElement('select');
+  const who = document.createElement("select");
   who.title = "Whose mood: everyone, whoever is in the picked person's room, or just them";
   for (const [v, label] of [
-    ['all', 'everyone'],
-    ['room', 'their room'],
-    ['person', 'them'],
-  ]) who.add(new Option(label, v));
+    ["all", "everyone"],
+    ["room", "their room"],
+    ["person", "them"],
+  ])
+    who.add(new Option(label, v));
   const nudge = (label: string, title: string, o: { tension?: number; energy?: number }) => {
-    const b = document.createElement('button');
+    const b = document.createElement("button");
     b.textContent = label;
     b.title = title;
     b.onclick = () => {
       const p = party.people[selected];
-      const target: MoodOverride['target'] = who.value === 'person' && p ? { person: p.id } : who.value === 'room' && p?.present ? { room: p.room } : 'all';
+      const target: MoodOverride["target"] = who.value === "person" && p ? { person: p.id } : who.value === "room" && p?.present ? { room: p.room } : "all";
       const n: MoodOverride = { t: party.t, target, ...o };
       nudges.push(n);
       party.nudge(n);
@@ -1323,17 +1368,17 @@ $('seen').onclick = () => {
     };
     return b;
   };
-  $('mood').append(
+  $("mood").append(
     who,
-    nudge('tense', 'Set tension to 60%', { tension: 0.6 }),
-    nudge('calm', 'Set tension to 0', { tension: 0 }),
-    nudge('liven', 'Energy × 1.5', { energy: 1.5 }),
-    nudge('dampen', 'Energy × 0.5', { energy: 0.5 }),
+    nudge("tense", "Set tension to 60%", { tension: 0.6 }),
+    nudge("calm", "Set tension to 0", { tension: 0 }),
+    nudge("liven", "Energy × 1.5", { energy: 1.5 }),
+    nudge("dampen", "Energy × 0.5", { energy: 0.5 }),
   );
 }
-addEventListener('keydown', (e) => {
+addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === ' ') {
+  if (e.key === " ") {
     e.preventDefault();
     speed = speed ? 0 : 1;
     refreshPanel();
@@ -1347,8 +1392,8 @@ function pick(cx: number, cy: number): void {
   const states = frameStates();
   party.people.forEach((p, i) => {
     const s = states[i]!;
-    if (!s.visible || (view === 'plan' && p.level !== planLevel)) return;
-    const at = toScreen(s.x, s.y + (view === 'plan' ? 2.2 : 1.1), s.z);
+    if (!s.visible || (view === "plan" && p.level !== planLevel)) return;
+    const at = toScreen(s.x, s.y + (view === "plan" ? 2.2 : 1.1), s.z);
     if (!at) return;
     const d = Math.hypot(at.x - cx, at.y - cy);
     if (d < bd) {
@@ -1360,20 +1405,20 @@ function pick(cx: number, cy: number): void {
 }
 
 let down: { x: number; y: number } | null = null;
-renderer.domElement.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
-addEventListener('pointerup', (e) => {
+renderer.domElement.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY }));
+addEventListener("pointerup", (e) => {
   if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && e.target === renderer.domElement) pick(e.clientX, e.clientY);
   down = null;
 });
-addEventListener('pointermove', (e) => {
+addEventListener("pointermove", (e) => {
   if (!down || !built) return;
-  if (view === 'plan') {
+  if (view === "plan") {
     const mPerPx = (2 * planFrame().half) / viewSize().h;
     planPan.x -= e.movementX * mPerPx;
     planPan.z -= e.movementY * mPerPx;
     clampPlanPan();
-    setView('plan');
-  } else if (view === 'scope' || view === 'wide') {
+    setView("plan");
+  } else if (view === "scope" || view === "wide") {
     // Taking the scope by hand stops following.
     follow = false;
     const k = (camera.fov / 60) * 0.004;
@@ -1390,16 +1435,16 @@ function clampPlanPan(): void {
   planPan.z = Math.max(-rz, Math.min(rz, planPan.z));
 }
 renderer.domElement.addEventListener(
-  'wheel',
+  "wheel",
   (e) => {
     if (!built) return;
-    if (view === 'scope') {
+    if (view === "scope") {
       aim.fov = Math.max(built.perch.fovMin, Math.min(built.perch.fovMax, aim.fov * Math.exp(e.deltaY * 0.001)));
       camera.fov = aim.fov;
       camera.updateProjectionMatrix();
       return;
     }
-    if (view !== 'plan') return;
+    if (view !== "plan") return;
     e.preventDefault();
     // Zoom about the cursor.
     const before = planFrame();
@@ -1414,17 +1459,17 @@ renderer.domElement.addEventListener(
     planPan.z += wz - (after.z + v * after.half);
     if (planZoom === 1) planPan.x = planPan.z = 0;
     clampPlanPan();
-    setView('plan');
+    setView("plan");
   },
   { passive: false },
 );
-renderer.domElement.addEventListener('dblclick', () => {
-  if (view !== 'plan') return;
+renderer.domElement.addEventListener("dblclick", () => {
+  if (view !== "plan") return;
   planZoom = 1;
   planPan.x = planPan.z = 0;
-  setView('plan');
+  setView("plan");
 });
-addEventListener('resize', () => {
+addEventListener("resize", () => {
   if (shot) return;
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
@@ -1436,10 +1481,10 @@ addEventListener('resize', () => {
 // ------------------------------------------------------------------ run
 
 build();
-if (params.has('t')) seek(parseTime(params.get('t')));
-if (params.has('zoom') && params.has('px')) {
-  planPan.x = Number(params.get('px'));
-  planPan.z = Number(params.get('pz') ?? 0);
+if (params.has("t")) seek(parseTime(params.get("t")));
+if (params.has("zoom") && params.has("px")) {
+  planPan.x = Number(params.get("px"));
+  planPan.z = Number(params.get("pz") ?? 0);
   setView(view);
 }
 refreshPanel();
@@ -1460,7 +1505,7 @@ function loop(now: number): void {
     if (acc >= STEP || party.over) acc = 0;
   }
   animClock = shot ? party.t / TIME_SCALE : animClock + dt * Math.min(speed, 4);
-  if (view === 'orbit') controls.update();
+  if (view === "orbit") controls.update();
   draw();
   composer.render();
   if (now - lastPanel > 250) {
@@ -1468,7 +1513,7 @@ function loop(now: number): void {
     refreshPanel();
   }
   frames++;
-  if (shot && frames === Number(params.get('frames') ?? 2)) {
+  if (shot && frames === Number(params.get("frames") ?? 2)) {
     refreshPanel();
     (window as unknown as { __ready: boolean }).__ready = true;
     return;

@@ -1,19 +1,28 @@
-import { describe, expect, it } from 'vitest';
-import { AIR, ROUNDS, at, holdRad, zeroTiltRad } from '../src/scope/ballistics';
-import { THOUSANDTH } from '../src/scope/optics';
-import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from '../src/scope/reticles';
-import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, dialTiltRad, aeroJumpRad, crossDriftPerMs, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, type Path, type Vec3 } from '../src/scope/shot';
+import { describe, expect, it } from "vitest";
+import { AIR, ROUNDS, at, holdRad, zeroTiltRad } from "../src/scope/ballistics";
+import { THOUSANDTH } from "../src/scope/optics";
+import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, psoChevronY, vssChevronY } from "../src/scope/reticles";
+import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, dialTiltRad, aeroJumpRad, crossDriftPerMs, dispersion, firstHit, fly, millerStability, pathAt, spinDriftM, type Path, type Vec3 } from "../src/scope/shot";
 
 /** Where the path crosses the vertical plane `range` metres down -z. */
 const plane = (p: Path, range: number) =>
-  firstHit(p, () => -1e9, (a, b) => (b[2] <= -range ? { f: (-range - a[2]) / (b[2] - a[2]), what: 'plane' } : null));
+  firstHit(
+    p,
+    () => -1e9,
+    (a, b) => (b[2] <= -range ? { f: (-range - a[2]) / (b[2] - a[2]), what: "plane" } : null),
+  );
 const svd = RIFLES.svd;
-const r7n1 = ROUNDS['7n1'];
+const r7n1 = ROUNDS["7n1"];
 const sp5 = ROUNDS.sp5;
-const steady = (x: number, y: number, z: number) => (_x: number, _y: number, _z: number, _t: number, o: Vec3) => { o[0] = x; o[1] = y; o[2] = z; return o; };
+const steady = (x: number, y: number, z: number) => (_x: number, _y: number, _z: number, _t: number, o: Vec3) => {
+  o[0] = x;
+  o[1] = y;
+  o[2] = z;
+  return o;
+};
 
-describe('3D bullet flight', () => {
-  it('reproduces the 2D solver (and so the DOPE card and chevrons) in still air without Earth rotation', () => {
+describe("3D bullet flight", () => {
+  it("reproduces the 2D solver (and so the DOPE card and chevrons) in still air without Earth rotation", () => {
     for (const r of [r7n1, ROUNDS.m118lr]) {
       const p = fly({ round: r, mv: r.mv, origin: [0, 0, 0], dir: [0, 0, -1] });
       for (const d of [100, 412, 800]) {
@@ -32,7 +41,7 @@ describe('3D bullet flight', () => {
     }
   });
 
-  it('lands on the target when the matching PSO chevron is held on it, drum on 1', () => {
+  it("lands on the target when the matching PSO chevron is held on it, drum on 1", () => {
     const sight = svd.sightM;
     for (const d of PSO_CHEVRON_RANGES) {
       // Hold the chevron on a target at the marked range: the bore leaves 70 mm under the line of sight and
@@ -45,7 +54,7 @@ describe('3D bullet flight', () => {
     }
   });
 
-  it('lands on the target when the matching VSS chevron is held on it, drum on 1', () => {
+  it("lands on the target when the matching VSS chevron is held on it, drum on 1", () => {
     const s = RIFLES.vss.sightM;
     for (const d of [BATTLE_ZERO_M, ...VSS_CHEVRON_RANGES]) {
       const up = vssChevronY(d) * THOUSANDTH + zeroTiltRad(sp5, BATTLE_ZERO_M, s);
@@ -54,7 +63,7 @@ describe('3D bullet flight', () => {
     }
   });
 
-  it('lands on the target with the DOPE card dialled on the bolt rifle, to the nearest click', () => {
+  it("lands on the target with the DOPE card dialled on the bolt rifle, to the nearest click", () => {
     const rf = RIFLES.bolt;
     const r = ROUNDS.m118lr;
     for (const d of [200, 400, 600, 800, 1000]) {
@@ -76,9 +85,14 @@ describe('3D bullet flight', () => {
       const up = a + dialTiltRad(rf, 0) + holdRad(r, slant * Math.cos(a), BATTLE_ZERO_M, rf.sightM);
       // The bore leaves square under the line of sight, which runs up or down the slope.
       const p = fly({ round: r, mv: r.mv, origin: [0, -rf.sightM * Math.cos(a), -rf.sightM * Math.sin(a)], dir: [0, Math.sin(up), -Math.cos(up)], floor: 1e4 });
-      const ty = slant * Math.sin(a), tz = -slant * Math.cos(a);
+      const ty = slant * Math.sin(a),
+        tz = -slant * Math.cos(a);
       const along = (q: Vec3) => (q[1] - ty) * Math.sin(a) - (q[2] - tz) * Math.cos(a);
-      const h = firstHit(p, () => -1e9, (A, B) => (along(A) < 0 && along(B) >= 0 ? { f: -along(A) / (along(B) - along(A)), what: 'plane' } : null));
+      const h = firstHit(
+        p,
+        () => -1e9,
+        (A, B) => (along(A) < 0 && along(B) >= 0 ? { f: -along(A) / (along(B) - along(A)), what: "plane" } : null),
+      );
       return (((h.pos[1] - ty) * Math.cos(a) + (h.pos[2] - tz) * Math.sin(a)) / slant) * 1000;
     };
     for (const deg of [-30, -15, 15, 30]) {
@@ -92,7 +106,7 @@ describe('3D bullet flight', () => {
     expect(miss(800, 30)).toBeLessThan(-0.6);
   });
 
-  it('keeps the SP-5 subsonic all the way, so it leaves no shock and no trace', () => {
+  it("keeps the SP-5 subsonic all the way, so it leaves no shock and no trace", () => {
     const p = fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, 0, -1] });
     expect(Math.max(...p.speed.subarray(0, p.n))).toBeLessThan(AIR.sound * 0.85);
     expect(plane(p, 400).speed).toBeGreaterThan(230);
@@ -101,7 +115,7 @@ describe('3D bullet flight', () => {
     expect(at(sp5, 183).tof).toBeCloseTo(0.68, 2);
   });
 
-  it('drifts downwind as the lag rule says: wind × (time of flight − vacuum time)', () => {
+  it("drifts downwind as the lag rule says: wind × (time of flight − vacuum time)", () => {
     const p = fly({ round: r7n1, mv: r7n1.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: steady(3, 0, 0) });
     const h = plane(p, 412);
     const lag = 3 * (at(r7n1, 412).tof - 412 / r7n1.mv);
@@ -112,14 +126,14 @@ describe('3D bullet flight', () => {
     expect(h.pos[0] / 412 / THOUSANDTH).toBeLessThan(0.9);
   });
 
-  it('a headwind costs a little height, a tailwind gives a little', () => {
+  it("a headwind costs a little height, a tailwind gives a little", () => {
     const head = plane(fly({ round: r7n1, mv: r7n1.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: steady(0, 0, 5) }), 600);
     const tail = plane(fly({ round: r7n1, mv: r7n1.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: steady(0, 0, -5) }), 600);
     expect(head.pos[1]).toBeLessThan(-at(r7n1, 600).drop);
     expect(tail.pos[1]).toBeGreaterThan(-at(r7n1, 600).drop);
   });
 
-  it('Coriolis at 38.5° N firing north-west: about a centimetre right and a centimetre low at 412 m', () => {
+  it("Coriolis at 38.5° N firing north-west: about a centimetre right and a centimetre low at 412 m", () => {
     const h = plane(fly({ round: r7n1, mv: r7n1.mv, origin: [0, 0, 0], dir: [0, 0, -1], spin: RANGE_SPIN }), 412);
     expect(h.pos[0]).toBeGreaterThan(0.005);
     expect(h.pos[0]).toBeLessThan(0.02);
@@ -127,7 +141,7 @@ describe('3D bullet flight', () => {
     expect(h.pos[1] + at(r7n1, 412).drop).toBeGreaterThan(-0.02);
   });
 
-  it('is gyro-stable, drifts right with the twist and jumps with the crosswind', () => {
+  it("is gyro-stable, drifts right with the twist and jumps with the crosswind", () => {
     const sg = millerStability(svd, r7n1.mv);
     expect(sg).toBeGreaterThan(1.5);
     expect(sg).toBeLessThan(3);
@@ -144,7 +158,7 @@ describe('3D bullet flight', () => {
     expect(aeroJumpRad(svd, sg, 2.2) / (Math.PI / 10800)).toBeCloseTo(0.22, 1);
   });
 
-  it('blows the slow SP-5 off less than its flight time suggests: the lag rule holds for it too', () => {
+  it("blows the slow SP-5 off less than its flight time suggests: the lag rule holds for it too", () => {
     const h = plane(fly({ round: sp5, mv: sp5.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: steady(3, 0, 0) }), 183);
     expect(h.pos[0]).toBeCloseTo(3 * (at(sp5, 183).tof - 183 / sp5.mv), 2);
     // About 7 cm in 3 m/s at 183 m: the bullet barely slows, so there is little lag to drift in.
@@ -152,7 +166,7 @@ describe('3D bullet flight', () => {
     expect(h.pos[0]).toBeLessThan(0.1);
   });
 
-  it('VSS: gyro-stable with the assumed 210 mm twist, and its long flight drifts it a few cm right', () => {
+  it("VSS: gyro-stable with the assumed 210 mm twist, and its long flight drifts it a few cm right", () => {
     const sg = millerStability(RIFLES.vss, sp5.mv);
     expect(sg).toBeGreaterThan(2.5);
     expect(sg).toBeLessThan(4);
@@ -161,11 +175,11 @@ describe('3D bullet flight', () => {
     expect(drift).toBeLessThan(0.09);
   });
 
-  it('finds the ground crossing and keeps the bullet moving the right way', () => {
+  it("finds the ground crossing and keeps the bullet moving the right way", () => {
     // Level ground 1.1 m below the muzzle: a level shot comes down where its drop is 1.1 m.
     const p = fly({ round: r7n1, mv: r7n1.mv, origin: [0, 1.1, 0], dir: [0, 0, -1] });
     const h = firstHit(p, () => 0);
-    expect(h.what).toBe('ground');
+    expect(h.what).toBe("ground");
     expect(h.pos[1]).toBeCloseTo(0, 3);
     expect(at(r7n1, -h.pos[2]).drop).toBeCloseTo(1.1, 2);
     expect(h.vel[2]).toBeLessThan(-300);
@@ -176,9 +190,11 @@ describe('3D bullet flight', () => {
   });
 });
 
-describe('the rifle and the air', () => {
-  it('spreads like the spec: σ per axis and in velocity, repeatable per shot', () => {
-    let sx = 0, sy = 0, sv = 0;
+describe("the rifle and the air", () => {
+  it("spreads like the spec: σ per axis and in velocity, repeatable per shot", () => {
+    let sx = 0,
+      sy = 0,
+      sv = 0;
     const N = 4000;
     for (let i = 0; i < N; i++) {
       const d = dispersion(svd, i);
@@ -192,7 +208,7 @@ describe('the rifle and the air', () => {
     expect(dispersion(svd, 7)).toEqual(dispersion(svd, 7));
   });
 
-  it('gives range-card drift that matches published data: the .308 175 gr SMK and the VSS', () => {
+  it("gives range-card drift that matches published data: the .308 175 gr SMK and the VSS", () => {
     // Applied Ballistics, per 1 m/s at 600, 800 and 1000 m: 0.25, 0.47 and 0.83 m. Within 8 %.
     const [d600, d800, d1000] = crossDriftPerMs(ROUNDS.m118lr, [600, 800, 1000]);
     expect(d600! / 0.25).toBeGreaterThan(0.92);

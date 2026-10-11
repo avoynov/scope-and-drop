@@ -8,10 +8,10 @@
  * with the same extents and pleat depths. A drape keeps its number of pleats as it moves, so
  * drawing an open curtain spreads its folds and opening a drawn one bunches them up.
  */
-import * as THREE from 'three';
-import type { CurtainSpec, DoorLeafSpec } from '../../mansion/build';
-import type { ScopedLighting } from '../../mansion/build/lighting';
-import { RECIPES, type MaterialLibrary } from '../../mansion/build/materials';
+import * as THREE from "three";
+import type { CurtainSpec, DoorLeafSpec } from "../../mansion/build";
+import type { ScopedLighting } from "../../mansion/build/lighting";
+import { RECIPES, type MaterialLibrary } from "../../mansion/build/materials";
 
 export interface FixturesOptions {
   /**
@@ -78,7 +78,7 @@ export class Fixtures {
   private windowsChanged = true;
 
   constructor(leaves: DoorLeafSpec[], curtains: CurtainSpec[], lighting: ScopedLighting, opts: FixturesOptions = {}) {
-    this.root.name = 'fixtures';
+    this.root.name = "fixtures";
     this.leaves = leaves;
     this.curtains = curtains;
     const lib = opts.materials;
@@ -88,13 +88,13 @@ export class Fixtures {
       return m;
     };
     // Texture means (sRGB) stand in for the plaster and fabric textures.
-    const leafMat = lib?.get('int-trim') ?? own('int-trim', 0.95);
-    const drapeMat = lib?.get('fabric') ?? own('fabric', 0.82, 0.82);
-    const sheerMat = lib?.get('sheer') ?? own('sheer');
+    const leafMat = lib?.get("int-trim") ?? own("int-trim", 0.95);
+    const drapeMat = lib?.get("fabric") ?? own("fabric", 0.82, 0.82);
+    const sheerMat = lib?.get("sheer") ?? own("sheer");
 
     // Door leaves: a box from the hinge along +z, thickness across x, standing on y = 0.
     const nl = leaves.length;
-    this.doors = this.instanced('doors', new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0.5), leafMat, nl, (i) => leaves[i]!.scope);
+    this.doors = this.instanced("doors", new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0.5), leafMat, nl, (i) => leaves[i]!.scope);
     leaves.forEach((l, i) => {
       this.doors.setColorAt(i, tmpC.set(l.color));
       const r = this.leafIndex.get(l.opening);
@@ -114,16 +114,16 @@ export class Fixtures {
     const members: [number[], number[]] = [[], []];
     curtains.forEach((c, w) => {
       this.windowIndex.set(c.opening, w);
-      this.drawn[w] = c.start === 'drawn' ? 1 : 0;
-      this.sheer[w] = c.start === 'sheer' ? 1 : 0;
-      const g = c.start === 'drawn' ? 1 : 0;
+      this.drawn[w] = c.start === "drawn" ? 1 : 0;
+      this.sheer[w] = c.start === "sheer" ? 1 : 0;
+      const g = c.start === "drawn" ? 1 : 0;
       this.group[w] = g;
       this.slot[w] = members[g].length;
       members[g].push(w);
     });
     this.drapes = ([0, 1] as const).map((g) => {
       const list = members[g];
-      const mesh = this.instanced(g ? 'drapes-drawn' : 'drapes-open', pleatGeometry(g ? PLEATS.drawn : PLEATS.open), drapeMat, list.length * 2, (i) => curtains[list[i >> 1]!]!.scope);
+      const mesh = this.instanced(g ? "drapes-drawn" : "drapes-open", pleatGeometry(g ? PLEATS.drawn : PLEATS.open), drapeMat, list.length * 2, (i) => curtains[list[i >> 1]!]!.scope);
       list.forEach((w, s) => {
         tmpC.set(curtains[w]!.color);
         mesh.setColorAt(s * 2, tmpC);
@@ -131,7 +131,7 @@ export class Fixtures {
       });
       return mesh;
     }) as [THREE.InstancedMesh, THREE.InstancedMesh];
-    this.sheers = this.instanced('sheers', sheerGeometry(), sheerMat, nw, (i) => curtains[i]!.scope);
+    this.sheers = this.instanced("sheers", sheerGeometry(), sheerMat, nw, (i) => curtains[i]!.scope);
     this.sheers.castShadow = false;
     this.sheers.receiveShadow = false;
     this.sheers.renderOrder = 2;
@@ -140,10 +140,10 @@ export class Fixtures {
 
   private instanced(name: string, geo: THREE.BufferGeometry, mat: THREE.Material, n: number, scope: (i: number) => number): THREE.InstancedMesh {
     // Library materials take vertex colours; white leaves the instance colour as the tint.
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.getAttribute('position').count * 3).fill(1), 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(geo.getAttribute("position").count * 3).fill(1), 3));
     const scopes = new Float32Array(Math.max(1, n));
     for (let i = 0; i < n; i++) scopes[i] = scope(i);
-    geo.setAttribute('aScope', new THREE.InstancedBufferAttribute(scopes, 1));
+    geo.setAttribute("aScope", new THREE.InstancedBufferAttribute(scopes, 1));
     geo.computeBoundingBox();
     const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, n));
     mesh.count = n;
@@ -272,10 +272,10 @@ function wallMatrix(c: CurtainSpec, ta: number, tb: number, y0: number, y1: numb
   const T = tb - ta;
   const D = c.inward * dn;
   const N = c.face + c.inward * n0;
-  const flip = (c.axis === 'x' ? T * D : -T * D) < 0;
+  const flip = (c.axis === "x" ? T * D : -T * D) < 0;
   const H = flip ? y0 - y1 : y1 - y0;
   const Y = flip ? y1 : y0;
-  if (c.axis === 'x') return m.set(T, 0, 0, ta, 0, H, 0, Y, 0, 0, D, N, 0, 0, 0, 1);
+  if (c.axis === "x") return m.set(T, 0, 0, ta, 0, H, 0, Y, 0, 0, D, N, 0, 0, 0, 1);
   return m.set(0, 0, D, N, 0, H, 0, Y, T, 0, 0, ta, 0, 0, 0, 1);
 }
 
@@ -300,9 +300,9 @@ function pleatGeometry(n: number): THREE.BufferGeometry {
     idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
   return g;
 }
@@ -310,9 +310,9 @@ function pleatGeometry(n: number): THREE.BufferGeometry {
 /** Unit sheer: two coincident quads facing either way, as the baked sheer is hung. */
 function sheerGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0], 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1], 2));
+  g.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0], 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1], 2));
   g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
   return g;
 }
@@ -321,7 +321,7 @@ function sheerGeometry(): THREE.BufferGeometry {
 function plain(key: string, tone = 1, roughness?: number): THREE.MeshStandardMaterial {
   const r = RECIPES[key]!;
   const m = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(r.color ?? '#ffffff').multiply(new THREE.Color().setRGB(tone, tone, tone, THREE.SRGBColorSpace)),
+    color: new THREE.Color(r.color ?? "#ffffff").multiply(new THREE.Color().setRGB(tone, tone, tone, THREE.SRGBColorSpace)),
     roughness: roughness ?? r.roughness ?? 1,
     metalness: r.metalness ?? 0,
     transparent: r.transparent ?? false,

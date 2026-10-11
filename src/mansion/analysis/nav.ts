@@ -2,9 +2,9 @@
  * Navigation grids (per storey) with per-cell room index and perch visibility.
  * The terrace is part of level 0 (room index -2).
  */
-import { containsPoint, type Rect } from '../core/geom';
-import type { LevelSpec, Mass, NavLevel, Portico, Prop, Room, Site, Wall } from '../core/types';
-import type { SightlineTracer } from './sightlines';
+import { containsPoint, type Rect } from "../core/geom";
+import type { LevelSpec, Mass, NavLevel, Portico, Prop, Room, Site, Wall } from "../core/types";
+import type { SightlineTracer } from "./sightlines";
 
 export interface NavInput {
   rooms: Room[];
@@ -60,7 +60,7 @@ export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
       const q = Math.round(p.yaw / (Math.PI / 2)) & 1;
       const hw = (q ? p.d : p.w) / 2 + AGENT;
       const hd = (q ? p.w : p.d) / 2 + AGENT;
-      const key = p.roomId ?? 'terrace';
+      const key = p.roomId ?? "terrace";
       let list = propRects.get(key);
       if (!list) propRects.set(key, (list = []));
       list.push({ x0: p.x - hw, z0: p.z - hd, x1: p.x + hw, z1: p.z + hd });
@@ -70,8 +70,9 @@ export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
       for (const b of terrace.balustrades) {
         terraceBlocks.push({ x0: Math.min(b.a.x, b.b.x) - 0.25, z0: Math.min(b.a.z, b.b.z) - 0.25, x1: Math.max(b.a.x, b.b.x) + 0.25, z1: Math.max(b.a.z, b.b.z) + 0.25 });
       }
-      for (const p of input.porticos) for (const c of p.columns) terraceBlocks.push({ x0: c.x - p.columnRadius - AGENT, z0: c.z - p.columnRadius - AGENT, x1: c.x + p.columnRadius + AGENT, z1: c.z + p.columnRadius + AGENT });
-      terraceBlocks.push(...(propRects.get('terrace') ?? []));
+      for (const p of input.porticos)
+        for (const c of p.columns) terraceBlocks.push({ x0: c.x - p.columnRadius - AGENT, z0: c.z - p.columnRadius - AGENT, x1: c.x + p.columnRadius + AGENT, z1: c.z + p.columnRadius + AGENT });
+      terraceBlocks.push(...(propRects.get("terrace") ?? []));
     }
     const masses = input.masses;
     const visCache = new Map<number, number>();
@@ -118,14 +119,14 @@ export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
       if (w.level !== lv.index) continue;
       for (const o of w.openings) {
         if (!o.passable || o.y0 > lv.floorY + 0.3) continue;
-        const base = w.axis === 'x' ? w.a.x : w.a.z;
-        const line = w.axis === 'x' ? w.a.z : w.a.x;
+        const base = w.axis === "x" ? w.a.x : w.a.z;
+        const line = w.axis === "x" ? w.a.z : w.a.x;
         const half = w.thickness / 2 + AGENT + cell;
         const ownIdx = w.neg ? (roomIndex.get(w.neg) ?? -1) : w.pos ? (roomIndex.get(w.pos) ?? -1) : -1;
         for (let t = base + o.u0 + 0.25; t <= base + o.u1 - 0.25 + 1e-6; t += cell / 2) {
           for (let s = -half; s <= half + 1e-6; s += cell / 2) {
-            const x = w.axis === 'x' ? t : line + s;
-            const z = w.axis === 'x' ? line + s : t;
+            const x = w.axis === "x" ? t : line + s;
+            const z = w.axis === "x" ? line + s : t;
             const c = Math.floor((x - x0) / cell);
             const r = Math.floor((z - z0) / cell);
             if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
@@ -133,7 +134,7 @@ export function buildNav(input: NavInput, tracer: SightlineTracer): NavLevel[] {
             if (walk[k]) continue;
             // Only carve cells that are not inside furniture or a stairwell.
             walk[k] = 1;
-            if (room[k] === -1) room[k] = w.exterior && w.side !== 'entrance' && lv.index === 0 && Math.sign(s) === (w.neg ? 1 : -1) ? -2 : ownIdx;
+            if (room[k] === -1) room[k] = w.exterior && w.side !== "entrance" && lv.index === 0 && Math.sign(s) === (w.neg ? 1 : -1) ? -2 : ownIdx;
             const fy = room[k] === -2 ? terrace.y : lv.floorY;
             vis[k] = visAt(c, r, fy);
           }

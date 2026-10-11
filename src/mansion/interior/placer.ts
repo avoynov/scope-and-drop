@@ -6,14 +6,14 @@
  * would block, and (4) keep every door and mission stand-point reachable,
  * verified by a flood fill after each placement (rejected props are dropped).
  */
-import { overlaps, rect, type Rect } from '../core/geom';
-import type { Rng } from '../core/rng';
-import type { LightSpec, OpeningKind, Prop, PropKind, Room, Wall } from '../core/types';
+import { overlaps, rect, type Rect } from "../core/geom";
+import type { Rng } from "../core/rng";
+import type { LightSpec, OpeningKind, Prop, PropKind, Room, Wall } from "../core/types";
 
-export type Side = 'n' | 's' | 'e' | 'w';
+export type Side = "n" | "s" | "e" | "w";
 /** Yaw that makes a prop's front (+z local) face into the room from each wall. */
 export const SIDE_YAW: Record<Side, number> = { n: Math.PI, s: 0, e: -Math.PI / 2, w: Math.PI / 2 };
-export const SIDES: Side[] = ['n', 's', 'e', 'w'];
+export const SIDES: Side[] = ["n", "s", "e", "w"];
 
 export interface SideOpening {
   t0: number;
@@ -73,32 +73,32 @@ export class Placer {
     const i = room.inner;
     const mk = (side: Side, line: number, t0: number, t1: number): SideInfo => ({ side, line, t0, t1, openings: [], exterior: false, windows: 0 });
     this.sides = {
-      n: mk('n', i.z1, i.x0, i.x1),
-      s: mk('s', i.z0, i.x0, i.x1),
-      e: mk('e', i.x1, i.z0, i.z1),
-      w: mk('w', i.x0, i.z0, i.z1),
+      n: mk("n", i.z1, i.x0, i.x1),
+      s: mk("s", i.z0, i.x0, i.x1),
+      e: mk("e", i.x1, i.z0, i.z1),
+      w: mk("w", i.x0, i.z0, i.z1),
     };
     for (const w of walls) {
       if (w.neg !== room.id && w.pos !== room.id) continue;
       let side: Side | null = null;
-      if (w.axis === 'x' && Math.abs(w.a.z - r.z1) < 1e-3 && w.neg === room.id) side = 'n';
-      else if (w.axis === 'x' && Math.abs(w.a.z - r.z0) < 1e-3 && w.pos === room.id) side = 's';
-      else if (w.axis === 'z' && Math.abs(w.a.x - r.x1) < 1e-3 && w.neg === room.id) side = 'e';
-      else if (w.axis === 'z' && Math.abs(w.a.x - r.x0) < 1e-3 && w.pos === room.id) side = 'w';
+      if (w.axis === "x" && Math.abs(w.a.z - r.z1) < 1e-3 && w.neg === room.id) side = "n";
+      else if (w.axis === "x" && Math.abs(w.a.z - r.z0) < 1e-3 && w.pos === room.id) side = "s";
+      else if (w.axis === "z" && Math.abs(w.a.x - r.x1) < 1e-3 && w.neg === room.id) side = "e";
+      else if (w.axis === "z" && Math.abs(w.a.x - r.x0) < 1e-3 && w.pos === room.id) side = "w";
       if (!side) continue;
       const info = this.sides[side];
       if (w.exterior) info.exterior = true;
-      const base = w.axis === 'x' ? w.a.x : w.a.z;
+      const base = w.axis === "x" ? w.a.x : w.a.z;
       for (const o of w.openings) {
         info.openings.push({ t0: base + o.u0, t1: base + o.u1, y0: o.y0, y1: o.y1, kind: o.kind, exterior: w.exterior, passable: o.passable });
         if (w.exterior && o.glazed && !o.frosted) info.windows++;
         if (o.passable && o.y0 < room.floorY + 0.5) {
           // Door clearance zone and a reachability probe just inside the door.
           const tc = base + (o.u0 + o.u1) / 2;
-          const depth = o.kind === 'french-window' ? 0.9 : 1.15;
+          const depth = o.kind === "french-window" ? 0.9 : 1.15;
           const half = (o.u1 - o.u0) / 2 + 0.15;
-          const inward = side === 'n' || side === 'e' ? -1 : 1;
-          if (side === 'n' || side === 's') {
+          const inward = side === "n" || side === "e" ? -1 : 1;
+          if (side === "n" || side === "s") {
             this.keep.push(rect(tc - half, info.line, tc + half, info.line + inward * depth));
             this.doorPoints.push({ x: tc, z: info.line + inward * 0.45 });
           } else {
@@ -145,8 +145,8 @@ export class Placer {
   get cz(): number {
     return (this.inner.z0 + this.inner.z1) / 2;
   }
-  get longAxis(): 'x' | 'z' {
-    return this.width >= this.depth ? 'x' : 'z';
+  get longAxis(): "x" | "z" {
+    return this.width >= this.depth ? "x" : "z";
   }
 
   /** Sides with exterior glazing, most windows first. */
@@ -242,7 +242,7 @@ export class Placer {
     w: number,
     d: number,
     h: number,
-    opts: { y?: number; blocks?: boolean; occludes?: boolean; mount?: Prop['mount']; variant?: number; color?: string; ignoreKeep?: boolean; force?: boolean } = {},
+    opts: { y?: number; blocks?: boolean; occludes?: boolean; mount?: Prop["mount"]; variant?: number; color?: string; ignoreKeep?: boolean; force?: boolean } = {},
   ): Prop | null {
     const blocks = opts.blocks ?? true;
     const fp = this.footprint(x, z, yaw, w, d);
@@ -261,7 +261,7 @@ export class Placer {
       h: round(h),
       variant: opts.variant ?? 0,
       color: opts.color,
-      mount: opts.mount ?? 'floor',
+      mount: opts.mount ?? "floor",
       blocksNav: blocks,
       occludes: opts.occludes ?? false,
     };
@@ -318,13 +318,13 @@ export class Placer {
   at(side: Side, t: number, off: number): { x: number; z: number } {
     const info = this.sides[side];
     switch (side) {
-      case 'n':
+      case "n":
         return { x: t, z: info.line - off };
-      case 's':
+      case "s":
         return { x: t, z: info.line + off };
-      case 'e':
+      case "e":
         return { x: info.line - off, z: t };
-      case 'w':
+      case "w":
         return { x: info.line + off, z: t };
     }
   }
@@ -370,7 +370,7 @@ export class Placer {
       if (t0 < info.t0 + 0.15 || t1 > info.t1 - 0.15) continue;
       if (!this.spanClear(side, t0, t1, yc + h / 2, yc - h / 2)) continue;
       const p = this.at(side, t, 0.04);
-      const prop = this.add(kind, p.x, p.z, SIDE_YAW[side], w, 0.08, h, { y: yc - h / 2, blocks: false, mount: 'wall', variant: opts.variant, color: opts.color });
+      const prop = this.add(kind, p.x, p.z, SIDE_YAW[side], w, 0.08, h, { y: yc - h / 2, blocks: false, mount: "wall", variant: opts.variant, color: opts.color });
       if (prop) {
         this.bands.push({ propId: prop.id, side, t0: t0 - 0.2, t1: t1 + 0.2, y0: yc - h / 2 - 0.15, y1: yc + h / 2 + 0.15 });
         return prop;
@@ -379,7 +379,7 @@ export class Placer {
     return null;
   }
 
-  light(kind: LightSpec['kind'], x: number, y: number, z: number, color: [number, number, number], intensity: number, range: number): void {
+  light(kind: LightSpec["kind"], x: number, y: number, z: number, color: [number, number, number], intensity: number, range: number): void {
     this.lights.push({ id: this.ids.light(), kind, scope: this.room.id, x: round(x), y: round(y), z: round(z), color, intensity: round(intensity), range: round(range) });
   }
 

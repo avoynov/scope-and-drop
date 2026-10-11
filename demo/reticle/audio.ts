@@ -12,11 +12,11 @@
  * `bolt-bolt-back.flac`, `svd-charge-release-2.wav` for a second take; see sounds/README.md). Otherwise they
  * are synthesised (synth.ts). The bullet's impacts are synthesised here.
  */
-import type { Cue, SoundEvent } from '../../src/scope/handling';
-import type { RifleId } from '../../src/scope/shot';
-import { render, type Synth } from './synth';
+import type { Cue, SoundEvent } from "../../src/scope/handling";
+import type { RifleId } from "../../src/scope/shot";
+import { render, type Synth } from "./synth";
 
-export type ImpactSound = 'plastic' | 'dirt' | 'rock' | 'steel' | 'wood' | 'glass' | 'tempered';
+export type ImpactSound = "plastic" | "dirt" | "rock" | "steel" | "wood" | "glass" | "tempered";
 
 export interface Sound {
   enabled: boolean;
@@ -38,18 +38,28 @@ export interface Sound {
 }
 
 /** Recordings dropped into sounds/, by file name without the extension. */
-const FILES = import.meta.glob('./sounds/*.{wav,flac,ogg,mp3,m4a,opus,webm}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const FILES = import.meta.glob("./sounds/*.{wav,flac,ogg,mp3,m4a,opus,webm}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 /** `<rifle>-<sound>` → its takes. A trailing `-2`, `-3`… marks another take of the same sound. */
 const TAKES = new Map<string, string[]>();
 for (const [path, url] of Object.entries(FILES)) {
-  const name = path.replace(/^.*\//, '').replace(/\.[^.]+$/, '').replace(/-\d+$/, '');
+  const name = path
+    .replace(/^.*\//, "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/-\d+$/, "");
   TAKES.set(name, [...(TAKES.get(name) ?? []), url]);
 }
 
 /** Where each sound comes from, left (−1) to right (1): the bolt and charging handle are on the right. */
 const PAN: Partial<Record<Synth, number>> = {
-  'bolt-up': 0.3, 'bolt-back': 0.35, 'bolt-forward': 0.3, 'bolt-down': 0.3, 'case-land': 0.7,
-  'charge-back': 0.3, 'charge-release': 0.25, 'dry-fire': 0.1, trigger: 0.1,
+  "bolt-up": 0.3,
+  "bolt-back": 0.35,
+  "bolt-forward": 0.3,
+  "bolt-down": 0.3,
+  "case-land": 0.7,
+  "charge-back": 0.3,
+  "charge-release": 0.25,
+  "dry-fire": 0.1,
+  trigger: 0.1,
 };
 /**
  * How loud each sound peaks against an open-muzzle report, at the shooter's ear. Every take, recorded or
@@ -58,9 +68,19 @@ const PAN: Partial<Record<Synth, number>> = {
  * The suppressed VSS's report is only about as loud as its own action.
  */
 const LEVEL: Record<Synth, number> = {
-  shot: 1, 'bolt-up': 0.22, 'bolt-back': 0.3, 'bolt-forward': 0.3, 'bolt-down': 0.25, 'case-land': 0.12,
-  'mag-release': 0.12, 'mag-out': 0.2, 'mag-in': 0.3, 'charge-back': 0.25, 'charge-release': 0.4,
-  'dry-fire': 0.22, trigger: 0.06,
+  shot: 1,
+  "bolt-up": 0.22,
+  "bolt-back": 0.3,
+  "bolt-forward": 0.3,
+  "bolt-down": 0.25,
+  "case-land": 0.12,
+  "mag-release": 0.12,
+  "mag-out": 0.2,
+  "mag-in": 0.3,
+  "charge-back": 0.25,
+  "charge-release": 0.4,
+  "dry-fire": 0.22,
+  trigger: 0.06,
 };
 const VSS_SHOT = 0.55;
 const VARIANTS = 4;
@@ -89,10 +109,11 @@ export function createSound(): Sound {
   function normalise(buf: AudioBuffer): AudioBuffer {
     let peak = 0;
     for (let ch = 0; ch < buf.numberOfChannels; ch++) for (const x of buf.getChannelData(ch)) peak = Math.max(peak, Math.abs(x));
-    if (peak > 0) for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-      const d = buf.getChannelData(ch);
-      for (let i = 0; i < d.length; i++) d[i]! /= peak;
-    }
+    if (peak > 0)
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < d.length; i++) d[i]! /= peak;
+      }
     return buf;
   }
 
@@ -119,7 +140,7 @@ export function createSound(): Sound {
     const src = c.createBufferSource();
     src.buffer = take(ev, rifle);
     const v = c.createGain();
-    v.gain.value = ev === 'shot' && rifle === 'vss' ? VSS_SHOT : LEVEL[ev];
+    v.gain.value = ev === "shot" && rifle === "vss" ? VSS_SHOT : LEVEL[ev];
     let node: AudioNode = src.connect(v);
     const pan = PAN[ev];
     if (pan && c.createStereoPanner) {
@@ -154,14 +175,14 @@ export function createSound(): Sound {
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
         load(ctx);
       }
-      if (ctx.state === 'suspended') void ctx.resume();
+      if (ctx.state === "suspended") void ctx.resume();
     },
     shot(delay, rifle) {
       if (!s.enabled || !ctx) return;
       const t = ctx.currentTime + delay;
-      play('shot', rifle, t);
+      play("shot", rifle, t);
       // The hills answer much later; the suppressed VSS is too quiet to come back off them.
-      if (rifle !== 'vss') burst(t + 9.2, 0.035, 0.25, 1.6, 'lowpass', 320, 160, 1.2);
+      if (rifle !== "vss") burst(t + 9.2, 0.035, 0.25, 1.6, "lowpass", 320, 160, 1.2);
     },
     impact(delay, dist, kind) {
       if (!s.enabled || !ctx) return;
@@ -169,30 +190,30 @@ export function createSound(): Sound {
       // 1/r falls fast: the mannequin's slap at 412 m is faint but distinct; the air takes the treble.
       const g = Math.min(1, 60 / Math.max(60, dist));
       const top = 5200 * Math.exp(-dist / 1500);
-      if (kind === 'plastic') {
-        burst(t, 2.2 * g, 0.001, 0.07, 'bandpass', Math.min(top, 1100), 700, 0.05);
+      if (kind === "plastic") {
+        burst(t, 2.2 * g, 0.001, 0.07, "bandpass", Math.min(top, 1100), 700, 0.05);
         tone(t, 210, 160, 1.1 * g, 0.002, 0.09);
-      } else if (kind === 'steel') {
+      } else if (kind === "steel") {
         tone(t, 1850, 1840, 1.2 * g, 0.001, 0.45);
-        burst(t, 1.1 * g, 0.0005, 0.03, 'bandpass', Math.min(top, 3000), 3000, 0.02);
-      } else if (kind === 'rock') {
-        burst(t, 1.6 * g, 0.0005, 0.05, 'bandpass', Math.min(top, 1800), 900, 0.04);
-      } else if (kind === 'wood') {
-        burst(t, 1.5 * g, 0.001, 0.06, 'bandpass', Math.min(top, 700), 500, 0.05);
-      } else if (kind === 'glass' || kind === 'tempered') {
+        burst(t, 1.1 * g, 0.0005, 0.03, "bandpass", Math.min(top, 3000), 3000, 0.02);
+      } else if (kind === "rock") {
+        burst(t, 1.6 * g, 0.0005, 0.05, "bandpass", Math.min(top, 1800), 900, 0.04);
+      } else if (kind === "wood") {
+        burst(t, 1.5 * g, 0.001, 0.06, "bandpass", Math.min(top, 700), 500, 0.05);
+      } else if (kind === "glass" || kind === "tempered") {
         // A pane breaking: a hard, bright snap, then shards ringing as they hit the sill and the ground. Tempered
         // glass lets go all at once and pours out of its frame in a rush of little dice.
-        const all = kind === 'tempered';
-        burst(t, (all ? 2.2 : 1.7) * g, 0.0003, 0.03, 'highpass', Math.min(top, 2600), 1600, 0.02);
+        const all = kind === "tempered";
+        burst(t, (all ? 2.2 : 1.7) * g, 0.0003, 0.03, "highpass", Math.min(top, 2600), 1600, 0.02);
         for (let i = 0; i < (all ? 24 : 9); i++) {
           const f = 2600 + 4200 * Math.random();
           // The air takes the treble: rings above `top` fade with distance.
           const air = f > top ? (top / f) ** 2 : 1;
           tone(t + 0.04 + (all ? 0.9 : 0.45) * Math.random() ** 1.5, f, f * 0.985, (0.12 + 0.2 * Math.random()) * g * air, 0.0005, 0.03 + 0.05 * Math.random());
         }
-        if (all) burst(t + 0.1, 0.6 * g, 0.06, 0.55, 'highpass', Math.min(top, 3600), 2400, 0.5);
+        if (all) burst(t + 0.1, 0.6 * g, 0.06, 0.55, "highpass", Math.min(top, 3600), 2400, 0.5);
       } else {
-        burst(t, 0.9 * g, 0.004, 0.12, 'lowpass', Math.min(top, 450), 200, 0.1);
+        burst(t, 0.9 * g, 0.004, 0.12, "lowpass", Math.min(top, 450), 200, 0.1);
       }
     },
     cue(ev, rifle, delay) {
@@ -213,7 +234,7 @@ export function createSound(): Sound {
     drumClick() {
       if (!s.enabled || !ctx) return;
       // A spring-loaded ball dropping into the next notch: quieter and higher than the action's clicks.
-      burst(ctx.currentTime, 0.12, 0.0003, 0.012, 'bandpass', 5200, 4200, 0.01);
+      burst(ctx.currentTime, 0.12, 0.0003, 0.012, "bandpass", 5200, 4200, 0.01);
     },
   };
   /** Filtered noise with an attack, an exponential decay, and a cutoff swept from f0 to f1 over `sweep` s. */
@@ -223,7 +244,7 @@ export function createSound(): Sound {
     src.buffer = noise;
     const f = c.createBiquadFilter();
     f.type = type;
-    f.Q.value = type === 'bandpass' ? 1.4 : 0.7;
+    f.Q.value = type === "bandpass" ? 1.4 : 0.7;
     f.frequency.setValueAtTime(f0, t);
     f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + sweep);
     const v = c.createGain();

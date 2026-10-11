@@ -4,8 +4,8 @@
  * stars and a crescent moon lit by the (set) sun. HDR output, also baked into
  * a PMREM environment map for façade/glass/water reflections.
  */
-import * as THREE from 'three';
-import type { SkySpec } from '../core/types';
+import * as THREE from "three";
+import type { SkySpec } from "../core/types";
 
 const DEG = Math.PI / 180;
 
@@ -138,7 +138,7 @@ export class TwilightSky {
       fog: false,
     });
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(4000, 48, 24), this.material);
-    this.mesh.name = 'sky';
+    this.mesh.name = "sky";
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1;
     this.hazeColor.multiplyScalar(params.intensity);

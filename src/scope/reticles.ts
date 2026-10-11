@@ -3,18 +3,18 @@
  * x grows right, y grows DOWN (holdover is positive). Line widths are angular too, so the whole
  * pattern, strokes included, scales with magnification as on a first-focal-plane scope.
  */
-import { ROUNDS, holdRad, type RoundId } from './ballistics';
-import { MRAD, THOUSANDTH } from './optics';
-import { BATTLE_ZERO_M, RIFLES } from './shot';
+import { ROUNDS, holdRad, type RoundId } from "./ballistics";
+import { MRAD, THOUSANDTH } from "./optics";
+import { BATTLE_ZERO_M, RIFLES } from "./shot";
 
 export type Prim =
-  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; w: number; dash?: number; lit?: boolean }
-  | { kind: 'poly'; pts: [number, number][]; w: number; lit?: boolean }
-  | { kind: 'dot'; x: number; y: number; r: number; lit?: boolean }
-  | { kind: 'text'; x: number; y: number; size: number; text: string; align?: 'left' | 'center' | 'right'; lit?: boolean };
+  | { kind: "line"; x1: number; y1: number; x2: number; y2: number; w: number; dash?: number; lit?: boolean }
+  | { kind: "poly"; pts: [number, number][]; w: number; lit?: boolean }
+  | { kind: "dot"; x: number; y: number; r: number; lit?: boolean }
+  | { kind: "text"; x: number; y: number; size: number; text: string; align?: "left" | "center" | "right"; lit?: boolean };
 
 export interface Reticle {
-  id: 'pso' | 'tree' | 'vss';
+  id: "pso" | "tree" | "vss";
   name: string;
   /** Radians per reticle unit. */
   unitRad: number;
@@ -40,7 +40,7 @@ export const PSO_CHEVRON_RANGES = [400, 600, 800] as const;
  * (drum on 1) and its scope 70 mm over the bore, in thousandths. Glass cannot move, so the chevrons are true
  * only with the drum on 1.
  */
-export const psoChevronY = (rangeM: number) => holdRad(ROUNDS['7n1'], rangeM, BATTLE_ZERO_M, RIFLES.svd.sightM) / THOUSANDTH;
+export const psoChevronY = (rangeM: number) => holdRad(ROUNDS["7n1"], rangeM, BATTLE_ZERO_M, RIFLES.svd.sightM) / THOUSANDTH;
 
 /**
  * SVD / PSO-1 style, tailored to the 7N1 round. Main chevron is the aiming point; three holdover chevrons
@@ -52,40 +52,50 @@ export const psoChevronY = (rangeM: number) => holdRad(ROUNDS['7n1'], rangeM, BA
 export function psoReticle(): Reticle {
   const p: Prim[] = [];
   const W = 0.13; // stroke
-  const chevron = (y: number, hw: number, h: number) => p.push({ kind: 'poly', pts: [[-hw, y + h], [0, y], [hw, y + h]], w: W, lit: true });
+  const chevron = (y: number, hw: number, h: number) =>
+    p.push({
+      kind: "poly",
+      pts: [
+        [-hw, y + h],
+        [0, y],
+        [hw, y + h],
+      ],
+      w: W,
+      lit: true,
+    });
   chevron(0, 0.5, 1.0);
   let last = 0;
   for (const range of PSO_CHEVRON_RANGES) {
     last = psoChevronY(range);
     chevron(last, 0.42, 0.85);
-    p.push({ kind: 'text', x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: 'left', lit: true });
+    p.push({ kind: "text", x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: "left", lit: true });
   }
-  p.push({ kind: 'line', x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
+  p.push({ kind: "line", x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
   // Lateral scale.
   for (let i = 1; i <= 10; i++) {
     const len = i === 10 ? 1.3 : i === 5 ? 0.85 : 0.5;
-    for (const s of [-1, 1]) p.push({ kind: 'line', x1: s * i, y1: 0, x2: s * i, y2: len, w: W, lit: true });
+    for (const s of [-1, 1]) p.push({ kind: "line", x1: s * i, y1: 0, x2: s * i, y2: len, w: W, lit: true });
   }
-  p.push({ kind: 'line', x1: -10, y1: 0, x2: -1, y2: 0, w: W * 0.8, lit: true });
-  p.push({ kind: 'line', x1: 1, y1: 0, x2: 10, y2: 0, w: W * 0.8, lit: true });
-  for (const s of [-1, 1]) p.push({ kind: 'text', x: s * 10, y: -0.55, size: 1.0, text: '10', lit: true });
+  p.push({ kind: "line", x1: -10, y1: 0, x2: -1, y2: 0, w: W * 0.8, lit: true });
+  p.push({ kind: "line", x1: 1, y1: 0, x2: 10, y2: 0, w: W * 0.8, lit: true });
+  for (const s of [-1, 1]) p.push({ kind: "text", x: s * 10, y: -0.55, size: 1.0, text: "10", lit: true });
   // Rangefinder: n = 2 at the far left, n = 10 near the centre.
   const base = 7.5;
   const xOf = (n: number) => -13.5 + ((n - 2) / 8) * 8.5;
-  p.push({ kind: 'line', x1: xOf(2) - 0.4, y1: base, x2: xOf(10) + 0.3, y2: base, w: W, lit: true });
+  p.push({ kind: "line", x1: xOf(2) - 0.4, y1: base, x2: xOf(10) + 0.3, y2: base, w: W, lit: true });
   const curve: [number, number][] = [];
   for (let n = 2; n <= 10.001; n += 0.1) curve.push([xOf(n), base - psoCurveHeight(n)]);
   for (let i = 0; i < curve.length - 1; i += 2) {
     const [x1, y1] = curve[i]!;
     const [x2, y2] = curve[i + 1]!;
-    p.push({ kind: 'line', x1, y1, x2, y2, w: W * 0.8, lit: true });
+    p.push({ kind: "line", x1, y1, x2, y2, w: W * 0.8, lit: true });
   }
   for (let n = 2; n <= 10; n++) {
     const y = base - psoCurveHeight(n);
-    p.push({ kind: 'line', x1: xOf(n), y1: y, x2: xOf(n), y2: y - 0.35, w: W * 0.8, lit: true });
-    if (n % 2 === 0) p.push({ kind: 'text', x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
+    p.push({ kind: "line", x1: xOf(n), y1: y, x2: xOf(n), y2: y - 0.35, w: W * 0.8, lit: true });
+    if (n % 2 === 0) p.push({ kind: "text", x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
   }
-  return { id: 'pso', name: 'SVD · PSO', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: '7n1', illum: 'rgb(255,46,24)' };
+  return { id: "pso", name: "SVD · PSO", unitRad: THOUSANDTH, unitName: "thousandth", prims: p, round: "7n1", illum: "rgb(255,46,24)" };
 }
 
 /**
@@ -113,7 +123,17 @@ export const VSS_RANGEFINDER = [1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 export function vssReticle(): Reticle {
   const p: Prim[] = [];
   const W = 0.13;
-  const chevron = (y: number, hw: number, h: number) => p.push({ kind: 'poly', pts: [[-hw, y + h], [0, y], [hw, y + h]], w: W, lit: true });
+  const chevron = (y: number, hw: number, h: number) =>
+    p.push({
+      kind: "poly",
+      pts: [
+        [-hw, y + h],
+        [0, y],
+        [hw, y + h],
+      ],
+      w: W,
+      lit: true,
+    });
   chevron(0, 0.5, 1.0);
   let last = 0;
   for (const range of VSS_CHEVRON_RANGES) {
@@ -121,36 +141,36 @@ export function vssReticle(): Reticle {
     const whole = range % 100 === 0;
     if (whole) {
       chevron(last, 0.42, 0.85);
-      p.push({ kind: 'text', x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: 'left', lit: true });
+      p.push({ kind: "text", x: 0.75, y: last + 0.45, size: 0.8, text: String(range / 100), align: "left", lit: true });
     } else chevron(last, 0.28, 0.55);
   }
-  p.push({ kind: 'line', x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
+  p.push({ kind: "line", x1: 0, y1: last + 1.1, x2: 0, y2: EDGE, w: W, lit: true });
   // Lateral scale, as on the PSO.
   for (let i = 1; i <= 10; i++) {
     const len = i === 10 ? 1.3 : i === 5 ? 0.85 : 0.5;
-    for (const s of [-1, 1]) p.push({ kind: 'line', x1: s * i, y1: 0, x2: s * i, y2: len, w: W, lit: true });
+    for (const s of [-1, 1]) p.push({ kind: "line", x1: s * i, y1: 0, x2: s * i, y2: len, w: W, lit: true });
   }
-  p.push({ kind: 'line', x1: -10, y1: 0, x2: -1, y2: 0, w: W * 0.8, lit: true });
-  p.push({ kind: 'line', x1: 1, y1: 0, x2: 10, y2: 0, w: W * 0.8, lit: true });
-  for (const s of [-1, 1]) p.push({ kind: 'text', x: s * 10, y: -0.55, size: 1.0, text: '10', lit: true });
+  p.push({ kind: "line", x1: -10, y1: 0, x2: -1, y2: 0, w: W * 0.8, lit: true });
+  p.push({ kind: "line", x1: 1, y1: 0, x2: 10, y2: 0, w: W * 0.8, lit: true });
+  for (const s of [-1, 1]) p.push({ kind: "text", x: s * 10, y: -0.55, size: 1.0, text: "10", lit: true });
   // Rangefinder at lower left: n = 1 (100 m) at the far left, where the curve stands 16 thousandths tall.
   const base = 17.5;
   const xOf = (n: number) => -15 + ((n - 1) / 3) * 9.5;
-  p.push({ kind: 'line', x1: xOf(1) - 0.4, y1: base, x2: xOf(4) + 0.3, y2: base, w: W, lit: true });
+  p.push({ kind: "line", x1: xOf(1) - 0.4, y1: base, x2: xOf(4) + 0.3, y2: base, w: W, lit: true });
   const curve: [number, number][] = [];
   for (let n = 1; n <= 4.0001; n += 0.04) curve.push([xOf(n), base - psoCurveHeight(n)]);
   for (let i = 0; i < curve.length - 1; i += 2) {
     const [x1, y1] = curve[i]!;
     const [x2, y2] = curve[i + 1]!;
-    p.push({ kind: 'line', x1, y1, x2, y2, w: W * 0.8, lit: true });
+    p.push({ kind: "line", x1, y1, x2, y2, w: W * 0.8, lit: true });
   }
   for (const n of VSS_RANGEFINDER) {
     const y = base - psoCurveHeight(n);
     const whole = n % 1 === 0;
-    p.push({ kind: 'line', x1: xOf(n), y1: y, x2: xOf(n), y2: y - (whole ? 0.35 : 0.22), w: W * 0.8, lit: true });
-    if (whole) p.push({ kind: 'text', x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
+    p.push({ kind: "line", x1: xOf(n), y1: y, x2: xOf(n), y2: y - (whole ? 0.35 : 0.22), w: W * 0.8, lit: true });
+    if (whole) p.push({ kind: "text", x: xOf(n), y: y - 0.75, size: 0.85, text: String(n), lit: true });
   }
-  return { id: 'vss', name: 'VSS · PSO-1-1', unitRad: THOUSANDTH, unitName: 'thousandth', prims: p, round: 'sp5', illum: 'rgb(255,46,24)' };
+  return { id: "vss", name: "VSS · PSO-1-1", unitRad: THOUSANDTH, unitName: "thousandth", prims: p, round: "sp5", illum: "rgb(255,46,24)" };
 }
 
 /**
@@ -172,16 +192,16 @@ export function treeReticle(): Reticle {
   const arm = 10.5;
   const stem = 20.5;
   // Posts.
-  p.push({ kind: 'line', x1: -EDGE, y1: 0, x2: -arm, y2: 0, w: post });
-  p.push({ kind: 'line', x1: arm, y1: 0, x2: EDGE, y2: 0, w: post });
-  p.push({ kind: 'line', x1: 0, y1: -EDGE, x2: 0, y2: -arm, w: post });
-  p.push({ kind: 'line', x1: 0, y1: stem, x2: 0, y2: EDGE, w: post });
+  p.push({ kind: "line", x1: -EDGE, y1: 0, x2: -arm, y2: 0, w: post });
+  p.push({ kind: "line", x1: arm, y1: 0, x2: EDGE, y2: 0, w: post });
+  p.push({ kind: "line", x1: 0, y1: -EDGE, x2: 0, y2: -arm, w: post });
+  p.push({ kind: "line", x1: 0, y1: stem, x2: 0, y2: EDGE, w: post });
   // Fine crosshair, open at the centre round the floating dot.
-  p.push({ kind: 'line', x1: -arm, y1: 0, x2: -gap, y2: 0, w: fine, lit: true });
-  p.push({ kind: 'line', x1: gap, y1: 0, x2: arm, y2: 0, w: fine, lit: true });
-  p.push({ kind: 'line', x1: 0, y1: -arm, x2: 0, y2: -gap, w: fine, lit: true });
-  p.push({ kind: 'line', x1: 0, y1: gap, x2: 0, y2: stem, w: fine, lit: true });
-  p.push({ kind: 'dot', x: 0, y: 0, r: 0.025, lit: true });
+  p.push({ kind: "line", x1: -arm, y1: 0, x2: -gap, y2: 0, w: fine, lit: true });
+  p.push({ kind: "line", x1: gap, y1: 0, x2: arm, y2: 0, w: fine, lit: true });
+  p.push({ kind: "line", x1: 0, y1: -arm, x2: 0, y2: -gap, w: fine, lit: true });
+  p.push({ kind: "line", x1: 0, y1: gap, x2: 0, y2: stem, w: fine, lit: true });
+  p.push({ kind: "dot", x: 0, y: 0, r: 0.025, lit: true });
   // Horizontal line and the stem above: whole mils across the line, half mils on one side only (below the
   // horizontal, left of the stem), 0.2 mil hashes inside 2 mil.
   for (let k = 1; k < arm * 10; k++) {
@@ -193,21 +213,21 @@ export function treeReticle(): Reticle {
     const l = whole ? 0.25 : half ? 0.18 : 0.1;
     for (const sgn of [-1, 1]) {
       const x = sgn * v;
-      p.push({ kind: 'line', x1: x, y1: whole ? -l : 0, x2: x, y2: l, w: whole ? fine : thin });
+      p.push({ kind: "line", x1: x, y1: whole ? -l : 0, x2: x, y2: l, w: whole ? fine : thin });
     }
-    p.push({ kind: 'line', x1: -l, y1: -v, x2: whole ? l : 0, y2: -v, w: whole ? fine : thin });
+    p.push({ kind: "line", x1: -l, y1: -v, x2: whole ? l : 0, y2: -v, w: whole ? fine : thin });
   }
   for (const v of [2, 4, 6, 8, 10]) {
-    for (const sgn of [-1, 1]) p.push({ kind: 'text', x: sgn * v, y: -0.55, size: 0.36, text: String(v) });
-    p.push({ kind: 'text', x: -0.6, y: -v, size: 0.36, text: String(v), align: 'right' });
+    for (const sgn of [-1, 1]) p.push({ kind: "text", x: sgn * v, y: -0.55, size: 0.36, text: String(v) });
+    p.push({ kind: "text", x: -0.6, y: -v, size: 0.36, text: String(v), align: "right" });
   }
   // Stem below: 0.2 mil hashes to 2 mil, half mils on the left after.
   for (let k = 1; k < 20 * 5; k++) {
     const v = k / 5;
     if (v % 1 === 0) continue;
-    if (v > 2 && Math.abs(v % 1 - 0.5) > 1e-9) continue;
-    const l = Math.abs(v % 1 - 0.5) < 1e-9 ? 0.18 : 0.1;
-    p.push({ kind: 'line', x1: -l, y1: v, x2: v < 2 ? l : 0, y2: v, w: thin });
+    if (v > 2 && Math.abs((v % 1) - 0.5) > 1e-9) continue;
+    const l = Math.abs((v % 1) - 0.5) < 1e-9 ? 0.18 : 0.1;
+    p.push({ kind: "line", x1: -l, y1: v, x2: v < 2 ? l : 0, y2: v, w: thin });
   }
   // Tree: a row on every whole mil to 20, holdover dots every mil across, widening with drop. Even rows carry a
   // short line across the stem and their number; odd rows are dots only, smaller.
@@ -216,12 +236,12 @@ export function treeReticle(): Reticle {
     const hw = Math.min(10, Math.floor(1 + y * 0.5));
     for (let x = -hw; x <= hw; x++) {
       if (x === 0) continue;
-      p.push({ kind: 'dot', x, y, r: even ? 0.05 : 0.035 });
+      p.push({ kind: "dot", x, y, r: even ? 0.05 : 0.035 });
     }
-    p.push({ kind: 'line', x1: -(even ? 0.3 : 0.18), y1: y, x2: even ? 0.3 : 0.18, y2: y, w: even ? fine : thin });
-    if (even) p.push({ kind: 'text', x: hw + 0.5, y, size: 0.36, text: String(y), align: 'left' });
+    p.push({ kind: "line", x1: -(even ? 0.3 : 0.18), y1: y, x2: even ? 0.3 : 0.18, y2: y, w: even ? fine : thin });
+    if (even) p.push({ kind: "text", x: hw + 0.5, y, size: 0.36, text: String(y), align: "left" });
   }
-  return { id: 'tree', name: 'PR2 · EBR TREE', unitRad: MRAD, unitName: 'mrad', prims: p, round: 'm118lr', illum: 'rgb(255,52,30)' };
+  return { id: "tree", name: "PR2 · EBR TREE", unitRad: MRAD, unitName: "mrad", prims: p, round: "m118lr", illum: "rgb(255,52,30)" };
 }
 
 export const RETICLES = { pso: psoReticle, tree: treeReticle, vss: vssReticle } as const;
@@ -235,26 +255,26 @@ export function drawReticle(ctx: CanvasRenderingContext2D, r: Reticle, cx: numbe
   const X = (x: number) => cx + x * k;
   const Y = (y: number) => cy + y * k;
   ctx.save();
-  ctx.lineCap = 'butt';
-  ctx.lineJoin = 'miter';
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
   for (const pass of lit ? [0, 1] : [0]) {
     for (const p of r.prims) {
       if (pass === 1 && !p.lit) continue;
       const col = pass === 1 ? lit! : ink;
       ctx.strokeStyle = col;
       ctx.fillStyle = col;
-      if (p.kind === 'line') {
+      if (p.kind === "line") {
         ctx.lineWidth = p.w * k;
         ctx.beginPath();
         ctx.moveTo(X(p.x1), Y(p.y1));
         ctx.lineTo(X(p.x2), Y(p.y2));
         ctx.stroke();
-      } else if (p.kind === 'poly') {
+      } else if (p.kind === "poly") {
         ctx.lineWidth = p.w * k;
         ctx.beginPath();
         p.pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
         ctx.stroke();
-      } else if (p.kind === 'dot') {
+      } else if (p.kind === "dot") {
         ctx.beginPath();
         ctx.arc(X(p.x), Y(p.y), Math.max(p.r * k, 0.35), 0, Math.PI * 2);
         ctx.fill();
@@ -264,8 +284,8 @@ export function drawReticle(ctx: CanvasRenderingContext2D, r: Reticle, cx: numbe
         if (px < 2) continue;
         ctx.globalAlpha = Math.min(1, px / 5);
         ctx.font = `600 ${px}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
-        ctx.textAlign = p.align ?? 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textAlign = p.align ?? "center";
+        ctx.textBaseline = "middle";
         ctx.fillText(p.text, X(p.x), Y(p.y));
         ctx.globalAlpha = 1;
       }

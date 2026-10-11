@@ -6,53 +6,53 @@
  * Conventions: metres, y up, plan = (x, z). The *garden front* faces +z, toward
  * the sniper perch; the entrance front faces -z.
  */
-import type { Rect, Vec2, Vec3 } from './geom';
+import type { Rect, Vec2, Vec3 } from "./geom";
 
-export type StyleId = 'palladian' | 'georgian' | 'beauxarts' | 'orangery';
-export type MassingType = 'block' | 'u-garden' | 'u-entrance' | 'h';
-export type MansionSize = 'compact' | 'grand' | 'palatial';
-export type FacadeSide = 'garden' | 'entrance' | 'east' | 'west';
+export type StyleId = "palladian" | "georgian" | "beauxarts" | "orangery";
+export type MassingType = "block" | "u-garden" | "u-entrance" | "h";
+export type MansionSize = "compact" | "grand" | "palatial";
+export type FacadeSide = "garden" | "entrance" | "east" | "west";
 
 export type RoomType =
-  | 'ballroom'
-  | 'grand-salon'
-  | 'drawing-room'
-  | 'music-room'
-  | 'library'
-  | 'dining-room'
-  | 'gallery'
-  | 'billiard-room'
-  | 'card-room'
-  | 'morning-room'
-  | 'conservatory'
-  | 'great-room'
-  | 'bar'
-  | 'cinema'
-  | 'spa'
-  | 'theatre'
-  | 'disco'
-  | 'gym'
-  | 'kitchen'
-  | 'entrance-hall'
-  | 'stair-hall'
-  | 'corridor'
-  | 'study'
-  | 'cloakroom'
-  | 'pantry'
-  | 'service-stair'
-  | 'landing'
-  | 'hall-gallery'
-  | 'roof-terrace'
-  | 'bedroom'
-  | 'sitting-room'
-  | 'dressing-room'
-  | 'bathroom';
+  | "ballroom"
+  | "grand-salon"
+  | "drawing-room"
+  | "music-room"
+  | "library"
+  | "dining-room"
+  | "gallery"
+  | "billiard-room"
+  | "card-room"
+  | "morning-room"
+  | "conservatory"
+  | "great-room"
+  | "bar"
+  | "cinema"
+  | "spa"
+  | "theatre"
+  | "disco"
+  | "gym"
+  | "kitchen"
+  | "entrance-hall"
+  | "stair-hall"
+  | "corridor"
+  | "study"
+  | "cloakroom"
+  | "pantry"
+  | "service-stair"
+  | "landing"
+  | "hall-gallery"
+  | "roof-terrace"
+  | "bedroom"
+  | "sitting-room"
+  | "dressing-room"
+  | "bathroom";
 
 /** party: guests mingle here. circulation: halls, corridors, stairs. */
-export type RoomRole = 'party' | 'circulation' | 'private' | 'service';
+export type RoomRole = "party" | "circulation" | "private" | "service";
 
-export type WallFinish = 'damask' | 'silk' | 'stripe' | 'paneling' | 'paint' | 'stone';
-export type FloorFinish = 'herringbone' | 'parquet' | 'marble' | 'checker' | 'stone' | 'carpet' | 'boards';
+export type WallFinish = "damask" | "silk" | "stripe" | "paneling" | "paint" | "stone";
+export type FloorFinish = "herringbone" | "parquet" | "marble" | "checker" | "stone" | "carpet" | "boards";
 
 export interface RoomFinish {
   wall: WallFinish;
@@ -75,7 +75,7 @@ export interface LevelSpec {
 }
 
 export interface RoofSpec {
-  kind: 'hipped' | 'mansard' | 'flat' | 'glass';
+  kind: "hipped" | "mansard" | "flat" | "glass";
   /** Top of the cornice / wall plate. */
   eaveY: number;
   pitchDeg: number;
@@ -92,7 +92,7 @@ export interface RoofSpec {
 
 export interface Mass {
   id: string;
-  kind: 'main' | 'wing' | 'pavilion' | 'conservatory';
+  kind: "main" | "wing" | "pavilion" | "conservatory";
   /** Wall-centreline footprint. */
   rect: Rect;
   levels: number;
@@ -101,10 +101,10 @@ export interface Mass {
   exposed: FacadeSide[];
 }
 
-export type OpeningKind = 'window' | 'french-window' | 'door' | 'double-door' | 'arch' | 'entrance';
+export type OpeningKind = "window" | "french-window" | "door" | "double-door" | "arch" | "entrance";
 
 export interface OpeningDressing {
-  pediment?: 'triangle' | 'segment';
+  pediment?: "triangle" | "segment";
   keystone?: boolean;
   balconette?: boolean;
   surround?: boolean;
@@ -136,7 +136,7 @@ export interface Opening {
   leaves?: 1 | 2;
   dressing?: OpeningDressing;
   /** Interior drapery state: sheer reduces visibility, drawn blocks it. */
-  curtain?: 'open' | 'sheer' | 'drawn';
+  curtain?: "open" | "sheer" | "drawn";
 }
 
 export interface Wall {
@@ -146,7 +146,7 @@ export interface Wall {
   /** Centreline endpoints; axis-aligned with a < b along `axis`. */
   a: Vec2;
   b: Vec2;
-  axis: 'x' | 'z';
+  axis: "x" | "z";
   thickness: number;
   y0: number;
   y1: number;
@@ -202,7 +202,7 @@ export interface StairFlight {
   y: number;
   z: number;
   /** Climbing direction in plan. */
-  dir: '+x' | '-x' | '+z' | '-z';
+  dir: "+x" | "-x" | "+z" | "-z";
   width: number;
   run: number;
   rise: number;
@@ -221,7 +221,7 @@ export interface StairArm {
 
 export interface Stair {
   id: string;
-  kind: 'grand' | 'service';
+  kind: "grand" | "service";
   fromLevel: number;
   toLevel: number;
   bottomRoom: string;
@@ -247,7 +247,7 @@ export interface RoofTerrace {
 }
 
 /** Shape of the dome hall: a rectangular room with curved galleries, or a true apse with curved walls. */
-export type HallShape = 'gallery' | 'rotunda';
+export type HallShape = "gallery" | "rotunda";
 
 /**
  * The dome hall: the ball room open through every storey to a glass dome,
@@ -295,79 +295,68 @@ export interface Portico {
   columnRadius: number;
   baseY: number;
   topY: number;
-  order: 'doric' | 'ionic' | 'corinthian';
+  order: "doric" | "ionic" | "corinthian";
   /** Roofed area in front of the façade. */
   rect: Rect;
   pediment: boolean;
 }
 
 export type PropKind =
-  | 'sofa'
-  | 'armchair'
-  | 'chair'
-  | 'coffee-table'
-  | 'side-table'
-  | 'dining-table'
-  | 'cocktail-table'
-  | 'card-table'
-  | 'console'
-  | 'sideboard'
-  | 'bookcase'
-  | 'desk'
-  | 'grand-piano'
-  | 'bar-counter'
-  | 'bar-shelf'
-  | 'billiard-table'
-  | 'fireplace'
-  | 'statue'
-  | 'bust'
-  | 'painting'
-  | 'mirror'
-  | 'clock'
-  | 'plant'
-  | 'rug'
-  | 'chandelier'
-  | 'sconce'
-  | 'lamp'
-  | 'bed'
-  | 'wardrobe'
-  | 'bench'
-  | 'globe'
-  | 'music-stand'
-  | 'harp'
-  | 'cabinet'
-  | 'safe'
-  | 'urn'
-  | 'lamppost'
-  | 'lantern'
-  | 'kitchen-island'
-  | 'range'
-  | 'cinema-screen'
-  | 'wine-rack'
-  | 'pool'
-  | 'treadmill'
-  | 'weights'
-  | 'stage'
-  | 'bathtub'
-  | 'dance-floor'
-  | 'disco-floor'
-  | 'dj-booth'
-  | 'speaker'
-  | 'mirror-ball'
-  | 'buffet';
+  | "sofa"
+  | "armchair"
+  | "chair"
+  | "coffee-table"
+  | "side-table"
+  | "dining-table"
+  | "cocktail-table"
+  | "card-table"
+  | "console"
+  | "sideboard"
+  | "bookcase"
+  | "desk"
+  | "grand-piano"
+  | "bar-counter"
+  | "bar-shelf"
+  | "billiard-table"
+  | "fireplace"
+  | "statue"
+  | "bust"
+  | "painting"
+  | "mirror"
+  | "clock"
+  | "plant"
+  | "rug"
+  | "chandelier"
+  | "sconce"
+  | "lamp"
+  | "bed"
+  | "wardrobe"
+  | "bench"
+  | "globe"
+  | "music-stand"
+  | "harp"
+  | "cabinet"
+  | "safe"
+  | "urn"
+  | "lamppost"
+  | "lantern"
+  | "kitchen-island"
+  | "range"
+  | "cinema-screen"
+  | "wine-rack"
+  | "pool"
+  | "treadmill"
+  | "weights"
+  | "stage"
+  | "bathtub"
+  | "dance-floor"
+  | "disco-floor"
+  | "dj-booth"
+  | "speaker"
+  | "mirror-ball"
+  | "buffet";
 
-export type PoiType =
-  | 'statue'
-  | 'bookshelf'
-  | 'bar'
-  | 'piano'
-  | 'painting'
-  | 'fireplace'
-  | 'clock'
-  | 'ledger'
-  | 'safe'
-  | 'globe'
-  | 'window';
+export type PoiType = "statue" | "bookshelf" | "bar" | "piano" | "painting" | "fireplace" | "clock" | "ledger" | "safe" | "globe" | "window";
 
 export interface Prop {
   id: string;
@@ -386,7 +375,7 @@ export interface Prop {
   h: number;
   variant: number;
   color?: string;
-  mount: 'floor' | 'wall' | 'ceiling';
+  mount: "floor" | "wall" | "ceiling";
   blocksNav: boolean;
   /** Tall/solid enough to block a sightline. */
   occludes: boolean;
@@ -410,7 +399,7 @@ export interface Poi {
 
 export interface LightSpec {
   id: string;
-  kind: 'chandelier' | 'sconce' | 'lamp' | 'candles' | 'fire' | 'lantern' | 'lamppost' | 'uplight' | 'spill' | 'bounce';
+  kind: "chandelier" | "sconce" | "lamp" | "candles" | "fire" | "lantern" | "lamppost" | "uplight" | "spill" | "bounce";
   /** Lighting scope: a room id, or 'exterior'. Lights never leak across scopes. */
   scope: string;
   x: number;
@@ -434,7 +423,7 @@ export interface Tree {
   y: number;
   height: number;
   crown: number;
-  kind: 'oak' | 'beech' | 'cedar' | 'cypress' | 'yew' | 'poplar';
+  kind: "oak" | "beech" | "cedar" | "cypress" | "yew" | "poplar";
 }
 
 export interface Terrace {
@@ -442,7 +431,7 @@ export interface Terrace {
   y: number;
   /** Balustrade runs (centreline) with their top height above the terrace. */
   balustrades: { a: Vec2; b: Vec2; height: number }[];
-  steps: { rect: Rect; dir: '+z' | '-z' | '+x' | '-x'; y0: number; y1: number; count: number }[];
+  steps: { rect: Rect; dir: "+z" | "-z" | "+x" | "-x"; y0: number; y1: number; count: number }[];
 }
 
 export interface Perch {
@@ -492,10 +481,10 @@ export interface TerrainSpec {
 export interface Site {
   terrace: Terrace;
   lawn: Rect;
-  paths: { rect: Rect; kind: 'gravel' | 'flagstone' }[];
+  paths: { rect: Rect; kind: "gravel" | "flagstone" }[];
   fountain: { x: number; z: number; radius: number; tiers: number } | null;
-  parterres: { rect: Rect; pattern: 'cross' | 'diamond' | 'ring' | 'quarters' }[];
-  topiary: { x: number; z: number; height: number; radius: number; shape: 'cone' | 'ball' | 'spiral' }[];
+  parterres: { rect: Rect; pattern: "cross" | "diamond" | "ring" | "quarters" }[];
+  topiary: { x: number; z: number; height: number; radius: number; shape: "cone" | "ball" | "spiral" }[];
   trees: Tree[];
   terrain: TerrainSpec;
   perch: Perch;
@@ -519,7 +508,7 @@ export interface NavLevel {
 }
 
 export interface NavLink {
-  kind: 'door' | 'french-window' | 'stair';
+  kind: "door" | "french-window" | "stair";
   from: string;
   to: string;
   /** Opening or stair id. */
@@ -547,7 +536,7 @@ export interface Sightlines {
 
 export interface ValidationIssue {
   code: string;
-  severity: 'error' | 'warn';
+  severity: "error" | "warn";
   message: string;
   ref?: string;
 }
@@ -584,12 +573,12 @@ export interface MansionOptions {
 export interface StyleDef {
   id: StyleId;
   name: string;
-  wallMaterial: 'limestone' | 'brick' | 'stucco';
+  wallMaterial: "limestone" | "brick" | "stucco";
   wallColor: string;
   trimColor: string;
-  baseMaterial: 'rusticated' | 'limestone' | 'brick';
-  roof: 'hipped' | 'mansard' | 'flat';
-  roofMaterial: 'slate' | 'zinc' | 'lead';
+  baseMaterial: "rusticated" | "limestone" | "brick";
+  roof: "hipped" | "mansard" | "flat";
+  roofMaterial: "slate" | "zinc" | "lead";
   /** A flat leaded main roof with a glass lantern over every top-storey room, and all-glass roofs on the wings. */
   glassRoofs?: boolean;
   /** Garden-front windows stacked into giant arched windows through every storey, between a giant order of pilasters. */
@@ -607,17 +596,17 @@ export interface StyleDef {
   balconettes: boolean;
   windowFrameColor: string;
   doorColor: string;
-  columnOrder: 'doric' | 'ionic' | 'corinthian';
+  columnOrder: "doric" | "ionic" | "corinthian";
   massingWeights: Record<MassingType, number>;
 }
 
 export interface MansionBlueprint {
-  schema: 'scope-and-drop/mansion@2';
+  schema: "scope-and-drop/mansion@2";
   seed: string;
   /** Generation attempt that passed validation (0 = first try). */
   attempt: number;
-  options: Required<Omit<MansionOptions, 'seed' | 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg' | 'perchElevationDeg' | 'minVisible'>> &
-    Pick<MansionOptions, 'style' | 'massing' | 'perchDistance' | 'perchAzimuthDeg' | 'perchElevationDeg'> & { seed: string };
+  options: Required<Omit<MansionOptions, "seed" | "style" | "massing" | "perchDistance" | "perchAzimuthDeg" | "perchElevationDeg" | "minVisible">> &
+    Pick<MansionOptions, "style" | "massing" | "perchDistance" | "perchAzimuthDeg" | "perchElevationDeg"> & { seed: string };
   style: StyleDef;
   massing: MassingType;
   bay: number;

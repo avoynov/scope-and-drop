@@ -8,12 +8,12 @@
  * is the product. Occluders are binned by bearing from the eye, so a query
  * only tests what lies along its bearing.
  */
-import type { Rect, Vec3 } from '../core/geom';
-import type { TerrainSpec } from '../core/types';
-import { terrainHeight } from '../site/terrain';
+import type { Rect, Vec3 } from "../core/geom";
+import type { TerrainSpec } from "../core/types";
+import { terrainHeight } from "../site/terrain";
 
 export interface WallOccluder {
-  axis: 'x' | 'z';
+  axis: "x" | "z";
   line: number;
   t0: number;
   t1: number;
@@ -78,10 +78,29 @@ export class SightlineTracer {
       items.push({ item, a0: Math.min(...as) - pad, a1: Math.max(...as) + pad });
     };
     for (const o of occ.walls) {
-      const pts: [number, number][] = o.axis === 'x' ? [[o.t0, o.line], [o.t1, o.line]] : [[o.line, o.t0], [o.line, o.t1]];
+      const pts: [number, number][] =
+        o.axis === "x"
+          ? [
+              [o.t0, o.line],
+              [o.t1, o.line],
+            ]
+          : [
+              [o.line, o.t0],
+              [o.line, o.t1],
+            ];
       push({ kind: 0, o }, pts, 1e-4);
     }
-    for (const o of occ.boxes) push({ kind: 1, o }, [[o.x0, o.z0], [o.x1, o.z0], [o.x0, o.z1], [o.x1, o.z1]], 1e-4);
+    for (const o of occ.boxes)
+      push(
+        { kind: 1, o },
+        [
+          [o.x0, o.z0],
+          [o.x1, o.z0],
+          [o.x0, o.z1],
+          [o.x1, o.z1],
+        ],
+        1e-4,
+      );
     for (const o of occ.cyls) {
       const d = Math.max(o.r + 0.01, Math.hypot(o.x - eye.x, o.z - eye.z));
       const a = ang(o.x, o.z);
@@ -118,7 +137,7 @@ export class SightlineTracer {
         const w = it.o;
         let t: number;
         let u: number;
-        if (w.axis === 'x') {
+        if (w.axis === "x") {
           if (Math.abs(dz) < 1e-9) continue;
           t = (w.line - E.z) / dz;
           if (t <= 1e-6 || t >= 1 - 1e-6) continue;

@@ -2,70 +2,45 @@
  * Data shapes for the party simulation (spec: Guests and the Spy).
  * Everything here is plain data so a run can be stepped headless, hashed and replayed.
  */
-import type { Verb } from './memory';
+import type { Verb } from "./memory";
 
-export type Sex = 'f' | 'm';
+export type Sex = "f" | "m";
 
 /** Roles own tasks they do fluently; staff roles are not guests. */
 export type RoleId =
-  | 'host'
-  | 'butler'
-  | 'waiter'
-  | 'bartender'
-  | 'cook'
-  | 'kitchenHand'
-  | 'cloakroom'
-  | 'musician'
-  | 'photographer'
-  | 'politician'
-  | 'pianist'
-  | 'doctor'
-  | 'dancer'
-  | 'billiards'
-  | 'guest';
+  | "host"
+  | "butler"
+  | "waiter"
+  | "bartender"
+  | "cook"
+  | "kitchenHand"
+  | "cloakroom"
+  | "musician"
+  | "photographer"
+  | "politician"
+  | "pianist"
+  | "doctor"
+  | "dancer"
+  | "billiards"
+  | "guest";
 
-export const STAFF_ROLES: ReadonlySet<RoleId> = new Set(['butler', 'waiter', 'bartender', 'cook', 'kitchenHand', 'cloakroom', 'musician', 'photographer']);
+export const STAFF_ROLES: ReadonlySet<RoleId> = new Set(["butler", "waiter", "bartender", "cook", "kitchenHand", "cloakroom", "musician", "photographer"]);
 
 /**
  * Guests cast from A Real Party's deck: each a preset of traits, habits, ties and a look hook.
  * Most guests are ordinary (null).
  */
-export type Archetype =
-  | 'honoree'
-  | 'old-friend'
-  | 'mother'
-  | 'child'
-  | 'boss'
-  | 'employee'
-  | 'plus-one'
-  | 'young'
-  | 'elderly'
-  | 'life'
-  | 'gossip'
-  | 'bore'
-  | 'flirt'
-  | 'ex';
+export type Archetype = "honoree" | "old-friend" | "mother" | "child" | "boss" | "employee" | "plus-one" | "young" | "elderly" | "life" | "gossip" | "bore" | "flirt" | "ex";
 
 /** What people do more or less fluently (0 to 1): the owner of a task about 0.95, others 0.2 to 0.5. */
-export type Skill = 'tour' | 'keys' | 'errand' | 'pour' | 'tray' | 'piano' | 'dance' | 'billiards' | 'photo';
-export const SKILLS: readonly Skill[] = ['tour', 'keys', 'errand', 'pour', 'tray', 'piano', 'dance', 'billiards', 'photo'];
+export type Skill = "tour" | "keys" | "errand" | "pour" | "tray" | "piano" | "dance" | "billiards" | "photo";
+export const SKILLS: readonly Skill[] = ["tour", "keys", "errand", "pour", "tray", "piano", "dance", "billiards", "photo"];
 
 /** Silhouette: what tells people apart at 4× along with the colour. */
-export type Outfit = 'tails' | 'suit' | 'dinner-jacket' | 'long-dress' | 'short-dress' | 'waiter' | 'chef';
+export type Outfit = "tails" | "suit" | "dinner-jacket" | "long-dress" | "short-dress" | "waiter" | "chef";
 
 /** Visible habits: the baseline impersonation gets wrong. */
-export type Quirk =
-  | 'glasses'
-  | 'limp'
-  | 'cane'
-  | 'ear-scratch'
-  | 'globe-pointer'
-  | 'dances-after-drink'
-  | 'hands-in-pockets'
-  | 'tie-adjust'
-  | 'big-laugh'
-  | 'smoker'
-  | 'watch-check';
+export type Quirk = "glasses" | "limp" | "cane" | "ear-scratch" | "globe-pointer" | "dances-after-drink" | "hands-in-pockets" | "tie-adjust" | "big-laugh" | "smoker" | "watch-check";
 
 export interface Look {
   sex: Sex;
@@ -96,78 +71,78 @@ export interface Traits {
   loyalty: number;
 }
 
-export type NeedId = 'thirst' | 'hunger' | 'bladder' | 'social' | 'dance' | 'rest' | 'air' | 'curiosity' | 'companion';
-export const NEED_IDS: readonly NeedId[] = ['thirst', 'hunger', 'bladder', 'social', 'dance', 'rest', 'air', 'curiosity', 'companion'];
+export type NeedId = "thirst" | "hunger" | "bladder" | "social" | "dance" | "rest" | "air" | "curiosity" | "companion";
+export const NEED_IDS: readonly NeedId[] = ["thirst", "hunger", "bladder", "social", "dance", "rest", "air", "curiosity", "companion"];
 /** 0 = urgent, 1 = met. */
 export type Needs = Record<NeedId, number>;
 
 export type Pose =
-  | 'stand'
-  | 'walk'
-  | 'sit'
-  | 'talk'
-  | 'drink'
-  | 'dance'
-  | 'toast'
-  | 'look'
-  | 'play'
-  | 'serve'
-  | 'smoke'
-  | 'greet'
-  | 'announce'
-  | 'wait'
-  | 'climb'
-  | 'knock'
+  | "stand"
+  | "walk"
+  | "sit"
+  | "talk"
+  | "drink"
+  | "dance"
+  | "toast"
+  | "look"
+  | "play"
+  | "serve"
+  | "smoke"
+  | "greet"
+  | "announce"
+  | "wait"
+  | "climb"
+  | "knock"
   /** Shaking hands, or a kiss on the cheek. */
-  | 'shake'
-  | 'kiss'
+  | "shake"
+  | "kiss"
   /** Holding a camera to the eye. */
-  | 'camera'
+  | "camera"
   /** Carrying something in both hands (a bottle, a coat). */
-  | 'carry'
+  | "carry"
   /** Standing in a row for the group photo, facing the camera. */
-  | 'line';
+  | "line";
 
 /** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over. */
-export type Gesture = 'ask' | 'point' | 'shrug' | 'lean' | 'wave' | 'frown' | 'beckon';
+export type Gesture = "ask" | "point" | "shrug" | "lean" | "wave" | "frown" | "beckon";
 
 /** The six drinks of the evening. */
-export type DrinkId = 'champagne' | 'red' | 'white' | 'beer' | 'whisky' | 'water';
-export const ALCOHOL: ReadonlySet<DrinkId> = new Set(['champagne', 'red', 'white', 'beer', 'whisky']);
+export type DrinkId = "champagne" | "red" | "white" | "beer" | "whisky" | "water";
+export const ALCOHOL: ReadonlySet<DrinkId> = new Set(["champagne", "red", "white", "beer", "whisky"]);
 
 /** What shows in someone's hands: a drink, a tray, a cue, cards or a cigarette. */
-export type Held = DrinkId | 'tray' | 'cue' | 'cards' | 'cigarette' | 'bottle' | 'coat' | 'bag' | 'camera';
-export const DRINKS: ReadonlySet<Held> = new Set<Held>(['champagne', 'red', 'white', 'beer', 'whisky', 'water']);
+export type Held = DrinkId | "tray" | "cue" | "cards" | "cigarette" | "bottle" | "coat" | "bag" | "camera";
+export const DRINKS: ReadonlySet<Held> = new Set<Held>(["champagne", "red", "white", "beer", "whisky", "water"]);
 
 /** Keys a person carries: none, the staff ring (service rooms) or the host's ring (everything). */
-export type Ring = 'none' | 'staff' | 'host';
+export type Ring = "none" | "staff" | "host";
 
 export type ActionId =
-  | 'arrive'
-  | 'mingle'
-  | 'drink'
-  | 'champagne'
-  | 'toilet'
-  | 'sit'
-  | 'art'
-  | 'terrace'
-  | 'dance'
-  | 'dinner'
-  | 'toast'
-  | 'games'
-  | 'wander'
-  | 'leave'
-  | 'staff'
+  | "arrive"
+  | "mingle"
+  | "drink"
+  | "champagne"
+  | "toilet"
+  | "sit"
+  | "art"
+  | "terrace"
+  | "dance"
+  | "dinner"
+  | "toast"
+  | "games"
+  | "wander"
+  | "leave"
+  | "staff"
   /** Asking someone the way (note 'bathroom'), or a friendly test of someone who seems not themselves (note 'test'). */
-  | 'ask'
+  | "ask"
   /** Using something in the house an ad offers: the fire, the bookshelves, the globe, the fountain, the kitchen counter (note: the ad). */
-  | 'use'
+  | "use"
   /** Canapés, the buffet outside dinner, the late sweets. */
-  | 'snack'
+  | "snack"
   /** Going to say hello to someone just seen (ref: whom). */
-  | 'greet'
+  | "greet"
   /** A step of a task (tasks.ts): a tour, an errand, a search, the group photo, saying goodbye (ref: the task, note: the step). */
-  | 'task';
+  | "task";
 
 /** A place someone can stand: always on a walkable nav cell. */
 export interface Spot {
@@ -183,7 +158,7 @@ export interface Spot {
 /** A place to sit: the seat itself and the walkable spot to approach it from. */
 export interface Seat {
   id: string;
-  kind: 'dining' | 'sofa' | 'armchair' | 'chair';
+  kind: "dining" | "sofa" | "armchair" | "chair";
   /** Where the person sits (may be inside furniture on the nav grid). */
   x: number;
   z: number;
@@ -330,67 +305,67 @@ export interface Group {
 }
 
 export type EventKind =
-  | 'phase'
-  | 'arrive'
-  | 'leave'
-  | 'announce'
+  | "phase"
+  | "arrive"
+  | "leave"
+  | "announce"
   /** Someone reached a bathroom door to find it taken, not having known. */
-  | 'bathroom-taken'
+  | "bathroom-taken"
   /** A queuer knocked on a taken bathroom. */
-  | 'knock'
-  | 'seated'
-  | 'toast'
-  | 'champagne'
+  | "knock"
+  | "seated"
+  | "toast"
+  | "champagne"
   /** A bar poured a drink (note: the drink). */
-  | 'pour'
+  | "pour"
   /** Two people walked into each other (note 'slop' when a drink slopped). */
-  | 'bump'
+  | "bump"
   /** A room's lights went on or off (note 'on' or 'off'). */
-  | 'light'
+  | "light"
   /** Someone looked twice at someone they know who didn't seem quite themselves. */
-  | 'double-take'
+  | "double-take"
   /** A friendly test (a nickname, a shared joke) put to someone who seemed not themselves (note 'passed'). */
-  | 'test'
+  | "test"
   /** A speaker passed something on (note: the verb; actors: speaker, then listeners). */
-  | 'gossip'
+  | "gossip"
   /** Someone took a wrong turn on the way somewhere (note 'door' when they tried a locked door). */
-  | 'wrong-turn'
+  | "wrong-turn"
   /** A conversation went quiet as someone its members are wary of joined. */
-  | 'hush'
+  | "hush"
   /** Someone asked the way (note: 'pointed' or 'shrug'; actors: asker, answerer). */
-  | 'ask'
+  | "ask"
   /** A nosy guest heard something loud and went to look (note: the sound). */
-  | 'heard'
+  | "heard"
   /** Someone noticed something with a blank in it, like a thing gone (note: the case; actors: who noticed, whose it is). */
-  | 'case'
+  | "case"
   /** Someone asked a group about an open case (note: the case; actors: the asker, then whoever answered). */
-  | 'ask-around'
+  | "ask-around"
   /** Someone passed on what points at their leading candidate (note: the case; actors: the speaker, the one pointed at). */
-  | 'lead'
+  | "lead"
   /** Someone connected the dots and settled a case (note: the case; actors: who settled it, whom they blame). */
-  | 'blame'
+  | "blame"
   /** Something didn't fit (note: 'two-places', 'claim' or 'not-themselves'; actors: who noticed, whom it's about). */
-  | 'conflict'
+  | "conflict"
   /** A description put a name to someone, and it bears on a case (actors: who, whom). */
-  | 'recognised'
+  | "recognised"
   /** A guest told the host what they'd worked out (actors: the guest, the host). */
-  | 'tell'
+  | "tell"
   /** Two people who know each other met for the first time tonight (note 'wave', 'shake' or 'kiss'). */
-  | 'greet'
+  | "greet"
   /** Someone waited at the edge of a circle and was let in (note 'open') or not (note 'closed'); actors: the joiner, then the members. */
-  | 'join'
+  | "join"
   /** A circle grew past what one conversation holds and split in two (actors: those who moved off). */
-  | 'split'
+  | "split"
   /** A task began or ended (note: the kind and how it went, e.g. 'tour', 'tour:done'; actors: its owner, then its party). */
-  | 'task'
+  | "task"
   /** Someone broke a practice's norm (note: the norm), and those who saw it frowned (actors: who, then who frowned). */
-  | 'breach'
+  | "breach"
   /** A camera flash: a candid shot or the group photo (actors: the photographer, then who was in it). */
-  | 'photo'
+  | "photo"
   /** A guest said goodbye to the host (actors: the guest, the host). */
-  | 'goodbye'
+  | "goodbye"
   /** A beat of a practice (note: the beat, e.g. 'tap', 'hush', 'open-dance', 'band-break', 'last-call'). */
-  | 'beat';
+  | "beat";
 
 export interface PartyEvent {
   t: number;

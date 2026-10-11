@@ -3,8 +3,8 @@
  * highlights), gentle saturation and a soft vignette. Runs on linear HDR
  * before the output (tone-mapping) pass.
  */
-import * as THREE from 'three';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import * as THREE from "three";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 
 export interface GradeOptions {
   shadowTint?: THREE.ColorRepresentation;
@@ -17,11 +17,11 @@ export interface GradeOptions {
 
 export function createGradePass(o: GradeOptions = {}): ShaderPass {
   return new ShaderPass({
-    name: 'MansionGrade',
+    name: "MansionGrade",
     uniforms: {
       tDiffuse: { value: null },
-      uShadow: { value: new THREE.Color(o.shadowTint ?? '#3f5aa8') },
-      uHigh: { value: new THREE.Color(o.highlightTint ?? '#ffb36b') },
+      uShadow: { value: new THREE.Color(o.shadowTint ?? "#3f5aa8") },
+      uHigh: { value: new THREE.Color(o.highlightTint ?? "#ffb36b") },
       uSplit: { value: o.splitStrength ?? 0.18 },
       uSat: { value: o.saturation ?? 1.12 },
       uVig: { value: o.vignette ?? 0.28 },

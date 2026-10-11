@@ -24,7 +24,7 @@
  * Frame: the scene frame of shot.ts. x right, y up, z toward the shooter (the range runs down -z). Metres,
  * seconds, radians.
  */
-import type { Vec3 } from './shot';
+import type { Vec3 } from "./shot";
 
 export interface Wind {
   /** Mean speed, 3 m above open ground (a flag's height). */
@@ -74,12 +74,19 @@ export function halfExact(v: number): number {
 
 /** Periodic value noise in [-1, 1] on an L × L lattice over the unit tile, at tile coordinates (u, v). */
 function periodicNoise(u: number, v: number, L: number, seed: number): number {
-  const x = u * L, y = v * L;
-  const i = Math.floor(x), j = Math.floor(y);
-  const fx = x - i, fy = y - j;
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-  const at = (a: number, b: number) => hash(((a % L) + L) % L + seed * 4099, ((b % L) + L) % L) * 2 - 1;
-  const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), d = at(i + 1, j + 1);
+  const x = u * L,
+    y = v * L;
+  const i = Math.floor(x),
+    j = Math.floor(y);
+  const fx = x - i,
+    fy = y - j;
+  const sx = fx * fx * (3 - 2 * fx),
+    sy = fy * fy * (3 - 2 * fy);
+  const at = (a: number, b: number) => hash((((a % L) + L) % L) + seed * 4099, ((b % L) + L) % L) * 2 - 1;
+  const a = at(i, j),
+    b = at(i + 1, j),
+    c = at(i, j + 1),
+    d = at(i + 1, j + 1);
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
@@ -94,7 +101,8 @@ export function gustTile(): Float32Array {
   tile = new Float32Array(N * N * 2);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
-      const u = (i + 0.5) / N, v = (j + 0.5) / N;
+      const u = (i + 0.5) / N,
+        v = (j + 0.5) / N;
       tile[(j * N + i) * 2] = halfExact(0.65 * periodicNoise(u, v, CELLS, 11) + 0.35 * periodicNoise(u, v, 43, 12));
       tile[(j * N + i) * 2 + 1] = halfExact(0.7 * periodicNoise(u, v, 13, 13) + 0.3 * periodicNoise(u, v, 37, 14));
     }
@@ -106,14 +114,21 @@ export function gustTile(): Float32Array {
 function tileAt(u: number, v: number, out: [number, number]): [number, number] {
   const t = gustTile();
   const N = GUST_TILE_N;
-  const x = u * N - 0.5, y = v * N - 0.5;
-  const fx0 = Math.floor(x), fy0 = Math.floor(y);
-  const fx = x - fx0, fy = y - fy0;
-  const i0 = ((fx0 % N) + N) % N, j0 = ((fy0 % N) + N) % N;
-  const i1 = (i0 + 1) % N, j1 = (j0 + 1) % N;
+  const x = u * N - 0.5,
+    y = v * N - 0.5;
+  const fx0 = Math.floor(x),
+    fy0 = Math.floor(y);
+  const fx = x - fx0,
+    fy = y - fy0;
+  const i0 = ((fx0 % N) + N) % N,
+    j0 = ((fy0 % N) + N) % N;
+  const i1 = (i0 + 1) % N,
+    j1 = (j0 + 1) % N;
   for (let c = 0; c < 2; c++) {
-    const a = t[(j0 * N + i0) * 2 + c]!, b = t[(j0 * N + i1) * 2 + c]!;
-    const d = t[(j1 * N + i0) * 2 + c]!, e = t[(j1 * N + i1) * 2 + c]!;
+    const a = t[(j0 * N + i0) * 2 + c]!,
+      b = t[(j0 * N + i1) * 2 + c]!;
+    const d = t[(j1 * N + i0) * 2 + c]!,
+      e = t[(j1 * N + i1) * 2 + c]!;
     out[c] = (a + (b - a) * fx) * (1 - fy) + (d + (e - d) * fx) * fy;
   }
   return out;
@@ -193,28 +208,35 @@ export function terrainWind(height: (x: number, z: number) => number, x0: number
   const r = Math.ceil(sigma * 2.5);
   const k: number[] = [];
   let ks = 0;
-  for (let d = -r; d <= r; d++) { const w = Math.exp(-(d * d) / (2 * sigma * sigma)); k.push(w); ks += w; }
+  for (let d = -r; d <= r; d++) {
+    const w = Math.exp(-(d * d) / (2 * sigma * sigma));
+    k.push(w);
+    ks += w;
+  }
   const blurX = new Float64Array(nx * nz);
   const mean = new Float64Array(nx * nz);
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    let s = 0;
-    for (let d = -r; d <= r; d++) s += k[d + r]! * h[j * nx + Math.min(nx - 1, Math.max(0, i + d))]!;
-    blurX[j * nx + i] = s / ks;
-  }
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    let s = 0;
-    for (let d = -r; d <= r; d++) s += k[d + r]! * blurX[Math.min(nz - 1, Math.max(0, j + d)) * nx + i]!;
-    mean[j * nx + i] = s / ks;
-  }
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      let s = 0;
+      for (let d = -r; d <= r; d++) s += k[d + r]! * h[j * nx + Math.min(nx - 1, Math.max(0, i + d))]!;
+      blurX[j * nx + i] = s / ks;
+    }
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      let s = 0;
+      for (let d = -r; d <= r; d++) s += k[d + r]! * blurX[Math.min(nz - 1, Math.max(0, j + d)) * nx + i]!;
+      mean[j * nx + i] = s / ks;
+    }
   const data = new Float32Array(nx * nz * 4);
   const H = (i: number, j: number) => h[Math.min(nz - 1, Math.max(0, j)) * nx + Math.min(nx - 1, Math.max(0, i))]!;
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const o = (j * nx + i) * 4;
-    data[o] = halfExact(H(i, j) - mean[j * nx + i]!);
-    data[o + 1] = halfExact((H(i + 1, j) - H(i - 1, j)) / (2 * cell));
-    data[o + 2] = halfExact((H(i, j + 1) - H(i, j - 1)) / (2 * cell));
-    data[o + 3] = halfExact(H(i, j));
-  }
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      const o = (j * nx + i) * 4;
+      data[o] = halfExact(H(i, j) - mean[j * nx + i]!);
+      data[o + 1] = halfExact((H(i + 1, j) - H(i - 1, j)) / (2 * cell));
+      data[o + 2] = halfExact((H(i, j + 1) - H(i, j - 1)) / (2 * cell));
+      data[o + 3] = halfExact(H(i, j));
+    }
   return { x0, z0, cell, nx, nz, data };
 }
 
@@ -283,12 +305,15 @@ export function shelterWind(obstacles: readonly Obstacle[], fromClock: number, h
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) ground[j * nx + i] = height(x0 + i * cell, z0 + j * cell);
   const a0 = (fromClock * Math.PI) / 6;
   // Downwind, and across it, as (x, z).
-  const ux = -Math.sin(a0), uz = Math.cos(a0);
-  const cx = -uz, cz = ux;
+  const ux = -Math.sin(a0),
+    uz = Math.cos(a0);
+  const cx = -uz,
+    cz = ux;
   // Each footprint's half-extent along the wind and across it, and where it sits in the wind's frame.
   const geo = obstacles.map((o) => {
     const round = o.r !== undefined;
-    const hx = round ? o.r! : o.hx!, hz = round ? o.r! : o.hz!;
+    const hx = round ? o.r! : o.hx!,
+      hz = round ? o.r! : o.hz!;
     return {
       ea: round ? o.r! : Math.abs(ux) * hx + Math.abs(uz) * hz,
       ec: round ? o.r! : Math.abs(cx) * hx + Math.abs(cz) * hz,
@@ -305,12 +330,16 @@ export function shelterWind(obstacles: readonly Obstacle[], fromClock: number, h
   for (let n = 0; n < order.length; n++) {
     const i = order[n]!;
     const g = geo[i]!;
-    let lo = -g.ec, hi = g.ec, filled = 2 * g.ec, upwind = 0;
+    let lo = -g.ec,
+      hi = g.ec,
+      filled = 2 * g.ec,
+      upwind = 0;
     for (let m = 0; m < order.length; m++) {
       const k = order[m]!;
       if (k === i) continue;
       const h = geo[k]!;
-      const da = h.a - g.a, dc = h.c - g.c;
+      const da = h.a - g.a,
+        dc = h.c - g.c;
       if (da > 2 * g.H) break;
       if (da < -4 * g.H) continue;
       if (Math.abs(da) <= 2 * g.H && Math.abs(dc) <= 3 * g.H) {
@@ -326,28 +355,46 @@ export function shelterWind(obstacles: readonly Obstacle[], fromClock: number, h
   obstacles.forEach((o, n) => {
     const { ea, ec, H } = geo[n]!;
     const round = o.r !== undefined;
-    const hx = round ? o.r! : o.hx!, hz = round ? o.r! : o.hz!;
+    const hx = round ? o.r! : o.hx!,
+      hz = round ? o.r! : o.hz!;
     const phi = porosity[n]!;
     const reach = (1 + 3 * phi) * H + 5 * (4 + 6 * phi) * H;
     const up = 4 * H;
     const side = ec + 0.3 * H + 0.15 * reach;
     // Grid box covering upwind, the footprint and the wake.
-    let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
-    for (const [a, c] of [[-ea - up, -side], [-ea - up, side], [ea + reach, -side], [ea + reach, side]] as const) {
-      const x = o.x + a * ux + c * cx, z = o.z + a * uz + c * cz;
-      bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z);
+    let bx0 = Infinity,
+      bx1 = -Infinity,
+      bz0 = Infinity,
+      bz1 = -Infinity;
+    for (const [a, c] of [
+      [-ea - up, -side],
+      [-ea - up, side],
+      [ea + reach, -side],
+      [ea + reach, side],
+    ] as const) {
+      const x = o.x + a * ux + c * cx,
+        z = o.z + a * uz + c * cz;
+      bx0 = Math.min(bx0, x);
+      bx1 = Math.max(bx1, x);
+      bz0 = Math.min(bz0, z);
+      bz1 = Math.max(bz1, z);
     }
-    const i0 = Math.max(0, Math.floor((bx0 - x0) / cell)), i1 = Math.min(nx - 1, Math.ceil((bx1 - x0) / cell));
-    const j0 = Math.max(0, Math.floor((bz0 - z0) / cell)), j1 = Math.min(nz - 1, Math.ceil((bz1 - z0) / cell));
+    const i0 = Math.max(0, Math.floor((bx0 - x0) / cell)),
+      i1 = Math.min(nx - 1, Math.ceil((bx1 - x0) / cell));
+    const j0 = Math.max(0, Math.floor((bz0 - z0) / cell)),
+      j1 = Math.min(nz - 1, Math.ceil((bz1 - z0) / cell));
     const top = o.base + H;
     for (let j = j0; j <= j1; j++) {
       for (let i = i0; i <= i1; i++) {
         const k = j * nx + i;
-        const px = x0 + i * cell - o.x, pz = z0 + j * cell - o.z;
+        const px = x0 + i * cell - o.x,
+          pz = z0 + j * cell - o.z;
         const a = px * ux + pz * uz;
         const lat = Math.abs(px * cx + pz * cz) - ec;
         const inFoot = round ? Math.hypot(px, pz) <= o.r! : Math.abs(px) <= hx && Math.abs(pz) <= hz;
-        let d = 0, f = 0, g = 0;
+        let d = 0,
+          f = 0,
+          g = 0;
         if (inFoot) {
           // Inside: no wind in a building, what gets through the leaves in a crown; all of it up to the top.
           d = 1 - phi;
@@ -387,12 +434,16 @@ export function shelterWind(obstacles: readonly Obstacle[], fromClock: number, h
 function gridAt(g: { x0: number; z0: number; cell: number; nx: number; nz: number; data: Float32Array }, x: number, z: number, out: number[]): number[] {
   const fx = Math.min(g.nx - 1, Math.max(0, (x - g.x0) / g.cell));
   const fz = Math.min(g.nz - 1, Math.max(0, (z - g.z0) / g.cell));
-  const i0 = Math.min(g.nx - 2, Math.floor(fx)), j0 = Math.min(g.nz - 2, Math.floor(fz));
-  const u = fx - i0, v = fz - j0;
+  const i0 = Math.min(g.nx - 2, Math.floor(fx)),
+    j0 = Math.min(g.nz - 2, Math.floor(fz));
+  const u = fx - i0,
+    v = fz - j0;
   const d = g.data;
   for (let c = 0; c < 4; c++) {
-    const a = d[(j0 * g.nx + i0) * 4 + c]!, b = d[(j0 * g.nx + i0 + 1) * 4 + c]!;
-    const e = d[((j0 + 1) * g.nx + i0) * 4 + c]!, h = d[((j0 + 1) * g.nx + i0 + 1) * 4 + c]!;
+    const a = d[(j0 * g.nx + i0) * 4 + c]!,
+      b = d[(j0 * g.nx + i0 + 1) * 4 + c]!;
+    const e = d[((j0 + 1) * g.nx + i0) * 4 + c]!,
+      h = d[((j0 + 1) * g.nx + i0 + 1) * 4 + c]!;
     out[c] = (a + (b - a) * u) * (1 - v) + (e + (h - e) * u) * v;
   }
   return out;
@@ -444,8 +495,10 @@ export function windAt(w: Wind, x: number, y: number, z: number, t: number, out:
   const gd = (ta[1] + (tb[1] - ta[1]) * f.mix) * f.norm;
   let sp = Math.max(0, w.speed * (1 + w.gust * gs));
   const d = gustSwing(w.gust) * gd;
-  const c = Math.cos(d), sn = Math.sin(d);
-  let hx = ux * c - uz * sn, hz = ux * sn + uz * c;
+  const c = Math.cos(d),
+    sn = Math.sin(d);
+  let hx = ux * c - uz * sn,
+    hz = ux * sn + uz * c;
   let vy = 0;
   if (w.terrain) {
     const [rel, gx, gz, h] = terrainAt(w.terrain, x, z, tt) as [number, number, number, number];

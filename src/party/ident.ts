@@ -5,8 +5,8 @@
  * friendly test. The real person always passes, so this milestone never goes further;
  * milestone 3 lets an impostor fail.
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Person, Quirk } from './types';
+import type { Rng } from "../mansion/core/rng";
+import type { Person, Quirk } from "./types";
 
 /** Features per look: height (cm), build, gait, voice, quirks (bits), drink, outfit hue, outfit state. */
 export const FEATURES = 8;
@@ -31,10 +31,10 @@ export const TEST = 0.45;
 export const COMPARE = 0.6;
 export const SURE = 0.85;
 
-const QUIRK_BITS: readonly Quirk[] = ['glasses', 'limp', 'cane', 'ear-scratch', 'globe-pointer', 'dances-after-drink', 'hands-in-pockets', 'tie-adjust', 'big-laugh', 'smoker', 'watch-check'];
+const QUIRK_BITS: readonly Quirk[] = ["glasses", "limp", "cane", "ear-scratch", "globe-pointer", "dances-after-drink", "hands-in-pockets", "tie-adjust", "big-laugh", "smoker", "watch-check"];
 
 /** What a sighting brings about. */
-export type IdentEvent = 'double-take' | 'test' | 'want-test' | null;
+export type IdentEvent = "double-take" | "test" | "want-test" | null;
 
 export class Ident {
   readonly n: number;
@@ -65,11 +65,11 @@ export class Ident {
     this.stage = new Uint8Array(n * n);
     this.voice = new Float32Array(n);
     this.wantTest = new Int16Array(n).fill(-1);
-    for (const p of people) this.voice[p.id] = (p.look.sex === 'f' ? 0.65 : 0.35) + rng.range(-0.1, 0.1);
+    for (const p of people) this.voice[p.id] = (p.look.sex === "f" ? 0.65 : 0.35) + rng.range(-0.1, 0.1);
     for (const p of people) this.refresh(p);
 
     // Ties from the cast: partners, friends (some close), the household, regulars, friends of friends.
-    const host = people.find((p) => p.role === 'host');
+    const host = people.find((p) => p.role === "host");
     const set = (a: Person, b: Person, t: Tie) => {
       if (a === b) return;
       if (this.tie[a.id * n + b.id]! >= t) return;
@@ -81,7 +81,7 @@ export class Ident {
       for (const f of p.friends) if (f > p.id) set(p, people[f]!, rng.chance(0.3) ? 4 : 3);
     }
     for (const p of people) {
-      if (p.staff) for (const q of people) if (q.staff || q.role === 'host') set(p, q, 3);
+      if (p.staff) for (const q of people) if (q.staff || q.role === "host") set(p, q, 3);
       if (host && !p.staff && p !== host) set(host, p, p.regular ? 3 : 2);
       if (p.regular) for (const q of people) if (q.regular && q !== p) set(p, q, 2);
       for (const f of p.friends) for (const ff of people[f]!.friends) if (ff !== p.id && rng.chance(0.5)) set(p, people[ff]!, 2);
@@ -104,7 +104,7 @@ export class Ident {
     });
     this.look[o + F_HEIGHT] = L.height * 100;
     this.look[o + F_BUILD] = L.build;
-    this.look[o + F_GAIT] = (p.quirks.includes('limp') ? 1 : 0) + 0.5 * sway;
+    this.look[o + F_GAIT] = (p.quirks.includes("limp") ? 1 : 0) + 0.5 * sway;
     this.look[o + F_VOICE] = this.voice[p.id]! + 0.6 * Math.max(0, p.tipsy - 0.3);
     this.look[o + F_QUIRKS] = bits;
     this.look[o + F_HUE] = hue(L.color);
@@ -190,15 +190,15 @@ export class Ident {
     if (this.stage[k] === 0 && v >= DOUBLE_TAKE) {
       this.stage[k] = 1;
       this.stats.doubleTakes++;
-      return 'double-take';
+      return "double-take";
     }
     if (this.stage[k] === 1 && v >= TEST) {
       if (faceToFace && d < 1.5) {
         this.test(i, j, t);
-        return 'test';
+        return "test";
       }
       this.wantTest[i] = j;
-      return 'want-test';
+      return "want-test";
     }
     return null;
   }

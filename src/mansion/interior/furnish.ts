@@ -2,11 +2,11 @@
  * Furnishing (stage 7): run room recipes, pick the bar room, derive mission
  * points of interest (POIs) with reachable stand points.
  */
-import type { Rect } from '../core/geom';
-import type { Rng } from '../core/rng';
-import type { LightSpec, Poi, PoiType, Prop, PropKind, Room, Wall } from '../core/types';
-import { Placer, SIDES, type Side } from './placer';
-import { bar, RECIPES } from './recipes';
+import type { Rect } from "../core/geom";
+import type { Rng } from "../core/rng";
+import type { LightSpec, Poi, PoiType, Prop, PropKind, Room, Wall } from "../core/types";
+import { Placer, SIDES, type Side } from "./placer";
+import { bar, RECIPES } from "./recipes";
 
 export interface FurnishInput {
   rng: Rng;
@@ -33,7 +33,7 @@ export interface FurnishOutput {
   placers: Map<string, Placer>;
 }
 
-const BAR_ROOMS = new Set(['drawing-room', 'billiard-room', 'card-room', 'morning-room', 'music-room', 'grand-salon', 'ballroom', 'gallery', 'library', 'dining-room']);
+const BAR_ROOMS = new Set(["drawing-room", "billiard-room", "card-room", "morning-room", "music-room", "grand-salon", "ballroom", "gallery", "library", "dining-room"]);
 
 export function furnish(input: FurnishInput): FurnishOutput {
   const { rng, rooms } = input;
@@ -43,9 +43,9 @@ export function furnish(input: FurnishInput): FurnishOutput {
 
   // The bar goes where the sniper can watch it, with a little randomness.
   const barCands = rooms
-    .filter((r) => (r.level === 0 && BAR_ROOMS.has(r.type)) || r.type === 'bar')
+    .filter((r) => (r.level === 0 && BAR_ROOMS.has(r.type)) || r.type === "bar")
     // The house's own bar room first; if it cannot take one, wherever the sniper can best watch it.
-    .map((r) => ({ r, score: (r.type === 'bar' ? 10 : 0) + (input.visHint.get(r.id) ?? 0) + rng.range(0, 0.15) + (r.type === 'ballroom' ? -0.1 : 0) }))
+    .map((r) => ({ r, score: (r.type === "bar" ? 10 : 0) + (input.visHint.get(r.id) ?? 0) + rng.range(0, 0.15) + (r.type === "ballroom" ? -0.1 : 0) }))
     .sort((a, b) => b.score - a.score);
   const barRoom = barCands[0]?.r.id;
 
@@ -72,7 +72,7 @@ export function furnish(input: FurnishInput): FurnishOutput {
     placers.set(room.id, p);
   }
   // Fallback: if the chosen room had no wall long enough for a bar, try the next best.
-  const hasBar = () => [...placers.values()].some((p) => p.props.some((q) => q.poi === 'bar'));
+  const hasBar = () => [...placers.values()].some((p) => p.props.some((q) => q.poi === "bar"));
   for (const c of barCands.slice(1)) {
     if (hasBar()) break;
     bar(placers.get(c.r.id)!);
@@ -129,12 +129,12 @@ export function furnish(input: FurnishInput): FurnishOutput {
 
   // Window spots: guests lingering at the stage French windows.
   for (const room of rooms) {
-    if (room.level !== 0 || room.role !== 'party' || !room.stage) continue;
+    if (room.level !== 0 || room.role !== "party" || !room.stage) continue;
     const p = placers.get(room.id)!;
     const ws = p.windowSides()[0];
     if (!ws) continue;
     const info = p.sides[ws];
-    const win = info.openings.find((o) => o.exterior && o.kind === 'french-window');
+    const win = info.openings.find((o) => o.exterior && o.kind === "french-window");
     if (!win) continue;
     const t = (win.t0 + win.t1) / 2;
     const at = p.at(ws, t, 0.75);
@@ -144,7 +144,7 @@ export function furnish(input: FurnishInput): FurnishOutput {
       p.mustReach.pop();
       continue;
     }
-    pois.push({ id: `poi${poiN++}`, type: 'window', roomId: room.id, level: 0, x: at.x, y: room.floorY, z: at.z, stand: { x: round(at.x), z: round(at.z), yaw }, visibility: 0 });
+    pois.push({ id: `poi${poiN++}`, type: "window", roomId: room.id, level: 0, x: at.x, y: room.floorY, z: at.z, stand: { x: round(at.x), z: round(at.z), yaw }, visibility: 0 });
   }
   return { props, lights, pois, placers };
 }
@@ -154,11 +154,11 @@ function round(v: number): number {
 }
 
 /** Where an NPC stands to use a prop: in front of it, else beside it; must be reachable. */
-function standPoint(p: Placer, prop: Prop): Poi['stand'] | null {
+function standPoint(p: Placer, prop: Prop): Poi["stand"] | null {
   const fx = Math.sin(prop.yaw);
   const fz = Math.cos(prop.yaw);
   const dirs: [number, number][] =
-    prop.mount === 'wall' || prop.kind === 'fireplace' || prop.kind === 'bookcase' || prop.kind === 'bar-counter' || prop.kind === 'clock'
+    prop.mount === "wall" || prop.kind === "fireplace" || prop.kind === "bookcase" || prop.kind === "bar-counter" || prop.kind === "clock"
       ? [[fx, fz]]
       : [
           [fx, fz],
@@ -166,10 +166,10 @@ function standPoint(p: Placer, prop: Prop): Poi['stand'] | null {
           [fz, -fx],
           [-fz, fx],
         ];
-  const reach = prop.mount === 'wall' ? 1.3 : prop.kind === 'bar-counter' ? -(prop.d / 2 + 0.45) : prop.d / 2 + 0.55;
+  const reach = prop.mount === "wall" ? 1.3 : prop.kind === "bar-counter" ? -(prop.d / 2 + 0.45) : prop.d / 2 + 0.55;
   for (const [dx, dz] of dirs) {
     // Bar: stand on the guest side (in front of the counter).
-    const s = prop.kind === 'bar-counter' ? prop.d / 2 + 0.5 : reach;
+    const s = prop.kind === "bar-counter" ? prop.d / 2 + 0.5 : reach;
     const x = prop.x + dx * s;
     const z = prop.z + dz * s;
     if (!p.isFree({ x0: x - 0.2, z0: z - 0.2, x1: x + 0.2, z1: z + 0.2 }, true)) continue;
@@ -183,27 +183,27 @@ function standPoint(p: Placer, prop: Prop): Poi['stand'] | null {
 interface FallbackSpec {
   kind: PropKind;
   /** Placement modes to try, in order. */
-  modes: ('wall' | 'free' | 'hang')[];
+  modes: ("wall" | "free" | "hang")[];
   w: number;
   d: number;
   h: number;
   gap?: number;
   occludes?: boolean;
-  rooms: Room['role'][];
+  rooms: Room["role"][];
 }
 
 const FALLBACK: Partial<Record<PoiType, FallbackSpec>> = {
-  statue: { kind: 'statue', modes: ['free'], w: 0.8, d: 0.8, h: 2.25, occludes: true, rooms: ['party', 'circulation'] },
+  statue: { kind: "statue", modes: ["free"], w: 0.8, d: 0.8, h: 2.25, occludes: true, rooms: ["party", "circulation"] },
   // An island bar facing the windows is the fallback when no wall spot is watchable.
-  bar: { kind: 'bar-counter', modes: ['wall', 'free'], w: 2.6, d: 0.7, h: 1.1, gap: 0.9, rooms: ['party'] },
-  painting: { kind: 'painting', modes: ['hang'], w: 1.2, d: 0.08, h: 1.0, rooms: ['party', 'circulation', 'private'] },
-  piano: { kind: 'grand-piano', modes: ['free'], w: 1.55, d: 2.1, h: 1.0, rooms: ['party'] },
-  ledger: { kind: 'console', modes: ['wall'], w: 1.4, d: 0.5, h: 0.88, rooms: ['circulation', 'party'] },
-  fireplace: { kind: 'fireplace', modes: ['wall'], w: 2.0, d: 0.55, h: 1.4, rooms: ['party'] },
-  bookshelf: { kind: 'bookcase', modes: ['wall'], w: 1.2, d: 0.45, h: 2.4, occludes: true, rooms: ['party', 'private'] },
-  clock: { kind: 'clock', modes: ['wall'], w: 0.55, d: 0.38, h: 2.15, occludes: true, rooms: ['circulation', 'party'] },
-  globe: { kind: 'globe', modes: ['free'], w: 0.7, d: 0.7, h: 1.05, rooms: ['party', 'private'] },
-  safe: { kind: 'safe', modes: ['wall'], w: 0.7, d: 0.6, h: 1.0, rooms: ['private'] },
+  bar: { kind: "bar-counter", modes: ["wall", "free"], w: 2.6, d: 0.7, h: 1.1, gap: 0.9, rooms: ["party"] },
+  painting: { kind: "painting", modes: ["hang"], w: 1.2, d: 0.08, h: 1.0, rooms: ["party", "circulation", "private"] },
+  piano: { kind: "grand-piano", modes: ["free"], w: 1.55, d: 2.1, h: 1.0, rooms: ["party"] },
+  ledger: { kind: "console", modes: ["wall"], w: 1.4, d: 0.5, h: 0.88, rooms: ["circulation", "party"] },
+  fireplace: { kind: "fireplace", modes: ["wall"], w: 2.0, d: 0.55, h: 1.4, rooms: ["party"] },
+  bookshelf: { kind: "bookcase", modes: ["wall"], w: 1.2, d: 0.45, h: 2.4, occludes: true, rooms: ["party", "private"] },
+  clock: { kind: "clock", modes: ["wall"], w: 0.55, d: 0.38, h: 2.15, occludes: true, rooms: ["circulation", "party"] },
+  globe: { kind: "globe", modes: ["free"], w: 0.7, d: 0.7, h: 1.05, rooms: ["party", "private"] },
+  safe: { kind: "safe", modes: ["wall"], w: 0.7, d: 0.6, h: 1.0, rooms: ["private"] },
 };
 
 const INWARD: Record<Side, [number, number]> = { n: [0, -1], s: [0, 1], e: [-1, 0], w: [1, 0] };
@@ -211,7 +211,7 @@ const INWARD: Record<Side, [number, number]> = { n: [0, -1], s: [0, 1], e: [-1, 
 /** Place one mission prop in room `p`, at a spot whose stand point is visible when `visAt` is given. */
 function placeFallback(p: Placer, type: PoiType, spec: FallbackSpec, visAt: ((x: number, z: number, y: number) => number) | null, need: number): Prop | null {
   for (const mode of spec.modes) {
-    const prop = mode === 'free' ? placeFree(p, type, spec, visAt, need) : placeOnWall(p, type, spec, mode, visAt, need);
+    const prop = mode === "free" ? placeFree(p, type, spec, visAt, need) : placeOnWall(p, type, spec, mode, visAt, need);
     if (prop) return prop;
   }
   return null;
@@ -219,7 +219,7 @@ function placeFallback(p: Placer, type: PoiType, spec: FallbackSpec, visAt: ((x:
 
 function placeFree(p: Placer, type: PoiType, spec: FallbackSpec, visAt: ((x: number, z: number, y: number) => number) | null, need: number): Prop | null {
   // Face the windows so whoever uses it stands between it and the sniper.
-  const face: Side = p.windowSides()[0] ?? 'n';
+  const face: Side = p.windowSides()[0] ?? "n";
   const [ix, iz] = INWARD[face];
   const dir: [number, number] = [-ix, -iz];
   const yaw = Math.round(Math.atan2(dir[0], dir[1]) / (Math.PI / 2)) * (Math.PI / 2);
@@ -245,17 +245,17 @@ function placeFree(p: Placer, type: PoiType, spec: FallbackSpec, visAt: ((x: num
   return null;
 }
 
-function placeOnWall(p: Placer, type: PoiType, spec: FallbackSpec, mode: 'wall' | 'hang', visAt: ((x: number, z: number, y: number) => number) | null, need: number): Prop | null {
+function placeOnWall(p: Placer, type: PoiType, spec: FallbackSpec, mode: "wall" | "hang", visAt: ((x: number, z: number, y: number) => number) | null, need: number): Prop | null {
   const windowSide = p.windowSides()[0];
   const ok = (x: number, z: number) => !visAt || visAt(x, z, p.floorY) >= need;
   for (const side of SIDES.filter((s) => s !== windowSide)) {
     const info = p.sides[side];
     for (let t = info.t0 + spec.w / 2 + 0.2; t <= info.t1 - spec.w / 2 - 0.2; t += 0.5) {
-      const reach = mode === 'hang' ? 1.3 : (spec.gap ?? 0.04) + spec.d + 0.55;
+      const reach = mode === "hang" ? 1.3 : (spec.gap ?? 0.04) + spec.d + 0.55;
       const st = p.at(side, t, reach);
       if (!ok(st.x, st.z)) continue;
       const prop =
-        mode === 'hang'
+        mode === "hang"
           ? p.onWall(side, spec.kind, spec.w, spec.h, p.floorY + 1.75, { prefer: t, sweep: false, variant: p.rng.int(0, 7) })
           : p.againstWall(side, spec.kind, spec.w, spec.d, spec.h, { prefer: t, sweep: false, gap: spec.gap, occludes: spec.occludes });
       if (prop) {

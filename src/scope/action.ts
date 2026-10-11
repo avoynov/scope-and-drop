@@ -14,8 +14,8 @@
  *  - VSS: striker fired, and with no bolt stop it shuts on an empty chamber after the last round, cocked: the
  *    next pull is a click.
  */
-import { ACTIONS, type Chamber } from './handling';
-import type { RifleId } from './shot';
+import { ACTIONS, type Chamber } from "./handling";
+import type { RifleId } from "./shot";
 
 export interface ActionState {
   chamber: Chamber;
@@ -27,35 +27,35 @@ export interface ActionState {
 }
 
 /** What a pull of the trigger does: fires, snaps the hammer or striker onto an empty chamber, or nothing. */
-export type Pull = 'fire' | 'click' | 'dead';
+export type Pull = "fire" | "click" | "dead";
 
 const semi = (rifle: RifleId) => !!ACTIONS[rifle].carrier;
 const holdsOpen = (rifle: RifleId) => !!ACTIONS[rifle].carrier?.holdOpen;
 
 /** Loaded and ready: a full magazine, one of it chambered. */
 export function loaded(rifle: RifleId): ActionState {
-  return { chamber: 'live', cocked: true, held: false, mag: ACTIONS[rifle].mag.rounds - 1 };
+  return { chamber: "live", cocked: true, held: false, mag: ACTIONS[rifle].mag.rounds - 1 };
 }
 
 /** The trigger pulled. Returns what happened; the state changes for a shot or a click. */
 export function pull(s: ActionState, rifle: RifleId): Pull {
-  if (s.held || !s.cocked) return 'dead';
-  if (s.chamber !== 'live') {
+  if (s.held || !s.cocked) return "dead";
+  if (s.chamber !== "live") {
     s.cocked = false;
-    return 'click';
+    return "click";
   }
   if (semi(rifle)) {
     // The gas drives the carrier back: out goes the case, in the next round, hammer or striker cocked again.
     if (s.mag > 0) s.mag--;
     else {
-      s.chamber = 'empty';
+      s.chamber = "empty";
       s.held = holdsOpen(rifle);
     }
   } else {
-    s.chamber = 'spent';
+    s.chamber = "spent";
     s.cocked = false;
   }
-  return 'fire';
+  return "fire";
 }
 
 /** The action worked by hand: whatever was chambered thrown out, cocked, and the top round, if any, chambered. */
@@ -63,10 +63,10 @@ export function cycle(s: ActionState, rifle: RifleId): void {
   s.cocked = true;
   if (s.mag > 0) {
     s.mag--;
-    s.chamber = 'live';
+    s.chamber = "live";
     s.held = false;
   } else {
-    s.chamber = 'empty';
+    s.chamber = "empty";
     s.held = holdsOpen(rifle);
   }
 }

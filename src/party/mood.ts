@@ -3,7 +3,7 @@
  * someone feels, tension how uneasy. Both belong to people, never to rooms: a room's mood is
  * worked out from whoever is in it, only when something asks.
  */
-import type { Person } from './types';
+import type { Person } from "./types";
 
 /** Energy drifts toward its target with this time constant (in-game s). */
 const ENERGY_TAU = 300;
@@ -17,7 +17,7 @@ const TENSION_PULL = 0.005;
 export interface MoodOverride {
   t: number;
   /** Everyone, one person, or whoever is in a room at that moment. */
-  target: 'all' | { person: number } | { room: number };
+  target: "all" | { person: number } | { room: number };
   tension?: number;
   /** Multiplies energy (0.5 to 1.5 in the lab). */
   energy?: number;
@@ -36,7 +36,7 @@ export interface MoodInput {
   crowd: number;
 }
 
-export type RoomMood = 'festive' | 'relaxed' | 'uneasy' | 'tense';
+export type RoomMood = "festive" | "relaxed" | "uneasy" | "tense";
 
 export class Mood {
   readonly energy: Float32Array;
@@ -101,8 +101,8 @@ export class Mood {
       if (this.applied.has(i) || o.t > t) return;
       this.applied.add(i);
       for (const p of this.people) {
-        if (!p.present && o.target !== 'all') continue;
-        const hit = o.target === 'all' || ('person' in o.target ? o.target.person === p.id : p.present && p.room === o.target.room);
+        if (!p.present && o.target !== "all") continue;
+        const hit = o.target === "all" || ("person" in o.target ? o.target.person === p.id : p.present && p.room === o.target.room);
         if (!hit) continue;
         if (o.tension !== undefined) this.tension[p.id] = Math.max(0, Math.min(1, o.tension));
         if (o.energy !== undefined) this.energy[p.id] = Math.max(0, Math.min(1, this.energy[p.id]! * o.energy));
@@ -124,7 +124,7 @@ export class Mood {
     if (!c) return null;
     e /= c;
     t /= c;
-    const label: RoomMood = t >= 0.35 ? 'tense' : t >= 0.15 ? 'uneasy' : e >= 0.45 ? 'festive' : 'relaxed';
+    const label: RoomMood = t >= 0.35 ? "tense" : t >= 0.15 ? "uneasy" : e >= 0.45 ? "festive" : "relaxed";
     return { energy: e, tension: t, label };
   }
 }

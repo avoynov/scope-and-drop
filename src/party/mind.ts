@@ -17,14 +17,14 @@
  * (ads.ts), conversations from the circles (groups.ts), and the evening's rituals pull on every
  * score through their beats (practices.ts).
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Offer } from './ads';
-import { PARTY_LENGTH, type PhaseId } from './clock';
-import type { Groups } from './groups';
-import type { Places, RoomCells } from './places';
-import type { Pathfinder } from './path';
-import { KNOWN } from './memory';
-import { DRINKS, type ActionId, type ActionState, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from './types';
+import type { Rng } from "../mansion/core/rng";
+import type { Offer } from "./ads";
+import { PARTY_LENGTH, type PhaseId } from "./clock";
+import type { Groups } from "./groups";
+import type { Places, RoomCells } from "./places";
+import type { Pathfinder } from "./path";
+import { KNOWN } from "./memory";
+import { DRINKS, type ActionId, type ActionState, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from "./types";
 
 /** How fitting each action is in each phase (0 = never chosen). */
 export const PHASE_WEIGHTS: Record<PhaseId, Partial<Record<ActionId, number>>> = {
@@ -47,8 +47,8 @@ export function decay(p: Person, k: number): void {
   const t = p.traits;
   const n = p.needs;
   const tipsy = p.tipsy;
-  const limp = p.quirks.includes('limp') ? 1 : 0;
-  const smoker = p.quirks.includes('smoker') ? 1 : 0;
+  const limp = p.quirks.includes("limp") ? 1 : 0;
+  const smoker = p.quirks.includes("smoker") ? 1 : 0;
   n.thirst = Math.max(0, n.thirst - 0.01 * (0.6 + 0.8 * t.thirst) * k);
   n.hunger = Math.max(0, n.hunger - 0.004 * k);
   n.bladder = Math.max(0, n.bladder - (0.003 + 0.009 * tipsy) * k);
@@ -111,7 +111,7 @@ export interface MindWorld {
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
-const ANYWHERE: ReadonlySet<ActionId> = new Set(['champagne', 'toast', 'dinner', 'leave', 'wander', 'ask']);
+const ANYWHERE: ReadonlySet<ActionId> = new Set(["champagne", "toast", "dinner", "leave", "wander", "ask"]);
 /** Below this bladder level someone goes looking for any bathroom, known or not. */
 const DESPERATE = 0.1;
 /** Offers kept for full scoring after the quick prefilter (need over distance). */
@@ -148,12 +148,12 @@ function nearest<T extends Spot>(p: Person, list: T[], n: number, rng: Rng): T[]
 export function candidates(p: Person, w: MindWorld): Candidate[] {
   const all = allCandidates(p, w);
   // Only toward rooms they know (a desperate bathroom trip aside).
-  return all.filter((c) => ANYWHERE.has(c.id) || !c.target || (c.id === 'toilet' && p.needs.bladder < DESPERATE) || w.familiarity(p, destination(c, w.places)) >= KNOWN);
+  return all.filter((c) => ANYWHERE.has(c.id) || !c.target || (c.id === "toilet" && p.needs.bladder < DESPERATE) || w.familiarity(p, destination(c, w.places)) >= KNOWN);
 }
 
 /** The room someone has in mind when they set off: the bathroom itself, not the corridor outside its door. */
 export function destination(a: { id: ActionId; target: Spot | null; ref?: number }, places: Places): number {
-  if (a.id === 'toilet' && a.ref !== undefined) return places.bathrooms[a.ref]?.room.index ?? a.target?.room ?? -1;
+  if (a.id === "toilet" && a.ref !== undefined) return places.bathrooms[a.ref]?.room.index ?? a.target?.room ?? -1;
   return a.target?.room ?? -1;
 }
 
@@ -165,7 +165,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
   const has = (a: ActionId) => (W[a] ?? 0) > 0;
   const tension = w.tension(p);
 
-  if (has('mingle')) {
+  if (has("mingle")) {
     out.push(...w.circles.candidates(p, w, tension));
     for (let i = 0; i < 2; i++) {
       const room = rng.pick(places.mingleRooms.length ? places.mingleRooms : [places.toastRoom.index]);
@@ -173,36 +173,41 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
       const s = cells.random(rng.chance(0.15) && places.terrace.length ? -2 : room, rng, 0.9);
       // Not on top of a conversation already going.
       if (s && w.circles.crowds(s)) continue;
-      if (s) out.push({ id: 'mingle', target: s, duration: 99999, pose: 'talk', gain: { social: 0.5 }, ref: -1, note: 'new', mod: (s.level === 0 ? 0.7 : 0.4) * (0.6 + p.traits.talk * 0.6) });
+      if (s) out.push({ id: "mingle", target: s, duration: 99999, pose: "talk", gain: { social: 0.5 }, ref: -1, note: "new", mod: (s.level === 0 ? 0.7 : 0.4) * (0.6 + p.traits.talk * 0.6) });
     }
   }
-  if (has('drink') && !(p.held && DRINKS.has(p.held) && p.held !== 'champagne')) {
+  if (has("drink") && !(p.held && DRINKS.has(p.held) && p.held !== "champagne")) {
     // The bar pours what they ask for when their turn comes (body.ts).
-    for (const s of nearest(p, places.bars.filter((b) => !w.taken(spotKey(b))), 2, rng)) {
-      out.push({ id: 'drink', target: s, duration: rng.range(90, 200), pose: 'drink', gain: { thirst: 0.8, social: 0.1 }, ref: places.bars.indexOf(s), note: 'bar-go', key: spotKey(s) });
+    for (const s of nearest(
+      p,
+      places.bars.filter((b) => !w.taken(spotKey(b))),
+      2,
+      rng,
+    )) {
+      out.push({ id: "drink", target: s, duration: rng.range(90, 200), pose: "drink", gain: { thirst: 0.8, social: 0.1 }, ref: places.bars.indexOf(s), note: "bar-go", key: spotKey(s) });
     }
   }
   // A fresh glass for the toast unless the one in hand will last it.
-  if (has('champagne') && p.never !== 'champagne' && !(p.held === 'champagne' && w.glassFill(p) > 0.5)) {
-    out.push({ id: 'champagne', target: null, duration: 20, pose: 'stand', gain: {}, programme: true, gives: 'champagne' });
+  if (has("champagne") && p.never !== "champagne" && !(p.held === "champagne" && w.glassFill(p) > 0.5)) {
+    out.push({ id: "champagne", target: null, duration: 20, pose: "stand", gain: {}, programme: true, gives: "champagne" });
   }
   // In the last 20 minutes only if it can't wait: the bathroom may be two floors up at the far end of the house.
-  if (has('toilet') && !(w.t > PARTY_LENGTH - 20 * 60 && p.needs.bladder > 0.2)) {
+  if (has("toilet") && !(w.t > PARTY_LENGTH - 20 * 60 && p.needs.bladder > 0.2)) {
     places.bathrooms.forEach((b, i) => {
       if ((p.avoid.get(`bath:${i}`) ?? -1) > w.t || !w.worthTrying(p, i)) return;
-      out.push({ id: 'toilet', target: b.door, duration: rng.range(120, 240), pose: 'wait', gain: { bladder: 1 }, ref: i, note: 'door' });
+      out.push({ id: "toilet", target: b.door, duration: rng.range(120, 240), pose: "wait", gain: { bladder: 1 }, ref: i, note: "door" });
     });
     // No idea where one is: ask someone (scored as the bathroom itself).
     if (places.bathrooms.length && places.bathrooms.every((b) => w.familiarity(p, b.room.index) < KNOWN)) {
       const q = w.answerer(p);
       const s = q ? beside(q, p, w.pf) : null;
-      if (q && s) out.push({ id: 'ask', target: s, duration: 4, pose: 'talk', gain: { bladder: 1 }, ref: q.id, note: 'bathroom' });
+      if (q && s) out.push({ id: "ask", target: s, duration: 4, pose: "talk", gain: { bladder: 1 }, ref: q.id, note: "bathroom" });
     }
   }
   out.push(...offerCandidates(p, w, phase.id));
-  if (has('dance') && places.danceSpots.length) {
+  if (has("dance") && places.danceSpots.length) {
     const partner = p.partner !== null ? people[p.partner] : undefined;
-    const partnerDancing = partner?.action?.id === 'dance';
+    const partnerDancing = partner?.action?.id === "dance";
     for (let i = 0; i < 3; i++) {
       let s = rng.pick(places.danceSpots);
       // Couples dance together: next to the partner's spot.
@@ -211,29 +216,38 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
         if (q.length) s = q[0]!;
       }
       if (w.taken(spotKey(s))) continue;
-      const after = p.quirks.includes('dances-after-drink') && p.tipsy > 0.15 ? 1.6 : 1;
+      const after = p.quirks.includes("dances-after-drink") && p.tipsy > 0.15 ? 1.6 : 1;
       // Lively people take to the floor.
       const energy = 0.6 + 0.8 * w.energy(p);
-      out.push({ id: 'dance', target: s, duration: rng.range(240, 600), pose: 'dance', gain: { dance: 0.8, social: 0.2 }, key: spotKey(s), mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after * energy });
+      out.push({
+        id: "dance",
+        target: s,
+        duration: rng.range(240, 600),
+        pose: "dance",
+        gain: { dance: 0.8, social: 0.2 },
+        key: spotKey(s),
+        mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after * energy,
+      });
     }
   }
-  if (has('wander')) {
+  if (has("wander")) {
     const s = cells.random(rng.pick(places.mingleRooms.length ? places.mingleRooms : [places.toastRoom.index]), rng);
-    if (s) out.push({ id: 'wander', target: s, duration: rng.range(20, 60), pose: 'look', gain: { curiosity: 0.15 }, mod: 0.4 + p.traits.curiosity * 0.6 });
+    if (s) out.push({ id: "wander", target: s, duration: rng.range(20, 60), pose: "look", gain: { curiosity: 0.15 }, mod: 0.4 + p.traits.curiosity * 0.6 });
   }
-  if (has('toast') && (phase.id === 'toast' || phase.progress < LAST_TOAST)) {
+  if (has("toast") && (phase.id === "toast" || phase.progress < LAST_TOAST)) {
     const s = toastSpot(w);
-    if (s) out.push({ id: 'toast', target: s, duration: 99999, pose: 'stand', gain: { social: 0.2 }, programme: true });
+    if (s) out.push({ id: "toast", target: s, duration: 99999, pose: "stand", gain: { social: 0.2 }, programme: true });
   }
-  if (has('dinner')) {
+  if (has("dinner")) {
     const seat = p.seat !== null ? places.diningSeats[p.seat] : undefined;
     const supper = !seat && p.supper !== null ? places.supperSeats[p.supper] : undefined;
-    if (seat) out.push({ id: 'dinner', target: seat.approach, seat, duration: 99999, pose: 'sit', gain: { hunger: 1, social: 0.4 }, programme: true });
-    else if (supper && !w.seatTaken(supper)) out.push({ id: 'dinner', target: supper.approach, seat: supper, duration: 99999, pose: 'sit', gain: { hunger: 1, social: 0.3 }, programme: true, note: 'supper' });
+    if (seat) out.push({ id: "dinner", target: seat.approach, seat, duration: 99999, pose: "sit", gain: { hunger: 1, social: 0.4 }, programme: true });
+    else if (supper && !w.seatTaken(supper))
+      out.push({ id: "dinner", target: supper.approach, seat: supper, duration: 99999, pose: "sit", gain: { hunger: 1, social: 0.3 }, programme: true, note: "supper" });
     else {
       const free = places.buffet.filter((b) => !w.taken(spotKey(b)));
       const s = free.length ? rng.pick(free) : cells.random(places.toastRoom.index, rng);
-      if (s) out.push({ id: 'dinner', target: s, duration: 99999, pose: 'stand', gain: { hunger: 1, social: 0.3 }, programme: true, key: spotKey(s) });
+      if (s) out.push({ id: "dinner", target: s, duration: 99999, pose: "stand", gain: { hunger: 1, social: 0.3 }, programme: true, key: spotKey(s) });
     }
   }
   return out;
@@ -256,7 +270,7 @@ function offerCandidates(p: Person, w: MindWorld, phase: PhaseId): Candidate[] {
     else {
       for (let i = 0; i < o.spots.length && spot < 0; i++) {
         // The piano stool is the pianist's when they want it.
-        if (ad.note === 'piano' && i === 0 && p.role !== 'pianist') continue;
+        if (ad.note === "piano" && i === 0 && p.role !== "pianist") continue;
         if (!w.taken(spotKey(o.spots[i]!))) spot = i;
       }
     }
@@ -272,19 +286,19 @@ function offerCandidates(p: Person, w: MindWorld, phase: PhaseId): Candidate[] {
     const ad = o.ad;
     const like = (p.archetype && ad.likes?.[p.archetype]) || 1;
     // Smokers take a cigarette out to the terrace.
-    const smoke = ad.id === 'terrace' && p.quirks.includes('smoker');
-    const plays = ad.note === 'piano' ? spot === 0 : ad.pose === 'play';
+    const smoke = ad.id === "terrace" && p.quirks.includes("smoker");
+    const plays = ad.note === "piano" ? spot === 0 : ad.pose === "play";
     out.push({
       id: ad.action,
       target: s,
       seat: o.seat,
       duration: w.rng.range(ad.duration[0], ad.duration[1]),
-      pose: smoke ? 'smoke' : ad.note === 'piano' ? (plays ? 'play' : 'look') : ad.pose,
+      pose: smoke ? "smoke" : ad.note === "piano" ? (plays ? "play" : "look") : ad.pose,
       gain: ad.gains,
       key: o.seat ? undefined : spotKey(s),
       ref: o.game,
       note: ad.note ?? ad.id,
-      gives: smoke ? 'cigarette' : ad.gives,
+      gives: smoke ? "cigarette" : ad.gives,
       mod: (ad.mod ? ad.mod(p) : 1) * like * (ad.phases?.[phase] ?? 1),
     });
   }
@@ -335,7 +349,7 @@ export function toastSpot(w: MindWorld): Spot | null {
 
 export function score(p: Person, c: Candidate, w: MindWorld): number {
   const phase = w.phaseOf(p);
-  const W = PHASE_WEIGHTS[phase.id][c.id === 'ask' ? 'toilet' : c.id] ?? 0;
+  const W = PHASE_WEIGHTS[phase.id][c.id === "ask" ? "toilet" : c.id] ?? 0;
   if (W <= 0) return 0;
   const needs = c.programme ? 1 : needTerm(p, c.gain);
   const d = distance(p, c.target);

@@ -13,76 +13,355 @@
         --panel: rgba(12, 14, 20, 0.72);
         --accent: #e0b56a;
       }
-      html, body { margin: 0; height: 100%; background: #07080c; color: var(--ink); font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; overflow: hidden; }
-      canvas { display: block; }
-      #panel { position: fixed; top: 16px; left: 16px; width: 300px; max-width: calc(100vw - 32px); background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; box-sizing: border-box; }
-      #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; color: var(--accent); }
-      .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-      input, select, button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-      input { flex: 1; min-width: 0; }
-      button { cursor: pointer; }
-      button.on { border-color: var(--accent); color: var(--accent); }
-      #stats { color: var(--muted); white-space: pre-wrap; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; max-height: 40vh; overflow: auto; }
-      #reticle { position: fixed; inset: 0; pointer-events: none; display: none; }
-      #reticle.on { display: block; }
-      #reticle::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0 34vmin, rgba(0, 0, 0, 0.94) 35vmin); }
-      #reticle .h, #reticle .v { position: absolute; background: rgba(10, 10, 10, 0.85); }
-      #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
-      #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
-      body.shot #panel { display: none; }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #07080c;
+        color: var(--ink);
+        font:
+          12px/1.45 ui-monospace,
+          "SF Mono",
+          Menlo,
+          Consolas,
+          monospace;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+      #panel {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        width: 300px;
+        max-width: calc(100vw - 32px);
+        background: var(--panel);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 14px 10px;
+        box-sizing: border-box;
+      }
+      #panel h1 {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin: 0 0 10px;
+        color: var(--accent);
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #stats {
+        color: var(--muted);
+        white-space: pre-wrap;
+        margin-top: 6px;
+        border-top: 1px solid var(--line);
+        padding-top: 8px;
+        max-height: 40vh;
+        overflow: auto;
+      }
+      #reticle {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        display: none;
+      }
+      #reticle.on {
+        display: block;
+      }
+      #reticle::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 50%, transparent 0 34vmin, rgba(0, 0, 0, 0.94) 35vmin);
+      }
+      #reticle .h,
+      #reticle .v {
+        position: absolute;
+        background: rgba(10, 10, 10, 0.85);
+      }
+      #reticle .h {
+        left: calc(50% - 34vmin);
+        right: calc(50% - 34vmin);
+        top: 50%;
+        height: 1px;
+      }
+      #reticle .v {
+        top: calc(50% - 34vmin);
+        bottom: calc(50% - 34vmin);
+        left: 50%;
+        width: 1px;
+      }
+      body.shot #panel {
+        display: none;
+      }
       /* Pre-mission briefing: floor plan on the left, bearing and numbers on the right. */
-      #brief { position: fixed; inset: 0; display: none; background: rgba(7, 8, 12, 0.94); z-index: 5; padding: 20px; box-sizing: border-box; gap: 20px; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto minmax(0, 1fr); }
-      #brief.on { display: grid; }
-      #brief header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-      #brief h2 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; margin: 0; color: var(--accent); }
-      #brief-title { color: var(--muted); }
-      #brief-plan { width: 100%; height: 100%; min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: #0b0d13; }
-      #brief aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
-      #brief-dial { width: 100%; height: 230px; touch-action: none; cursor: grab; flex: none; }
-      #brief-az { width: 100%; padding: 0; margin: 0; border: 0; box-sizing: border-box; flex: none; accent-color: var(--accent); }
-      #brief dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; border-top: 1px solid var(--line); padding-top: 10px; }
-      #brief dt { color: var(--muted); }
-      #brief dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-      #brief-bearing, #brief-elevation { color: var(--ink); text-align: center; }
-      #brief-az, #brief-el { width: 100%; padding: 0; margin: 0; border: 0; box-sizing: border-box; flex: none; accent-color: var(--accent); }
-      #brief-elbars { display: flex; align-items: flex-end; gap: 3px; height: 34px; flex: none; }
-      #brief-elbars i { flex: 1; background: var(--line); border-radius: 2px 2px 0 0; min-height: 2px; }
-      #brief-elbars i.on { background: var(--accent); }
-      #panel label { color: var(--muted); align-self: center; flex: 1; }
-      #minvis { width: 64px; flex: none; }
-      #roofglass { width: 110px; flex: none; padding: 0; border: 0; accent-color: var(--accent); }
-      #brief .key { color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      #brief .key i { display: inline-block; width: 90px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, rgb(34, 40, 54), rgb(255, 190, 84)); }
-      #brief-deploy { background: var(--accent); color: #16110a; border-color: var(--accent); font-weight: 600; padding: 9px 10px; }
-      body.shot.briefshot #panel { display: none; }
+      #brief {
+        position: fixed;
+        inset: 0;
+        display: none;
+        background: rgba(7, 8, 12, 0.94);
+        z-index: 5;
+        padding: 20px;
+        box-sizing: border-box;
+        gap: 20px;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      #brief.on {
+        display: grid;
+      }
+      #brief header {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      #brief h2 {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin: 0;
+        color: var(--accent);
+      }
+      #brief-title {
+        color: var(--muted);
+      }
+      #brief-plan {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0b0d13;
+      }
+      #brief aside {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        overflow: auto;
+      }
+      #brief-dial {
+        width: 100%;
+        height: 230px;
+        touch-action: none;
+        cursor: grab;
+        flex: none;
+      }
+      #brief-az {
+        width: 100%;
+        padding: 0;
+        margin: 0;
+        border: 0;
+        box-sizing: border-box;
+        flex: none;
+        accent-color: var(--accent);
+      }
+      #brief dl {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px 12px;
+        margin: 0;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+      }
+      #brief dt {
+        color: var(--muted);
+      }
+      #brief dd {
+        margin: 0;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      #brief-bearing,
+      #brief-elevation {
+        color: var(--ink);
+        text-align: center;
+      }
+      #brief-az,
+      #brief-el {
+        width: 100%;
+        padding: 0;
+        margin: 0;
+        border: 0;
+        box-sizing: border-box;
+        flex: none;
+        accent-color: var(--accent);
+      }
+      #brief-elbars {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 34px;
+        flex: none;
+      }
+      #brief-elbars i {
+        flex: 1;
+        background: var(--line);
+        border-radius: 2px 2px 0 0;
+        min-height: 2px;
+      }
+      #brief-elbars i.on {
+        background: var(--accent);
+      }
+      #panel label {
+        color: var(--muted);
+        align-self: center;
+        flex: 1;
+      }
+      #minvis {
+        width: 64px;
+        flex: none;
+      }
+      #roofglass {
+        width: 110px;
+        flex: none;
+        padding: 0;
+        border: 0;
+        accent-color: var(--accent);
+      }
+      #brief .key {
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #brief .key i {
+        display: inline-block;
+        width: 90px;
+        height: 8px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, rgb(34, 40, 54), rgb(255, 190, 84));
+      }
+      #brief-deploy {
+        background: var(--accent);
+        color: #16110a;
+        border-color: var(--accent);
+        font-weight: 600;
+        padding: 9px 10px;
+      }
+      body.shot.briefshot #panel {
+        display: none;
+      }
       @media (max-width: 760px) {
-        #brief { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(220px, 1fr) auto; padding: 12px; gap: 12px; }
-        #brief-dial { height: 170px; }
+        #brief {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto minmax(220px, 1fr) auto;
+          padding: 12px;
+          gap: 12px;
+        }
+        #brief-dial {
+          height: 170px;
+        }
       }
       /* Storey switch: only meaningful in the plan view. */
       /* Room names over the plan view. They never take the pointer: wheel and drag go to the plan. */
-      #plan-labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
-      #panel { z-index: 2; }
-      #plan-labels span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 3px; background: rgba(7, 8, 12, 0.72); color: var(--ink); }
-      #plan-labels span.party { color: var(--accent); }
-      #plan-labels span.service, #plan-labels span.private { color: var(--muted); }
-      body.plan canvas { cursor: grab; }
-      #floors { display: none; }
-      body.plan #floors { display: flex; }
-      #plan-hint { display: none; color: var(--muted); }
-      body.plan #plan-hint { display: block; }
+      #plan-labels {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 0;
+      }
+      #panel {
+        z-index: 2;
+      }
+      #plan-labels span {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        white-space: nowrap;
+        font-size: 11px;
+        line-height: 1;
+        padding: 3px 5px;
+        border-radius: 3px;
+        background: rgba(7, 8, 12, 0.72);
+        color: var(--ink);
+      }
+      #plan-labels span.party {
+        color: var(--accent);
+      }
+      #plan-labels span.service,
+      #plan-labels span.private {
+        color: var(--muted);
+      }
+      body.plan canvas {
+        cursor: grab;
+      }
+      #floors {
+        display: none;
+      }
+      body.plan #floors {
+        display: flex;
+      }
+      #plan-hint {
+        display: none;
+        color: var(--muted);
+      }
+      body.plan #plan-hint {
+        display: block;
+      }
     </style>
   </head>
   <body>
-    <div id="reticle"><div class="h"></div><div class="v"></div></div>
+    <div id="reticle">
+      <div class="h"></div>
+      <div class="v"></div>
+    </div>
     <div id="plan-labels" aria-hidden="true"></div>
     <div id="panel">
       <h1>Mansion · twilight</h1>
       <div class="row"><input id="seed" spellcheck="false" /><button id="go">Build</button><button id="rnd">⟳</button></div>
       <div class="row">
-        <select id="style"><option value="">any style</option><option>palladian</option><option>georgian</option><option>beauxarts</option><option>orangery</option></select>
-        <select id="massing"><option value="">any plan</option><option>block</option><option>u-garden</option><option>u-entrance</option><option>h</option></select>
-        <select id="size"><option>grand</option><option>compact</option><option>palatial</option></select>
+        <select id="style">
+          <option value="">any style</option>
+          <option>palladian</option>
+          <option>georgian</option>
+          <option>beauxarts</option>
+          <option>orangery</option>
+        </select>
+        <select id="massing">
+          <option value="">any plan</option>
+          <option>block</option>
+          <option>u-garden</option>
+          <option>u-entrance</option>
+          <option>h</option>
+        </select>
+        <select id="size">
+          <option>grand</option>
+          <option>compact</option>
+          <option>palatial</option>
+        </select>
       </div>
       <div class="row">
         <select id="hall" title="Shape of the dome hall, chosen before the house is generated">
@@ -121,15 +400,23 @@
         <input id="brief-el" type="range" step="1" aria-label="Elevation above the horizon, degrees" />
         <button id="brief-deploy">Deploy here</button>
         <dl>
-          <dt>Indoor party floor in view</dt><dd id="brief-party"></dd>
-          <dt>Dome hall, stair and galleries in view</dt><dd id="brief-hall"></dd>
-          <dt>Terrace in view</dt><dd id="brief-terrace"></dd>
-          <dt>Ground floor out of sight</dt><dd id="brief-hidden"></dd>
-          <dt>Mission objects you can watch</dt><dd id="brief-pois"></dd>
+          <dt>Indoor party floor in view</dt>
+          <dd id="brief-party"></dd>
+          <dt>Dome hall, stair and galleries in view</dt>
+          <dd id="brief-hall"></dd>
+          <dt>Terrace in view</dt>
+          <dd id="brief-terrace"></dd>
+          <dt>Ground floor out of sight</dt>
+          <dd id="brief-hidden"></dd>
+          <dt>Mission objects you can watch</dt>
+          <dd id="brief-pois"></dd>
         </dl>
         <div class="key">unseen <i></i> in view</div>
         <div class="key">Scroll over the plan to zoom, drag to move it, double-click to reset.</div>
-        <div class="key">Bars show how much of the party each bearing or elevation sees. Low looks through the windows; high looks down through the glass roof. Dots are mission objects: white when you can watch them.</div>
+        <div class="key">
+          Bars show how much of the party each bearing or elevation sees. Low looks through the windows; high looks down through the glass roof. Dots are mission objects: white when you can watch
+          them.
+        </div>
       </aside>
     </section>
     <script type="module" src="./main.ts"></script>

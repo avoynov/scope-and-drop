@@ -34,13 +34,13 @@
  *
  * Everything is deterministic for a seed, and costs a few microseconds a sheet.
  */
-import type { RoundId } from './ballistics';
-import { ROUNDS } from './ballistics';
-import type { Vec3 } from './shot';
+import type { RoundId } from "./ballistics";
+import { ROUNDS } from "./ballistics";
+import type { Vec3 } from "./shot";
 
 /** One ply of a glazing. Glass is annealed float unless tempered; PVB is the laminating interlayer. */
 export interface Ply {
-  k: 'glass' | 'tempered' | 'pvb';
+  k: "glass" | "tempered" | "pvb";
   mm: number;
 }
 /** A sheet: plies bonded together, with an air gap in front of it (0 for the first). */
@@ -55,10 +55,28 @@ export interface Glazing {
 
 /** The windows a house has: old single glazing, a sealed double unit, laminated safety glass, toughened glass. */
 export const GLAZING = {
-  single: { name: 'single 4 mm', sheets: [{ plies: [{ k: 'glass', mm: 4 }], gapMm: 0 }] },
-  double: { name: 'double 4-16-4', sheets: [{ plies: [{ k: 'glass', mm: 4 }], gapMm: 0 }, { plies: [{ k: 'glass', mm: 4 }], gapMm: 16 }] },
-  laminated: { name: 'laminated 6.8 mm', sheets: [{ plies: [{ k: 'glass', mm: 3 }, { k: 'pvb', mm: 0.76 }, { k: 'glass', mm: 3 }], gapMm: 0 }] },
-  tempered: { name: 'tempered 6 mm', sheets: [{ plies: [{ k: 'tempered', mm: 6 }], gapMm: 0 }] },
+  single: { name: "single 4 mm", sheets: [{ plies: [{ k: "glass", mm: 4 }], gapMm: 0 }] },
+  double: {
+    name: "double 4-16-4",
+    sheets: [
+      { plies: [{ k: "glass", mm: 4 }], gapMm: 0 },
+      { plies: [{ k: "glass", mm: 4 }], gapMm: 16 },
+    ],
+  },
+  laminated: {
+    name: "laminated 6.8 mm",
+    sheets: [
+      {
+        plies: [
+          { k: "glass", mm: 3 },
+          { k: "pvb", mm: 0.76 },
+          { k: "glass", mm: 3 },
+        ],
+        gapMm: 0,
+      },
+    ],
+  },
+  tempered: { name: "tempered 6 mm", sheets: [{ plies: [{ k: "tempered", mm: 6 }], gapMm: 0 }] },
 } as const satisfies Record<string, Glazing>;
 export type GlazingId = keyof typeof GLAZING;
 
@@ -90,17 +108,23 @@ export interface GlassBullet {
  *    eighth as hard as a 7.62 at 750 m/s, so it stays whole unless the pane is steep.
  */
 export const GLASS_BULLET: Record<RoundId, GlassBullet> = {
-  '7n1': { diaM: 0.00792, lenM: 0.0323, jacket: 0.38, stripV: 850, deform: 0.25, breakup: 0 },
+  "7n1": { diaM: 0.00792, lenM: 0.0323, jacket: 0.38, stripV: 850, deform: 0.25, breakup: 0 },
   m118lr: { diaM: 0.00782, lenM: 0.0315, jacket: 0.3, stripV: 420, deform: 0.4, breakup: 0.3 },
   sp5: { diaM: 0.00925, lenM: 0.036, jacket: 0.28, stripV: 520, deform: 0.15, breakup: 0 },
 };
 
 const RHO_GLASS = 2500;
 /** Work of crushing glass and of stretching PVB, per metre of path per metre of presented width (J/m²). */
-const CRUSH: Record<Ply['k'], number> = { glass: 0.4e6, tempered: 0.55e6, pvb: 8.2e6 };
+const CRUSH: Record<Ply["k"], number> = { glass: 0.4e6, tempered: 0.55e6, pvb: 8.2e6 };
 /** Turn toward the normal, to the spin side and from the rub, scatter, and yaw, per unit of speed lost (see the header). */
-const TURN = 0.044, SPIN_SIDE = 0.046, SPIN_SIDE_TAN = 0.67, RUB = 0.039;
-const SCATTER = 0.039, SCATTER_IN = 1.2, SCATTER_OUT = 0.5, YAW = 1.2;
+const TURN = 0.044,
+  SPIN_SIDE = 0.046,
+  SPIN_SIDE_TAN = 0.67,
+  RUB = 0.039;
+const SCATTER = 0.039,
+  SCATTER_IN = 1.2,
+  SCATTER_OUT = 0.5,
+  YAW = 1.2;
 /** The yaw dies away over this distance (m). */
 const YAW_SETTLE_M = 80;
 /** Drag grows by this much per rad² of yaw (C_D = C_D0·(1 + k·δ²), k ≈ 15 for spitzers). */
@@ -148,7 +172,7 @@ export interface SheetHit {
 
 /** The bullet after the glass. */
 export interface Through {
-  outcome: 'through' | 'ricochet' | 'stopped';
+  outcome: "through" | "ricochet" | "stopped";
   /** Where it leaves the last face, and its velocity there. */
   pos: Vec3;
   vel: Vec3;
@@ -267,17 +291,18 @@ export function throughGlass(o: GlassShot): Through {
       v *= 0.85;
       hit.speedOut = v;
       hit.ricochet = true;
-      return { outcome: 'ricochet', pos, vel: [dir[0] * v, dir[1] * v, dir[2] * v], speed: v, massKg: m, stripped, yawMax: 1, swingM, turn: turned(), sheets };
+      return { outcome: "ricochet", pos, vel: [dir[0] * v, dir[1] * v, dir[2] * v], speed: v, massKg: m, stripped, yawMax: 1, swingM, turn: turned(), sheets };
     }
     // What it presents: its point if it is straight, more of its side the more it is yawed. A bare core is
     // about 0.87 of the calibre.
     const yaw = since === Infinity ? 0 : yawAfter(yawMax, yawSwing, since);
     const area = ((Math.PI * b.diaM * b.diaM) / 4) * (stripped ? 0.75 : 1) * Math.cos(yaw) + b.lenM * b.diaM * 0.8 * Math.sin(yaw);
     const width = b.diaM * (stripped ? 0.87 : 1) * Math.cos(yaw) + b.lenM * Math.sin(yaw);
-    let glassM = 0, crush = 0;
+    let glassM = 0,
+      crush = 0;
     for (const p of sh.plies) {
       const path = p.mm / 1000 / Math.max(0.2, cos);
-      if (p.k !== 'pvb') glassM += path;
+      if (p.k !== "pvb") glassM += path;
       crush += CRUSH[p.k] * path * width;
     }
     // The glass in its path taken up to its speed, then the crushing work off its energy.
@@ -287,7 +312,7 @@ export function throughGlass(o: GlassShot): Through {
     const e = 0.5 * m * v1 * v1 - crush - nose;
     if (e <= 0.5 * m * 20 * 20) {
       hit.speedOut = 0;
-      return { outcome: 'stopped', pos, vel: [0, 0, 0], speed: 0, massKg: m, stripped, yawMax, swingM, turn: turned(), sheets };
+      return { outcome: "stopped", pos, vel: [0, 0, 0], speed: 0, massKg: m, stripped, yawMax, swingM, turn: turned(), sheets };
     }
     const v2 = Math.sqrt((2 * e) / m);
     const f = 1 - v2 / v;
@@ -332,7 +357,7 @@ export function throughGlass(o: GlassShot): Through {
     pos = [pos[0] + dir[0] * l, pos[1] + dir[1] * l, pos[2] + dir[2] * l];
   }
   return {
-    outcome: 'through',
+    outcome: "through",
     pos,
     vel: [dir[0] * v, dir[1] * v, dir[2] * v],
     speed: v,

@@ -52,12 +52,7 @@ export function containsPoint(r: Rect, x: number, z: number, tol = 0): boolean {
 }
 
 export function containsRect(outer: Rect, inner: Rect, tol = EPS): boolean {
-  return (
-    inner.x0 >= outer.x0 - tol &&
-    inner.x1 <= outer.x1 + tol &&
-    inner.z0 >= outer.z0 - tol &&
-    inner.z1 <= outer.z1 + tol
-  );
+  return inner.x0 >= outer.x0 - tol && inner.x1 <= outer.x1 + tol && inner.z0 >= outer.z0 - tol && inner.z1 <= outer.z1 + tol;
 }
 
 /** A rectangle with other rectangles cut out of it, as a list of rectangles. */

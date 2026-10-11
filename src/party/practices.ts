@@ -7,26 +7,26 @@
  * Some beats carry a norm. Talking through the host's speech, or sitting down at table before the
  * host does, is a breach: whoever sees it close by frowns, and remembers it as rude.
  */
-import type { Rng } from '../mansion/core/rng';
-import { PARTY_LENGTH, phaseProgress, type Phase, type PhaseId } from './clock';
-import type { Memory } from './memory';
-import type { Places } from './places';
-import type { SoundKind } from './senses';
-import type { ActionId, Gesture, PartyEvent, Person } from './types';
+import type { Rng } from "../mansion/core/rng";
+import { PARTY_LENGTH, phaseProgress, type Phase, type PhaseId } from "./clock";
+import type { Memory } from "./memory";
+import type { Places } from "./places";
+import type { SoundKind } from "./senses";
+import type { ActionId, Gesture, PartyEvent, Person } from "./types";
 
-export type BeatId = 'tap' | 'hush' | 'procession' | 'host-sits' | 'table-turn' | 'open-dance' | 'surge' | 'band-break' | 'band-back' | 'last-call' | 'thanks';
-export type Norm = 'quiet' | 'host-first';
+export type BeatId = "tap" | "hush" | "procession" | "host-sits" | "table-turn" | "open-dance" | "surge" | "band-break" | "band-back" | "last-call" | "thanks";
+export type Norm = "quiet" | "host-first";
 
 /** Beats at a point in a phase (progress 0 to 1). */
 const SCRIPT: ReadonlyArray<{ id: BeatId; phase: PhaseId; at: number }> = [
-  { id: 'tap', phase: 'toast', at: 0.06 },
-  { id: 'hush', phase: 'toast', at: 0.08 },
-  { id: 'procession', phase: 'dinner', at: 0 },
-  { id: 'table-turn', phase: 'dinner', at: 0.4 },
-  { id: 'open-dance', phase: 'dancing', at: 0 },
-  { id: 'band-break', phase: 'dancing', at: 0.62 },
-  { id: 'band-back', phase: 'dancing', at: 0.74 },
-  { id: 'thanks', phase: 'farewell', at: 0 },
+  { id: "tap", phase: "toast", at: 0.06 },
+  { id: "hush", phase: "toast", at: 0.08 },
+  { id: "procession", phase: "dinner", at: 0 },
+  { id: "table-turn", phase: "dinner", at: 0.4 },
+  { id: "open-dance", phase: "dancing", at: 0 },
+  { id: "band-break", phase: "dancing", at: 0.62 },
+  { id: "band-back", phase: "dancing", at: 0.74 },
+  { id: "thanks", phase: "farewell", at: 0 },
 ];
 /** The speech runs from the hush until glasses go up (toast progress). */
 const SPEECH_END = 0.45;
@@ -50,10 +50,10 @@ export interface PracticesHost {
   readonly host: Person;
   readonly memory: Memory;
   readonly places: Places;
-  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void;
+  log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   gesture(p: Person, g: Gesture, secs: number): void;
   glance(p: Person, x: number, z: number, secs: number): void;
-  notable(p: Person, verb: 'rude', obj: number, secs: number): void;
+  notable(p: Person, verb: "rude", obj: number, secs: number): void;
   sound(kind: SoundKind, at: { level: number; x: number; z: number; room: number }, source: number): void;
 }
 
@@ -77,8 +77,8 @@ export class Practices {
     const ph = h.phase;
     const pr = phaseProgress(ph, h.t);
     for (const b of SCRIPT) if (b.phase === ph.id && pr >= b.at && !this.fired.has(b.id)) this.fire(b.id);
-    if (h.t >= PARTY_LENGTH - LAST_CALL && !this.fired.has('last-call')) this.fire('last-call');
-    if (this.fired.has('open-dance') && !this.fired.has('surge') && h.t >= this.fired.get('open-dance')! + OPEN) this.fire('surge');
+    if (h.t >= PARTY_LENGTH - LAST_CALL && !this.fired.has("last-call")) this.fire("last-call");
+    if (this.fired.has("open-dance") && !this.fired.has("surge") && h.t >= this.fired.get("open-dance")! + OPEN) this.fire("surge");
     if (this.speaking) {
       for (const w of this.whispers) if (w.at <= h.t && w.at > h.t - 0.5) this.whisper(h.people[w.who]!);
       if (stepNo % 4 === 0) this.watchSpeech();
@@ -89,17 +89,17 @@ export class Practices {
     const h = this.host;
     const host = h.host;
     this.fired.set(id, h.t);
-    if (id === 'tap') {
+    if (id === "tap") {
       // A spoon on a glass: the room turns.
-      h.sound('clink', host, host.id);
-      h.gesture(host, 'beckon', 2);
-    } else if (id === 'hush') this.planWhispers();
-    else if (id === 'table-turn') this.turnTable();
-    else if (id === 'last-call') {
+      h.sound("clink", host, host.id);
+      h.gesture(host, "beckon", 2);
+    } else if (id === "hush") this.planWhispers();
+    else if (id === "table-turn") this.turnTable();
+    else if (id === "last-call") {
       const bar = h.places.bars[0];
-      if (bar) h.sound('call', bar, -1);
+      if (bar) h.sound("call", bar, -1);
     }
-    h.log('beat', id === 'last-call' ? [] : [host.id], id === 'last-call' ? h.places.bars[0]?.room : host.room, id);
+    h.log("beat", id === "last-call" ? [] : [host.id], id === "last-call" ? h.places.bars[0]?.room : host.room, id);
   }
 
   /** Whether a beat fired within the last `secs`. */
@@ -111,30 +111,30 @@ export class Practices {
   /** The host's speech: from the hush until glasses go up. */
   get speaking(): boolean {
     const ph = this.host.phase;
-    return ph.id === 'toast' && this.fired.has('hush') && phaseProgress(ph, this.host.t) < SPEECH_END;
+    return ph.id === "toast" && this.fired.has("hush") && phaseProgress(ph, this.host.t) < SPEECH_END;
   }
 
   /** The band is on its break. */
   get bandBreak(): boolean {
-    return this.fired.has('band-break') && !this.fired.has('band-back');
+    return this.fired.has("band-break") && !this.fired.has("band-back");
   }
 
   /** The host couple have the floor to themselves. */
   get opening(): boolean {
-    return this.within('open-dance', OPEN);
+    return this.within("open-dance", OPEN);
   }
 
   /** How a beat pulls on a choice: 1 leaves it as it is. */
   mult(p: Person, a: ActionId): number {
     let k = 1;
-    if (a === 'dance') {
+    if (a === "dance") {
       const host = this.host.host;
       if (this.opening) k *= p === host || p.id === host.partner ? 4 : 0.05;
-      else if (this.within('surge', SURGE)) k *= 1.6;
+      else if (this.within("surge", SURGE)) k *= 1.6;
       if (this.bandBreak) k *= 0.4;
-    } else if (a === 'drink') {
+    } else if (a === "drink") {
       if (this.bandBreak) k *= 2;
-      if (this.within('last-call', LAST_CALL_FOR)) k *= 2.5;
+      if (this.within("last-call", LAST_CALL_FOR)) k *= 2.5;
     }
     return k;
   }
@@ -142,13 +142,13 @@ export class Practices {
   /** At table: whether a guest may sit yet. They stand behind the chair until the host is seated. */
   maySit(p: Person): boolean {
     const h = this.host;
-    if (p === h.host || h.phase.id !== 'dinner' || this.fired.has('host-sits') || h.host.seat === null) return true;
+    if (p === h.host || h.phase.id !== "dinner" || this.fired.has("host-sits") || h.host.seat === null) return true;
     return h.t - h.phase.start > SIT_WAIT;
   }
 
   /** The host has sat down: everyone may. */
   hostSat(): void {
-    if (!this.fired.has('host-sits')) this.fire('host-sits');
+    if (!this.fired.has("host-sits")) this.fire("host-sits");
   }
 
   /**
@@ -165,15 +165,15 @@ export class Practices {
       if (frowners.length >= FROWNERS) break;
       if (o === p || !o.present || o.staff || o.room !== p.room || o.level !== p.level || o.traits.propriety < 0.6) continue;
       if (Math.hypot(o.x - p.x, o.z - p.z) > NORM_RADIUS) continue;
-      h.gesture(o, 'frown', 1.5);
+      h.gesture(o, "frown", 1.5);
       h.glance(o, p.x, p.z, 1.5);
-      h.memory.observe(o.id, 'rude', p.id, -1, p.room);
+      h.memory.observe(o.id, "rude", p.id, -1, p.room);
       frowners.push(o.id);
     }
-    h.notable(p, 'rude', -1, 10);
+    h.notable(p, "rude", -1, 10);
     this.stats.breaches++;
     this.stats.frowns += frowners.length;
-    h.log('breach', [p.id, ...frowners], p.room, norm);
+    h.log("breach", [p.id, ...frowners], p.room, norm);
   }
 
   /** Through the speech, the less proper (and the tipsy) whisper to a neighbour now and then. */
@@ -190,13 +190,13 @@ export class Practices {
   }
 
   private whisper(p: Person): void {
-    if (!p.present || p.action?.id !== 'toast' || p.action.startedAt === null) return;
+    if (!p.present || p.action?.id !== "toast" || p.action.startedAt === null) return;
     const h = this.host;
     const near = h.people.find((q) => q !== p && q.present && !q.staff && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 1.5);
     if (!near) return;
-    h.gesture(p, 'lean', 3);
+    h.gesture(p, "lean", 3);
     h.glance(p, near.x, near.z, 3);
-    this.breach(p, 'quiet');
+    this.breach(p, "quiet");
   }
 
   /** Still chatting in the room while the host speaks. */
@@ -204,15 +204,15 @@ export class Practices {
     const h = this.host;
     const host = h.host;
     for (const p of h.people) {
-      if (p.staff || p === host || !p.present || p.room !== host.room || p.level !== host.level || p.pose !== 'talk') continue;
-      if (Math.hypot(p.x - host.x, p.z - host.z) < 14) this.breach(p, 'quiet');
+      if (p.staff || p === host || !p.present || p.room !== host.room || p.level !== host.level || p.pose !== "talk") continue;
+      if (Math.hypot(p.x - host.x, p.z - host.z) < 14) this.breach(p, "quiet");
     }
   }
 
   /** The table turns: everyone at dinner turns from one neighbour to the other. */
   private turnTable(): void {
     const h = this.host;
-    const diners = h.people.filter((p) => p.present && p.action?.id === 'dinner' && p.action.startedAt !== null && p.pose === 'sit');
+    const diners = h.people.filter((p) => p.present && p.action?.id === "dinner" && p.action.startedAt !== null && p.pose === "sit");
     for (const p of diners) {
       const by = diners.filter((q) => q !== p).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z));
       const other = by[1] ?? by[0];

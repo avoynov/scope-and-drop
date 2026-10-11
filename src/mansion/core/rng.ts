@@ -84,7 +84,7 @@ export class Rng {
   }
 
   pick<T>(items: readonly T[]): T {
-    if (items.length === 0) throw new Error('Rng.pick on empty list');
+    if (items.length === 0) throw new Error("Rng.pick on empty list");
     return items[Math.floor(this.next() * items.length)]!;
   }
 
@@ -92,7 +92,7 @@ export class Rng {
   weighted<T>(entries: ReadonlyArray<readonly [T, number]>): T {
     let total = 0;
     for (const [, w] of entries) total += Math.max(0, w);
-    if (total <= 0) throw new Error('Rng.weighted with no positive weights');
+    if (total <= 0) throw new Error("Rng.weighted with no positive weights");
     let r = this.next() * total;
     for (const [item, w] of entries) {
       if (w <= 0) continue;

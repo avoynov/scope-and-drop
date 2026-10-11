@@ -5,8 +5,8 @@
  * about 9° per m/s and straight out from 10 m/s) and flaps faster the harder it blows. Seen end-on, a flag in a
  * head or tail wind shows almost nothing of its width, which is the cue that the wind is worth little.
  */
-import * as THREE from 'three';
-import { windAt, type Wind } from '../../src/scope/wind';
+import * as THREE from "three";
+import { windAt, type Wind } from "../../src/scope/wind";
 
 export const FLAG_POLE_M = 3.5;
 const FLAG_L = 1.2;
@@ -42,8 +42,10 @@ export function createFlags(spots: readonly { x: number; z: number }[], heightAt
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, uniforms);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform vec2 uFlagWind;\nuniform float uFlagPhase, uFlagSeed;')
-        .replace('#include <beginnormal_vertex>', /* glsl */ `
+        .replace("#include <common>", "#include <common>\nuniform vec2 uFlagWind;\nuniform float uFlagPhase, uFlagSeed;")
+        .replace(
+          "#include <beginnormal_vertex>",
+          /* glsl */ `
           // Plane x along the fly (0 at the pole), y up the hoist; the hoist hangs from the pole top.
           float fu = position.x + .5;
           float fv = .5 - position.y;
@@ -71,10 +73,11 @@ export function createFlags(spots: readonly { x: number; z: number }[], heightAt
           #ifdef USE_TANGENT
             vec3 objectTangent = vec3( tangent.xyz );
           #endif
-        `)
-        .replace('#include <begin_vertex>', 'vec3 transformed = flagP;');
+        `,
+        )
+        .replace("#include <begin_vertex>", "vec3 transformed = flagP;");
     };
-    mat.customProgramCacheKey = () => 'range-flag';
+    mat.customProgramCacheKey = () => "range-flag";
     const cloth = new THREE.Mesh(clothGeo, mat);
     cloth.position.set(x, y - 0.1 + FLAG_POLE_M - 0.02, z);
     // The shadow map is drawn once; a flapping flag would leave its shadow behind, so it casts none.

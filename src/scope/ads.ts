@@ -37,7 +37,7 @@ interface Stroke {
 }
 
 export interface AdsMotion {
-  dir: 'in' | 'out';
+  dir: "in" | "out";
   start: number;
   base: Vec3;
   strokes: Stroke[];
@@ -99,9 +99,14 @@ export function planScopeIn(start: number, from: Vec3, vel: Vec3, n: number): Ad
     { t0: tc, T: Tc, d: sub(ON_WELD, land), v0: ZERO },
   ];
   return {
-    dir: 'in', start, base: { ...from }, strokes,
-    contact: 0.85 * Tp, squash: 0.5 + 0.4 * r(6),
-    roll: 1.1 * DEG * (0.8 + 0.4 * r(7)), rollT: Tp + 0.15,
+    dir: "in",
+    start,
+    base: { ...from },
+    strokes,
+    contact: 0.85 * Tp,
+    squash: 0.5 + 0.4 * r(6),
+    roll: 1.1 * DEG * (0.8 + 0.4 * r(7)),
+    rollT: Tp + 0.15,
     duration: Math.max(Tp + 0.08, tc + Tc) + 0.05,
   };
 }
@@ -117,9 +122,14 @@ export function planScopeOut(start: number, from: Vec3, vel: Vec3, n: number): A
     { t0: 0.04, T, d: { x: d.x, y: d.y, z: 0 }, v0: { x: vel.x, y: vel.y, z: 0 } },
   ];
   return {
-    dir: 'out', start, base: { ...from }, strokes,
-    contact: -1, squash: 0,
-    roll: -0.8 * DEG * (0.8 + 0.4 * r(5)), rollT: T + 0.1,
+    dir: "out",
+    start,
+    base: { ...from },
+    strokes,
+    contact: -1,
+    squash: 0,
+    roll: -0.8 * DEG * (0.8 + 0.4 * r(5)),
+    rollT: T + 0.1,
     duration: T + 0.1,
   };
 }

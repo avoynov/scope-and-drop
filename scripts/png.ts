@@ -1,6 +1,6 @@
 /** Minimal PNG writer (RGB8) for previews in Node. */
-import { deflateSync } from 'node:zlib';
-import { writeFileSync } from 'node:fs';
+import { deflateSync } from "node:zlib";
+import { writeFileSync } from "node:fs";
 
 const crcTable = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -15,7 +15,7 @@ function crc32(buf: Uint8Array): number {
 function chunk(type: string, data: Uint8Array): Buffer {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(data.length);
-  const td = Buffer.concat([Buffer.from(type, 'ascii'), Buffer.from(data)]);
+  const td = Buffer.concat([Buffer.from(type, "ascii"), Buffer.from(data)]);
   const crc = Buffer.alloc(4);
   crc.writeUInt32BE(crc32(td));
   return Buffer.concat([len, td, crc]);
@@ -32,5 +32,5 @@ export function writePng(path: string, w: number, h: number, rgb: Uint8Array): v
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
   ihdr[9] = 2;
-  writeFileSync(path, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', new Uint8Array())]));
+  writeFileSync(path, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", new Uint8Array())]));
 }

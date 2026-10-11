@@ -5,7 +5,7 @@
  * is compressed. People walk and gesture at real speed, so a sim step of `dt`
  * in-game seconds moves them `dt / TIME_SCALE` seconds' worth of distance.
  */
-import type { Rng } from '../mansion/core/rng';
+import type { Rng } from "../mansion/core/rng";
 
 /** In-game seconds per real second. */
 export const TIME_SCALE = 3;
@@ -14,7 +14,7 @@ export const PARTY_START = 19 * 3600;
 /** Three in-game hours. */
 export const PARTY_LENGTH = 3 * 3600;
 
-export type PhaseId = 'arrival' | 'mingle' | 'champagne' | 'toast' | 'dinner' | 'dancing' | 'games' | 'farewell';
+export type PhaseId = "arrival" | "mingle" | "champagne" | "toast" | "dinner" | "dancing" | "games" | "farewell";
 
 export interface Phase {
   id: PhaseId;
@@ -26,16 +26,16 @@ export interface Phase {
 
 /** The generic gala programme, in in-game minutes (spec: Match structure). */
 const PROGRAMME: ReadonlyArray<readonly [PhaseId, string, number]> = [
-  ['arrival', 'Arrival', 15],
-  ['mingle', 'Mingling', 15],
-  ['champagne', 'Champagne', 6],
-  ['toast', 'Toast', 6],
-  ['mingle', 'Mingling', 18],
-  ['dinner', 'Dinner', 40],
-  ['dancing', 'Dancing', 30],
-  ['games', 'Evening games', 25],
-  ['mingle', 'Mingling', 10],
-  ['farewell', 'Last toasts and departures', 15],
+  ["arrival", "Arrival", 15],
+  ["mingle", "Mingling", 15],
+  ["champagne", "Champagne", 6],
+  ["toast", "Toast", 6],
+  ["mingle", "Mingling", 18],
+  ["dinner", "Dinner", 40],
+  ["dancing", "Dancing", 30],
+  ["games", "Evening games", 25],
+  ["mingle", "Mingling", 10],
+  ["farewell", "Last toasts and departures", 15],
 ];
 
 /** Each inner boundary moves by up to this much per seed (in-game seconds). */
@@ -79,5 +79,5 @@ export function clockLabel(t: number): string {
   const s = Math.max(0, Math.floor(PARTY_START + t));
   const h = Math.floor(s / 3600) % 24;
   const m = Math.floor((s % 3600) / 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }

@@ -5,8 +5,8 @@
  * plan. The upper floor gets a stairwell hole over everything but the
  * approach zone, which is where the top flight arrives.
  */
-import { intersect, rect, type Rect } from '../core/geom';
-import type { LevelSpec, Stair, StairFlight } from '../core/types';
+import { intersect, rect, type Rect } from "../core/geom";
+import type { LevelSpec, Stair, StairFlight } from "../core/types";
 
 export interface StairParams {
   maxRiser: number;
@@ -52,17 +52,9 @@ export interface StairFit {
  * @param nearAtMin  true if the approach (near) end is at the region's min coordinate along `along`
  * @param bandsAtMin true if the flights hug the region's min edge across the flights
  */
-export function fitUStair(
-  region: Rect,
-  along: 'x' | 'z',
-  nearAtMin: boolean,
-  bandsAtMin: boolean,
-  y0: number,
-  rise: number,
-  p: StairParams,
-): StairFit | null {
-  const len = along === 'x' ? region.x1 - region.x0 : region.z1 - region.z0;
-  const span = along === 'x' ? region.z1 - region.z0 : region.x1 - region.x0;
+export function fitUStair(region: Rect, along: "x" | "z", nearAtMin: boolean, bandsAtMin: boolean, y0: number, rise: number, p: StairParams): StairFit | null {
+  const len = along === "x" ? region.x1 - region.x0 : region.z1 - region.z0;
+  const span = along === "x" ? region.z1 - region.z0 : region.x1 - region.x0;
   const fw = Math.min(p.maxWidth, (span - p.gap) / 2);
   if (fw < p.minWidth) return null;
   const n = Math.ceil(rise / p.maxRiser);
@@ -79,15 +71,15 @@ export function fitUStair(
     const toPlan = (u: number, v: number): { x: number; z: number } => {
       const U = nearAtMin ? u : len - u;
       const V = bandsAtMin ? v : span - v;
-      return along === 'x' ? { x: region.x0 + U, z: region.z0 + V } : { x: region.x0 + V, z: region.z0 + U };
+      return along === "x" ? { x: region.x0 + U, z: region.z0 + V } : { x: region.x0 + V, z: region.z0 + U };
     };
     const rectUV = (u0: number, v0: number, u1: number, v1: number): Rect => {
       const a = toPlan(u0, v0);
       const b = toPlan(u1, v1);
       return rect(a.x, a.z, b.x, b.z);
     };
-    const farward: StairFlight['dir'] = along === 'x' ? (nearAtMin ? '+x' : '-x') : nearAtMin ? '+z' : '-z';
-    const nearward: StairFlight['dir'] = along === 'x' ? (nearAtMin ? '-x' : '+x') : nearAtMin ? '-z' : '+z';
+    const farward: StairFlight["dir"] = along === "x" ? (nearAtMin ? "+x" : "-x") : nearAtMin ? "+z" : "-z";
+    const nearward: StairFlight["dir"] = along === "x" ? (nearAtMin ? "-x" : "+x") : nearAtMin ? "-z" : "+z";
     const foot1 = toPlan(approach, fw / 2);
     const foot2 = toPlan(len - fw, fw + p.gap + fw / 2);
     const flights: StairFlight[] = [
@@ -112,7 +104,7 @@ export function fitUStair(
  */
 export function fitStairBetween(
   id: string,
-  kind: Stair['kind'],
+  kind: Stair["kind"],
   bottom: { id: string; inner: Rect },
   top: { id: string; inner: Rect },
   from: LevelSpec,
@@ -122,16 +114,16 @@ export function fitStairBetween(
   const region0 = intersect(bottom.inner, top.inner);
   if (!region0) return null;
   const region = rect(region0.x0 + 0.05, region0.z0 + 0.05, region0.x1 - 0.05, region0.z1 - 0.05);
-  const params = kind === 'grand' ? GRAND_STAIR : SERVICE_STAIR;
+  const params = kind === "grand" ? GRAND_STAIR : SERVICE_STAIR;
   const w = region.x1 - region.x0;
   const d = region.z1 - region.z0;
-  const axes: ('x' | 'z')[] = w >= d ? ['x', 'z'] : ['z', 'x'];
+  const axes: ("x" | "z")[] = w >= d ? ["x", "z"] : ["z", "x"];
   const cx = (region.x0 + region.x1) / 2;
   const cz = (region.z0 + region.z1) / 2;
   for (const along of axes) {
     // Approach at the end nearest the preferred entry; flights against the far side.
-    const nearAtMin = along === 'x' ? prefer.x <= cx : prefer.z <= cz;
-    const bandsAtMin = along === 'x' ? prefer.z > cz : prefer.x > cx;
+    const nearAtMin = along === "x" ? prefer.x <= cx : prefer.z <= cz;
+    const bandsAtMin = along === "x" ? prefer.z > cz : prefer.x > cx;
     for (const [nm, bm] of [
       [nearAtMin, bandsAtMin],
       [nearAtMin, !bandsAtMin],

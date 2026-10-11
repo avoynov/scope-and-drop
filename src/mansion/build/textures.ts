@@ -6,8 +6,8 @@
  * the house. Most albedos are near-neutral and get their colour from vertex
  * tints (room finishes, stone tone), which lets every room share one material.
  */
-import * as THREE from 'three';
-import { clamp01, fbm, hash2i, lerp, smoothstep, vnoise, worley } from './noise';
+import * as THREE from "three";
+import { clamp01, fbm, hash2i, lerp, smoothstep, vnoise, worley } from "./noise";
 
 export interface TexFields {
   col: Float32Array;
@@ -961,100 +961,100 @@ function carpetTile(seed: number): TexSpec {
 /* ------------------------------------------------------------------ */
 
 export type TextureKey =
-  | 'ashlar'
-  | 'rusticated'
-  | 'brick'
-  | 'stucco'
-  | 'slate'
-  | 'zinc'
-  | 'lead'
-  | 'roofglass'
-  | 'herringbone'
-  | 'parquet'
-  | 'boards'
-  | 'marble'
-  | 'marble-floor'
-  | 'checker'
-  | 'flagstone'
-  | 'damask'
-  | 'silk'
-  | 'stripe'
-  | 'paneling'
-  | 'plaster'
-  | 'wood'
-  | 'fabric'
-  | 'books'
-  | 'grass'
-  | 'gravel'
-  | 'foliage'
-  | 'bark'
-  | 'soil'
-  | 'paintings'
-  | 'carpet'
+  | "ashlar"
+  | "rusticated"
+  | "brick"
+  | "stucco"
+  | "slate"
+  | "zinc"
+  | "lead"
+  | "roofglass"
+  | "herringbone"
+  | "parquet"
+  | "boards"
+  | "marble"
+  | "marble-floor"
+  | "checker"
+  | "flagstone"
+  | "damask"
+  | "silk"
+  | "stripe"
+  | "paneling"
+  | "plaster"
+  | "wood"
+  | "fabric"
+  | "books"
+  | "grass"
+  | "gravel"
+  | "foliage"
+  | "bark"
+  | "soil"
+  | "paintings"
+  | "carpet"
   | `rug${number}`;
 
 function specFor(key: TextureKey): TexSpec {
-  if (key.startsWith('rug')) return rug(31, Number(key.slice(3)));
+  if (key.startsWith("rug")) return rug(31, Number(key.slice(3)));
   switch (key) {
-    case 'ashlar':
+    case "ashlar":
       return ashlar(11);
-    case 'rusticated':
+    case "rusticated":
       return rusticated(12);
-    case 'brick':
+    case "brick":
       return brick(13);
-    case 'stucco':
+    case "stucco":
       return stucco(14);
-    case 'slate':
+    case "slate":
       return slate(15);
-    case 'zinc':
+    case "zinc":
       return zinc(16);
-    case 'lead':
+    case "lead":
       return lead(17);
-    case 'roofglass':
+    case "roofglass":
       return roofGlass(18);
-    case 'herringbone':
+    case "herringbone":
       return chevron(18);
-    case 'parquet':
+    case "parquet":
       return planks(19, 0.12, 1.2);
-    case 'boards':
+    case "boards":
       return planks(20, 0.2, 2.4);
-    case 'marble':
+    case "marble":
       return marble(21, 0);
-    case 'marble-floor':
+    case "marble-floor":
       return marble(22, 3);
-    case 'checker':
+    case "checker":
       return checker(23);
-    case 'flagstone':
+    case "flagstone":
       return flagstone(24);
-    case 'damask':
+    case "damask":
       return damask(25);
-    case 'silk':
+    case "silk":
       return silk(26);
-    case 'stripe':
+    case "stripe":
       return stripe(27);
-    case 'paneling':
+    case "paneling":
       return paneling(28);
-    case 'plaster':
+    case "plaster":
       return plaster(29);
-    case 'wood':
+    case "wood":
       return woodGrain(30);
-    case 'fabric':
+    case "fabric":
       return fabric(32);
-    case 'books':
+    case "books":
       return books(33);
-    case 'grass':
+    case "grass":
       return grass(34);
-    case 'gravel':
+    case "gravel":
       return gravel(35);
-    case 'foliage':
+    case "foliage":
       return foliage(36);
-    case 'bark':
+    case "bark":
       return bark(37);
-    case 'soil':
+    case "soil":
       return soil(38);
-    case 'paintings':
+    case "paintings":
       return paintings(39);
-    case 'carpet':
+    case "carpet":
       return carpetTile(40);
   }
   throw new Error(`unknown texture ${key}`);

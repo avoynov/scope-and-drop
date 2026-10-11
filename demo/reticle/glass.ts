@@ -1,7 +1,7 @@
 /**
  * The glass screens: a glazed window frame standing 4 m in front of each mannequin, so every rifle can be fired
  * through glass at the range it is meant for. The panel picks the glazing (src/scope/glass.ts) and turns the
- * frame up to 60° either way; "New pane" glazes it again.
+ * frame up to 60deg either way; "New pane" glazes it again.
  *
  * What the shooter sees through the scope:
  *  - The pane itself: both faces reflect the sky by Fresnel (4 % square-on, much more at a slant) and the sun
@@ -15,13 +15,17 @@
  *    blown back toward the shooter (spray.ts-style closed-form particles, in shooting.ts's sprite batch).
  * Everything is a function of the time since the bullet arrived, so stills are exact.
  */
-import * as THREE from 'three';
-import { GLAZING, glazingDepth, type Glazing, type GlazingId, type Sheet, type Through } from '../../src/scope/glass';
-import type { Vec3 } from '../../src/scope/shot';
-import { heightAt, type Range } from './scene';
+import * as THREE from "three";
+import { GLAZING, glazingDepth, type Glazing, type GlazingId, type Sheet, type Through } from "../../src/scope/glass";
+import type { Vec3 } from "../../src/scope/shot";
+import { heightAt, type Range } from "./scene";
 
 /** The glazed opening (m), its sill height, the frame's timber, and how far in front of the mannequin it stands. */
-const PANE_W = 1.0, PANE_H = 1.3, SILL = 0.62, BAR = 0.06, BEFORE_M = 4;
+const PANE_W = 1.0,
+  PANE_H = 1.3,
+  SILL = 0.62,
+  BAR = 0.06,
+  BEFORE_M = 4;
 const TEX = 512;
 const WOOD = 0x7a6248;
 /** Mean glass colour for the flecks: pale, a touch green at the edges. */
@@ -191,7 +195,7 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
     const box = (w: number, h: number, dz: number, x: number, y: number, z = 0) => {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, dz), wood);
       b.position.set(x, y, z);
-      b.name = 'frame';
+      b.name = "frame";
       b.castShadow = b.receiveShadow = true;
       group.add(b);
       return b;
@@ -212,13 +216,13 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
 
   const paneGeo = new THREE.PlaneGeometry(PANE_W, PANE_H);
   function makeSheet(sh: Sheet, depth: number, thick: number): SheetState {
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = canvas.height = TEX;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext("2d")!;
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.NoColorSpace;
     tex.anisotropy = 4;
-    const glassMm = sh.plies.filter((p) => p.k !== 'pvb').reduce((a, p) => a + p.mm, 0);
+    const glassMm = sh.plies.filter((p) => p.k !== "pvb").reduce((a, p) => a + p.mm, 0);
     const mat = new THREE.ShaderMaterial({
       vertexShader: vert,
       fragmentShader: frag,
@@ -235,17 +239,20 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
         uTime: { value: 0 },
         uSize: { value: new THREE.Vector2(PANE_W, PANE_H) },
         // Float glass absorbs about 0.6 % per mm; the PVB a little more.
-        uTrans: { value: Math.exp(-0.006 * glassMm) * (sh.plies.some((p) => p.k === 'pvb') ? 0.97 : 1) },
+        uTrans: { value: Math.exp(-0.006 * glassMm) * (sh.plies.some((p) => p.k === "pvb") ? 0.97 : 1) },
       },
     });
     const mesh = new THREE.Mesh(paneGeo, mat);
     mesh.position.set(0, SILL + PANE_H / 2, -(depth + thick / 2));
-    mesh.name = 'pane';
+    mesh.name = "pane";
     mesh.renderOrder = 1;
     return {
-      mesh, mat, ctx, tex,
-      tempered: sh.plies.some((p) => p.k === 'tempered'),
-      laminated: sh.plies.some((p) => p.k === 'pvb'),
+      mesh,
+      mat,
+      ctx,
+      tex,
+      tempered: sh.plies.some((p) => p.k === "tempered"),
+      laminated: sh.plies.some((p) => p.k === "pvb"),
       holes: [],
       goneAt: Infinity,
     };
@@ -285,7 +292,9 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
 
   /** Pane coordinates (m from its centre, right and up) of a world point. */
   const local = (s: Screen, p: Vec3): [number, number] => {
-    const dx = p[0] - s.centre.x, dy = p[1] - s.centre.y, dz = p[2] - s.centre.z;
+    const dx = p[0] - s.centre.x,
+      dy = p[1] - s.centre.y,
+      dz = p[2] - s.centre.z;
     return [dx * s.right.x + dy * s.right.y + dz * s.right.z, dx * s.up.x + dy * s.up.y + dz * s.up.z];
   };
   /** Whether sheet `k` still has glass at (u, v). */
@@ -340,10 +349,12 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
     const out: GlassSpray[] = [];
     const g = glazingAt(i, t.sheets[0]?.at ?? [s.centre.x, s.centre.y, s.centre.z]);
     // Map the pass's sheets back onto the glazing's (holed ones were skipped).
-    const whole = glazing!.sheets.map((_, k) => k).filter((k) => {
-      const [u, v] = local(s, t.sheets[0]!.at);
-      return intact(s.sheets[k]!, u, v);
-    });
+    const whole = glazing!.sheets
+      .map((_, k) => k)
+      .filter((k) => {
+        const [u, v] = local(s, t.sheets[0]!.at);
+        return intact(s.sheets[k]!, u, v);
+      });
     t.sheets.forEach((h, j) => {
       const k = whole[j];
       if (k === undefined || !g) return;
@@ -354,9 +365,17 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
       else if (!h.ricochet) st.holes.push({ u, v, r: diaM * (st.laminated ? 0.45 : 0.75) });
       marks.push({ at, screen: i, sheet: k, u, v, speed: h.speedIn, obliquity: h.obliquity, diaM, seed: seed * 5 + j, chip: h.ricochet, drawn: false });
       out.push({
-        at, pos: h.at, normal: [s.normal.x, s.normal.y, s.normal.z], dir: t.speed > 0 ? norm3(t.vel) : [-s.normal.x, -s.normal.y, -s.normal.z],
-        tempered: st.tempered, chip: h.ricochet, centre: [s.centre.x, s.centre.y, s.centre.z], right: [s.right.x, s.right.y, s.right.z], up: [s.up.x, s.up.y, s.up.z],
-        ground: s.group.position.y, seed: seed * 5 + j,
+        at,
+        pos: h.at,
+        normal: [s.normal.x, s.normal.y, s.normal.z],
+        dir: t.speed > 0 ? norm3(t.vel) : [-s.normal.x, -s.normal.y, -s.normal.z],
+        tempered: st.tempered,
+        chip: h.ricochet,
+        centre: [s.centre.x, s.centre.y, s.centre.z],
+        right: [s.right.x, s.right.y, s.right.z],
+        up: [s.up.x, s.up.y, s.up.z],
+        ground: s.group.position.y,
+        seed: seed * 5 + j,
       });
     });
     return out;
@@ -390,9 +409,15 @@ export function createGlass(range: Range, eye: THREE.Vector3) {
     frames: (i: number) => screens[i]!.frame,
     centre: (i: number) => screens[i]!.centre,
     count: screens.length,
-    get id() { return glazingId; },
-    get glazing() { return glazing; },
-    get depth() { return glazing ? glazingDepth(glazing) : 0; },
+    get id() {
+      return glazingId;
+    },
+    get glazing() {
+      return glazing;
+    },
+    get depth() {
+      return glazing ? glazingDepth(glazing) : 0;
+    },
   };
 }
 
@@ -409,20 +434,23 @@ function norm3(a: Vec3): Vec3 {
  */
 function drawHole(ctx: CanvasRenderingContext2D, m: Mark, laminated: boolean): void {
   const R = (i: number) => rnd(m.seed, i);
-  const sx = TEX / PANE_W, sy = TEX / PANE_H;
+  const sx = TEX / PANE_W,
+    sy = TEX / PANE_H;
   const X = (u: number) => (u / PANE_W + 0.5) * TEX;
   const Y = (v: number) => (0.5 - v / PANE_H) * TEX;
   const reach = Math.min(0.7, Math.max(0.05, 0.1 * Math.pow(600 / Math.max(150, m.speed), 0.8) * (1 + 0.8 * Math.min(4, Math.tan(m.obliquity))) * (laminated ? 1.1 : 1) * (m.chip ? 0.6 : 1)));
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineCap = 'round';
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
   // Radial cracks: jagged, now and then forking.
   const nRad = laminated ? 14 + Math.floor(R(1) * 9) : 7 + Math.floor(R(1) * 6);
   const ends: [number, number][][] = [];
   let k = 10;
   const crack = (u0: number, v0: number, a0: number, len: number, w: number) => {
     const pts: [number, number][] = [[u0, v0]];
-    let u = u0, v = v0, a = a0;
+    let u = u0,
+      v = v0,
+      a = a0;
     for (let s = 0; s < len; s += 0.012) {
       a += (R(k++) - 0.5) * 0.35;
       u += Math.cos(a) * 0.012;
@@ -430,7 +458,7 @@ function drawHole(ctx: CanvasRenderingContext2D, m: Mark, laminated: boolean): v
       pts.push([u, v]);
     }
     ctx.lineWidth = w * sx;
-    ctx.strokeStyle = 'rgba(255,0,0,0.85)';
+    ctx.strokeStyle = "rgba(255,0,0,0.85)";
     ctx.beginPath();
     pts.forEach(([pu, pv], i) => (i ? ctx.lineTo(X(pu), Y(pv)) : ctx.moveTo(X(pu), Y(pv))));
     ctx.stroke();
@@ -448,14 +476,15 @@ function drawHole(ctx: CanvasRenderingContext2D, m: Mark, laminated: boolean): v
   }
   // Concentric cracks: chords from one radial to the next at about the same distance out.
   const rings = laminated ? 4 + Math.floor(R(k++) * 4) : 1 + Math.floor(R(k++) * 3);
-  ctx.strokeStyle = 'rgba(255,0,0,0.7)';
+  ctx.strokeStyle = "rgba(255,0,0,0.7)";
   ctx.lineWidth = 0.0018 * sx;
   for (let r = 0; r < rings; r++) {
-    const rho = reach * (laminated ? 0.08 + 0.55 * (r + R(k++)) / rings : 0.15 + 0.35 * R(k++));
+    const rho = reach * (laminated ? 0.08 + (0.55 * (r + R(k++))) / rings : 0.15 + 0.35 * R(k++));
     ctx.beginPath();
     for (let i = 0; i < nRad; i++) {
       if (R(k++) > (laminated ? 0.85 : 0.65)) continue;
-      const p = ends[i]!, q = ends[(i + 1) % nRad]!;
+      const p = ends[i]!,
+        q = ends[(i + 1) % nRad]!;
       const a = p[Math.min(p.length - 1, Math.round(rho / 0.012))]!;
       const b = q[Math.min(q.length - 1, Math.round(rho / 0.012))]!;
       ctx.moveTo(X(a[0]), Y(a[1]));
@@ -466,9 +495,9 @@ function drawHole(ctx: CanvasRenderingContext2D, m: Mark, laminated: boolean): v
   // The frosted cone blown off the back face (larger for a slow bullet), or laminated glass's crushed disc.
   const frost = laminated ? 0.025 + 0.015 * R(k++) : m.diaM * (1.4 + 1.2 * R(k++)) * (1 + 150 / Math.max(150, m.speed));
   const gr = ctx.createRadialGradient(X(m.u), Y(m.v), 0, X(m.u), Y(m.v), frost * sx);
-  gr.addColorStop(0, 'rgba(0,255,0,1)');
-  gr.addColorStop(0.6, 'rgba(0,200,0,0.8)');
-  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  gr.addColorStop(0, "rgba(0,255,0,1)");
+  gr.addColorStop(0.6, "rgba(0,200,0,0.8)");
+  gr.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = gr;
   ctx.beginPath();
   ctx.ellipse(X(m.u), Y(m.v), frost * sx, frost * sy, 0, 0, 2 * Math.PI);
@@ -479,12 +508,13 @@ function drawHole(ctx: CanvasRenderingContext2D, m: Mark, laminated: boolean): v
   }
   // The hole: about the bullet, ragged, a little bigger for a slow one that knocks chips out of annealed glass.
   const hole = (m.diaM / 2) * (laminated ? 0.9 : 1.05 + 0.4 * R(k++) + (m.speed < 400 ? 0.6 : 0));
-  ctx.fillStyle = 'rgba(0,0,255,1)';
+  ctx.fillStyle = "rgba(0,0,255,1)";
   ctx.beginPath();
   for (let i = 0; i < 9; i++) {
     const a = (2 * Math.PI * i) / 9;
     const r = hole * (0.8 + 0.4 * R(k++));
-    const x = X(m.u + Math.cos(a) * r), y = Y(m.v + Math.sin(a) * r);
+    const x = X(m.u + Math.cos(a) * r),
+      y = Y(m.v + Math.sin(a) * r);
     if (i) ctx.lineTo(x, y);
     else ctx.moveTo(x, y);
   }
@@ -528,11 +558,16 @@ export function spray(s: GlassSpray, age: number, add: AddSprite): void {
     uy /= l0;
     uz /= l0;
     const h = Math.hypot(ux, uz) || 1;
-    const a = 2 * Math.PI * R(k + 1), c = 0.28 * Math.sqrt(R(k + 2));
-    const ca = c * Math.cos(a), sa = c * Math.sin(a);
+    const a = 2 * Math.PI * R(k + 1),
+      c = 0.28 * Math.sqrt(R(k + 2));
+    const ca = c * Math.cos(a),
+      sa = c * Math.sin(a);
     // e1 is level and square to u, e2 = u × e1.
-    const e1x = uz / h, e1z = -ux / h;
-    const e2x = uy * e1z, e2y = uz * e1x - ux * e1z, e2z = -uy * e1x;
+    const e1x = uz / h,
+      e1z = -ux / h;
+    const e2x = uy * e1z,
+      e2y = uz * e1x - ux * e1z,
+      e2z = -uy * e1x;
     ux += ca * e1x + sa * e2x;
     uy += sa * e2y;
     uz += ca * e1z + sa * e2z;
@@ -546,17 +581,28 @@ export function spray(s: GlassSpray, age: number, add: AddSprite): void {
     fleck(k + 5, x, y, z, 0.0012 + 0.004 * R(k + 6), age);
   }
   // Glass dust: a faint pale puff behind the pane, slowing and spreading.
-  if (age < 1.5) for (let i = 0; i < 4; i++) {
-    const k = 300 + i * 5;
-    const slow = 0.15 * (1 - Math.exp(-age / 0.15));
-    const sp = 4 + 10 * R(k);
-    add(s.pos[0] + (-nx + dx) * 0.5 * sp * slow, s.pos[1] + 0.05 * age, s.pos[2] + (-nz + dz) * 0.5 * sp * slow, 0.03 + 0.12 * Math.sqrt(age), 0.22 * Math.exp(-age / 0.5) * Math.min(1, age / 0.02), FLECK, R(k + 1), 0);
-  }
+  if (age < 1.5)
+    for (let i = 0; i < 4; i++) {
+      const k = 300 + i * 5;
+      const slow = 0.15 * (1 - Math.exp(-age / 0.15));
+      const sp = 4 + 10 * R(k);
+      add(
+        s.pos[0] + (-nx + dx) * 0.5 * sp * slow,
+        s.pos[1] + 0.05 * age,
+        s.pos[2] + (-nz + dz) * 0.5 * sp * slow,
+        0.03 + 0.12 * Math.sqrt(age),
+        0.22 * Math.exp(-age / 0.5) * Math.min(1, age / 0.02),
+        FLECK,
+        R(k + 1),
+        0,
+      );
+    }
   if (!s.tempered) return;
   // Tempered glass: the dice pour out of the frame, from the impact outward, a little forward and back.
   for (let i = 0; i < 70; i++) {
     const k = 400 + i * 6;
-    const u = (R(k) - 0.5) * PANE_W, v = (R(k + 1) - 0.5) * PANE_H;
+    const u = (R(k) - 0.5) * PANE_W,
+      v = (R(k + 1) - 0.5) * PANE_H;
     const [iu, iv] = [
       (s.pos[0] - s.centre[0]) * s.right[0] + (s.pos[1] - s.centre[1]) * s.right[1] + (s.pos[2] - s.centre[2]) * s.right[2],
       (s.pos[0] - s.centre[0]) * s.up[0] + (s.pos[1] - s.centre[1]) * s.up[1] + (s.pos[2] - s.centre[2]) * s.up[2],

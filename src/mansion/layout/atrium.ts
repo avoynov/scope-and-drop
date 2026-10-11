@@ -10,9 +10,9 @@
  * curved wall). The rest of the generator still thinks in rectangles, so the
  * curved shapes are handed to it as thin rectangular strips.
  */
-import { rect, type Rect, type Vec2 } from '../core/geom';
-import { snap } from '../core/rng';
-import type { HallShape, StairArm } from '../core/types';
+import { rect, type Rect, type Vec2 } from "../core/geom";
+import { snap } from "../core/rng";
+import type { HallShape, StairArm } from "../core/types";
 
 export interface AtriumGeometry {
   shape: HallShape;
@@ -168,7 +168,7 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
   if (vw < sw + 2.0 || zMax < minRadius) return null;
   let rx: number;
   let rz: number;
-  if (shape === 'rotunda') {
+  if (shape === "rotunda") {
     // A true apse: the back of the hall is a half oval as wide as the hall allows.
     rz = Math.min(vw, zMax);
     rx = Math.min(vw, (rz * rz) / minRadius);
@@ -180,14 +180,14 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
   const edge = eastEdge(cx, vw, zV, zF, rx, rz);
   const voidE = offset(edge, 0);
   const outerE: Vec2[] =
-    shape === 'rotunda'
+    shape === "rotunda"
       ? offset(edge, gw)
       : [
           { x: cx, z: zB },
           { x: inner.x1, z: zB },
           { x: inner.x1, z: zF },
         ];
-  if (shape === 'rotunda' && outerE[0]!.x > cx + 1e-6) outerE.unshift({ x: cx, z: zB });
+  if (shape === "rotunda" && outerE[0]!.x > cx + 1e-6) outerE.unshift({ x: cx, z: zB });
 
   // Stair arm centreline, east side: from beside the axis door, round the back corner, up the side.
   const centre = offset(edge, -sw / 2);
@@ -307,14 +307,17 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
   };
   const low = band(sFoot, lowTo);
   const blocked0 = [...strips(low, inner, false, -0.05), ...strips(mirror(low, cx), inner, false, -0.05)];
-  if (shape === 'rotunda') blocked0.push(...strips(footprint, inner, true));
+  if (shape === "rotunda") blocked0.push(...strips(footprint, inner, true));
 
   const curvedWalls: Vec2[][] = [];
-  if (shape === 'rotunda') {
+  if (shape === "rotunda") {
     // The arc alone: the straight runs before and after it lie on the rectangular walls.
     const hasBack = cx + vw - rx > cx + 1e-6;
     const arc = clean(offset(edge.slice(hasBack ? 1 : 0, edge.length - 1), gw));
-    curvedWalls.push(mirror(arc, cx).map((p) => ({ x: round(p.x), z: p.z })), arc);
+    curvedWalls.push(
+      mirror(arc, cx).map((p) => ({ x: round(p.x), z: p.z })),
+      arc,
+    );
   }
   const footPoint = pointAt(centre, cum, Math.max(0, sFoot - 0.45));
   return {
@@ -338,8 +341,8 @@ export function planAtriumGeometry(inner: Rect, shape: HallShape, floorY: number
     holesPlain: strips(outlinePlain, inner, true),
     columnBlocks: colBlocks,
     wallSpan: {
-      backX: shape === 'rotunda' ? [round(cx - (vw - rx)), round(cx + (vw - rx))] : [inner.x0, inner.x1],
-      sideZ: shape === 'rotunda' ? [round(zV + rz), inner.z1] : [inner.z0, inner.z1],
+      backX: shape === "rotunda" ? [round(cx - (vw - rx)), round(cx + (vw - rx))] : [inner.x0, inner.x1],
+      sideZ: shape === "rotunda" ? [round(zV + rz), inner.z1] : [inner.z0, inner.z1],
     },
     foot: [
       { x: round(footPoint.x), z: round(footPoint.z) },
@@ -379,5 +382,5 @@ function inscribedDome(footprint: Vec2[], cx: number, zB: number, zF: number): {
 /** Does a hall of this clear size take the stair in both hall shapes? Used by the massing to size the hall. */
 export function atriumFits(width: number, depth: number, rise: number): boolean {
   const inner = rect(-width / 2, 0, width / 2, depth);
-  return !!planAtriumGeometry(inner, 'gallery', 0, rise) && !!planAtriumGeometry(inner, 'rotunda', 0, rise);
+  return !!planAtriumGeometry(inner, "gallery", 0, rise) && !!planAtriumGeometry(inner, "rotunda", 0, rise);
 }

@@ -5,8 +5,8 @@
  * A hand is a palm and fifteen phalanges, each a capsule hinged at its joint, in a shooting glove; the wrist
  * runs into a sleeve, the forearm to the elbow and the upper arm on to the shoulder (solved in handling.ts).
  */
-import * as THREE from 'three';
-import { HAND, type HandState, type Side } from '../../src/scope/handling';
+import * as THREE from "three";
+import { HAND, type HandState, type Side } from "../../src/scope/handling";
 
 export interface Hand {
   group: THREE.Group;
@@ -24,7 +24,7 @@ function bone(r: number, len: number): THREE.BufferGeometry {
 export function buildHand(side: Side, glove: THREE.Material, sleeve: THREE.Material, place: (o: THREE.Mesh) => void): Hand {
   const group = new THREE.Group();
   const hand = new THREE.Group();
-  if (side === 'L') hand.scale.x = -1;
+  if (side === "L") hand.scale.x = -1;
   group.add(hand);
   const mesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D) => {
     const o = new THREE.Mesh(g, m);
@@ -126,7 +126,7 @@ export function buildHand(side: Side, glove: THREE.Material, sleeve: THREE.Mater
       joints.forEach((chain, i) => chain.forEach((j, k) => (j.rotation.x = -s.pose.f[i * 3 + k]!)));
       const [opp, mcp, ip] = s.pose.t as [number, number, number];
       // Opposition swings the thumb under the palm and turns it so that it bends toward the fingers.
-      thumb[0]!.rotation.set(-(0.25 + 0.2 * opp), 0.5 - 0.45 * opp, 0.9 * opp, 'YXZ');
+      thumb[0]!.rotation.set(-(0.25 + 0.2 * opp), 0.5 - 0.45 * opp, 0.9 * opp, "YXZ");
       thumb[1]!.rotation.x = -mcp;
       thumb[2]!.rotation.x = -ip;
       wristEnd.set(...s.arm.wrist);

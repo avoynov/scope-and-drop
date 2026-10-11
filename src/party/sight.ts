@@ -10,10 +10,10 @@
  * Walls are rasterised conservatively (any cell a wall touches is wall), so no line slips
  * through a thin wall on a diagonal; doorways and arches are cut back in by their centres.
  */
-import type { Vec2 } from '../mansion/core/geom';
-import type { MansionBlueprint, NavLevel, Opening, PropKind, Wall } from '../mansion/core/types';
-import type { Pathfinder } from './path';
-import type { World } from './world';
+import type { Vec2 } from "../mansion/core/geom";
+import type { MansionBlueprint, NavLevel, Opening, PropKind, Wall } from "../mansion/core/types";
+import type { Pathfinder } from "./path";
+import type { World } from "./world";
 
 export const SEE_OPEN = 0;
 export const SEE_WALL = 1;
@@ -25,7 +25,7 @@ export const SEE_SCREEN = 4;
 export const SEE_DOOR_OPEN = 0.5;
 
 /** Tall furniture that hides whoever stands behind it (its occluder lets through 40% or less). */
-const BLOCKS_SIGHT: ReadonlySet<PropKind> = new Set(['bookcase', 'wardrobe', 'cabinet', 'bar-shelf', 'clock', 'statue']);
+const BLOCKS_SIGHT: ReadonlySet<PropKind> = new Set(["bookcase", "wardrobe", "cabinet", "bar-shelf", "clock", "statue"]);
 /** Eye height above the floor (m): a window passes sight when its glass spans it. */
 const EYE = 1.6;
 
@@ -94,7 +94,7 @@ export class Sight {
     for (const [a, edges] of world.graph.entries()) {
       const from = a === T ? -2 : a;
       for (const e of edges) {
-        if (e.kind === 'stair') continue;
+        if (e.kind === "stair") continue;
         if (e.door >= 0) via(this.viaDoors, from, e.to, e.door);
         else join(from, e.to);
       }
@@ -200,7 +200,7 @@ export class Sight {
     }
     // Tall furniture.
     for (const p of bp.props) {
-      if (p.level !== n.level || !p.occludes || !BLOCKS_SIGHT.has(p.kind) || p.mount === 'ceiling') continue;
+      if (p.level !== n.level || !p.occludes || !BLOCKS_SIGHT.has(p.kind) || p.mount === "ceiling") continue;
       const q = Math.round(p.yaw / (Math.PI / 2)) & 1;
       const hw = (q ? p.d : p.w) / 2;
       const hd = (q ? p.w : p.d) / 2;
@@ -210,11 +210,11 @@ export class Sight {
     for (const w of bp.walls) {
       if (w.level !== n.level) continue;
       const half = w.thickness / 2;
-      const line = w.axis === 'x' ? w.a.z : w.a.x;
-      const t0 = w.axis === 'x' ? w.a.x : w.a.z;
-      const t1 = w.axis === 'x' ? w.b.x : w.b.z;
+      const line = w.axis === "x" ? w.a.z : w.a.x;
+      const t0 = w.axis === "x" ? w.a.x : w.a.z;
+      const t1 = w.axis === "x" ? w.b.x : w.b.z;
       const band = (a: number, b: number, v: number, overlapAlong: boolean, r = -1) => {
-        if (w.axis === 'x') {
+        if (w.axis === "x") {
           const [c0, c1] = cellRange(a, b, x0, cols, overlapAlong);
           const [r0, r1] = cellRange(line - half, line + half, z0, rows, true);
           for (let rr = r0; rr <= r1; rr++) for (let c = c0; c <= c1; c++) ((kind[rr * cols + c] = v), (ref[rr * cols + c] = r));
@@ -235,7 +235,7 @@ export class Sight {
         const b = t0 + o.u1;
         const door = doorOf.get(o.id);
         if (door !== undefined) band(a, b, SEE_DOOR, false, door);
-        else if (o.kind === 'arch' || (o.passable && !o.glazed && !w.exterior)) band(a, b, SEE_OPEN, false);
+        else if (o.kind === "arch" || (o.passable && !o.glazed && !w.exterior)) band(a, b, SEE_OPEN, false);
         else if (o.glazed && o.frosted) band(a, b, SEE_SCREEN, false);
         else if (this.seeThroughGlass(w, o)) {
           const c = curtainOf.get(o.id);
@@ -259,7 +259,7 @@ export class Sight {
     const v = g.kind[k]!;
     if (v === SEE_OPEN) return true;
     if (v === SEE_DOOR) return this.world.doors[g.ref[k]!]!.open >= SEE_DOOR_OPEN;
-    if (v === SEE_CURTAIN) return this.world.curtains[g.ref[k]!]!.state !== 'drawn';
+    if (v === SEE_CURTAIN) return this.world.curtains[g.ref[k]!]!.state !== "drawn";
     return false;
   }
 
@@ -323,7 +323,7 @@ export class Sight {
     const doors = this.viaDoors.get(k);
     if (doors) for (const d of doors) if (this.world.doors[d]!.open >= SEE_DOOR_OPEN) return true;
     const curtains = this.viaCurtains.get(k);
-    if (curtains) for (const c of curtains) if (this.world.curtains[c]!.state !== 'drawn') return true;
+    if (curtains) for (const c of curtains) if (this.world.curtains[c]!.state !== "drawn") return true;
     return false;
   }
 

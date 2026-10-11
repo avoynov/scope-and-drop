@@ -18,25 +18,25 @@
  * What a case looks like is data (`CASES`): a new kind of connecting the dots is a new row.
  * Nothing here ticks: every check runs when something is filed.
  */
-import type { Rng } from '../mansion/core/rng';
-import { TIE_WEIGHT, type Ident } from './ident';
-import { PASS_ON, VERB_IDS, VERBS, type Memory, type Verb } from './memory';
-import type { PartyEvent, Person } from './types';
-import type { World } from './world';
+import type { Rng } from "../mansion/core/rng";
+import { TIE_WEIGHT, type Ident } from "./ident";
+import { PASS_ON, VERB_IDS, VERBS, type Memory, type Verb } from "./memory";
+import type { PartyEvent, Person } from "./types";
+import type { World } from "./world";
 
 const MIN = 60;
 
 // ----------------------------------------------------------------- case templates
 
-export type CaseKind = 'gone' | 'person-gone' | 'dark' | 'locked' | 'noise' | 'cheating' | 'not-themselves';
-export const CASE_KINDS: readonly CaseKind[] = ['gone', 'person-gone', 'dark', 'locked', 'noise', 'cheating', 'not-themselves'];
+export type CaseKind = "gone" | "person-gone" | "dark" | "locked" | "noise" | "cheating" | "not-themselves";
+export const CASE_KINDS: readonly CaseKind[] = ["gone", "person-gone", "dark", "locked", "noise", "cheating", "not-themselves"];
 
 export interface CaseTemplate {
   /**
    * What fills the blank. place: whoever was seen in the room around then. pair: whoever the
    * subject was seen close with. doubt: nobody; things about the subject that don't fit add up.
    */
-  match: 'place' | 'pair' | 'doubt';
+  match: "place" | "pair" | "doubt";
   /** Suspicion of the one to blame, at full certainty (0 when it is nobody's fault). */
   severity: number;
   /** The leading candidate's share that settles it (the next must be under half of it). */
@@ -56,13 +56,13 @@ export interface CaseTemplate {
  * acquaintances (the user's call, 2026-10-10).
  */
 export const CASES: Record<CaseKind, CaseTemplate> = {
-  gone: { match: 'place', severity: 0.6, settle: 0.6, lookBack: 20 * MIN, juicy: 0.8, verb: 'gone' },
-  'person-gone': { match: 'place', severity: 0.5, settle: 0.6, lookBack: 20 * MIN, juicy: 0.9, verb: 'missing' },
-  dark: { match: 'place', severity: 0.15, settle: 0.6, lookBack: 2 * MIN, juicy: 0.5, verb: 'dark' },
-  locked: { match: 'place', severity: 0.1, settle: 0.6, lookBack: 5 * MIN, juicy: 0.4, verb: 'locked-door' },
-  noise: { match: 'place', severity: 0, settle: 0.6, lookBack: 1 * MIN, juicy: 0.6, verb: 'crash' },
-  cheating: { match: 'pair', severity: 0, settle: 0.52, lookBack: 90 * MIN, juicy: 1, verb: 'cheating' },
-  'not-themselves': { match: 'doubt', severity: 0.05, settle: 0.6, lookBack: 0, juicy: 0.5, verb: 'not-themselves' },
+  gone: { match: "place", severity: 0.6, settle: 0.6, lookBack: 20 * MIN, juicy: 0.8, verb: "gone" },
+  "person-gone": { match: "place", severity: 0.5, settle: 0.6, lookBack: 20 * MIN, juicy: 0.9, verb: "missing" },
+  dark: { match: "place", severity: 0.15, settle: 0.6, lookBack: 2 * MIN, juicy: 0.5, verb: "dark" },
+  locked: { match: "place", severity: 0.1, settle: 0.6, lookBack: 5 * MIN, juicy: 0.4, verb: "locked-door" },
+  noise: { match: "place", severity: 0, settle: 0.6, lookBack: 1 * MIN, juicy: 0.6, verb: "crash" },
+  cheating: { match: "pair", severity: 0, settle: 0.52, lookBack: 90 * MIN, juicy: 1, verb: "cheating" },
+  "not-themselves": { match: "doubt", severity: 0.05, settle: 0.6, lookBack: 0, juicy: 0.5, verb: "not-themselves" },
 };
 
 // ----------------------------------------------------------------------- sizes
@@ -151,7 +151,7 @@ export interface RegisterHost {
   readonly memory: Memory;
   readonly ident: Ident;
   readonly world: World;
-  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void;
+  log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
 }
 
 /** A case as the lab shows it. */
@@ -163,7 +163,7 @@ export interface CaseView {
   room: number;
   from: number;
   to: number;
-  state: 'open' | 'settled' | 'closed';
+  state: "open" | "settled" | "closed";
   firstHand: boolean;
   teller: number;
   candidates: Array<{ who: number; p: number }>;
@@ -185,7 +185,7 @@ export interface EntryView {
 
 /** What a turn of case talk did, for the party to show. */
 export interface CaseTalk {
-  what: 'ask' | 'lead';
+  what: "ask" | "lead";
   kind: CaseKind;
   room: number;
   /** Whoever answered (ask), or the one pointed at (lead). */
@@ -547,7 +547,7 @@ export class Register {
       this.span[s] = t - this.from[s]!;
       this.conf[s] = 1;
       this.at[s] = t;
-      if (verb !== 'was-in') {
+      if (verb !== "was-in") {
         this.verb[s] = VERB_IDS.indexOf(verb);
         this.obj[s] = obj;
         if (fact >= 0) this.fact[s] = fact;
@@ -582,16 +582,16 @@ export class Register {
   told(i: number, f: number, from: number): void {
     const m = this.host.memory;
     const verb = m.verbOf(f);
-    if (verb === 'blamed') return this.toldBlame(i, f, from);
+    if (verb === "blamed") return this.toldBlame(i, f, from);
     const c = this.caseByFact(from, f);
     if (c >= 0) {
       this.copyCase(i, from, c);
       return;
     }
-    if (verb === 'gone' || verb === 'missing') {
-      const kind: CaseKind = verb === 'gone' ? 'gone' : 'person-gone';
+    if (verb === "gone" || verb === "missing") {
+      const kind: CaseKind = verb === "gone" ? "gone" : "person-gone";
       const t0 = m.t[f]!;
-      this.open(i, kind, m.subject[f]!, verb === 'gone' ? m.object[f]! : -1, m.room[f]!, t0 - CASES[kind].lookBack, t0, f, from, from, 1);
+      this.open(i, kind, m.subject[f]!, verb === "gone" ? m.object[f]! : -1, m.room[f]!, t0 - CASES[kind].lookBack, t0, f, from, from, 1);
       return;
     }
     const e = this.entryByFact(from, f);
@@ -652,7 +652,10 @@ export class Register {
     if (w !== FORGOT) {
       for (let k = base; k < base + cap; k++) {
         if (!this.used[k] || (this.witness[k] !== w && this.teller[k] !== OWN)) continue;
-        const same = this.fact[e]! >= 0 ? this.fact[k] === this.fact[e] : this.who[k] === this.who[e] && this.joined(this.room[k]!, this.room[e]!) && Register.overlap(this.winFrom(k), this.winTo(k), this.winFrom(e), this.winTo(e)) > 0;
+        const same =
+          this.fact[e]! >= 0
+            ? this.fact[k] === this.fact[e]
+            : this.who[k] === this.who[e] && this.joined(this.room[k]!, this.room[e]!) && Register.overlap(this.winFrom(k), this.winTo(k), this.winFrom(e), this.winTo(e)) > 0;
         if (!same) continue;
         const c = this.confAt(e) * PASS_ON;
         if (this.teller[k] !== OWN && c > this.confAt(k)) {
@@ -702,7 +705,7 @@ export class Register {
     }
     const s = this.newEntry(i, true);
     this.who[s] = x;
-    this.verb[s] = VERB_IDS.indexOf('was-in');
+    this.verb[s] = VERB_IDS.indexOf("was-in");
     this.obj[s] = obj;
     this.room[s] = room;
     this.from[s] = from;
@@ -755,7 +758,7 @@ export class Register {
     const base = i * CASE_SLOTS;
     for (let c = base; c < base + CASE_SLOTS; c++) {
       if (!this.cUsed[c] || this.cKind[c] !== kind || this.cSubject[c] !== subject || this.cObj[c] !== obj) continue;
-      if (CASES[CASE_KINDS[kind]!].match === 'doubt') return c;
+      if (CASES[CASE_KINDS[kind]!].match === "doubt") return c;
       if (this.joined(this.cRoom[c]!, room) && Register.overlap(this.cFrom[c]!, this.cTo[c]!, from, to) > -FIT_GAP) return c;
     }
     return -1;
@@ -817,8 +820,8 @@ export class Register {
   heard(i: number, f: number): void {
     const m = this.host.memory;
     const v = m.verbOf(f);
-    if (v !== 'crash' && v !== 'scream') return;
-    this.open(i, 'noise', -1, -1, m.room[f]!, m.t[f]! - CASES.noise.lookBack, this.host.t, f);
+    if (v !== "crash" && v !== "scream") return;
+    this.open(i, "noise", -1, -1, m.room[f]!, m.t[f]! - CASES.noise.lookBack, this.host.t, f);
   }
 
   /** A case settled by the teller: i learns the case, and the teller's word counts as one vote. */
@@ -829,7 +832,7 @@ export class Register {
     // The teller's case: the one they settled, else the one about the same thing.
     for (let k = base; k < base + CASE_SLOTS && c < 0; k++) if (this.cUsed[k] && this.cBlamed[k] === f) c = k;
     for (let k = base; k < base + CASE_SLOTS && c < 0; k++) {
-      if (this.cUsed[k] && CASES[CASE_KINDS[this.cKind[k]!]!].match === 'place' && this.cObj[k] === m.object[f] && this.joined(this.cRoom[k]!, m.room[f]!)) c = k;
+      if (this.cUsed[k] && CASES[CASE_KINDS[this.cKind[k]!]!].match === "place" && this.cObj[k] === m.object[f] && this.joined(this.cRoom[k]!, m.room[f]!)) c = k;
     }
     const lc = c >= 0 ? this.copyCase(i, from, c) : -1;
     const blamed = m.subject[f]!;
@@ -903,13 +906,13 @@ export class Register {
     const T = CASES[CASE_KINDS[this.cKind[c]!]!];
     if (this.isClaim(s)) return 0;
     const v = VERB_IDS[this.verb[s]!]!;
-    if (T.match === 'place') {
+    if (T.match === "place") {
       // Someone's settled word on the same thing fits whenever it was said.
-      if (v === 'blamed') return this.obj[s] === this.cObj[c] && (this.cObj[c]! >= 0 || this.joined(this.cRoom[c]!, this.room[s]!)) ? 1 : 0;
+      if (v === "blamed") return this.obj[s] === this.cObj[c] && (this.cObj[c]! >= 0 || this.joined(this.cRoom[c]!, this.room[s]!)) ? 1 : 0;
       return this.roomFit(this.cRoom[c]!, this.room[s]!) * Register.timeFit(this.cFrom[c]!, this.cTo[c]!, this.winFrom(s), this.winTo(s));
     }
-    if (T.match === 'pair') {
-      if (v !== 'flirting' && v !== 'couple' && v !== 'cheating') return 0;
+    if (T.match === "pair") {
+      if (v !== "flirting" && v !== "couple" && v !== "cheating") return 0;
       const x = this.cSubject[c]!;
       if (this.who[s] !== x && this.obj[s] !== x) return 0;
       return Register.timeFit(this.cFrom[c]!, this.cTo[c]!, this.winFrom(s), this.winTo(s));
@@ -919,7 +922,7 @@ export class Register {
 
   /** The one a sighting points at for a pair case: whoever the subject was with. */
   private pointsAt(c: number, s: number): number {
-    if (CASES[CASE_KINDS[this.cKind[c]!]!].match !== 'pair') return this.who[s]!;
+    if (CASES[CASE_KINDS[this.cKind[c]!]!].match !== "pair") return this.who[s]!;
     return this.who[s] === this.cSubject[c] ? this.obj[s]! : this.who[s]!;
   }
 
@@ -929,7 +932,7 @@ export class Register {
     const x = this.cSubject[c]!;
     if (j === x) return true;
     const T = CASES[CASE_KINDS[this.cKind[c]!]!];
-    if (T.match === 'pair') return this.host.people[x]?.partner === j;
+    if (T.match === "pair") return this.host.people[x]?.partner === j;
     const hh = this.host.memory.household;
     return x >= 0 && hh[x] === 1 && hh[j] === 1;
   }
@@ -943,7 +946,7 @@ export class Register {
   weigh(i: number, c: number): void {
     const T = CASES[CASE_KINDS[this.cKind[c]!]!];
     const K = c * CANDIDATES;
-    if (T.match === 'doubt') {
+    if (T.match === "doubt") {
       const w = this.cWeight[c]!;
       this.cand[K] = this.cSubject[c]!;
       this.candP[K] = w / (w + UNKNOWN);
@@ -967,7 +970,7 @@ export class Register {
       const w = f * this.confAt(s) * this.sourceWeight(i, s);
       const key = this.witness[s]! >= 0 ? this.witness[s]! : n + (s - base);
       if (this.who[s]! >= 0) vote(this.pointsAt(c, s), key, w);
-      else if (T.match === 'place') {
+      else if (T.match === "place") {
         // Not yet a name: a share for every face i knows that fits the description.
         for (let j = 0; j < n; j++) {
           if (!ident.tieOf(i, j)) continue;
@@ -976,7 +979,7 @@ export class Register {
         }
       }
     }
-    if (T.match === 'place') {
+    if (T.match === "place") {
       // i's own last sight of each person, as one more sighting.
       const m = this.host.memory;
       for (let j = 0; j < n; j++) {
@@ -1049,15 +1052,15 @@ export class Register {
     const kind = CASE_KINDS[this.cKind[c]!]!;
     const T = CASES[kind];
     this.cState[c] = 1;
-    const f = m.fact('blamed', lead, this.cObj[c]!, this.cRoom[c]!, T.juicy, 0);
+    const f = m.fact("blamed", lead, this.cObj[c]!, this.cRoom[c]!, T.juicy, 0);
     // Their own conclusion: the case has already added the suspicion.
     m.learn(i, f, p, -1, 0, true);
     this.cBlamed[c] = f;
     this.stats.settled++;
-    this.host.log('blame', [i, lead], this.cRoom[c]!, kind);
+    this.host.log("blame", [i, lead], this.cRoom[c]!, kind);
     const x = this.cSubject[c]!;
     const people = this.host.people;
-    const host = people.find((q) => q.role === 'host');
+    const host = people.find((q) => q.role === "host");
     // The house's own things: a guest who knows the host (and half of those) goes and tells them.
     if (host && T.severity > 0 && x >= 0 && m.household[x] && !m.household[i] && !people[i]!.staff && this.host.ident.tieOf(i, host.id) >= 2 && this.rng.chance(TELL)) {
       this.wantTell[i] = c;
@@ -1148,14 +1151,14 @@ export class Register {
     this.stats.conflicts++;
     if (sa >= FIRM && sb >= FIRM && own) {
       this.firmClash(i, x, Math.min(sa, sb));
-      this.host.log('conflict', [i, x], this.room[a]!, 'not-themselves');
+      this.host.log("conflict", [i, x], this.room[a]!, "not-themselves");
       return;
     }
     // The weaker gives way, and whoever told it is believed a little less.
     const weak = b < 0 || sa < sb ? a : b;
     const ratio = Math.min(sa, sb) / Math.max(sa, sb, 1e-6);
     this.giveWay(i, weak, ratio);
-    this.host.log('conflict', [i, x], this.room[weak]!, 'two-places');
+    this.host.log("conflict", [i, x], this.room[weak]!, "two-places");
   }
 
   private giveWay(i: number, e: number, ratio: number): void {
@@ -1167,7 +1170,7 @@ export class Register {
   /** Neither gives way: i doubts it is really x, and suspects them a little. */
   private firmClash(i: number, x: number, w: number): void {
     const t = this.host.t;
-    const c = this.open(i, 'not-themselves', x, -1, -1, t, t);
+    const c = this.open(i, "not-themselves", x, -1, -1, t, t);
     this.cWeight[c]! += w;
     this.weigh(i, c);
     this.host.ident.addDoubt(i, x, FIRM_DOUBT, t);
@@ -1187,7 +1190,7 @@ export class Register {
     this.stats.conflicts++;
     if (!own && ss <= sc) {
       this.giveWay(i, s, ss / Math.max(sc, 1e-6));
-      this.host.log('conflict', [i, x], this.room[s]!, 'two-places');
+      this.host.log("conflict", [i, x], this.room[s]!, "two-places");
       return;
     }
     let sev = CLAIM_NONE;
@@ -1204,7 +1207,7 @@ export class Register {
     const k = i * this.n + x;
     if (this.broke[k]! < 255) this.broke[k]!++;
     if (this.broke[k] === 2) this.firmClash(i, x, 0.5);
-    this.host.log('conflict', [i, x], s >= 0 ? this.room[s]! : this.room[cl]!, 'claim');
+    this.host.log("conflict", [i, x], s >= 0 ? this.room[s]! : this.room[cl]!, "claim");
     // The case it answered: weigh again without the alibi.
     if (this.openN[i]) this.checkCases(i, cl);
   }
@@ -1230,7 +1233,7 @@ export class Register {
       this.who[s] = bj;
       this.stats.recognised++;
       // Worth a line in the log when it bears on a case.
-      if (this.openN[i] && this.bearsOnCase(i, s)) this.host.log('recognised', [i, bj], this.room[s]!);
+      if (this.openN[i] && this.bearsOnCase(i, s)) this.host.log("recognised", [i, bj], this.room[s]!);
     }
     this.check(i, s);
   }
@@ -1281,7 +1284,7 @@ export class Register {
     for (let c = base; c < base + CASE_SLOTS; c++) {
       if (!this.cUsed[c] || this.cState[c] !== 0) continue;
       const T = CASES[CASE_KINDS[this.cKind[c]!]!];
-      if (T.match === 'doubt') continue;
+      if (T.match === "doubt") continue;
       if (T.severity >= ASK_SEVERITY && t - this.cAsked[c]! >= ASK_EVERY && (ask < 0 || T.severity > CASES[CASE_KINDS[this.cKind[ask]!]!].severity)) ask = c;
       if (this.candP[c * CANDIDATES]! >= LEAD && !listeners.includes(this.cand[c * CANDIDATES]!) && (lead < 0 || this.candP[c * CANDIDATES]! > this.candP[lead * CANDIDATES]!)) lead = c;
     }
@@ -1303,7 +1306,7 @@ export class Register {
       for (const e of ev) for (const o of [sp, ...listeners]) if (o !== l) this.copyEntry(o, l, e);
     }
     this.stats.asked++;
-    return { what: 'ask', kind: CASE_KINDS[this.cKind[c]!]!, room: this.cRoom[c]!, others: answered };
+    return { what: "ask", kind: CASE_KINDS[this.cKind[c]!]!, room: this.cRoom[c]!, others: answered };
   }
 
   private passLead(sp: number, c: number, listeners: number[]): CaseTalk {
@@ -1314,7 +1317,7 @@ export class Register {
       if (e >= 0) this.copyEntry(l, sp, e);
     }
     this.stats.leads++;
-    return { what: 'lead', kind: CASE_KINDS[this.cKind[c]!]!, room: this.cRoom[c]!, others: [j] };
+    return { what: "lead", kind: CASE_KINDS[this.cKind[c]!]!, room: this.cRoom[c]!, others: [j] };
   }
 
   /** What i holds that fits a case best: up to k entries, i's own last sights filed as sightings first. */
@@ -1322,7 +1325,7 @@ export class Register {
     const m = this.host.memory;
     const n = this.n;
     const T = CASES[CASE_KINDS[this.cKind[c]!]!];
-    if (T.match === 'place') {
+    if (T.match === "place") {
       for (let j = 0; j < n; j++) {
         const lk = i * n + j;
         if (m.secondHand[lk] || m.lastT[lk]! < -1e8 || this.excluded(i, c, j)) continue;
@@ -1375,7 +1378,7 @@ export class Register {
       describe(b, this.desc, s * D);
       this.mask[s] = ALL;
     }
-    this.verb[s] = VERB_IDS.indexOf('was-in');
+    this.verb[s] = VERB_IDS.indexOf("was-in");
     this.room[s] = room;
     this.from[s] = at;
     this.to[s] = at;
@@ -1429,13 +1432,13 @@ export class Register {
         room: this.cRoom[c]!,
         from: this.cFrom[c]!,
         to: this.cTo[c]!,
-        state: this.cState[c] === 0 ? 'open' : this.cState[c] === 1 ? 'settled' : 'closed',
+        state: this.cState[c] === 0 ? "open" : this.cState[c] === 1 ? "settled" : "closed",
         firstHand: this.cTeller[c] === OWN,
         teller: this.cTeller[c]!,
         candidates,
       });
     }
-    return out.sort((a, b) => (a.state === 'open' ? 0 : 1) - (b.state === 'open' ? 0 : 1) || b.from - a.from);
+    return out.sort((a, b) => (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1) || b.from - a.from);
   }
 
   /** i's sightings and claims, newest first. */
@@ -1444,7 +1447,18 @@ export class Register {
     const base = i * E;
     for (let s = base; s < base + E; s++) {
       if (!this.used[s]) continue;
-      out.push({ slot: s, claim: this.isClaim(s), who: this.who[s]!, verb: VERB_IDS[this.verb[s]!]!, room: this.room[s]!, from: this.winFrom(s), to: this.winTo(s), conf: this.confAt(s), teller: this.teller[s]!, witness: this.witness[s]! });
+      out.push({
+        slot: s,
+        claim: this.isClaim(s),
+        who: this.who[s]!,
+        verb: VERB_IDS[this.verb[s]!]!,
+        room: this.room[s]!,
+        from: this.winFrom(s),
+        to: this.winTo(s),
+        conf: this.confAt(s),
+        teller: this.teller[s]!,
+        witness: this.witness[s]!,
+      });
     }
     return out.sort((a, b) => b.to - a.to);
   }
@@ -1467,13 +1481,13 @@ export class Register {
 
 // ------------------------------------------------------------------ descriptions
 
-const QUIRK_SEEN = ['glasses', 'limp', 'cane'] as const;
+const QUIRK_SEEN = ["glasses", "limp", "cane"] as const;
 
 /** Write someone's looks as a description: sex, height (cm), build, outfit colour, visible quirks. */
 function describe(p: Person, out: Float32Array, o: number): void {
   const L = p.look;
   const v = parseInt(L.color.slice(1), 16);
-  out[o] = L.sex === 'f' ? 1 : 0;
+  out[o] = L.sex === "f" ? 1 : 0;
   out[o + 1] = L.height * 100;
   out[o + 2] = L.build;
   out[o + 3] = ((v >> 16) & 255) / 255;

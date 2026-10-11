@@ -3,73 +3,160 @@
  * Each person has a look (told apart at 4× by outfit colour and silhouette), a role,
  * traits, quirks and relationships (spec: The cast).
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Places } from './places';
-import { NEED_IDS, SKILLS, STAFF_ROLES, type Archetype, type DrinkId, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Skill, type Traits } from './types';
+import type { Rng } from "../mansion/core/rng";
+import type { Places } from "./places";
+import { NEED_IDS, SKILLS, STAFF_ROLES, type Archetype, type DrinkId, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Skill, type Traits } from "./types";
 
 const FIRST: Record<Sex, string[]> = {
-  f: ['Adela', 'Beatrice', 'Clara', 'Daria', 'Elena', 'Flora', 'Greta', 'Helena', 'Irina', 'Julia', 'Katya', 'Lena', 'Maren', 'Nadia', 'Olga', 'Petra', 'Rosa', 'Sofia', 'Tamara', 'Vera', 'Yana', 'Zora', 'Agnes', 'Lidia', 'Mila', 'Ines', 'Edith', 'Vanya'],
-  m: ['Anton', 'Boris', 'Cyril', 'Dimitar', 'Emil', 'Felix', 'Georg', 'Hugo', 'Ivan', 'Jonas', 'Kiril', 'Leon', 'Marko', 'Nikolai', 'Oskar', 'Pavel', 'Rafael', 'Stefan', 'Teodor', 'Viktor', 'Yuri', 'Zachary', 'Arno', 'Lucas', 'Matthias', 'Rolf', 'Silvio', 'Bogdan'],
+  f: [
+    "Adela",
+    "Beatrice",
+    "Clara",
+    "Daria",
+    "Elena",
+    "Flora",
+    "Greta",
+    "Helena",
+    "Irina",
+    "Julia",
+    "Katya",
+    "Lena",
+    "Maren",
+    "Nadia",
+    "Olga",
+    "Petra",
+    "Rosa",
+    "Sofia",
+    "Tamara",
+    "Vera",
+    "Yana",
+    "Zora",
+    "Agnes",
+    "Lidia",
+    "Mila",
+    "Ines",
+    "Edith",
+    "Vanya",
+  ],
+  m: [
+    "Anton",
+    "Boris",
+    "Cyril",
+    "Dimitar",
+    "Emil",
+    "Felix",
+    "Georg",
+    "Hugo",
+    "Ivan",
+    "Jonas",
+    "Kiril",
+    "Leon",
+    "Marko",
+    "Nikolai",
+    "Oskar",
+    "Pavel",
+    "Rafael",
+    "Stefan",
+    "Teodor",
+    "Viktor",
+    "Yuri",
+    "Zachary",
+    "Arno",
+    "Lucas",
+    "Matthias",
+    "Rolf",
+    "Silvio",
+    "Bogdan",
+  ],
 };
-const SURNAMES = ['Albrecht', 'Bellamy', 'Castell', 'Draganov', 'Eckhart', 'Falk', 'Grisham', 'Hartley', 'Ivanova', 'Jansen', 'Kessler', 'Lindqvist', 'Marchetti', 'Novak', 'Orlov', 'Petrov', 'Quint', 'Rossi', 'Sterling', 'Thorne', 'Ulrich', 'Varga', 'Whitlock', 'Zanetti', 'Morrow', 'Avery', 'Delacroix', 'Halloran'];
+const SURNAMES = [
+  "Albrecht",
+  "Bellamy",
+  "Castell",
+  "Draganov",
+  "Eckhart",
+  "Falk",
+  "Grisham",
+  "Hartley",
+  "Ivanova",
+  "Jansen",
+  "Kessler",
+  "Lindqvist",
+  "Marchetti",
+  "Novak",
+  "Orlov",
+  "Petrov",
+  "Quint",
+  "Rossi",
+  "Sterling",
+  "Thorne",
+  "Ulrich",
+  "Varga",
+  "Whitlock",
+  "Zanetti",
+  "Morrow",
+  "Avery",
+  "Delacroix",
+  "Halloran",
+];
 
 /** Distinct outfit colourways, each a garment colour and an accent. Men's are mostly dark with a few standouts. */
 const MEN: ReadonlyArray<readonly [Outfit, string, string]> = [
-  ['tails', '#15161b', '#f1efe8'],
-  ['suit', '#1d2a44', '#e8e6df'],
-  ['suit', '#3a3d42', '#efece4'],
-  ['dinner-jacket', '#eee6d2', '#17181c'],
-  ['dinner-jacket', '#6b1f2c', '#ece8e0'],
-  ['suit', '#24432f', '#e9e6dc'],
-  ['suit', '#8a6e4b', '#f0ebe0'],
-  ['dinner-jacket', '#2c2f6b', '#f1efe8'],
-  ['suit', '#5e5f63', '#202226'],
-  ['tails', '#2b1d17', '#f3efe5'],
-  ['dinner-jacket', '#c9c5bb', '#15161b'],
-  ['suit', '#4a2b52', '#ebe7df'],
-  ['suit', '#0f3a4a', '#e9e6dc'],
-  ['dinner-jacket', '#7a5a1e', '#efe9dc'],
-  ['tails', '#2a2440', '#ece9e2'],
-  ['suit', '#5a1c1c', '#e9e4da'],
+  ["tails", "#15161b", "#f1efe8"],
+  ["suit", "#1d2a44", "#e8e6df"],
+  ["suit", "#3a3d42", "#efece4"],
+  ["dinner-jacket", "#eee6d2", "#17181c"],
+  ["dinner-jacket", "#6b1f2c", "#ece8e0"],
+  ["suit", "#24432f", "#e9e6dc"],
+  ["suit", "#8a6e4b", "#f0ebe0"],
+  ["dinner-jacket", "#2c2f6b", "#f1efe8"],
+  ["suit", "#5e5f63", "#202226"],
+  ["tails", "#2b1d17", "#f3efe5"],
+  ["dinner-jacket", "#c9c5bb", "#15161b"],
+  ["suit", "#4a2b52", "#ebe7df"],
+  ["suit", "#0f3a4a", "#e9e6dc"],
+  ["dinner-jacket", "#7a5a1e", "#efe9dc"],
+  ["tails", "#2a2440", "#ece9e2"],
+  ["suit", "#5a1c1c", "#e9e4da"],
 ];
 const WOMEN: ReadonlyArray<readonly [Outfit, string, string]> = [
-  ['long-dress', '#b3122b', '#e6c27a'],
-  ['long-dress', '#0f6b4f', '#e0d6c0'],
-  ['long-dress', '#d9b54a', '#3a2a12'],
-  ['short-dress', '#c3c7cc', '#2a2c30'],
-  ['long-dress', '#1f3f9a', '#d8d2c4'],
-  ['short-dress', '#141416', '#d9c08a'],
-  ['long-dress', '#f2ece0', '#7d6a4a'],
-  ['long-dress', '#5e1f63', '#e1cfa0'],
-  ['short-dress', '#16808a', '#ede6d6'],
-  ['long-dress', '#d76d84', '#f3e9e0'],
-  ['short-dress', '#e07a24', '#2a1b10'],
-  ['long-dress', '#6f7d3a', '#efe7d0'],
-  ['long-dress', '#8e1c1c', '#141416'],
-  ['short-dress', '#7aa6d9', '#20222a'],
-  ['short-dress', '#3b5a3a', '#e8e0cc'],
-  ['long-dress', '#c0a0d8', '#2a2233'],
+  ["long-dress", "#b3122b", "#e6c27a"],
+  ["long-dress", "#0f6b4f", "#e0d6c0"],
+  ["long-dress", "#d9b54a", "#3a2a12"],
+  ["short-dress", "#c3c7cc", "#2a2c30"],
+  ["long-dress", "#1f3f9a", "#d8d2c4"],
+  ["short-dress", "#141416", "#d9c08a"],
+  ["long-dress", "#f2ece0", "#7d6a4a"],
+  ["long-dress", "#5e1f63", "#e1cfa0"],
+  ["short-dress", "#16808a", "#ede6d6"],
+  ["long-dress", "#d76d84", "#f3e9e0"],
+  ["short-dress", "#e07a24", "#2a1b10"],
+  ["long-dress", "#6f7d3a", "#efe7d0"],
+  ["long-dress", "#8e1c1c", "#141416"],
+  ["short-dress", "#7aa6d9", "#20222a"],
+  ["short-dress", "#3b5a3a", "#e8e0cc"],
+  ["long-dress", "#c0a0d8", "#2a2233"],
 ];
-const SKIN = ['#f1d3bd', '#e7bf9f', '#d8a47f', '#b9805a', '#8f5a3b', '#5f3a26'];
-const HAIR = ['#1b1512', '#3b2a1e', '#6a4a2f', '#a07a4a', '#cfb07a', '#8a8a86', '#d8d5cf', '#5a1e14'];
-const QUIRKS: readonly Quirk[] = ['glasses', 'limp', 'cane', 'ear-scratch', 'hands-in-pockets', 'tie-adjust', 'big-laugh', 'smoker', 'watch-check', 'dances-after-drink'];
+const SKIN = ["#f1d3bd", "#e7bf9f", "#d8a47f", "#b9805a", "#8f5a3b", "#5f3a26"];
+const HAIR = ["#1b1512", "#3b2a1e", "#6a4a2f", "#a07a4a", "#cfb07a", "#8a8a86", "#d8d5cf", "#5a1e14"];
+const QUIRKS: readonly Quirk[] = ["glasses", "limp", "cane", "ear-scratch", "hands-in-pockets", "tie-adjust", "big-laugh", "smoker", "watch-check", "dances-after-drink"];
 
 /** How often each drink is someone's favourite (the evening's mix). */
 const FAV: ReadonlyArray<readonly [DrinkId, number]> = [
-  ['champagne', 3],
-  ['red', 3],
-  ['white', 2.5],
-  ['beer', 1.5],
-  ['whisky', 1.5],
-  ['water', 0.6],
+  ["champagne", 3],
+  ["red", 3],
+  ["white", 2.5],
+  ["beer", 1.5],
+  ["whisky", 1.5],
+  ["water", 0.6],
 ];
 /** The drink someone never touches: most often red wine or beer (milestone 2 plan), so a refusal proves little. */
 const NEVER: ReadonlyArray<readonly [DrinkId, number]> = [
-  ['red', 3],
-  ['beer', 3],
-  ['whisky', 2],
-  ['white', 1],
-  ['champagne', 0.5],
+  ["red", 3],
+  ["beer", 3],
+  ["whisky", 2],
+  ["white", 1],
+  ["champagne", 0.5],
 ];
 
 export interface CastOptions {
@@ -78,15 +165,15 @@ export interface CastOptions {
 }
 
 /** Staff outfits: the butler in tails, the band in black dinner jackets, the cloakroom in a dark waistcoat. */
-const STAFF_LOOK: Partial<Record<RoleId, Pick<Look, 'outfit' | 'color' | 'accent'>>> = {
-  butler: { outfit: 'tails', color: '#101115', accent: '#f1efe8' },
-  waiter: { outfit: 'waiter', color: '#ece9e1', accent: '#111214' },
-  bartender: { outfit: 'waiter', color: '#1a1b1f', accent: '#ece9e1' },
-  cook: { outfit: 'chef', color: '#f4f2ec', accent: '#f4f2ec' },
-  kitchenHand: { outfit: 'chef', color: '#dcdad2', accent: '#3a3a3a' },
-  cloakroom: { outfit: 'waiter', color: '#3b3542', accent: '#ece9e1' },
-  musician: { outfit: 'dinner-jacket', color: '#131418', accent: '#f1efe8' },
-  photographer: { outfit: 'suit', color: '#2e3036', accent: '#9aa0a8' },
+const STAFF_LOOK: Partial<Record<RoleId, Pick<Look, "outfit" | "color" | "accent">>> = {
+  butler: { outfit: "tails", color: "#101115", accent: "#f1efe8" },
+  waiter: { outfit: "waiter", color: "#ece9e1", accent: "#111214" },
+  bartender: { outfit: "waiter", color: "#1a1b1f", accent: "#ece9e1" },
+  cook: { outfit: "chef", color: "#f4f2ec", accent: "#f4f2ec" },
+  kitchenHand: { outfit: "chef", color: "#dcdad2", accent: "#3a3a3a" },
+  cloakroom: { outfit: "waiter", color: "#3b3542", accent: "#ece9e1" },
+  musician: { outfit: "dinner-jacket", color: "#131418", accent: "#f1efe8" },
+  photographer: { outfit: "suit", color: "#2e3036", accent: "#9aa0a8" },
 };
 
 /** Who does what fluently: the owner of a task about 0.95 (milestone 2 plan: Tasks). */
@@ -104,7 +191,7 @@ const FLUENT: Partial<Record<RoleId | Archetype, Partial<Record<Skill, number>>>
   dancer: { dance: 0.95 },
   billiards: { billiards: 0.95 },
   child: { tour: 0.7, keys: 0.8, errand: 0.8 },
-  'old-friend': { tour: 0.5 },
+  "old-friend": { tour: 0.5 },
   young: { dance: 0.7 },
   life: { dance: 0.75 },
   employee: { errand: 0.7 },
@@ -116,15 +203,15 @@ const FLUENT: Partial<Record<RoleId | Archetype, Partial<Record<Skill, number>>>
  */
 const PRESETS: Record<Archetype, { min?: Partial<Traits>; max?: Partial<Traits>; quirks?: Quirk[] }> = {
   honoree: { min: { social: 0.7, talk: 0.6 } },
-  'old-friend': { min: { social: 0.6, propriety: 0.85 }, max: { nerves: 0.4 } },
-  mother: { min: { nosy: 0.8, propriety: 0.9 }, max: { dance: 0.15, thirst: 0.4 }, quirks: ['cane'] },
+  "old-friend": { min: { social: 0.6, propriety: 0.85 }, max: { nerves: 0.4 } },
+  mother: { min: { nosy: 0.8, propriety: 0.9 }, max: { dance: 0.15, thirst: 0.4 }, quirks: ["cane"] },
   child: { min: { social: 0.6, curiosity: 0.5 } },
   boss: { min: { talk: 0.75, social: 0.75 } },
   employee: { min: { propriety: 0.85 }, max: { talk: 0.35 } },
-  'plus-one': { min: { curiosity: 0.6, nerves: 0.55 }, max: { social: 0.35, talk: 0.35 } },
+  "plus-one": { min: { curiosity: 0.6, nerves: 0.55 }, max: { social: 0.35, talk: 0.35 } },
   young: { min: { dance: 0.75, social: 0.6 }, max: { propriety: 0.75 } },
   elderly: { min: { propriety: 0.9 }, max: { dance: 0.25, thirst: 0.45 } },
-  life: { min: { talk: 0.85, social: 0.9, dance: 0.85, thirst: 0.75 }, max: { propriety: 0.65 }, quirks: ['big-laugh'] },
+  life: { min: { talk: 0.85, social: 0.9, dance: 0.85, thirst: 0.75 }, max: { propriety: 0.65 }, quirks: ["big-laugh"] },
   gossip: { min: { talk: 0.9, nosy: 0.85, social: 0.75 } },
   bore: { min: { talk: 0.9 }, max: { social: 0.45, curiosity: 0.3 } },
   flirt: { min: { social: 0.8, dance: 0.7 }, max: { propriety: 0.7 } },
@@ -169,10 +256,10 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
   let wi = 0;
   const people: Person[] = [];
   const make = (role: RoleId, sex: Sex, look?: Partial<Look>): Person => {
-    const pal = look?.outfit ? ([look.outfit, look.color ?? '#000000', look.accent ?? '#ffffff'] as const) : sex === 'm' ? men[mi++ % men.length]! : women[wi++ % women.length]!;
+    const pal = look?.outfit ? ([look.outfit, look.color ?? "#000000", look.accent ?? "#ffffff"] as const) : sex === "m" ? men[mi++ % men.length]! : women[wi++ % women.length]!;
     const lk: Look = {
       sex,
-      height: Math.round(rng.normal(sex === 'm' ? 1.78 : 1.65, 0.06) * 100) / 100,
+      height: Math.round(rng.normal(sex === "m" ? 1.78 : 1.65, 0.06) * 100) / 100,
       build: Math.max(0, Math.min(1, rng.normal(0.45, 0.2))),
       outfit: pal[0],
       color: pal[1],
@@ -201,7 +288,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       regular: false,
       seat: null,
       supper: null,
-      fav: 'champagne',
+      fav: "champagne",
       never: null,
       arriveAt: 0,
       phaseLag: rng.range(20, 150),
@@ -213,7 +300,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       y: 0,
       yaw: places.entrance.yaw,
       room: places.entrance.room,
-      pose: 'stand',
+      pose: "stand",
       held: null,
       heldUntil: 0,
       drinks: 0,
@@ -221,7 +308,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       tipsy: 0,
       item: -1,
       coat: -1,
-      ring: role === 'host' ? 'host' : STAFF_ROLES.has(role) ? 'staff' : 'none',
+      ring: role === "host" ? "host" : STAFF_ROLES.has(role) ? "staff" : "none",
       lentKey: -1,
       needs: freshNeeds(rng),
       action: null,
@@ -247,61 +334,61 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
   };
 
   // Staff first: they are in place before anyone arrives.
-  const host = make('host', rng.chance(0.7) ? 'm' : 'f');
+  const host = make("host", rng.chance(0.7) ? "m" : "f");
   host.traits.talk = Math.max(host.traits.talk, 0.7);
   host.traits.social = Math.max(host.traits.social, 0.8);
   // About a dozen staff for 20 to 30 guests (A Real Party: The staff's choreography).
-  const staff = (role: RoleId, pm: number) => make(role, rng.chance(pm) ? 'm' : 'f', STAFF_LOOK[role]);
-  staff('butler', 0.85);
+  const staff = (role: RoleId, pm: number) => make(role, rng.chance(pm) ? "m" : "f", STAFF_LOOK[role]);
+  staff("butler", 0.85);
   const nWaiters = rng.int(4, 6);
-  for (let i = 0; i < nWaiters; i++) staff('waiter', 0.5);
-  if (places.bars.length) staff('bartender', 0.6);
+  for (let i = 0; i < nWaiters; i++) staff("waiter", 0.5);
+  if (places.bars.length) staff("bartender", 0.6);
   if (places.kitchen.length) {
-    staff('cook', 0.6);
-    staff('kitchenHand', 0.5);
+    staff("cook", 0.6);
+    staff("kitchenHand", 0.5);
   }
-  staff('cloakroom', 0.35);
-  for (let i = 0; i < 3; i++) staff('musician', 0.6);
-  staff('photographer', 0.6);
+  staff("cloakroom", 0.35);
+  for (let i = 0; i < 3; i++) staff("musician", 0.6);
+  staff("photographer", 0.6);
 
   // Guests: roughly even men and women; special roles once each.
-  const guestRoles: RoleId[] = ['politician', 'dancer', 'billiards'];
-  if (rng.chance(0.6) && places.games.some((g) => g.kind === 'piano')) guestRoles.push('pianist');
-  if (rng.chance(0.6)) guestRoles.push('doctor');
+  const guestRoles: RoleId[] = ["politician", "dancer", "billiards"];
+  if (rng.chance(0.6) && places.games.some((g) => g.kind === "piano")) guestRoles.push("pianist");
+  if (rng.chance(0.6)) guestRoles.push("doctor");
   const first = people.length;
   for (let i = 0; i < nGuests; i++) {
-    const sex: Sex = i % 2 === 0 ? (rng.chance(0.5) ? 'm' : 'f') : people[people.length - 1]!.look.sex === 'm' ? 'f' : 'm';
-    const p = make(i < guestRoles.length ? guestRoles[i]! : 'guest', sex);
+    const sex: Sex = i % 2 === 0 ? (rng.chance(0.5) ? "m" : "f") : people[people.length - 1]!.look.sex === "m" ? "f" : "m";
+    const p = make(i < guestRoles.length ? guestRoles[i]! : "guest", sex);
     // Some men in black tails or dinner jackets wear a hat in; most take it off at the door, a few keep it.
-    p.look.hat = sex === 'm' && rng.chance(0.08);
+    p.look.hat = sex === "m" && rng.chance(0.08);
   }
   const guests = people.slice(first);
-  const politician = guests.find((g) => g.role === 'politician');
+  const politician = guests.find((g) => g.role === "politician");
   if (politician) {
     politician.traits.talk = Math.max(0.85, politician.traits.talk);
     politician.traits.social = Math.max(0.8, politician.traits.social);
-    if (places.globe) politician.quirks.push('globe-pointer');
+    if (places.globe) politician.quirks.push("globe-pointer");
   }
-  const dancer = guests.find((g) => g.role === 'dancer');
+  const dancer = guests.find((g) => g.role === "dancer");
   if (dancer) dancer.traits.dance = Math.max(0.85, dancer.traits.dance);
 
   // Quirks: 1–3 per guest; glasses and a limp are common, a cane rarer.
   for (const g of [host, ...guests]) {
     const n = rng.int(1, 3) - g.quirks.length;
-    const pool = rng.shuffle(QUIRKS.filter((q) => q !== 'tie-adjust' || g.look.sex === 'm'));
+    const pool = rng.shuffle(QUIRKS.filter((q) => q !== "tie-adjust" || g.look.sex === "m"));
     for (const q of pool) {
-      if (g.quirks.length >= n + (g.quirks.includes('globe-pointer') ? 1 : 0)) break;
-      if (q === 'cane' && (g.quirks.includes('limp') || !rng.chance(0.3))) continue;
-      if (q === 'limp' && !rng.chance(0.4)) continue;
+      if (g.quirks.length >= n + (g.quirks.includes("globe-pointer") ? 1 : 0)) break;
+      if (q === "cane" && (g.quirks.includes("limp") || !rng.chance(0.3))) continue;
+      if (q === "limp" && !rng.chance(0.4)) continue;
       g.quirks.push(q);
     }
-    if (g.quirks.includes('cane') && !g.quirks.includes('limp')) g.quirks.push('limp');
-    if (g.quirks.includes('limp')) g.speed *= 0.75;
-    if (g.quirks.includes('smoker')) g.traits.thirst = Math.min(1, g.traits.thirst + 0.1);
+    if (g.quirks.includes("cane") && !g.quirks.includes("limp")) g.quirks.push("limp");
+    if (g.quirks.includes("limp")) g.speed *= 0.75;
+    if (g.quirks.includes("smoker")) g.traits.thirst = Math.min(1, g.traits.thirst + 0.1);
   }
 
   // Couples: mostly a man and a woman, about half the guests; the host may bring a partner.
-  const single = rng.shuffle(guests.filter((g) => g.role !== 'politician' || rng.chance(0.5)));
+  const single = rng.shuffle(guests.filter((g) => g.role !== "politician" || rng.chance(0.5)));
   for (let i = 0; i < single.length; i++) {
     const a = single[i]!;
     if (a.partner !== null || !rng.chance(0.55)) continue;
@@ -328,7 +415,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
 
   // Arrivals over the first 15 minutes; couples together; one latecomer now and then.
   for (const g of guests) {
-    if (g.partner !== null && g.partner < g.id && people[g.partner]!.role !== 'host') {
+    if (g.partner !== null && g.partner < g.id && people[g.partner]!.role !== "host") {
       g.arriveAt = people[g.partner]!.arriveAt + rng.range(0, 8);
       continue;
     }
@@ -388,12 +475,12 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
     const u = rng.next();
     g.leaveAt = 0.55 * u * u;
   }
-  for (const g of guests) if (g.partner !== null && people[g.partner]!.role !== 'host') g.leaveAt = Math.min(g.leaveAt, people[g.partner]!.leaveAt);
+  for (const g of guests) if (g.partner !== null && people[g.partner]!.role !== "host") g.leaveAt = Math.min(g.leaveAt, people[g.partner]!.leaveAt);
   // One or two go after dessert: the elderly couple tire, now and then a babysitter or feeling unwell.
-  const early = guests.filter((g) => g.archetype === 'elderly');
-  for (const g of early) g.early = 'tired';
+  const early = guests.filter((g) => g.archetype === "elderly");
+  for (const g of early) g.early = "tired";
   const alone = guests.filter((q) => q.partner === null && q.archetype === null);
-  if (!early.length && alone.length && rng.chance(0.6)) rng.pick(alone).early = rng.chance(0.5) ? 'babysitter' : 'unwell';
+  if (!early.length && alone.length && rng.chance(0.6)) rng.pick(alone).early = rng.chance(0.5) ? "babysitter" : "unwell";
   return people;
 }
 
@@ -405,8 +492,8 @@ function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person
     const pr = PRESETS[a];
     LIMIT_TRAITS(g.traits, pr.min, pr.max);
     for (const q of pr.quirks ?? []) if (!g.quirks.includes(q)) g.quirks.push(q);
-    if (g.quirks.includes('cane') && !g.quirks.includes('limp')) {
-      g.quirks.push('limp');
+    if (g.quirks.includes("cane") && !g.quirks.includes("limp")) {
+      g.quirks.push("limp");
       g.speed *= 0.75;
     }
   };
@@ -418,7 +505,7 @@ function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person
     return g;
   };
   const couple = (a: Archetype) => {
-    const pool = free().filter((q) => q.partner !== null && people[q.partner]!.archetype === null && people[q.partner]!.role !== 'host');
+    const pool = free().filter((q) => q.partner !== null && people[q.partner]!.archetype === null && people[q.partner]!.role !== "host");
     if (!pool.length) return;
     const g = rng.pick(pool);
     set(g, a);
@@ -429,31 +516,31 @@ function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person
     if (!b.friends.includes(a.id)) b.friends.push(a.id);
   };
   // The guest of honour and an old friend of the house come every time.
-  const honoree = one('honoree', (g) => g.role === 'guest');
+  const honoree = one("honoree", (g) => g.role === "guest");
   if (honoree) tie(honoree, host);
-  const old = one('old-friend', (g) => g.role === 'guest');
+  const old = one("old-friend", (g) => g.role === "guest");
   if (old) {
     old.regular = true;
     tie(old, host);
   }
   if (rng.chance(0.5)) {
-    const m = one('mother', (g) => g.look.sex === 'f' && g.partner === null && g.role === 'guest');
+    const m = one("mother", (g) => g.look.sex === "f" && g.partner === null && g.role === "guest");
     if (m) {
       m.regular = true;
-      m.look.color = '#b9a3cf';
+      m.look.color = "#b9a3cf";
       tie(m, host);
     }
   }
   if (rng.chance(0.5)) {
-    const c = one('child', (g) => g.partner === null && g.role === 'guest');
+    const c = one("child", (g) => g.partner === null && g.role === "guest");
     if (c) {
       c.regular = true;
       tie(c, host);
     }
   }
   if (rng.chance(0.5)) {
-    const b = one('boss', (g) => g.partner === null);
-    const e = b ? one('employee', (g) => g.partner === null) : null;
+    const b = one("boss", (g) => g.partner === null);
+    const e = b ? one("employee", (g) => g.partner === null) : null;
     if (b && e) {
       b.linked = e.id;
       e.linked = b.id;
@@ -461,7 +548,7 @@ function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person
     }
   }
   if (rng.chance(0.7)) {
-    const p = one('plus-one', (g) => g.partner !== null);
+    const p = one("plus-one", (g) => g.partner !== null);
     if (p) {
       // Knows nobody but their partner.
       for (const f of p.friends) people[f]!.friends = people[f]!.friends.filter((x) => x !== p.id);
@@ -469,15 +556,15 @@ function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person
       p.regular = false;
     }
   }
-  if (rng.chance(0.6)) couple('young');
-  if (rng.chance(0.5)) couple('elderly');
-  one('life');
-  one('gossip');
-  one('bore');
-  if (rng.chance(0.6)) one('flirt', (g) => g.partner === null);
+  if (rng.chance(0.6)) couple("young");
+  if (rng.chance(0.5)) couple("elderly");
+  one("life");
+  one("gossip");
+  one("bore");
+  if (rng.chance(0.6)) one("flirt", (g) => g.partner === null);
   if (rng.chance(0.4)) {
-    const a = one('ex', (g) => g.partner === null);
-    const b = a ? one('ex', (g) => g.partner === null && g.look.sex !== a.look.sex && !a.friends.includes(g.id)) : null;
+    const a = one("ex", (g) => g.partner === null);
+    const b = a ? one("ex", (g) => g.partner === null && g.look.sex !== a.look.sex && !a.friends.includes(g.id)) : null;
     if (a && b) {
       a.ex = b.id;
       b.ex = a.id;

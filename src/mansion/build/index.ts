@@ -6,21 +6,21 @@
  * shadows. Returns handles the game needs: the root group, the perch camera
  * pose, materials (for quality toggles) and a dispose().
  */
-import * as THREE from 'three';
-import type { LightSpec, MansionBlueprint, Room } from '../core/types';
-import { buildFacades, buildInteriors, buildReveals, type ArchContext, type CurtainSpec, type DoorLeafSpec, type Fittings } from './arch';
-import { buildAtrium, buildDome } from './atrium';
-import { GeometryBuilder } from './geometry';
-import { ScopedLighting } from './lighting';
-import { MaterialLibrary, RECIPES } from './materials';
-import { buildLanterns, buildProps } from './props';
-import { buildPorticos, buildRoofs } from './roofs';
-import { buildGardens, buildTerrain, buildTrees } from './site';
-import { dirFromAzEl, TwilightSky } from './sky';
-import { buildStairs } from './stairs';
-import { TextureLibrary } from './textures';
+import * as THREE from "three";
+import type { LightSpec, MansionBlueprint, Room } from "../core/types";
+import { buildFacades, buildInteriors, buildReveals, type ArchContext, type CurtainSpec, type DoorLeafSpec, type Fittings } from "./arch";
+import { buildAtrium, buildDome } from "./atrium";
+import { GeometryBuilder } from "./geometry";
+import { ScopedLighting } from "./lighting";
+import { MaterialLibrary, RECIPES } from "./materials";
+import { buildLanterns, buildProps } from "./props";
+import { buildPorticos, buildRoofs } from "./roofs";
+import { buildGardens, buildTerrain, buildTrees } from "./site";
+import { dirFromAzEl, TwilightSky } from "./sky";
+import { buildStairs } from "./stairs";
+import { TextureLibrary } from "./textures";
 
-export type Quality = 'low' | 'medium' | 'high';
+export type Quality = "low" | "medium" | "high";
 
 export interface BuildOptions {
   renderer: THREE.WebGLRenderer;
@@ -73,7 +73,7 @@ function mulberry(seed: number): () => number {
 }
 
 /** The static geometry pass, needing no WebGL: every mesher in order into one builder, plus the fittings left out of it. */
-export function meshMansion(bp: MansionBlueprint, opts: Pick<BuildOptions, 'dynamicDoors' | 'dynamicCurtains'> = {}): { g: GeometryBuilder; doorLeaves: DoorLeafSpec[]; curtains: CurtainSpec[] } {
+export function meshMansion(bp: MansionBlueprint, opts: Pick<BuildOptions, "dynamicDoors" | "dynamicCurtains"> = {}): { g: GeometryBuilder; doorLeaves: DoorLeafSpec[]; curtains: CurtainSpec[] } {
   const g = new GeometryBuilder();
   const rand = mulberry(bp.seed.length * 7919 + bp.attempt);
   const fittings: Fittings = { doors: opts.dynamicDoors ?? false, drapes: opts.dynamicCurtains ?? null, doorLeaves: [], curtains: [] };
@@ -95,7 +95,7 @@ export function meshMansion(bp: MansionBlueprint, opts: Pick<BuildOptions, 'dyna
 
 export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMansion {
   const t0 = performance.now();
-  const q = QUALITY[opts.quality ?? 'medium'];
+  const q = QUALITY[opts.quality ?? "medium"];
   const renderer = opts.renderer;
   const root = new THREE.Group();
   root.name = `mansion:${bp.seed}`;
@@ -107,26 +107,26 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   const lighting = new ScopedLighting(bp, opts.lightScale ?? 0.08);
   const textures = new TextureLibrary(Math.min(q.aniso, renderer.capabilities.getMaxAnisotropy()), q.tex);
   const materials = new MaterialLibrary(textures, lighting, envMap);
-  if (opts.roofGlassOpacity !== undefined) materials.get('roof-glass').opacity = Math.max(0, Math.min(1, opts.roofGlassOpacity));
+  if (opts.roofGlassOpacity !== undefined) materials.get("roof-glass").opacity = Math.max(0, Math.min(1, opts.roofGlassOpacity));
 
   const { g, doorLeaves, curtains } = meshMansion(bp, opts);
 
   let triangles = 0;
   let meshes = 0;
   for (const [key, geo] of g.build()) {
-    const mat = materials.get(RECIPES[key] ? key : 'white');
+    const mat = materials.get(RECIPES[key] ? key : "white");
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = key;
     const transparent = mat.transparent;
-    mesh.castShadow = !transparent && !key.startsWith('floor-') && key !== 'ceiling' && !key.startsWith('rug');
+    mesh.castShadow = !transparent && !key.startsWith("floor-") && key !== "ceiling" && !key.startsWith("rug");
     mesh.receiveShadow = !transparent;
     if (transparent) mesh.renderOrder = 2;
     root.add(mesh);
     triangles += (geo.index?.count ?? 0) / 3;
     meshes++;
   }
-  const terrain = new THREE.Mesh(buildTerrain(bp, q.level), materials.get('grass'));
-  terrain.name = 'terrain';
+  const terrain = new THREE.Mesh(buildTerrain(bp, q.level), materials.get("grass"));
+  terrain.name = "terrain";
   terrain.receiveShadow = true;
   root.add(terrain);
   triangles += (terrain.geometry.index?.count ?? 0) / 3;
@@ -194,6 +194,6 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   };
 }
 
-export type { CurtainSpec, DoorLeafSpec } from './arch';
-export { ScopedLighting } from './lighting';
-export { TwilightSky } from './sky';
+export type { CurtainSpec, DoorLeafSpec } from "./arch";
+export { ScopedLighting } from "./lighting";
+export { TwilightSky } from "./sky";

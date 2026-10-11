@@ -10,19 +10,19 @@
  * Sounds carry over the room graph, losing level with distance and through doors, and are
  * heard where they beat the room's own noise. Hearing gives where and what, never who.
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Body } from './body';
-import type { PhaseId } from './clock';
-import type { Ident } from './ident';
-import { WARY, type Memory, type Verb } from './memory';
-import type { Mood } from './mood';
-import type { Places } from './places';
-import type { Register } from './register';
-import type { Sight } from './sight';
-import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from './types';
-import type { World } from './world';
+import type { Rng } from "../mansion/core/rng";
+import type { Body } from "./body";
+import type { PhaseId } from "./clock";
+import type { Ident } from "./ident";
+import { WARY, type Memory, type Verb } from "./memory";
+import type { Mood } from "./mood";
+import type { Places } from "./places";
+import type { Register } from "./register";
+import type { Sight } from "./sight";
+import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from "./types";
+import type { World } from "./world";
 
-export type SoundKind = 'knock' | 'bolt' | 'clink' | 'laugh' | 'raised-voice' | 'dropped-tray' | 'breaking-glass' | 'slap' | 'door-slam' | 'scream' | 'shutter' | 'call';
+export type SoundKind = "knock" | "bolt" | "clink" | "laugh" | "raised-voice" | "dropped-tray" | "breaking-glass" | "slap" | "door-slam" | "scream" | "shutter" | "call";
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -39,16 +39,16 @@ interface SoundSpec {
  * through a shut door.
  */
 export const SOUNDS: Record<SoundKind, SoundSpec> = {
-  knock: { db: 58, tension: 0, fact: 'bathroom-taken' },
+  knock: { db: 58, tension: 0, fact: "bathroom-taken" },
   bolt: { db: 50, tension: 0 },
   clink: { db: 50, tension: 0 },
   laugh: { db: 65, tension: 0 },
-  'raised-voice': { db: 65, tension: 0.02, fact: 'raised-voices' },
-  'dropped-tray': { db: 65, tension: 0.01, fact: 'crash' },
-  'breaking-glass': { db: 80, tension: 0.03, fact: 'crash' },
-  slap: { db: 80, tension: 0.08, fact: 'raised-voices' },
-  'door-slam': { db: 80, tension: 0.02 },
-  scream: { db: 95, tension: 0.3, fact: 'scream' },
+  "raised-voice": { db: 65, tension: 0.02, fact: "raised-voices" },
+  "dropped-tray": { db: 65, tension: 0.01, fact: "crash" },
+  "breaking-glass": { db: 80, tension: 0.03, fact: "crash" },
+  slap: { db: 80, tension: 0.08, fact: "raised-voices" },
+  "door-slam": { db: 80, tension: 0.02 },
+  scream: { db: 95, tension: 0.3, fact: "scream" },
   /** A camera's shutter and flash; the flash itself is seen, not heard. */
   shutter: { db: 45, tension: 0 },
   /** Last orders called at the bar, or the host calling everyone for the photo. */
@@ -109,7 +109,7 @@ export interface SensesHost {
   readonly places: Places;
   readonly groups: Map<number, Group>;
   readonly phaseId: PhaseId;
-  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void;
+  log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   /** Turn someone's head toward a point for a while. */
   glance(p: Person, x: number, z: number, secs: number): void;
   /** A nosy guest goes to see what that was. */
@@ -118,7 +118,28 @@ export interface SensesHost {
   together(a: Person, b: Person): boolean;
 }
 
-const ACTIONS: readonly ActionId[] = ['arrive', 'mingle', 'drink', 'champagne', 'toilet', 'sit', 'art', 'terrace', 'dance', 'dinner', 'toast', 'games', 'wander', 'leave', 'staff', 'ask', 'use', 'snack', 'greet', 'task'];
+const ACTIONS: readonly ActionId[] = [
+  "arrive",
+  "mingle",
+  "drink",
+  "champagne",
+  "toilet",
+  "sit",
+  "art",
+  "terrace",
+  "dance",
+  "dinner",
+  "toast",
+  "games",
+  "wander",
+  "leave",
+  "staff",
+  "ask",
+  "use",
+  "snack",
+  "greet",
+  "task",
+];
 export const actionIndex = (a: ActionId | undefined): number => (a ? ACTIONS.indexOf(a) + 1 : 0);
 export const actionAt = (i: number): ActionId | null => (i > 0 ? (ACTIONS[i - 1] ?? null) : null);
 
@@ -163,7 +184,7 @@ export class Senses {
     // Who stands in each room, for the crowd test while people look (nobody moves meanwhile).
     const rooms = (this.byRoom ??= Array.from({ length: this.host.sight.R + 2 }, () => []));
     for (const r of rooms) r.length = 0;
-    for (const q of this.host.people) if (q.present && q.pose !== 'sit') rooms[q.room + 2]?.push(q);
+    for (const q of this.host.people) if (q.present && q.pose !== "sit") rooms[q.room + 2]?.push(q);
     this.lookStep = true;
     for (const p of this.host.people) if (p.present && (p.id + stepNo) % 4 === 0) this.look(p);
     this.lookStep = false;
@@ -187,7 +208,7 @@ export class Senses {
   /** How likely someone is to take in what's in front of them: nosy and tense people more, the tipsy, the busy and the lively less. */
   attention(p: Person): number {
     const a = p.action;
-    const busy = p.pose === 'dance' ? 0.25 : a?.id === 'dinner' && a.startedAt !== null ? 0.2 : p.pose === 'talk' ? 0.1 : 0;
+    const busy = p.pose === "dance" ? 0.25 : a?.id === "dinner" && a.startedAt !== null ? 0.2 : p.pose === "talk" ? 0.1 : 0;
     const m = this.host.mood;
     return Math.max(0.1, Math.min(1, 0.9 + 0.3 * (p.traits.nosy - 0.5) - 0.5 * p.tipsy - busy - 0.3 * m.energy[p.id]! + 0.3 * m.tension[p.id]!));
   }
@@ -242,7 +263,7 @@ export class Senses {
   private blockers(qs: readonly Person[], a: Person, b: Person, dx: number, dz: number, d: number, c: number, all: boolean): number {
     for (const q of qs) {
       if (q === a || q === b || q.level !== a.level) continue;
-      if (all && ((q.room !== a.room && q.room !== b.room) || !q.present || q.pose === 'sit')) continue;
+      if (all && ((q.room !== a.room && q.room !== b.room) || !q.present || q.pose === "sit")) continue;
       const rx = q.x - a.x;
       const rz = q.z - a.z;
       const along = (rx * dx + rz * dz) / d;
@@ -279,30 +300,30 @@ export class Senses {
     memory.seen(a.id, b.id, b.room, actionIndex(b.action?.id));
     const detail = d <= DETAIL_RANGE && Math.abs(off) <= DETAIL_FOV;
     if (detail && b.held && ALCOHOL.has(b.held as DrinkId)) memory.sawDrinking[a.id * n + b.id] = h.t;
-    if (detail && b.tipsy > 0.6) memory.observe(a.id, 'tipsy', b.id);
+    if (detail && b.tipsy > 0.6) memory.observe(a.id, "tipsy", b.id);
     // Something worth remembering: a wrong turn, a rattled door, coming out of a bedroom. Somewhere
     // private, or doing something notable, they go in the register too.
     if (b.notable && h.t < b.notableUntil) {
       const f = memory.observe(a.id, b.notable, b.id, b.notableObj, b.room);
       h.register.see(a.id, b, b.notable, b.notableRoom >= 0 ? b.notableRoom : b.room, b.notableObj, f);
-    } else if (h.register.watching(a.id, b.room)) h.register.see(a.id, b, 'was-in', b.room);
+    } else if (h.register.watching(a.id, b.room)) h.register.see(a.id, b, "was-in", b.room);
     // Someone they know: do they look like themselves?
     if (ident.tie[a.id * n + b.id]) {
       const k = a.id * n + b.id;
       const dt = Math.min(4, h.t - this.checkedT[k]!);
       this.checkedT[k] = h.t;
       ident.refresh(b);
-      const explained = h.t - memory.sawDrinking[k]! < 3600 || memory.knowsAbout(a.id, 'tipsy', b.id);
+      const explained = h.t - memory.sawDrinking[k]! < 3600 || memory.knowsAbout(a.id, "tipsy", b.id);
       const light = b.room >= 0 ? Math.max(0.3, h.world.lit(b.room)) : 0.6;
       const e = ident.check(a.id, b.id, h.t, Math.max(0, dt), d, h.together(a, b), light, a.tipsy, explained);
-      if (e === 'double-take') {
+      if (e === "double-take") {
         h.glance(a, b.x, b.z, 1.5);
-        memory.observe(a.id, 'not-themselves', b.id, -1, b.room);
-        h.log('double-take', [a.id, b.id], a.room);
-      } else if (e === 'test') h.log('test', [a.id, b.id], a.room, 'passed');
+        memory.observe(a.id, "not-themselves", b.id, -1, b.room);
+        h.log("double-take", [a.id, b.id], a.room);
+      } else if (e === "test") h.log("test", [a.id, b.id], a.room, "passed");
     }
     // Wary of them: a glance when they're close.
-    if (d < 5 && memory.suspects(a.id, b.id) >= WARY && a.pose !== 'walk' && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
+    if (d < 5 && memory.suspects(a.id, b.id) >= WARY && a.pose !== "walk" && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
   }
 
   /** Bathroom doors in view tell whether each is taken (milestone 2 replaces PR 1's stand-in with this). */
@@ -335,16 +356,16 @@ export class Senses {
     const music = new Float32Array(R);
     for (const g of h.groups.values()) {
       const s = h.people[g.speaker];
-      if (s?.present && s.pose === 'talk') talkers[s.room < 0 ? R - 1 : s.room]!++;
+      if (s?.present && s.pose === "talk") talkers[s.room < 0 ? R - 1 : s.room]!++;
     }
     // The piano, and the band: dance music through the dancing, soft under the talk otherwise.
-    const band = h.phaseId === 'dancing' ? MUSIC : BAND_SOFT;
+    const band = h.phaseId === "dancing" ? MUSIC : BAND_SOFT;
     for (const p of h.people) {
-      if (!p.present || p.pose !== 'play') continue;
+      if (!p.present || p.pose !== "play") continue;
       const r = p.room < 0 ? R - 1 : p.room;
       const note = p.action?.note;
-      if (note === 'piano') music[r] = Math.max(music[r]!, PIANO);
-      else if (note === 'band') music[r] = Math.max(music[r]!, band);
+      if (note === "piano") music[r] = Math.max(music[r]!, PIANO);
+      else if (note === "band") music[r] = Math.max(music[r]!, band);
     }
     for (let r = 0; r < R; r++) {
       this.music[r] = music[r]! >= PIANO ? 1 : 0;
@@ -382,7 +403,7 @@ export class Senses {
       for (const e of graph[r] ?? []) {
         const to = e.to < 0 ? R - 1 : e.to;
         if (done[to]) continue;
-        let loss = e.kind === 'stair' ? LOSS_STAIR : LOSS_ARCH;
+        let loss = e.kind === "stair" ? LOSS_STAIR : LOSS_ARCH;
         if (e.door >= 0) loss = h.world.doors[e.door]!.open >= 0.5 ? LOSS_OPEN : LOSS_SHUT;
         const v = best - LOSS_M * Math.hypot(e.x - ex[r]!, e.z - ez[r]!) - loss;
         if (v > level[to]!) {
@@ -421,9 +442,9 @@ export class Senses {
       this.stats.heard++;
       heard.push(p.id);
       // Heads turn; laughter in one's own room is just the party.
-      if (s.kind !== 'laugh' || p.room !== s.room) if (p.pose !== 'walk' && p.pose !== 'climb') h.glance(p, s.x, s.z, 1);
+      if (s.kind !== "laugh" || p.room !== s.room) if (p.pose !== "walk" && p.pose !== "climb") h.glance(p, s.x, s.z, 1);
       if (spec.tension) h.mood.witness(p.id, spec.tension);
-      if ((s.kind === 'knock' || s.kind === 'bolt') && s.ref >= 0) h.body.heardBath(p, s.ref);
+      if ((s.kind === "knock" || s.kind === "bolt") && s.ref >= 0) h.body.heardBath(p, s.ref);
       else if (spec.fact) h.register.heard(p.id, h.memory.observe(p.id, spec.fact, -1, -1, s.room));
       if (spec.db >= 80 && p.room !== s.room && p.traits.nosy > 0.7) h.goLook(p, s);
     }

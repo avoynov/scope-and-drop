@@ -3,12 +3,12 @@
  * torsos on orange stakes (1.7 m tall overall, so the PSO rangefinders read them) at 412 m and at the game's
  * range of 183 m, a wire fence, haze.
  */
-import * as THREE from 'three';
-import { HEAD, TORSO_BASE, TORSO_PROFILE, torsoDepth } from '../../src/body/anatomy';
-import type { Obstacle } from '../../src/scope/wind';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createFlags, type Flags } from './flags';
-import type { WindGL } from './wind-gl';
+import * as THREE from "three";
+import { HEAD, TORSO_BASE, TORSO_PROFILE, torsoDepth } from "../../src/body/anatomy";
+import type { Obstacle } from "../../src/scope/wind";
+import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { createFlags, type Flags } from "./flags";
+import type { WindGL } from "./wind-gl";
 
 function hash(x: number, y: number): number {
   // murmur3-style finaliser over both coordinates; a single multiply-add leaves visible lattice streaks.
@@ -54,7 +54,9 @@ function fbm3(x: number, y: number, z: number, oct: number): number {
   let a = 0.5;
   for (let i = 0; i < oct; i++) {
     s += a * vnoise3(x, y, z);
-    x = x * 2.03 + 17.1; y = y * 2.03 - 9.7; z = z * 2.03 + 4.3;
+    x = x * 2.03 + 17.1;
+    y = y * 2.03 - 9.7;
+    z = z * 2.03 + 4.3;
     a *= 0.5;
   }
   return s;
@@ -100,18 +102,18 @@ const NOISE = /* glsl */ `
  * the body and for `vertex`, which may move `transformed`; the texture stays put on the surface (vWPos is
  * taken before it moves).
  */
-function proceduralLambert(color: THREE.ColorRepresentation, body: string, wind?: WindGL, vertex = ''): THREE.MeshLambertMaterial {
+function proceduralLambert(color: THREE.ColorRepresentation, body: string, wind?: WindGL, vertex = ""): THREE.MeshLambertMaterial {
   const m = new THREE.MeshLambertMaterial({ color });
-  const windGlsl = wind?.glsl ?? '';
+  const windGlsl = wind?.glsl ?? "";
   m.onBeforeCompile = (sh) => {
     if (wind) Object.assign(sh.uniforms, wind.uniforms);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${vertex ? windGlsl : ''}`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvec3 restP = transformed;\n${vertex}`)
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(restP,1.)).xyz;\nvONrm = normal;');
+      .replace("#include <common>", `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${vertex ? windGlsl : ""}`)
+      .replace("#include <begin_vertex>", `#include <begin_vertex>\nvec3 restP = transformed;\n${vertex}`)
+      .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(restP,1.)).xyz;\nvONrm = normal;");
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${NOISE}\n${windGlsl}`)
-      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse, opacity );\n{ ${body} }`);
+      .replace("#include <common>", `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vONrm;\n${NOISE}\n${windGlsl}`)
+      .replace("vec4 diffuseColor = vec4( diffuse, opacity );", `vec4 diffuseColor = vec4( diffuse, opacity );\n{ ${body} }`);
   };
   // Every one of these has the same onBeforeCompile source, which is three's default program key: key them by
   // what differs, or two of them would share one program.
@@ -183,7 +185,7 @@ export function buildRange(wind?: WindGL): Range {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+      vertexShader: "varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }",
       fragmentShader: `varying vec3 vD; void main(){ float h = max(vD.y, 0.);
         vec3 c = mix(vec3(.80,.84,.88), vec3(.42,.58,.78), pow(h, .55));
         gl_FragColor = vec4(c, 1.); }`,
@@ -198,7 +200,12 @@ export function buildRange(wind?: WindGL): Range {
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.03;
   const sc = sun.shadow.camera;
-  sc.left = -22; sc.right = 22; sc.top = 22; sc.bottom = -22; sc.near = 1; sc.far = 300;
+  sc.left = -22;
+  sc.right = 22;
+  sc.top = 22;
+  sc.bottom = -22;
+  sc.near = 1;
+  sc.far = 300;
   scene.add(sun, sun.target);
   scene.add(new THREE.HemisphereLight(0xc5d6ea, 0x8a7656, 0.8));
 
@@ -212,13 +219,16 @@ export function buildRange(wind?: WindGL): Range {
     let z = gp.getZ(i);
     const r = Math.hypot(x, z);
     if (r > 0) {
-      const k = Math.pow(r / 6364, 1.9) * 6364 / r;
-      x *= k; z *= k;
+      const k = (Math.pow(r / 6364, 1.9) * 6364) / r;
+      x *= k;
+      z *= k;
     }
     gp.setXYZ(i, x, heightAt(x, z), z);
   }
   ground.computeVertexNormals();
-  const groundMat = proceduralLambert(0xffffff, /* glsl */ `
+  const groundMat = proceduralLambert(
+    0xffffff,
+    /* glsl */ `
     // Geometric mean of the footprint: keeps grain at grazing angles a pure isotropic filter would erase.
     vec2 fw = fwidth(vWPos.xz);
     float px = sqrt(fw.x*fw.y)*1.4;
@@ -236,12 +246,18 @@ export function buildRange(wind?: WindGL): Range {
     // Grass tufts: dark bases, sun-bleached tips.
     float tuft = fbmAA(p*27.+9., px*27.);
     c *= 1. + tuft*1.2;
-    ${wind ? `// Wind on the grass: a gust lays the blades over and the patch it is crossing shows paler, travelling
+    ${
+      wind
+        ? `// Wind on the grass: a gust lays the blades over and the patch it is crossing shows paler, travelling
     // downwind with it (cat's paws). Nothing to see in a light air; plain to see from about 5 m/s at flag height.
     float v = length(windAt(vec3(vWPos.x, vWPos.y + .3, vWPos.z)).xz);
-    c *= 1. + .12*smoothstep(.8, 3.5, v)*gustAt(vWPos.xz).x;` : ''}
+    c *= 1. + .12*smoothstep(.8, 3.5, v)*gustAt(vWPos.xz).x;`
+        : ""
+    }
     diffuseColor.rgb = c;
-  `, wind);
+  `,
+    wind,
+  );
   const groundMesh = new THREE.Mesh(ground, groundMat);
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
@@ -254,14 +270,16 @@ export function buildRange(wind?: WindGL): Range {
     const a = (k / 7) * Math.PI * 2;
     const rr = k === 0 ? 0 : 0.45 + hash(k, 42) * 0.25;
     lobe.translate(Math.cos(a) * rr, 0.15 + hash(k, 43) * 0.35 - rr * 0.25, Math.sin(a) * rr);
-    lobes.push(lobe.deleteAttribute('uv'));
+    lobes.push(lobe.deleteAttribute("uv"));
   }
-  const sage = mergeVertices(mergeGeometries(lobes).deleteAttribute('normal'));
+  const sage = mergeVertices(mergeGeometries(lobes).deleteAttribute("normal"));
   const sp = sage.attributes.position as THREE.BufferAttribute;
   const jitter = new Map<string, number>();
   const at = (x: number, y: number, z: number) => `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
   for (let i = 0; i < sp.count; i++) {
-    const x = sp.getX(i), y = sp.getY(i), z = sp.getZ(i);
+    const x = sp.getX(i),
+      y = sp.getY(i),
+      z = sp.getZ(i);
     const n = 0.85 + 0.3 * hash(i, 77);
     jitter.set(at(x, y, z), n);
     sp.setXYZ(i, x * n, Math.max(y, -0.05) * n, z * n);
@@ -272,15 +290,21 @@ export function buildRange(wind?: WindGL): Range {
   // straddle the round lobe instead of sitting inside it. Off by at most ~10 % of a lobe radius.
   const farLobes: THREE.BufferGeometry[] = [];
   for (let k = 0; k < 7; k++) {
-    const lobe = new THREE.IcosahedronGeometry(0.42 + hash(k, 41) * 0.25, 0).deleteAttribute('uv').deleteAttribute('normal');
+    const lobe = new THREE.IcosahedronGeometry(0.42 + hash(k, 41) * 0.25, 0).deleteAttribute("uv").deleteAttribute("normal");
     const a = (k / 7) * Math.PI * 2;
     const rr = k === 0 ? 0 : 0.45 + hash(k, 42) * 0.25;
-    const cx = Math.cos(a) * rr, cy = 0.15 + hash(k, 43) * 0.35 - rr * 0.25, cz = Math.sin(a) * rr;
+    const cx = Math.cos(a) * rr,
+      cy = 0.15 + hash(k, 43) * 0.35 - rr * 0.25,
+      cz = Math.sin(a) * rr;
     const lp = lobe.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < lp.count; i++) {
-      const x = lp.getX(i) + cx, y = lp.getY(i) + cy, z = lp.getZ(i) + cz;
+      const x = lp.getX(i) + cx,
+        y = lp.getY(i) + cy,
+        z = lp.getZ(i) + cz;
       const n = jitter.get(at(x, y, z)) ?? 1;
-      const X = cx + (x - cx) * 1.08, Y = cy + (y - cy) * 1.08, Z = cz + (z - cz) * 1.08;
+      const X = cx + (x - cx) * 1.08,
+        Y = cy + (y - cy) * 1.08,
+        Z = cz + (z - cz) * 1.08;
       lp.setXYZ(i, X * n, Math.max(Y, -0.05) * n, Z * n);
     }
     farLobes.push(lobe);
@@ -296,7 +320,12 @@ export function buildRange(wind?: WindGL): Range {
   // The far bushes keep still: they are far only where a bush's shape is off by under the LOD's tolerance,
   // about the sway in a strong wind, so the wind's texture reads are spent on the near ones alone.
   const sageFarMat = proceduralLambert(0xffffff, sageBody);
-  const sageMat = proceduralLambert(0xffffff, sageBody, wind, wind ? /* glsl */ `
+  const sageMat = proceduralLambert(
+    0xffffff,
+    sageBody,
+    wind,
+    wind
+      ? /* glsl */ `
     #ifdef USE_INSTANCING
     {
       // Wind in the sage. Stiff stems: still in a light breeze; in a strong one (8 m/s at flag height is about
@@ -314,7 +343,9 @@ export function buildRange(wind?: WindGL): Range {
       transformed += inverse(mat3(instanceMatrix))*vec3(off.x, 0., off.y);
     }
     #endif
-  ` : '');
+  `
+      : "",
+  );
   const N = 40000;
   const bushes = new THREE.InstancedMesh(sage, sageMat, N);
   const m = new THREE.Matrix4();
@@ -336,7 +367,7 @@ export function buildRange(wind?: WindGL): Range {
     m.compose(new THREE.Vector3(x, heightAt(x, z) - 0.05, z), q, new THREE.Vector3(s * (0.9 + hash(i, 5) * 0.6), s * (0.55 + hash(i, 6) * 0.35), s));
     bushes.setMatrixAt(placed, m);
     const g = hash(i, 7);
-    col.setRGB(0.44 + g * 0.1, 0.48 + g * 0.08, 0.40 + g * 0.05);
+    col.setRGB(0.44 + g * 0.1, 0.48 + g * 0.08, 0.4 + g * 0.05);
     bushes.setColorAt(placed, col);
     placed++;
   }
@@ -350,7 +381,7 @@ export function buildRange(wind?: WindGL): Range {
   for (let i = 0; i < placed; i++) {
     bushes.getMatrixAt(i, m);
     pos.setFromMatrixPosition(m);
-    const b = Math.min(BEARINGS - 1, Math.max(0, Math.floor(((Math.atan2(pos.x, -pos.z) / 0.9 + 0.5) * BEARINGS))));
+    const b = Math.min(BEARINGS - 1, Math.max(0, Math.floor((Math.atan2(pos.x, -pos.z) / 0.9 + 0.5) * BEARINGS)));
     const r = Math.hypot(pos.x, pos.z);
     let band = 0;
     while (band < BANDS.length - 2 && r >= BANDS[band + 1]!) band++;
@@ -385,7 +416,7 @@ export function buildRange(wind?: WindGL): Range {
   bushes.dispose();
 
   // The boulder.
-  const rock = mergeVertices(new THREE.IcosahedronGeometry(1, 6).deleteAttribute('normal').deleteAttribute('uv'));
+  const rock = mergeVertices(new THREE.IcosahedronGeometry(1, 6).deleteAttribute("normal").deleteAttribute("uv"));
   const rp = rock.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
   for (let i = 0; i < rp.count; i++) {
@@ -400,7 +431,9 @@ export function buildRange(wind?: WindGL): Range {
   const bx = TARGET.x + 0.6;
   const bz = TARGET.z - 7.2;
   const by = heightAt(bx, bz);
-  const rockMat = proceduralLambert(0xffffff, /* glsl */ `
+  const rockMat = proceduralLambert(
+    0xffffff,
+    /* glsl */ `
     float px = length(fwidth(vWPos));
     vec3 p = vWPos;
     // Tri-planar-ish: mix noise from the three planes so no face is stretched.
@@ -416,7 +449,8 @@ export function buildRange(wind?: WindGL): Range {
     // Darker, damp base where it meets the ground.
     c *= mix(.72, 1., smoothstep(.0, .9, p.y - ${(by - 0.3).toFixed(3)}));
     diffuseColor.rgb = c;
-  `);
+  `,
+  );
   const boulder = new THREE.Mesh(rock, rockMat);
   boulder.position.set(bx, by + 1.1, bz);
   boulder.scale.set(4.3, 2.9, 3.4);
@@ -445,26 +479,29 @@ export function buildRange(wind?: WindGL): Range {
     tgt.position.copy(at);
     const stake = new THREE.Mesh(stakeGeo, orange);
     stake.position.y = 0.43;
-    stake.name = 'stake';
+    stake.name = "stake";
     tgt.add(stake);
     const torso = new THREE.Mesh(torsoGeo, white);
     torso.position.y = TORSO_BASE;
-    torso.name = 'torso';
+    torso.name = "torso";
     tgt.add(torso);
     const head = new THREE.Mesh(headGeo, white);
     head.scale.set(HEAD.r[0] / 0.095, HEAD.r[1] / 0.095, HEAD.r[2] / 0.095);
     head.position.y = HEAD.c[1];
-    head.name = 'head';
+    head.name = "head";
     tgt.add(head);
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 + 0.4;
       const leg = new THREE.Mesh(legGeo, steel);
       leg.position.set(Math.cos(a) * 0.18, 0.42, Math.sin(a) * 0.18);
       leg.rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4);
-      leg.name = 'tripod';
+      leg.name = "tripod";
       tgt.add(leg);
     }
-    tgt.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    tgt.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
     scene.add(tgt);
     return { group: tgt, head: new THREE.Vector3(at.x, at.y + 1.7, at.z), foot: at.clone(), range };
   };
@@ -480,17 +517,19 @@ export function buildRange(wind?: WindGL): Range {
     const z = -360 - x * 0.12;
     const y = heightAt(x, z);
     const post = new THREE.Mesh(postGeo, i % 6 === 0 ? wood : steel);
-    post.name = i % 6 === 0 ? 'post-wood' : 'post-steel';
+    post.name = i % 6 === 0 ? "post-wood" : "post-steel";
     post.position.set(x, y + 0.6, z);
     post.rotation.z = (hash(i, 9) - 0.5) * 0.08;
     fence.add(post);
     if (i > -70) {
-      const px = x - 5, pz = -360 - px * 0.12, py = heightAt(px, pz);
+      const px = x - 5,
+        pz = -360 - px * 0.12,
+        py = heightAt(px, pz);
       for (const h of [0.55, 0.85, 1.12]) wirePts.push(px, py + h, pz, x, y + h, z);
     }
   }
   const wires = new THREE.BufferGeometry();
-  wires.setAttribute('position', new THREE.Float32BufferAttribute(wirePts, 3));
+  wires.setAttribute("position", new THREE.Float32BufferAttribute(wirePts, 3));
   fence.add(new THREE.LineSegments(wires, new THREE.LineBasicMaterial({ color: 0x5c5853, transparent: true, opacity: 0.6 })));
   scene.add(fence);
 
@@ -505,7 +544,10 @@ export function buildRange(wind?: WindGL): Range {
     if (i === shadowAt) return false;
     shadowAt = i;
     const h = SHADOW_HALF[i]!;
-    sc.left = -h; sc.right = h; sc.top = h; sc.bottom = -h;
+    sc.left = -h;
+    sc.right = h;
+    sc.top = h;
+    sc.bottom = -h;
     sc.updateProjectionMatrix();
     sun.target.position.copy(targets[i]!.foot);
     sun.position.copy(targets[i]!.foot).addScaledVector(toSun, 120);

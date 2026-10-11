@@ -6,13 +6,13 @@
  * a closed door costs a little, and private rooms are never a short cut. Repeat trips
  * reuse a cached cell path, checked against the doors it crosses before each reuse.
  */
-import type { MansionBlueprint, NavLevel } from '../mansion/core/types';
-import type { Waypoint } from './types';
+import type { MansionBlueprint, NavLevel } from "../mansion/core/types";
+import type { Waypoint } from "./types";
 
 /** Who is walking, as far as locked doors care. */
 export interface Walker {
   id: number;
-  ring: 'none' | 'staff' | 'host';
+  ring: "none" | "staff" | "host";
   lentKey: number;
   /** The room they stand in: a bolt opens from its own side. */
   room: number;
@@ -134,7 +134,7 @@ export class Pathfinder {
       this.closed.set(n.level, new Uint32Array(size));
     }
     // Stair links are pushed in pairs: up from the foot, down from the top.
-    const st = bp.nav.links.filter((l) => l.kind === 'stair');
+    const st = bp.nav.links.filter((l) => l.kind === "stair");
     for (let i = 0; i + 1 < st.length; i += 2) {
       const a = st[i]!;
       const b = st[i + 1]!;
@@ -337,7 +337,7 @@ export class Pathfinder {
   private cellPath(n: NavLevel, s: number, t: number, who: Walker | null): Cached | null {
     if (s < 0 || !n.walk[s]) return null;
     const gate = this.gate;
-    const key = `${n.level}:${s}:${t}:${who ? `${who.ring}${who.lentKey}` : '-'}`;
+    const key = `${n.level}:${s}:${t}:${who ? `${who.ring}${who.lentKey}` : "-"}`;
     const hit = this.cache.get(key);
     if (hit && (!gate || (hit.unlocks === gate.unlocks && hit.doors.every((d) => gate.passable(d, who))))) {
       this.cache.delete(key);
@@ -349,10 +349,11 @@ export class Pathfinder {
     if (!cells) return null;
     const doors: number[] = [];
     const at = gate?.doorAt(n.level);
-    if (at) for (const k of cells) {
-      const d = at[k]!;
-      if (d >= 0 && doors[doors.length - 1] !== d) doors.push(d);
-    }
+    if (at)
+      for (const k of cells) {
+        const d = at[k]!;
+        if (d >= 0 && doors[doors.length - 1] !== d) doors.push(d);
+      }
     if (this.cache.size >= CACHE_SIZE) this.cache.delete(this.cache.keys().next().value!);
     const out = { cells, doors, unlocks: gate?.unlocks ?? 0 };
     this.cache.set(key, out);

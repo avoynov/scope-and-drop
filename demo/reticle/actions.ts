@@ -5,11 +5,11 @@
  * and positions come from src/scope/handling.ts (ACTIONS), in millimetres in the scope's frame, so the hands
  * land on the parts they reach for.
  */
-import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { ACTIONS, type HandlingPose, type MagGeom } from '../../src/scope/handling';
-import type { RifleId } from '../../src/scope/shot';
-import { buildHand } from './hands';
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { ACTIONS, type HandlingPose, type MagGeom } from "../../src/scope/handling";
+import type { RifleId } from "../../src/scope/shot";
+import { buildHand } from "./hands";
 
 export type MatFn = (base: number, gloss: number, spec: number) => THREE.Material;
 
@@ -61,7 +61,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     return g;
   };
   /** A cartridge with its head at the origin and its bullet toward −z. */
-  const cartridge = (c: MagGeom['cartridge'], caseMat: THREE.Material, rim = false) => {
+  const cartridge = (c: MagGeom["cartridge"], caseMat: THREE.Material, rim = false) => {
     const g = new THREE.Group();
     const r = c.dia / 2;
     const neck = 4.4;
@@ -114,7 +114,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     const rec = (geo: THREE.BufferGeometry) => mesh(geo, blued, g, 0, y, 0);
     rec(arcPrism(17.5, 9.9, 0, TAU, -290, -195));
     // The ejection port: the wall is cut away on the right, from below level to the top.
-    rec(arcPrism(17.5, 9.9, 62 * Math.PI / 180, 320 * Math.PI / 180, -382, -290));
+    rec(arcPrism(17.5, 9.9, (62 * Math.PI) / 180, (320 * Math.PI) / 180, -382, -290));
     rec(arcPrism(17.5, 9.9, 0, TAU, -420, -382));
     // Recoil lug, barrel and brake.
     mesh(box(26, 12, 10, 1), blued, g, 0, y - 18, -425);
@@ -169,14 +169,14 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
   })();
 
   // ---- SVD and VSS: AK-type receivers ----
-  const akParts = (id: 'svd' | 'vss') => {
+  const akParts = (id: "svd" | "vss") => {
     const g = new THREE.Group();
     root.add(g);
     rifles[id] = g;
     const A = ACTIONS[id];
     const C = A.carrier!;
     const y = A.boreY;
-    const svd = id === 'svd';
+    const svd = id === "svd";
     const wood = svd ? svdWood : vssWood;
     const [z0, z1] = svd ? [-170, -430] : [-180, -380];
     const half = svd ? 15 : 14;
@@ -239,8 +239,8 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     mags[id] = [m0, m1];
     return { charge };
   };
-  const svd = akParts('svd');
-  const vss = akParts('vss');
+  const svd = akParts("svd");
+  const vss = akParts("vss");
 
   // ---- spent cases and the round going into the chamber (bolt rifle) ----
   const caseG = () => {
@@ -257,10 +257,10 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
   const feed = cartridge(ACTIONS.bolt.mag.cartridge, brass);
   rifles.bolt.add(feed);
 
-  const hands = { R: buildHand('R', glove, sleeve, place), L: buildHand('L', glove, sleeve, place) };
+  const hands = { R: buildHand("R", glove, sleeve, place), L: buildHand("L", glove, sleeve, place) };
   root.add(hands.R.group, hands.L.group);
 
-  let rifle: RifleId = 'svd';
+  let rifle: RifleId = "svd";
   const q = new THREE.Quaternion();
   return {
     setRifle(id) {
@@ -269,7 +269,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     },
     apply(p) {
       const b = ACTIONS.bolt.bolt!;
-      if (rifle === 'bolt') {
+      if (rifle === "bolt") {
         boltParts.slide.position.z = b.stroke * p.bolt.travel;
         boltParts.turn.rotation.z = b.liftRad * p.bolt.lift;
         cases.forEach((c, i) => {
@@ -286,7 +286,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
           feed.quaternion.copy(q.set(...p.feed.q));
         }
       } else {
-        const parts = rifle === 'svd' ? svd : vss;
+        const parts = rifle === "svd" ? svd : vss;
         parts.charge.position.z = ACTIONS[rifle].carrier!.stroke * p.carrier;
       }
       mags[rifle].forEach((m, i) => {

@@ -3,7 +3,7 @@
  * a wooded ridge along the sniper's perch arc, and gentle undulation.
  * Pure function of the TerrainSpec so the server, AI and renderer agree.
  */
-import type { TerrainSpec } from '../core/types';
+import type { TerrainSpec } from "../core/types";
 
 function hash2(ix: number, iz: number, seed: number): number {
   let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(seed, 2147483647);

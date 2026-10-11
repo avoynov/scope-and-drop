@@ -9,7 +9,7 @@
  * Shooting adds two things here (see shooting.ts): the bullet's trace, a ripple in the magnified image
  * only, and the muzzle-blast dust, a veil over everything that drifts off with the wind.
  */
-import * as THREE from 'three';
+import * as THREE from "three";
 
 export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRet: THREE.Texture, tNear: THREE.Texture, tLens: THREE.Texture, tBody: THREE.Texture): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -61,7 +61,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uEdge: { value: 0 },
       uRetCol: { value: new THREE.Vector3(0.02, 0.02, 0.02) },
     },
-    vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0., 1.); }',
+    vertexShader: "void main(){ gl_Position = vec4(position.xy, 0., 1.); }",
     fragmentShader: /* glsl */ `
       precision highp float;
       uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;

@@ -3,13 +3,13 @@
  * to choose the bearing to shoot from and a slider for the elevation. Nothing here changes the house;
  * moving the dial calls movePerch(), which only recomputes sightlines.
  */
-import { movePerch, POI_VISIBLE, type MansionBlueprint } from '../src/mansion';
+import { movePerch, POI_VISIBLE, type MansionBlueprint } from "../src/mansion";
 
-const INK = '#e9e4d8';
-const MUTED = '#9a9486';
-const ACCENT = '#e0b56a';
-const SNIPER = '#ff5a5a';
-const LEVEL_NAMES = ['ground', 'first', 'second', 'third'];
+const INK = "#e9e4d8";
+const MUTED = "#9a9486";
+const ACCENT = "#e0b56a";
+const SNIPER = "#ff5a5a";
+const LEVEL_NAMES = ["ground", "first", "second", "third"];
 
 /** Unseen = deep slate, clearly seen = amber. One hue, so lightness alone carries the value. */
 function ramp(v: number): [number, number, number] {
@@ -25,7 +25,7 @@ function fit(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; w: num
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
   }
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext("2d")!;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   return { ctx, w, h };
@@ -33,9 +33,9 @@ function fit(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; w: num
 
 /** A room's name and shorter forms of it, longest first: "West Drawing Room 2", "Drawing Room 2", "Drawing Room", "Drawing". */
 export function labelForms(label: string): string[] {
-  const noSide = label.replace(/^(West|East|North|South) /, '');
-  const noNumber = noSide.replace(/ \d+$/, '');
-  const words = noNumber.split(' ').filter((w) => w !== 'Room');
+  const noSide = label.replace(/^(West|East|North|South) /, "");
+  const noNumber = noSide.replace(/ \d+$/, "");
+  const words = noNumber.split(" ").filter((w) => w !== "Room");
   return [...new Set([label, noSide, noNumber, words[words.length - 1] ?? noNumber])];
 }
 
@@ -65,7 +65,7 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   const n = bp.nav.levels.find((l) => l.level === level);
   if (n) {
     const img = new ImageData(n.cols, n.rows);
-    const partyOrHall = bp.rooms.map((r) => r.role === 'party' || r.role === 'circulation');
+    const partyOrHall = bp.rooms.map((r) => r.role === "party" || r.role === "circulation");
     for (let k = 0; k < n.walk.length; k++) {
       if (!n.walk[k]) continue;
       const [r, g, b] = ramp(n.vis[k]! / 255);
@@ -76,10 +76,10 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
       // Rooms guests do not use are drawn fainter.
       img.data[k * 4 + 3] = ri === -2 || (ri >= 0 && partyOrHall[ri]) ? 255 : 120;
     }
-    const off = document.createElement('canvas');
+    const off = document.createElement("canvas");
     off.width = n.cols;
     off.height = n.rows;
-    off.getContext('2d')!.putImageData(img, 0, 0);
+    off.getContext("2d")!.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, sx(n.originX), sz(n.originZ), n.cols * n.cell * s, n.rows * n.cell * s);
   }
@@ -95,8 +95,8 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   if (a) {
     const stair = bp.stairs.find((q) => q.id === a.stairId);
     if (level <= 1) {
-      ctx.strokeStyle = level === 0 ? 'rgba(233,228,216,0.5)' : 'rgba(233,228,216,0.22)';
-      ctx.lineCap = 'butt';
+      ctx.strokeStyle = level === 0 ? "rgba(233,228,216,0.5)" : "rgba(233,228,216,0.22)";
+      ctx.lineCap = "butt";
       for (const arm of stair?.arms ?? []) {
         ctx.lineWidth = arm.width * s;
         path(arm.path, false);
@@ -124,15 +124,15 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
   // Walls with their openings: glass in blue, doorways left open.
   for (const wl of bp.walls) {
     if (wl.level !== level) continue;
-    const base = wl.axis === 'x' ? wl.a.x : wl.a.z;
-    const end = wl.axis === 'x' ? wl.b.x : wl.b.z;
-    const line = wl.axis === 'x' ? wl.a.z : wl.a.x;
+    const base = wl.axis === "x" ? wl.a.x : wl.a.z;
+    const end = wl.axis === "x" ? wl.b.x : wl.b.z;
+    const line = wl.axis === "x" ? wl.a.z : wl.a.x;
     const seg = (p: number, q: number, stroke: string, width: number) => {
       if (q - p < 0.02) return;
       ctx.strokeStyle = stroke;
       ctx.lineWidth = width;
       ctx.beginPath();
-      if (wl.axis === 'x') (ctx.moveTo(sx(p), sz(line)), ctx.lineTo(sx(q), sz(line)));
+      if (wl.axis === "x") (ctx.moveTo(sx(p), sz(line)), ctx.lineTo(sx(q), sz(line)));
       else (ctx.moveTo(sx(line), sz(p)), ctx.lineTo(sx(line), sz(q)));
       ctx.stroke();
     };
@@ -140,15 +140,15 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
     let cur = base;
     for (const o of [...wl.openings].sort((p, q) => p.u0 - q.u0)) {
       seg(cur, base + o.u0, INK, solid);
-      if (o.glazed) seg(base + o.u0, base + o.u1, o.frosted || o.curtain === 'drawn' ? '#5b6170' : '#7fd6ff', Math.max(1, solid * 0.35));
+      if (o.glazed) seg(base + o.u0, base + o.u1, o.frosted || o.curtain === "drawn" ? "#5b6170" : "#7fd6ff", Math.max(1, solid * 0.35));
       cur = base + o.u1;
     }
     seg(cur, end, INK, solid);
   }
 
   // Room names.
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
   ctx.font = `${Math.max(9, Math.min(12, s * 0.75))}px ui-monospace, Menlo, Consolas, monospace`;
   for (const r of bp.rooms) {
     if (r.level !== level) continue;
@@ -158,7 +158,7 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
     if (!label) continue;
     const x = sx((r.rect.x0 + r.rect.x1) / 2);
     const z = sz((r.rect.z0 + r.rect.z1) / 2);
-    ctx.fillStyle = 'rgba(7,8,12,0.72)';
+    ctx.fillStyle = "rgba(7,8,12,0.72)";
     ctx.fillRect(x - label.length * 3.3 - 4, z - 8, label.length * 6.6 + 8, 16);
     ctx.fillStyle = INK;
     ctx.fillText(label, x, z);
@@ -169,11 +169,11 @@ export function drawPlan(canvas: HTMLCanvasElement, bp: MansionBlueprint, level:
     if (p.level !== level) continue;
     ctx.beginPath();
     ctx.arc(sx(p.stand.x), sz(p.stand.z), 3, 0, Math.PI * 2);
-    ctx.strokeStyle = '#0b0d13';
+    ctx.strokeStyle = "#0b0d13";
     ctx.lineWidth = 1.5;
-    ctx.fillStyle = p.visibility >= POI_VISIBLE ? '#ffffff' : '#0b0d13';
+    ctx.fillStyle = p.visibility >= POI_VISIBLE ? "#ffffff" : "#0b0d13";
     ctx.fill();
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = "#ffffff";
     ctx.stroke();
   }
 
@@ -215,15 +215,15 @@ function drawDial(canvas: HTMLCanvasElement, bp: MansionBlueprint, az: number): 
   ctx.fillStyle = INK;
   ctx.fillRect(cx - 26, cy - 12, 52, 12);
   ctx.fillStyle = MUTED;
-  ctx.font = '10px ui-monospace, Menlo, Consolas, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('garden front', cx, cy + 12);
+  ctx.font = "10px ui-monospace, Menlo, Consolas, monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("garden front", cx, cy + 12);
   // What each sampled bearing sees.
   const best = Math.max(...bp.site.perch.options.map((o) => o.partyVisible), 0.01);
   for (const o of bp.site.perch.options) {
     const [x0, y0] = pt(o.azimuthDeg, R + 6);
     const [x1, y1] = pt(o.azimuthDeg, R + 6 + 26 * (o.partyVisible / best));
-    ctx.strokeStyle = 'rgba(224,181,106,0.75)';
+    ctx.strokeStyle = "rgba(224,181,106,0.75)";
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(x0, y0);
@@ -250,7 +250,7 @@ function drawDial(canvas: HTMLCanvasElement, bp: MansionBlueprint, az: number): 
   ctx.beginPath();
   ctx.arc(kx, ky, 8, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#07080c';
+  ctx.strokeStyle = "#07080c";
   ctx.lineWidth = 2;
   ctx.stroke();
   return { cx, cy, R };
@@ -264,12 +264,12 @@ export interface Briefing {
 
 export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefing {
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-  const root = $('brief');
-  const plan = $<HTMLCanvasElement>('brief-plan');
-  const dial = $<HTMLCanvasElement>('brief-dial');
-  const slider = $<HTMLInputElement>('brief-az');
-  const elSlider = $<HTMLInputElement>('brief-el');
-  const elBars = $('brief-elbars');
+  const root = $("brief");
+  const plan = $<HTMLCanvasElement>("brief-plan");
+  const dial = $<HTMLCanvasElement>("brief-dial");
+  const slider = $<HTMLInputElement>("brief-az");
+  const elSlider = $<HTMLInputElement>("brief-el");
+  const elBars = $("brief-elbars");
   let base: MansionBlueprint | null = null;
   let shown: MansionBlueprint | null = null;
   let level = 0;
@@ -285,11 +285,12 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     const sl = shown.sightlines;
     const seen = shown.pois.filter((p) => p.visibility >= POI_VISIBLE).length;
     const az = shown.site.perch.azimuthDeg;
-    $('brief-title').textContent = `${shown.style.name} · ${shown.atrium?.shape === 'rotunda' ? 'rotunda' : 'galleried'} dome hall · ${shown.levels.length} storeys`;
-    $('brief-bearing').textContent = `${az > 0 ? '+' : ''}${az.toFixed(0)}° ${Math.abs(az) < 0.5 ? 'dead centre' : az > 0 ? 'east of the axis' : 'west of the axis'} · ${shown.site.perch.distance.toFixed(0)} m`;
+    $("brief-title").textContent = `${shown.style.name} · ${shown.atrium?.shape === "rotunda" ? "rotunda" : "galleried"} dome hall · ${shown.levels.length} storeys`;
+    $("brief-bearing").textContent =
+      `${az > 0 ? "+" : ""}${az.toFixed(0)}° ${Math.abs(az) < 0.5 ? "dead centre" : az > 0 ? "east of the axis" : "west of the axis"} · ${shown.site.perch.distance.toFixed(0)} m`;
     const el = shown.site.perch.elevationDeg;
     const above = shown.site.perch.eye.y - shown.groundFloorY;
-    $('brief-elevation').textContent = `elevation ${el.toFixed(0)}° · eye ${above.toFixed(0)} m above the ground floor${el < 0.5 ? ' · from the treeline' : ''}`;
+    $("brief-elevation").textContent = `elevation ${el.toFixed(0)}° · eye ${above.toFixed(0)} m above the ground floor${el < 0.5 ? " · from the treeline" : ""}`;
     const opts = shown.site.perch.elevationOptions;
     const top = Math.max(...opts.map((o) => o.partyVisible), 0.01);
     let nearest = 0;
@@ -298,9 +299,9 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     });
     elBars.replaceChildren(
       ...opts.map((o, i) => {
-        const b = document.createElement('i');
+        const b = document.createElement("i");
         b.style.height = `${Math.max(6, (o.partyVisible / top) * 100)}%`;
-        b.classList.toggle('on', i === nearest);
+        b.classList.toggle("on", i === nearest);
         b.title = `${o.elevationDeg.toFixed(0)}°: ${Math.round(o.partyVisible * 100)}% of the party floor`;
         return b;
       }),
@@ -308,12 +309,12 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     const a = shown.atrium;
     const hallIds = a ? [a.roomId, ...a.galleries.map((q) => q.roomId)] : [];
     const hallSeen = hallIds.length ? hallIds.reduce((t, id) => t + (sl.rooms[id] ?? 0), 0) / hallIds.length : 0;
-    $('brief-hall').textContent = a ? `${Math.round(hallSeen * 100)}%` : 'none';
-    $('brief-party').textContent = `${Math.round(sl.partyVisible * 100)}%`;
-    $('brief-terrace').textContent = `${Math.round(sl.terrace * 100)}%`;
-    $('brief-hidden').textContent = `${Math.round(sl.hiddenShare * 100)}%`;
-    $('brief-pois').textContent = `${seen} of ${shown.pois.length}`;
-    for (const b of document.querySelectorAll<HTMLButtonElement>('#brief-floors button')) b.classList.toggle('on', Number(b.dataset.level) === level);
+    $("brief-hall").textContent = a ? `${Math.round(hallSeen * 100)}%` : "none";
+    $("brief-party").textContent = `${Math.round(sl.partyVisible * 100)}%`;
+    $("brief-terrace").textContent = `${Math.round(sl.terrace * 100)}%`;
+    $("brief-hidden").textContent = `${Math.round(sl.hiddenShare * 100)}%`;
+    $("brief-pois").textContent = `${seen} of ${shown.pois.length}`;
+    for (const b of document.querySelectorAll<HTMLButtonElement>("#brief-floors button")) b.classList.toggle("on", Number(b.dataset.level) === level);
   };
 
   const setPerch = (deg: number, elevation: number) => {
@@ -334,7 +335,7 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
   const setAz = (deg: number) => setPerch(deg, Number(elSlider.value));
   const setEl = (deg: number) => setPerch(Number(slider.value), deg);
 
-  elSlider.addEventListener('input', () => setEl(Number(elSlider.value)));
+  elSlider.addEventListener("input", () => setEl(Number(elSlider.value)));
   // The plan zooms about the cursor with the wheel, pans by dragging, and resets on a double click.
   const clampPlan = () => {
     if (!base) return;
@@ -345,7 +346,7 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     planView.z = Math.max(-rz, Math.min(rz, planView.z));
   };
   plan.addEventListener(
-    'wheel',
+    "wheel",
     (e) => {
       e.preventDefault();
       const r = plan.getBoundingClientRect();
@@ -362,44 +363,44 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
     },
     { passive: false },
   );
-  plan.addEventListener('pointerdown', (e) => plan.setPointerCapture(e.pointerId));
-  plan.addEventListener('pointermove', (e) => {
+  plan.addEventListener("pointerdown", (e) => plan.setPointerCapture(e.pointerId));
+  plan.addEventListener("pointermove", (e) => {
     if (!e.buttons || planView.zoom === 1) return;
     planView.x -= e.movementX / planScale;
     planView.z -= e.movementY / planScale;
     clampPlan();
     render();
   });
-  plan.addEventListener('dblclick', () => {
+  plan.addEventListener("dblclick", () => {
     planView.zoom = 1;
     planView.x = planView.z = 0;
     render();
   });
-  plan.style.touchAction = 'none';
-  plan.style.cursor = 'grab';
+  plan.style.touchAction = "none";
+  plan.style.cursor = "grab";
 
-  slider.addEventListener('input', () => setAz(Number(slider.value)));
+  slider.addEventListener("input", () => setAz(Number(slider.value)));
   const fromPointer = (e: PointerEvent) => {
     const r = dial.getBoundingClientRect();
     setAz((Math.atan2(e.clientX - r.left - geom.cx, e.clientY - r.top - geom.cy) * 180) / Math.PI);
   };
-  dial.addEventListener('pointerdown', (e) => {
+  dial.addEventListener("pointerdown", (e) => {
     dial.setPointerCapture(e.pointerId);
     fromPointer(e);
   });
-  dial.addEventListener('pointermove', (e) => e.buttons && fromPointer(e));
-  $('brief-deploy').onclick = () => {
+  dial.addEventListener("pointermove", (e) => e.buttons && fromPointer(e));
+  $("brief-deploy").onclick = () => {
     if (shown) onDeploy(shown);
     api.close();
   };
-  addEventListener('resize', () => root.classList.contains('on') && render());
-  addEventListener('keydown', (e) => {
-    if (!root.classList.contains('on') || (e.target as HTMLElement).tagName === 'INPUT') return;
-    if (e.key === 'ArrowLeft') setAz(Number(slider.value) - 2);
-    else if (e.key === 'ArrowRight') setAz(Number(slider.value) + 2);
-    else if (e.key === 'ArrowUp') setEl(Number(elSlider.value) + 3);
-    else if (e.key === 'ArrowDown') setEl(Number(elSlider.value) - 3);
-    else if (e.key === 'Enter') $('brief-deploy').click();
+  addEventListener("resize", () => root.classList.contains("on") && render());
+  addEventListener("keydown", (e) => {
+    if (!root.classList.contains("on") || (e.target as HTMLElement).tagName === "INPUT") return;
+    if (e.key === "ArrowLeft") setAz(Number(slider.value) - 2);
+    else if (e.key === "ArrowRight") setAz(Number(slider.value) + 2);
+    else if (e.key === "ArrowUp") setEl(Number(elSlider.value) + 3);
+    else if (e.key === "ArrowDown") setEl(Number(elSlider.value) - 3);
+    else if (e.key === "Enter") $("brief-deploy").click();
   });
 
   const api: Briefing = {
@@ -417,10 +418,10 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
       elSlider.min = String(elLo);
       elSlider.max = String(elHi);
       elSlider.value = String(Math.round(bp.site.perch.elevationDeg));
-      const floors = $('brief-floors');
+      const floors = $("brief-floors");
       floors.replaceChildren();
       for (const lv of bp.levels) {
-        const b = document.createElement('button');
+        const b = document.createElement("button");
         b.textContent = LEVEL_NAMES[lv.index] ?? `level ${lv.index}`;
         b.dataset.level = String(lv.index);
         b.onclick = () => {
@@ -429,14 +430,14 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
         };
         floors.appendChild(b);
       }
-      root.classList.add('on');
+      root.classList.add("on");
       render();
     },
     close() {
-      root.classList.remove('on');
+      root.classList.remove("on");
     },
     get isOpen() {
-      return root.classList.contains('on');
+      return root.classList.contains("on");
     },
   };
   return api;

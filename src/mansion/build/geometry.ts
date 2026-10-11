@@ -5,7 +5,7 @@
  * normal, world-space UV (metres; materials set texture repeat), linear tint
  * colour and lighting scope. One bucket becomes one draw call.
  */
-import * as THREE from 'three';
+import * as THREE from "three";
 
 class Grow {
   data: Float32Array;
@@ -97,7 +97,7 @@ export class GeometryBuilder {
   setTint(hexOrColor: string | THREE.Color | V3): this {
     if (Array.isArray(hexOrColor)) this.tint = hexOrColor;
     else {
-      const c = typeof hexOrColor === 'string' ? new THREE.Color(hexOrColor) : hexOrColor;
+      const c = typeof hexOrColor === "string" ? new THREE.Color(hexOrColor) : hexOrColor;
       this.tint = [c.r, c.g, c.b];
     }
     return this;
@@ -226,10 +226,17 @@ export class GeometryBuilder {
   }
 
   cylinder(key: string, cx: number, y: number, cz: number, r0: number, r1: number, h: number, seg = 10, cap = true): void {
-    this.lathe(key, cx, cz, [
-      [r0, y],
-      [r1, y + h],
-    ], seg, cap);
+    this.lathe(
+      key,
+      cx,
+      cz,
+      [
+        [r0, y],
+        [r1, y + h],
+      ],
+      seg,
+      cap,
+    );
   }
 
   /** UV sphere / ellipsoid. */
@@ -464,10 +471,17 @@ export class GeometryBuilder {
       const old = bk.idx.data.slice(from, bk.idx.length);
       bk.idx.length = from;
       const read = (i: number): Vx => [
-        bk.pos.data[i * 3]!, bk.pos.data[i * 3 + 1]!, bk.pos.data[i * 3 + 2]!,
-        bk.nor.data[i * 3]!, bk.nor.data[i * 3 + 1]!, bk.nor.data[i * 3 + 2]!,
-        bk.uv.data[i * 2]!, bk.uv.data[i * 2 + 1]!,
-        bk.col.data[i * 3]!, bk.col.data[i * 3 + 1]!, bk.col.data[i * 3 + 2]!,
+        bk.pos.data[i * 3]!,
+        bk.pos.data[i * 3 + 1]!,
+        bk.pos.data[i * 3 + 2]!,
+        bk.nor.data[i * 3]!,
+        bk.nor.data[i * 3 + 1]!,
+        bk.nor.data[i * 3 + 2]!,
+        bk.uv.data[i * 2]!,
+        bk.uv.data[i * 2 + 1]!,
+        bk.col.data[i * 3]!,
+        bk.col.data[i * 3 + 1]!,
+        bk.col.data[i * 3 + 2]!,
         bk.scope.data[i]!,
       ];
       for (let t = 0; t + 2 < old.length; t += 3) {
@@ -500,11 +514,11 @@ export class GeometryBuilder {
     for (const [key, b] of this.buckets) {
       if (b.vertexCount === 0) continue;
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(b.pos.view().slice(), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(b.nor.view().slice(), 3));
-      g.setAttribute('uv', new THREE.BufferAttribute(b.uv.view().slice(), 2));
-      g.setAttribute('color', new THREE.BufferAttribute(b.col.view().slice(), 3));
-      g.setAttribute('aScope', new THREE.BufferAttribute(b.scope.view().slice(), 1));
+      g.setAttribute("position", new THREE.BufferAttribute(b.pos.view().slice(), 3));
+      g.setAttribute("normal", new THREE.BufferAttribute(b.nor.view().slice(), 3));
+      g.setAttribute("uv", new THREE.BufferAttribute(b.uv.view().slice(), 2));
+      g.setAttribute("color", new THREE.BufferAttribute(b.col.view().slice(), 3));
+      g.setAttribute("aScope", new THREE.BufferAttribute(b.scope.view().slice(), 1));
       g.setIndex(new THREE.BufferAttribute(b.idx.data.slice(0, b.idx.length), 1));
       g.computeBoundingSphere();
       g.computeBoundingBox();

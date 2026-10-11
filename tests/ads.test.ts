@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut } from '../src/scope/ads';
-import { SCOPE, eyeboxTransmission } from '../src/scope/optics';
+import { describe, expect, it } from "vitest";
+import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut } from "../src/scope/ads";
+import { SCOPE, eyeboxTransmission } from "../src/scope/optics";
 
 const still = { x: 0, y: 0, z: 0 };
 
-describe('scope-in and scope-out', () => {
-  it('ends exactly on the weld and at rest, for every attempt', () => {
+describe("scope-in and scope-out", () => {
+  it("ends exactly on the weld and at rest, for every attempt", () => {
     for (let n = 0; n < 20; n++) {
       const m = planScopeIn(0, HEAD_UP, still, n);
       const e = adsEye(m, m.duration);
@@ -17,7 +17,7 @@ describe('scope-in and scope-out', () => {
     }
   });
 
-  it('lands the primary stroke high and back, so the picture opens as a crescent before it fills', () => {
+  it("lands the primary stroke high and back, so the picture opens as a crescent before it fills", () => {
     const m = planScopeIn(0, HEAD_UP, still, 0);
     const land = adsEye(m, 0.8 * 0.45 * 0.9);
     expect(land.z).toBeGreaterThan(3);
@@ -29,14 +29,17 @@ describe('scope-in and scope-out', () => {
     expect(eyeboxTransmission(SCOPE, 8, e, 0, -0.15)).toBeGreaterThan(eyeboxTransmission(SCOPE, 8, e, 0, 0.15));
   });
 
-  it('is minimum-jerk: bell-shaped speed, peak in the first half of the move', () => {
+  it("is minimum-jerk: bell-shaped speed, peak in the first half of the move", () => {
     const m = planScopeIn(0, HEAD_UP, still, 3);
     let peak = 0;
     let tPeak = 0;
     for (let t = 0; t < m.duration; t += 0.005) {
       const v = adsVelocity(m, t);
       const s = Math.hypot(v.x, v.y, v.z);
-      if (s > peak) { peak = s; tPeak = t; }
+      if (s > peak) {
+        peak = s;
+        tPeak = t;
+      }
     }
     expect(tPeak).toBeGreaterThan(0.15);
     expect(tPeak).toBeLessThan(0.3);
@@ -45,7 +48,7 @@ describe('scope-in and scope-out', () => {
     expect(peak).toBeLessThan(350);
   });
 
-  it('lifts off the weld back first, then up, and can be reversed mid-move without a jump', () => {
+  it("lifts off the weld back first, then up, and can be reversed mid-move without a jump", () => {
     const m = planScopeOut(0, ON_WELD, still, 0);
     const early = adsEye(m, 0.05);
     expect(early.z).toBeGreaterThan(early.y);
@@ -57,7 +60,7 @@ describe('scope-in and scope-out', () => {
     expect(Math.hypot(a.x - from.x, a.y - from.y, a.z - from.z)).toBeLessThan(0.5);
   });
 
-  it('rolls the view a degree or so mid-move and not at either end', () => {
+  it("rolls the view a degree or so mid-move and not at either end", () => {
     const m = planScopeIn(0, HEAD_UP, still, 0);
     expect(adsRoll(m, 0)).toBe(0);
     expect(adsRoll(m, m.duration)).toBe(0);

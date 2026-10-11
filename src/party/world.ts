@@ -6,24 +6,24 @@
  * Everything is worked out once from the blueprint and kept here as plain data. The
  * blueprint itself is never changed, so the generator's output and tests stay as they are.
  */
-import { collectOccluders } from '../mansion/analysis/occluders';
-import { SightlineTracer } from '../mansion/analysis/sightlines';
-import { VIS_BLOCK } from '../mansion/analysis/nav';
-import type { Rng } from '../mansion/core/rng';
-import type { MansionBlueprint, Opening, Room, RoomType, Wall } from '../mansion/core/types';
-import type { DoorGate, Pathfinder, Walker } from './path';
-import type { DrinkId } from './types';
+import { collectOccluders } from "../mansion/analysis/occluders";
+import { SightlineTracer } from "../mansion/analysis/sightlines";
+import { VIS_BLOCK } from "../mansion/analysis/nav";
+import type { Rng } from "../mansion/core/rng";
+import type { MansionBlueprint, Opening, Room, RoomType, Wall } from "../mansion/core/types";
+import type { DoorGate, Pathfinder, Walker } from "./path";
+import type { DrinkId } from "./types";
 
 // ------------------------------------------------------------------- doors
 
 /** How a door locks: not at all, a bolt on the inside, or a key. */
-export type LockKind = 'none' | 'inside' | 'key';
+export type LockKind = "none" | "inside" | "key";
 
 export interface Door {
   id: number;
   /** Opening.id, the same as NavLink.via. */
   opening: string;
-  kind: 'door' | 'double-door';
+  kind: "door" | "double-door";
   /** Room index on the wall's negative and positive sides. */
   rooms: [number, number];
   level: number;
@@ -31,7 +31,7 @@ export interface Door {
   x: number;
   z: number;
   /** The wall runs along this axis; the doorway is crossed along the other. */
-  axis: 'x' | 'z';
+  axis: "x" | "z";
   width: number;
   /** Nav cells inside the wall band: every route through the doorway crosses one. */
   cells: Int32Array;
@@ -45,7 +45,7 @@ export interface Door {
   /** The room its bolt is on (the bathroom or guest bedroom side), or -1. Anyone in there can draw it back. */
   inner: number;
   /** The ring that opens it when it is locked with a key. */
-  ring: 'staff' | 'host';
+  ring: "staff" | "host";
   /** Closes behind whoever walks through: bedrooms, the study, guest bedrooms. */
   closes: boolean;
   /** Leads only into a private room, so nobody walks through it on the way elsewhere. */
@@ -64,11 +64,11 @@ export const DEAD_COST = 60;
 /** What a person brings to a locked door: their id (for a bolt they drew), their ring and any lent key. */
 export type Access = Walker;
 
-const PRIVATE: ReadonlySet<RoomType> = new Set(['bedroom', 'bathroom', 'dressing-room', 'study']);
+const PRIVATE: ReadonlySet<RoomType> = new Set(["bedroom", "bathroom", "dressing-room", "study"]);
 
 // ---------------------------------------------------------------- curtains
 
-export type CurtainState = 'open' | 'sheer' | 'drawn';
+export type CurtainState = "open" | "sheer" | "drawn";
 
 export interface Curtain {
   id: number;
@@ -90,7 +90,7 @@ export interface Curtain {
 /** How much of the light a window lets through, as the occluders weigh it (occluders.ts). */
 export const CURTAIN_TRANSMIT: Record<CurtainState, number> = { open: 0.92, sheer: 0.45, drawn: 0 };
 
-export const MOVABLE_CURTAINS: ReadonlySet<RoomType> = new Set(['bedroom', 'dressing-room', 'sitting-room', 'study', 'cinema']);
+export const MOVABLE_CURTAINS: ReadonlySet<RoomType> = new Set(["bedroom", "dressing-room", "sitting-room", "study", "cinema"]);
 
 // ------------------------------------------------------------------ lights
 
@@ -99,18 +99,18 @@ export const LIGHT_OFF = 0.08;
 
 // ------------------------------------------------------------------- items
 
-export type ItemKind = 'glass' | 'tray' | 'bottle' | 'kit' | 'bandage' | 'bag' | 'coat' | 'spectacles' | 'camera';
-export const ITEM_KINDS: readonly ItemKind[] = ['glass', 'tray', 'bottle', 'kit', 'bandage', 'bag', 'coat', 'spectacles', 'camera'];
+export type ItemKind = "glass" | "tray" | "bottle" | "kit" | "bandage" | "bag" | "coat" | "spectacles" | "camera";
+export const ITEM_KINDS: readonly ItemKind[] = ["glass", "tray", "bottle", "kit", "bandage", "bag", "coat", "spectacles", "camera"];
 
 /**
  * full: a glass with drink in it. empty: drunk. down: set down somewhere, drink and all.
  * carried, worn, hung (a coat in the coat room), shelved (where it lives), lost, broken,
  * cleared (taken away by staff: out of play).
  */
-export type ItemState = 'full' | 'empty' | 'down' | 'carried' | 'worn' | 'hung' | 'shelved' | 'lost' | 'broken' | 'cleared';
-export const ITEM_STATES: readonly ItemState[] = ['full', 'empty', 'down', 'carried', 'worn', 'hung', 'shelved', 'lost', 'broken', 'cleared'];
+export type ItemState = "full" | "empty" | "down" | "carried" | "worn" | "hung" | "shelved" | "lost" | "broken" | "cleared";
+export const ITEM_STATES: readonly ItemState[] = ["full", "empty", "down", "carried", "worn", "hung", "shelved", "lost", "broken", "cleared"];
 
-export const DRINK_IDS: readonly DrinkId[] = ['champagne', 'red', 'white', 'beer', 'whisky', 'water'];
+export const DRINK_IDS: readonly DrinkId[] = ["champagne", "red", "white", "beer", "whisky", "water"];
 
 /**
  * Every item in play, struct-of-arrays. Ids are dense and never reused, so an id held
@@ -211,7 +211,7 @@ export interface RoomEdge {
   /** Room index on the other side; -2 is the terrace. */
   to: number;
   via: string;
-  kind: 'door' | 'french-window' | 'stair';
+  kind: "door" | "french-window" | "stair";
   /** World door id when the doorway has a door, else -1. */
   door: number;
   level: number;
@@ -268,7 +268,7 @@ export class World implements DoorGate {
     for (const w of bp.walls) {
       if (w.exterior || !w.neg || !w.pos) continue;
       for (const o of w.openings) {
-        if (!o.passable || (o.kind !== 'door' && o.kind !== 'double-door')) continue;
+        if (!o.passable || (o.kind !== "door" && o.kind !== "double-door")) continue;
         const a = byId.get(w.neg);
         const b = byId.get(w.pos);
         if (!a || !b) continue;
@@ -278,13 +278,13 @@ export class World implements DoorGate {
 
     this.graph = Array.from({ length: R + 1 }, () => []);
     const doorOf = new Map(this.doors.map((d) => [d.opening, d.id]));
-    const idx = (id: string): number | null => (id === 'terrace' ? -2 : (byId.get(id)?.index ?? null));
+    const idx = (id: string): number | null => (id === "terrace" ? -2 : (byId.get(id)?.index ?? null));
     for (const l of bp.nav.links) {
       const a = idx(l.from);
       const b = idx(l.to);
       if (a === null || b === null) continue;
       const edge = (to: number): RoomEdge => ({ to, via: l.via, kind: l.kind, door: doorOf.get(l.via) ?? -1, level: l.level, x: l.x, z: l.z });
-      if (l.kind === 'stair') {
+      if (l.kind === "stair") {
         // Stair links come once per end; the end's own room is `from`.
         this.graph[a < 0 ? R : a]!.push(edge(b));
       } else {
@@ -305,10 +305,21 @@ export class World implements DoorGate {
       for (const o of w.openings) {
         if (!o.glazed || o.frosted || !o.curtain) continue;
         const u = (o.u0 + o.u1) / 2;
-        const x = w.axis === 'x' ? w.a.x + u : w.a.x;
-        const z = w.axis === 'x' ? w.a.z : w.a.z + u;
-        const toward = (w.axis === 'x' ? (eye.z - z) * out : (eye.x - x) * out) > 0;
-        const c: Curtain = { id: this.curtains.length, opening: o.id, room: room.index, level: w.level, x, z, state: o.curtain, base: o.curtain, movable: MOVABLE_CURTAINS.has(room.type), towardPerch: toward };
+        const x = w.axis === "x" ? w.a.x + u : w.a.x;
+        const z = w.axis === "x" ? w.a.z : w.a.z + u;
+        const toward = (w.axis === "x" ? (eye.z - z) * out : (eye.x - x) * out) > 0;
+        const c: Curtain = {
+          id: this.curtains.length,
+          opening: o.id,
+          room: room.index,
+          level: w.level,
+          x,
+          z,
+          state: o.curtain,
+          base: o.curtain,
+          movable: MOVABLE_CURTAINS.has(room.type),
+          towardPerch: toward,
+        };
         this.curtains.push(c);
         this.roomCurtains[room.index]!.push(c.id);
       }
@@ -320,8 +331,8 @@ export class World implements DoorGate {
 
   private addDoor(w: Wall, o: Opening, a: Room, b: Room): void {
     const id = this.doors.length;
-    const base = w.axis === 'x' ? w.a.x : w.a.z;
-    const line = w.axis === 'x' ? w.a.z : w.a.x;
+    const base = w.axis === "x" ? w.a.x : w.a.z;
+    const line = w.axis === "x" ? w.a.z : w.a.x;
     const n = this.pf.levels.get(w.level);
     const cellsOut: number[] = [];
     if (n) {
@@ -329,10 +340,10 @@ export class World implements DoorGate {
       const half = Math.max(w.thickness / 2, n.cell / 2 + 1e-3);
       const t0 = base + o.u0;
       const t1 = base + o.u1;
-      const x0 = w.axis === 'x' ? t0 : line - half;
-      const x1 = w.axis === 'x' ? t1 : line + half;
-      const z0 = w.axis === 'x' ? line - half : t0;
-      const z1 = w.axis === 'x' ? line + half : t1;
+      const x0 = w.axis === "x" ? t0 : line - half;
+      const x1 = w.axis === "x" ? t1 : line + half;
+      const z0 = w.axis === "x" ? line - half : t0;
+      const z1 = w.axis === "x" ? line + half : t1;
       const c0 = Math.max(0, Math.floor((x0 - n.originX) / n.cell));
       const c1 = Math.min(n.cols - 1, Math.floor((x1 - n.originX) / n.cell));
       const r0 = Math.max(0, Math.floor((z0 - n.originZ) / n.cell));
@@ -352,44 +363,44 @@ export class World implements DoorGate {
       }
     }
     const types = [a.type, b.type];
-    const bath = types.includes('bathroom');
+    const bath = types.includes("bathroom");
     const guest = this.guestBedrooms.includes(a.index) || this.guestBedrooms.includes(b.index);
     // A room's own entrance: the private room on one side, a room you can come from on the other.
-    const entranceTo = (t: RoomType) => types.includes(t) && types.some((x) => !PRIVATE.has(x) || x === 'bathroom');
-    let lock: LockKind = 'none';
+    const entranceTo = (t: RoomType) => types.includes(t) && types.some((x) => !PRIVATE.has(x) || x === "bathroom");
+    let lock: LockKind = "none";
     let locked = false;
     let open = 1;
-    let ring: Door['ring'] = 'host';
+    let ring: Door["ring"] = "host";
     let closes = false;
     let inner = -1;
     if (bath) {
-      lock = 'inside';
+      lock = "inside";
       open = AJAR;
-      inner = a.type === 'bathroom' ? a.index : b.index;
-    } else if (guest && types.includes('bedroom')) {
+      inner = a.type === "bathroom" ? a.index : b.index;
+    } else if (guest && types.includes("bedroom")) {
       // A guest bedroom: unlocked with the key inside, so it bolts from inside like a bathroom.
-      lock = 'inside';
+      lock = "inside";
       open = 0;
       closes = true;
       inner = this.guestBedrooms.includes(a.index) ? a.index : b.index;
-    } else if (entranceTo('bedroom') || types.includes('study')) {
-      lock = 'key';
+    } else if (entranceTo("bedroom") || types.includes("study")) {
+      lock = "key";
       locked = true;
       open = 0;
       closes = true;
-    } else if (types.includes('pantry')) {
-      lock = 'key';
-      ring = 'staff';
+    } else if (types.includes("pantry")) {
+      lock = "key";
+      ring = "staff";
     }
     const dead = types.some((t) => PRIVATE.has(t));
     this.doors.push({
       id,
       opening: o.id,
-      kind: o.kind === 'double-door' ? 'double-door' : 'door',
+      kind: o.kind === "double-door" ? "double-door" : "door",
       rooms: [a.index, b.index],
       level: w.level,
-      x: w.axis === 'x' ? base + (o.u0 + o.u1) / 2 : line,
-      z: w.axis === 'x' ? line : base + (o.u0 + o.u1) / 2,
+      x: w.axis === "x" ? base + (o.u0 + o.u1) / 2 : line,
+      z: w.axis === "x" ? line : base + (o.u0 + o.u1) / 2,
       axis: w.axis,
       width: o.u1 - o.u0,
       cells: Int32Array.from(cellsOut),
@@ -439,7 +450,7 @@ export class World implements DoorGate {
       this.comps.clear();
       this.compsEpoch = this.epoch;
     }
-    const key = who ? `${who.ring}:${who.lentKey}` : '-';
+    const key = who ? `${who.ring}:${who.lentKey}` : "-";
     let c = this.comps.get(key);
     if (!c) this.comps.set(key, (c = this.components(who)));
     const R = this.graph.length - 1;
@@ -482,8 +493,8 @@ export class World implements DoorGate {
   canPass(d: Door, who: Access | null): boolean {
     if (!d.locked) return true;
     if (!who) return false;
-    if (d.lock === 'inside') return d.lockedBy === who.id || who.room === d.inner;
-    return who.ring === 'host' || (who.ring === 'staff' && d.ring === 'staff') || who.lentKey === d.id;
+    if (d.lock === "inside") return d.lockedBy === who.id || who.room === d.inner;
+    return who.ring === "host" || (who.ring === "staff" && d.ring === "staff") || who.lentKey === d.id;
   }
 
   /** Lock or unlock a door. `by` is who turns the key or the bolt. */
@@ -495,7 +506,7 @@ export class World implements DoorGate {
     }
     d.locked = locked;
     if (!locked && !d.dead) this.unlocks++;
-    d.lockedBy = locked && d.lock === 'inside' ? by : -1;
+    d.lockedBy = locked && d.lock === "inside" ? by : -1;
     if (d.lockedBy >= 0) {
       this.bolters.add(d.lockedBy);
       this.boltedRooms.add(d.inner);
@@ -603,8 +614,20 @@ export class World implements DoorGate {
     const bp = this.bp;
     if (!this.visOpenTracer) {
       const open = new Set(this.curtains.filter((c) => c.movable).map((c) => c.opening));
-      const walls = bp.walls.map((w) => (w.openings.some((o) => open.has(o.id)) ? { ...w, openings: w.openings.map((o) => (open.has(o.id) ? { ...o, curtain: 'open' as const } : o)) } : w));
-      const occ = collectOccluders({ walls, rooms: bp.rooms, levels: bp.levels, masses: bp.masses, porticos: bp.porticos, props: bp.props, site: bp.site, atrium: bp.atrium, stairs: bp.stairs, roofTerraces: bp.roofTerraces, withProps: true });
+      const walls = bp.walls.map((w) => (w.openings.some((o) => open.has(o.id)) ? { ...w, openings: w.openings.map((o) => (open.has(o.id) ? { ...o, curtain: "open" as const } : o)) } : w));
+      const occ = collectOccluders({
+        walls,
+        rooms: bp.rooms,
+        levels: bp.levels,
+        masses: bp.masses,
+        porticos: bp.porticos,
+        props: bp.props,
+        site: bp.site,
+        atrium: bp.atrium,
+        stairs: bp.stairs,
+        roofTerraces: bp.roofTerraces,
+        withProps: true,
+      });
       this.visOpenTracer = new SightlineTracer(bp.site.perch.eye, occ);
     }
     const tracer = this.visOpenTracer;
@@ -636,9 +659,9 @@ export class World implements DoorGate {
  * and a spare. They are the bedrooms nearest the top of a stair on the first floor up.
  */
 function pickGuestBedrooms(bp: MansionBlueprint, rng: Rng): number[] {
-  const beds = bp.rooms.filter((r) => r.type === 'bedroom');
+  const beds = bp.rooms.filter((r) => r.type === "bedroom");
   if (!beds.length) return [];
-  const tops = bp.nav.links.filter((l) => l.kind === 'stair' && l.level > 0);
+  const tops = bp.nav.links.filter((l) => l.kind === "stair" && l.level > 0);
   const lowest = Math.min(...beds.map((r) => r.level));
   const dist = (r: Room) => {
     const cx = (r.inner.x0 + r.inner.x1) / 2;
@@ -647,7 +670,7 @@ function pickGuestBedrooms(bp: MansionBlueprint, rng: Rng): number[] {
     return (Number.isFinite(d) ? d : 50) + 30 * (r.level - lowest);
   };
   const sorted = [...beds].sort((a, b) => dist(a) - dist(b) || a.index - b.index);
-  const cloak = bp.rooms.some((r) => r.type === 'cloakroom');
+  const cloak = bp.rooms.some((r) => r.type === "cloakroom");
   const n = cloak ? (rng.chance(0.5) ? 2 : 1) : 2;
   return sorted.slice(0, Math.min(n, sorted.length)).map((r) => r.index);
 }

@@ -6,10 +6,10 @@
  * pavilions, portico, conservatory). Everything downstream snaps to this grid,
  * which is what keeps windows, walls and rooms in classical alignment.
  */
-import { rect, type Rect } from '../core/geom';
-import { snap, type Rng } from '../core/rng';
-import type { LevelSpec, MansionSize, MassingType, StyleDef } from '../core/types';
-import { atriumFits } from './atrium';
+import { rect, type Rect } from "../core/geom";
+import { snap, type Rng } from "../core/rng";
+import type { LevelSpec, MansionSize, MassingType, StyleDef } from "../core/types";
+import { atriumFits } from "./atrium";
 
 // Wall thicknesses (kept here so the massing can size rooms; walls.ts re-exports them).
 export const EXTERIOR_T = 0.6;
@@ -17,9 +17,9 @@ export const INTERIOR_T = 0.25;
 
 export interface WingSpec {
   id: string;
-  side: 'west' | 'east';
+  side: "west" | "east";
   /** Which front the wing projects from. */
-  toward: 'garden' | 'entrance';
+  toward: "garden" | "entrance";
   rect: Rect;
   /** Length in bays along z. */
   bays: number;
@@ -63,9 +63,9 @@ export interface MassingPlan {
   gardenPortico: { depth: number; giant: boolean } | null;
   entrancePortico: { depth: number } | null;
   wings: WingSpec[];
-  conservatory: { side: 'west' | 'east'; rect: Rect } | null;
+  conservatory: { side: "west" | "east"; rect: Rect } | null;
   /** Side of the back pile carrying the service stair. The grand stair is inside the dome hall. */
-  serviceSide: 'west' | 'east';
+  serviceSide: "west" | "east";
 }
 
 // A great house: the smallest is eleven bays, wide enough for a five-bay hall and the rooms such a
@@ -81,8 +81,7 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   const bays = rng.pick(SIZE_BAYS[size]);
   const W = snap(bays * bay, 0.01);
 
-  const type: MassingType =
-    forced ?? rng.weighted(Object.entries(style.massingWeights) as [MassingType, number][]);
+  const type: MassingType = forced ?? rng.weighted(Object.entries(style.massingWeights) as [MassingType, number][]);
   // Wings need enough façade between them to read as a court.
 
   const mainLevels = rng.int(style.floors[0], style.floors[1]);
@@ -107,18 +106,14 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   // The dome hall is seven bays wide (five in a compact house), a ballroom with a real dance floor
   // between the stair's arms, and runs back from the garden
   // front deep into the house. Behind it, on the axis, a three-bay entrance hall with a room either side.
-  const centerFront = size === 'compact' ? 5 : 7;
+  const centerFront = size === "compact" ? 5 : 7;
   const centerBack = 3;
   const entranceDepth = snap(rng.range(5.0, 6.0), 0.1);
 
-  let gardenPavilion = rng.chance(style.pavilionChance)
-    ? { bays: centerFront, depth: snap(rng.range(2.0, 4.0), 0.1) }
-    : null;
+  let gardenPavilion = rng.chance(style.pavilionChance) ? { bays: centerFront, depth: snap(rng.range(2.0, 4.0), 0.1) } : null;
   // Pavilions only ever widen the central room, so they always cover whole rooms.
   const entrancePavilion = rng.chance(0.5) ? { bays: centerBack, depth: snap(rng.range(1.0, 2.0), 0.1) } : null;
-  const gardenPortico = rng.chance(style.porticoChance)
-    ? { depth: snap(rng.range(2.8, 3.6), 0.1), giant: mainLevels >= 2 && rng.chance(0.7) }
-    : null;
+  const gardenPortico = rng.chance(style.porticoChance) ? { depth: snap(rng.range(2.8, 3.6), 0.1), giant: mainLevels >= 2 && rng.chance(0.7) } : null;
   const entrancePortico = rng.chance(0.6) ? { depth: snap(rng.range(2.6, 3.2), 0.1) } : null;
   const entrancePav = entrancePavilion;
 
@@ -150,12 +145,12 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
   const ww = 2 * bay;
   // Glass-roofed houses keep their wings to one storey, as orangery ranges.
   const wingLevels = mainLevels >= 3 && rng.chance(0.6) && !style.glassRoofs ? 2 : 1;
-  const addWings = (toward: 'garden' | 'entrance') => {
-    const nb = rng.int(3, size === 'palatial' ? 6 : 5);
+  const addWings = (toward: "garden" | "entrance") => {
+    const nb = rng.int(3, size === "palatial" ? 6 : 5);
     const L = snap(nb * bay, 0.01);
-    for (const side of ['west', 'east'] as const) {
-      const x0 = side === 'west' ? -W / 2 : W / 2 - ww;
-      const z0 = toward === 'garden' ? zGarden : zEntrance - L;
+    for (const side of ["west", "east"] as const) {
+      const x0 = side === "west" ? -W / 2 : W / 2 - ww;
+      const z0 = toward === "garden" ? zGarden : zEntrance - L;
       wings.push({
         id: `wing-${toward}-${side}`,
         side,
@@ -166,20 +161,20 @@ export function planMassing(rng: Rng, style: StyleDef, size: MansionSize, forced
       });
     }
   };
-  if (type === 'u-garden' || type === 'h') addWings('garden');
-  if (type === 'u-entrance' || type === 'h') addWings('entrance');
+  if (type === "u-garden" || type === "h") addWings("garden");
+  if (type === "u-entrance" || type === "h") addWings("entrance");
 
   // Conservatory on an open end of the front pile.
-  let conservatory: MassingPlan['conservatory'] = null;
+  let conservatory: MassingPlan["conservatory"] = null;
   // About half of all houses have one: usual where the garden front has open ends, occasional beside a garden wing.
-  if (rng.chance(type === 'block' || type === 'u-entrance' ? 0.7 : 0.25)) {
-    const side = rng.pick(['west', 'east'] as const);
+  if (rng.chance(type === "block" || type === "u-entrance" ? 0.7 : 0.25)) {
+    const side = rng.pick(["west", "east"] as const);
     const cw = snap(rng.range(6.5, 9.0), 0.1);
-    const x0 = side === 'east' ? W / 2 : -W / 2 - cw;
+    const x0 = side === "east" ? W / 2 : -W / 2 - cw;
     conservatory = { side, rect: rect(snap(x0, 0.01), zFrontInner, snap(x0 + cw, 0.01), zGarden) };
   }
 
-  const serviceSide = rng.pick(['west', 'east'] as const);
+  const serviceSide = rng.pick(["west", "east"] as const);
 
   return {
     type,

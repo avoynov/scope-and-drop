@@ -1,80 +1,80 @@
-import * as THREE from 'three';
-import { ROUNDS, holdRad } from '../../src/scope/ballistics';
-import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from '../../src/scope/ads';
-import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from '../../src/scope/optics';
-import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from '../../src/scope/recoil';
-import { RETICLES, drawReticle, type Reticle } from '../../src/scope/reticles';
-import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from '../../src/scope/shot';
-import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from '../../src/scope/wind';
-import { createSound } from './audio';
-import { createComposite } from './composite';
-import { GLAZING, type GlazingId } from '../../src/scope/glass';
-import { createGlass } from './glass';
-import { DRUM_R_MM, TURN_LIFT_MM, createDrum, drumHome, drumStep } from './drum';
-import { FLAG_DEG_PER_MS } from './flags';
-import { buildRifle, createNearPasses } from './near';
-import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from './scene';
-import { createShooting, type Aim } from './shooting';
-import { createWindGL } from './wind-gl';
-import { woundSvg, woundText } from './wound-card';
+import * as THREE from "three";
+import { ROUNDS, holdRad } from "../../src/scope/ballistics";
+import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
+import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
+import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
+import { RETICLES, drawReticle, type Reticle } from "../../src/scope/reticles";
+import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
+import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
+import { createSound } from "./audio";
+import { createComposite } from "./composite";
+import { GLAZING, type GlazingId } from "../../src/scope/glass";
+import { createGlass } from "./glass";
+import { DRUM_R_MM, TURN_LIFT_MM, createDrum, drumHome, drumStep } from "./drum";
+import { FLAG_DEG_PER_MS } from "./flags";
+import { buildRifle, createNearPasses } from "./near";
+import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from "./scene";
+import { createShooting, type Aim } from "./shooting";
+import { createWindGL } from "./wind-gl";
+import { woundSvg, woundText } from "./wound-card";
 
 const params = new URLSearchParams(location.search);
-const shot = params.has('shot');
-if (shot) document.body.classList.add('shot');
-if (params.get('hud') === '0') document.body.classList.add('nohud');
-const W = Number(params.get('w') ?? 0) || innerWidth;
-const H = Number(params.get('h') ?? 0) || innerHeight;
+const shot = params.has("shot");
+if (shot) document.body.classList.add("shot");
+if (params.get("hud") === "0") document.body.classList.add("nohud");
+const W = Number(params.get("w") ?? 0) || innerWidth;
+const H = Number(params.get("h") ?? 0) || innerHeight;
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
 
 /**
  * The rifle behind each reticle, and the mannequin it is meant for: the SVD and the bolt rifle shoot the one at
  * 412 m, the VSS the one at the game's range, 183 m (range.targets[1]).
  */
-const RIFLE = { pso: 'svd', tree: 'bolt', vss: 'vss' } as const satisfies Record<Reticle['id'], RifleId>;
-const HOME = { pso: 0, tree: 0, vss: 1 } as const satisfies Record<Reticle['id'], number>;
-const reticleParam = params.get('reticle');
+const RIFLE = { pso: "svd", tree: "bolt", vss: "vss" } as const satisfies Record<Reticle["id"], RifleId>;
+const HOME = { pso: 0, tree: 0, vss: 1 } as const satisfies Record<Reticle["id"], number>;
+const reticleParam = params.get("reticle");
 
 const state = {
-  reticle: (reticleParam === 'tree' || reticleParam === 'vss' ? reticleParam : 'pso') as Reticle['id'],
-  mag: num('mag', 8),
-  parallax: num('par', reticleParam === 'vss' ? NEAR_M : RANGE_M), // metres; Infinity = ∞
+  reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
+  mag: num("mag", 8),
+  parallax: num("par", reticleParam === "vss" ? NEAR_M : RANGE_M), // metres; Infinity = ∞
   // A good scope, well set up: parallax on the target, eye centred at full eye relief.
-  eye: { x: num('ex', 0), y: num('ey', 0), z: num('ez', 0), pupilMm: num('pupil', 3) } as Eye,
-  illum: params.has('illum'),
-  sway: !params.has('nosway'),
-  mirage: !params.has('nomirage'),
-  drift: !params.has('nodrift'),
+  eye: { x: num("ex", 0), y: num("ey", 0), z: num("ez", 0), pupilMm: num("pupil", 3) } as Eye,
+  illum: params.has("illum"),
+  sway: !params.has("nosway"),
+  mirage: !params.has("nomirage"),
+  drift: !params.has("nodrift"),
   /** Pan shadow: how far the head trails a quick swing (0 = glued to the stock, 1 = a firm cheek weld, 2 = loose). */
-  pan: num('pan', 1),
+  pan: num("pan", 1),
   /**
    * Wind over the range: speed (m/s at 3 m), the clock direction it blows from, and how much it gusts. It
    * follows the ground (`flatwind` turns that off); the boulder's shelter is baked below, once the range is built.
    */
   wind: (() => {
-    const [speed = 2.5, from = 9.5] = (params.get('wind') ?? '').split(',').filter(Boolean).map(Number);
-    const w: Wind = { speed, fromClock: from, gust: params.has('nogust') ? 0 : 0.3 };
+    const [speed = 2.5, from = 9.5] = (params.get("wind") ?? "").split(",").filter(Boolean).map(Number);
+    const w: Wind = { speed, fromClock: from, gust: params.has("nogust") ? 0 : 0.3 };
     // Everything the scope can see: the sage runs out to 1.84 km over ±26°.
-    if (!params.has('flatwind')) w.terrain = terrainWind(heightAt, -900, -2000, 900, 150, 10);
+    if (!params.has("flatwind")) w.terrain = terrainWind(heightAt, -900, -2000, 900, 150, 10);
     return w;
   })(),
   /** Easy: a wind meter at the hide gives the wind in m/s. Otherwise only the range itself tells it. */
-  easy: params.has('easy'),
-  sound: !params.has('mute'),
+  easy: params.has("easy"),
+  sound: !params.has("mute"),
   /**
    * Where each rifle's elevation dial is set, as a detent: the range drums on 1, the 100 m zero, unless `zero=<m>`
    * says otherwise (the nearest mark); the bolt rifle's mil turret on 0 unless `mils=<mil>` dials it up.
    */
   dial: (() => {
     const onDrum = (d: Dial) => {
-      if (d.kind === 'mil') return Math.max(0, Math.min(d.clicks, Math.round(num('mils', 0) / d.clickMil)));
-      const z = num('zero', BATTLE_ZERO_M);
+      if (d.kind === "mil") return Math.max(0, Math.min(d.clicks, Math.round(num("mils", 0) / d.clickMil)));
+      const z = num("zero", BATTLE_ZERO_M);
       return d.marksM.reduce((b, m, k) => (Math.abs(m - z) < Math.abs(d.marksM[b]! - z) ? k : b), 0);
     };
-    return { pso: onDrum(RIFLES.svd.dial), tree: onDrum(RIFLES.bolt.dial), vss: onDrum(RIFLES.vss.dial) } as Record<Reticle['id'], number>;
+    return { pso: onDrum(RIFLES.svd.dial), tree: onDrum(RIFLES.bolt.dial), vss: onDrum(RIFLES.vss.dial) } as Record<Reticle["id"], number>;
   })(),
   /** The glass screens in front of the mannequins: the glazing (or off), and how far they are turned (deg). */
-  glass: ((g) => (g && g in GLAZING ? g : 'off'))(params.get('glass')) as GlazingId | 'off',
-  glassAngle: num('glassangle', 0),
+  glass: ((g) => (g && g in GLAZING ? g : "off"))(params.get("glass")) as GlazingId | "off",
+  glassAngle: num("glassangle", 0),
   yaw: 0,
   pitch: 0,
 };
@@ -83,21 +83,21 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuff
 const dpr = shot ? 1 : Math.min(devicePixelRatio, 2);
 renderer.setPixelRatio(dpr);
 renderer.setSize(W, H);
-renderer.shadowMap.enabled = !params.has('noshadow');
+renderer.shadowMap.enabled = !params.has("noshadow");
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // The range and the sun never move, so the shadow map is the same every frame: draw it once, on the first
 // render that has the sun in it, instead of before every view.
 renderer.shadowMap.autoUpdate = false;
 renderer.shadowMap.needsUpdate = true;
 renderer.autoClear = true;
-document.getElementById('view')!.appendChild(renderer.domElement);
+document.getElementById("view")!.appendChild(renderer.domElement);
 
 const windGL = createWindGL(state.wind);
 const range = buildRange(windGL);
 const { scene } = range;
 /** The boulder's shelter, for the mean wind direction. Baked again when the direction changes. */
 const bakeShelter = () => {
-  if (params.has('flatwind')) return;
+  if (params.has("flatwind")) return;
   state.wind.shelter = shelterWind(range.obstacles, state.wind.fromClock, heightAt, -60, -560, 100, -300, 2);
 };
 bakeShelter();
@@ -111,11 +111,14 @@ wideCam.position.copy(eyePos);
 // Aim at the chest of the mannequin this rifle is meant for.
 {
   const home = range.targets[HOME[state.reticle]]!.head;
-  const d = home.clone().setY(home.y - 0.55).sub(eyePos);
+  const d = home
+    .clone()
+    .setY(home.y - 0.55)
+    .sub(eyePos);
   state.yaw = Math.atan2(-d.x, -d.z);
   state.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
   // hold=<units>: aim that many reticle units high (and hold=<up>,<right> for wind), so a chevron sits on the chest.
-  const [up = 0, right = 0] = (params.get('hold') ?? '').split(',').filter(Boolean).map(Number);
+  const [up = 0, right = 0] = (params.get("hold") ?? "").split(",").filter(Boolean).map(Number);
   const unit = RETICLES[state.reticle]().unitRad;
   state.pitch += up * unit;
   state.yaw -= right * unit;
@@ -135,15 +138,15 @@ let R = 0;
 let scopeRT: THREE.WebGLRenderTarget;
 let wideRT: THREE.WebGLRenderTarget;
 let wideLoRT: THREE.WebGLRenderTarget;
-const retCanvas = document.createElement('canvas');
-const retCtx = retCanvas.getContext('2d')!;
+const retCanvas = document.createElement("canvas");
+const retCtx = retCanvas.getContext("2d")!;
 const retTex = new THREE.CanvasTexture(retCanvas);
 retTex.colorSpace = THREE.NoColorSpace;
 retTex.premultiplyAlpha = false;
 retTex.generateMipmaps = false;
 retTex.minFilter = THREE.LinearFilter;
 
-const quad = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)));
+const quad = new THREE.Mesh(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)));
 quad.frustumCulled = false;
 const quadScene = new THREE.Scene();
 quadScene.add(quad);
@@ -157,11 +160,11 @@ const glass = createGlass(range, eyePos);
 const shooting = createShooting(range, sound, glass);
 /** Glazes the frames afresh (or takes them away); their shadows change, so the shadow map is redrawn. */
 function glaze(): void {
-  glass.set(state.glass === 'off' ? null : state.glass, state.glassAngle);
+  glass.set(state.glass === "off" ? null : state.glass, state.glassAngle);
   renderer.shadowMap.needsUpdate = true;
 }
 glaze();
-const GLASS_NEXT = { off: 'single', single: 'double', double: 'laminated', laminated: 'tempered', tempered: 'off' } as const satisfies Record<GlazingId | 'off', GlazingId | 'off'>;
+const GLASS_NEXT = { off: "single", single: "double", double: "laminated", laminated: "tempered", tempered: "off" } as const satisfies Record<GlazingId | "off", GlazingId | "off">;
 
 function layout(): void {
   const bw = Math.round(W * dpr);
@@ -194,11 +197,11 @@ function layout(): void {
   rifle.camera.fov = wideCam.fov;
   rifle.camera.aspect = wideCam.aspect;
   rifle.camera.updateProjectionMatrix();
-  retKey = '';
+  retKey = "";
   wideDrawn = null;
 }
 
-let retKey = '';
+let retKey = "";
 /** The surround last drawn into wideLoRT, and where the naked eye was looking, so a still view can reuse it. */
 let wideDrawn: THREE.WebGLRenderTarget | null = null;
 const wideDrawnQ = new THREE.Quaternion();
@@ -214,7 +217,7 @@ function drawRet(): void {
   retCtx.clearRect(0, 0, S, S);
   // FFP: units → canvas px grows with magnification. Canvas half-width ↔ tan(half apparent field).
   const pxPerUnit = ((S / 2) * state.mag * Math.tan(r.unitRad)) / tanHalfApparent(SCOPE);
-  drawReticle(retCtx, r, S / 2, S / 2, pxPerUnit, 'rgba(6,6,6,0.97)', state.illum ? r.illum : null);
+  drawReticle(retCtx, r, S / 2, S / 2, pxPerUnit, "rgba(6,6,6,0.97)", state.illum ? r.illum : null);
   retTex.needsUpdate = true;
 }
 
@@ -247,12 +250,12 @@ function aimDistance(dir: THREE.Vector3): number {
 }
 
 const $ = (id: string) => document.getElementById(id)!;
-const magIn = $('mag') as HTMLInputElement;
-const parIn = $('par') as HTMLInputElement;
-const exIn = $('ex') as HTMLInputElement;
-const eyIn = $('ey') as HTMLInputElement;
-const ezIn = $('ez') as HTMLInputElement;
-const panIn = $('pan') as HTMLInputElement;
+const magIn = $("mag") as HTMLInputElement;
+const parIn = $("par") as HTMLInputElement;
+const exIn = $("ex") as HTMLInputElement;
+const eyIn = $("ey") as HTMLInputElement;
+const ezIn = $("ez") as HTMLInputElement;
+const panIn = $("pan") as HTMLInputElement;
 
 // Parallax dial: 50 m … 1500 m on a log scale, then ∞ at the stop.
 const parToSlider = (m: number) => (Number.isFinite(m) ? (Math.log(m / 50) / Math.log(30)) * 100 : 105);
@@ -267,9 +270,9 @@ const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 1
  */
 const DOPE_RANGES = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
 const COS_DEG = [5, 10, 15, 20, 25, 30, 35, 40, 45];
-const dope = $('dope');
+const dope = $("dope");
 function syncDope(): void {
-  const show = state.reticle === 'tree';
+  const show = state.reticle === "tree";
   dope.hidden = !show;
   if (!show || dope.innerHTML) return;
   const rf = RIFLES.bolt;
@@ -279,9 +282,23 @@ function syncDope(): void {
   const cols = (from: number) => DOPE_RANGES.slice(from, from + half);
   dope.innerHTML =
     `<div class="dope-head"><b>DOPE</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · elevation, mil</span></div>` +
-    `<table>${[0, half].map((f) => `<tr><th>m</th>${cols(f).map((d) => `<td>${d}</td>`).join('')}</tr><tr><th>mil</th>${cols(f).map((d) => `<td>${elev(d)}</td>`).join('')}</tr>`).join('')}</table>` +
+    `<table>${[0, half]
+      .map(
+        (f) =>
+          `<tr><th>m</th>${cols(f)
+            .map((d) => `<td>${d}</td>`)
+            .join("")}</tr><tr><th>mil</th>${cols(f)
+            .map((d) => `<td>${elev(d)}</td>`)
+            .join("")}</tr>`,
+      )
+      .join("")}</table>` +
     `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: dial for range × cos(angle)</div>` +
-    `<table class="cos"><tr><th>°</th>${COS_DEG.map((a) => `<td>${a}</td>`).join('')}</tr><tr><th>cos</th>${COS_DEG.map((a) => `<td>${Math.cos((a * Math.PI) / 180).toFixed(2).replace(/^0/, '')}</td>`).join('')}</tr></table>`;
+    `<table class="cos"><tr><th>°</th>${COS_DEG.map((a) => `<td>${a}</td>`).join("")}</tr><tr><th>cos</th>${COS_DEG.map(
+      (a) =>
+        `<td>${Math.cos((a * Math.PI) / 180)
+          .toFixed(2)
+          .replace(/^0/, "")}</td>`,
+    ).join("")}</tr></table>`;
 }
 
 /**
@@ -290,22 +307,24 @@ function syncDope(): void {
  * full-value crosswind as a flag at 3 m reads it, rounded to the quarter mark a shooter can hold.
  */
 const CARD_FLAGS = [20, 45, 70, 90];
-const CARD_RANGES = { pso: [200, 400, 600, 800], tree: [200, 400, 600, 800], vss: [100, 200, 300] } as const satisfies Record<Reticle['id'], readonly number[]>;
-const windCard = $('windcard');
-let windCardFor = '';
+const CARD_RANGES = { pso: [200, 400, 600, 800], tree: [200, 400, 600, 800], vss: [100, 200, 300] } as const satisfies Record<Reticle["id"], readonly number[]>;
+const windCard = $("windcard");
+let windCardFor = "";
 const quarters = (h: number) => {
   const q = Math.round(h * 4);
-  if (q === 0) return '0';
+  if (q === 0) return "0";
   const whole = Math.floor(q / 4);
-  const part = ['', '¼', '½', '¾'][q % 4]!;
-  return `${whole || ''}${part}` || '0';
+  const part = ["", "¼", "½", "¾"][q % 4]!;
+  return `${whole || ""}${part}` || "0";
 };
 const flagIcon = (deg: number) => {
   const a = (Math.min(88, deg) * Math.PI) / 180;
   // The fly streams out at `deg` from the pole: hoist 5 px, fly 11 px.
   const p = (along: number, down: number) => `${(4 + along * Math.sin(a)).toFixed(1)},${(2 + down + along * Math.cos(a)).toFixed(1)}`;
-  return `<svg width="22" height="20" viewBox="0 0 22 20"><line x1="4" y1="1" x2="4" y2="20" stroke="currentColor" stroke-width="1.2"/>` +
-    `<polygon points="${p(0, 0)} ${p(11, 0)} ${p(11, 5)} ${p(0, 5)}" fill="#f0552a"/></svg>`;
+  return (
+    `<svg width="22" height="20" viewBox="0 0 22 20"><line x1="4" y1="1" x2="4" y2="20" stroke="currentColor" stroke-width="1.2"/>` +
+    `<polygon points="${p(0, 0)} ${p(11, 0)} ${p(11, 5)} ${p(0, 5)}" fill="#f0552a"/></svg>`
+  );
 };
 function syncWindCard(): void {
   const key = `${state.reticle}|${state.easy}`;
@@ -314,28 +333,35 @@ function syncWindCard(): void {
   const ret = RETICLES[state.reticle]();
   const ranges = CARD_RANGES[state.reticle];
   const drift = crossDriftPerMs(ROUNDS[ret.round], ranges);
-  const unit = ret.id === 'tree' ? 'mil' : 'thousandths';
+  const unit = ret.id === "tree" ? "mil" : "thousandths";
   windCard.innerHTML =
     `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[ret.round].name}<span>${unit} into the wind</span></div>` +
-    `<table><tr><th>flag</th>${CARD_FLAGS.map((d) => `<td>${flagIcon(d)}</td>`).join('')}</tr>` +
+    `<table><tr><th>flag</th>${CARD_FLAGS.map((d) => `<td>${flagIcon(d)}</td>`).join("")}</tr>` +
     // Easy: what the meter reads for each flag, to go from its number to a column.
-    (state.easy ? `<tr class="card-sub"><th>m/s</th>${CARD_FLAGS.map((d) => `<td>${d >= 90 ? 10 : Math.round(d / FLAG_DEG_PER_MS)}</td>`).join('')}</tr>` : '') +
-    ranges.map((r, i) => `<tr><th>${r} m</th>${CARD_FLAGS.map((d) => `<td>${quarters(((d >= 90 ? 10 : d / FLAG_DEG_PER_MS) * drift[i]!) / r / ret.unitRad)}</td>`).join('')}</tr>`).join('') +
+    (state.easy ? `<tr class="card-sub"><th>m/s</th>${CARD_FLAGS.map((d) => `<td>${d >= 90 ? 10 : Math.round(d / FLAG_DEG_PER_MS)}</td>`).join("")}</tr>` : "") +
+    ranges.map((r, i) => `<tr><th>${r} m</th>${CARD_FLAGS.map((d) => `<td>${quarters(((d >= 90 ? 10 : d / FLAG_DEG_PER_MS) * drift[i]!) / r / ret.unitRad)}</td>`).join("")}</tr>`).join("") +
     `</table><div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
 }
 
-const windIn = $('wind') as HTMLInputElement;
-const windDirIn = $('winddir') as HTMLInputElement;
+const windIn = $("wind") as HTMLInputElement;
+const windDirIn = $("winddir") as HTMLInputElement;
 windIn.oninput = () => (state.wind.speed = Number(windIn.value));
 windDirIn.oninput = () => {
   state.wind.fromClock = Number(windDirIn.value);
   // Wakes point downwind: bake them again once the dial has stopped moving.
   shelterDue = performance.now() + 250;
 };
-const glassAngleIn = $('glassangle') as HTMLInputElement;
-glassAngleIn.oninput = () => { state.glassAngle = Number(glassAngleIn.value); glaze(); };
-$('glass').onclick = () => { state.glass = GLASS_NEXT[state.glass]; glaze(); syncUi(); };
-$('pane').onclick = () => glaze();
+const glassAngleIn = $("glassangle") as HTMLInputElement;
+glassAngleIn.oninput = () => {
+  state.glassAngle = Number(glassAngleIn.value);
+  glaze();
+};
+$("glass").onclick = () => {
+  state.glass = GLASS_NEXT[state.glass];
+  glaze();
+  syncUi();
+};
+$("pane").onclick = () => glaze();
 
 /**
  * The elevation dial on top of the scope (see drum.ts), engraved on the 3D rifle. Each rifle keeps its own dial
@@ -350,7 +376,7 @@ const drum = createDrum((i) => {
   state.dial[state.reticle] = i;
   syncUi();
 });
-let drumShown = '';
+let drumShown = "";
 function syncDrum(): void {
   const r = drumRifle();
   if (drumShown !== r.id) {
@@ -369,18 +395,18 @@ function syncUi(): void {
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
   glassAngleIn.value = String(state.glassAngle);
-  $('glass').textContent = `Glass · ${state.glass}`;
-  $('glass').classList.toggle('on', state.glass !== 'off');
+  $("glass").textContent = `Glass · ${state.glass}`;
+  $("glass").classList.toggle("on", state.glass !== "off");
   magIn.value = String(state.mag);
   parIn.value = String(parToSlider(state.parallax));
   exIn.value = String(state.eye.x);
   eyIn.value = String(state.eye.y);
   ezIn.value = String(state.eye.z);
   panIn.value = String(state.pan);
-  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.classList.toggle('on', b.dataset.ret === state.reticle);
-  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.classList.toggle('on', state[b.dataset.flag as 'illum'] as boolean);
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]")) b.classList.toggle("on", b.dataset.ret === state.reticle);
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]")) b.classList.toggle("on", state[b.dataset.flag as "illum"] as boolean);
   syncWindCard();
-  $('scope').textContent = shooting.busy() ? 'Hands on the action' : adsIn ? 'Scope out · F' : 'Scope in · F';
+  $("scope").textContent = shooting.busy() ? "Hands on the action" : adsIn ? "Scope out · F" : "Scope in · F";
   rifle.setRifle(RIFLE[state.reticle]);
 }
 magIn.oninput = () => (state.mag = Number(magIn.value));
@@ -389,9 +415,22 @@ exIn.oninput = () => (state.eye.x = Number(exIn.value));
 eyIn.oninput = () => (state.eye.y = Number(eyIn.value));
 ezIn.oninput = () => (state.eye.z = Number(ezIn.value));
 panIn.oninput = () => (state.pan = Number(panIn.value));
-for (const b of document.querySelectorAll<HTMLButtonElement>('[data-ret]')) b.onclick = () => { state.reticle = b.dataset.ret as Reticle['id']; syncUi(); };
-for (const b of document.querySelectorAll<HTMLButtonElement>('[data-flag]')) b.onclick = () => { const k = b.dataset.flag as 'illum'; state[k] = !state[k]; syncUi(); };
-$('center').onclick = () => { state.eye.x = state.eye.y = 0; state.eye.z = 0; syncUi(); };
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]"))
+  b.onclick = () => {
+    state.reticle = b.dataset.ret as Reticle["id"];
+    syncUi();
+  };
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]"))
+  b.onclick = () => {
+    const k = b.dataset.flag as "illum";
+    state[k] = !state[k];
+    syncUi();
+  };
+$("center").onclick = () => {
+  state.eye.x = state.eye.y = 0;
+  state.eye.z = 0;
+  syncUi();
+};
 
 /**
  * Firing (see shooting.ts). The SVD, the bolt rifle behind the tree and the VSS kick differently. When the
@@ -417,10 +456,7 @@ function swayAt(t: number): [number, number] {
   if (!state.sway) return [0, 0];
   const b = 0.00032;
   const beat = Math.exp(-((t * 1.15) % 1) * 18);
-  return [
-    b * (Math.sin(t * 1.55) * 0.6 + Math.sin(t * 0.37 + 1) * 0.8),
-    b * (Math.sin(t * 3.1 + 0.4) * 0.5 + Math.sin(t * 0.29) * 0.9) - 0.00006 * beat,
-  ];
+  return [b * (Math.sin(t * 1.55) * 0.6 + Math.sin(t * 0.37 + 1) * 0.8), b * (Math.sin(t * 3.1 + 0.4) * 0.5 + Math.sin(t * 0.29) * 0.9) - 0.00006 * beat];
 }
 /** The hands working the action: offsets to the aim (see shooting.act). */
 let hand: { yaw: number; pitch: number } | null = null;
@@ -438,16 +474,16 @@ function fire(): void {
   if (recoil) foldRecoil(recoilAt(recoil.spec, recoil.v, exit - recoil.start));
   recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(shots++) };
 }
-$('fire').onclick = () => fire();
+$("fire").onclick = () => fire();
 /** B works the action (the bolt, or the charging handle), R changes the magazine: whenever asked, needed or not. */
-function work(kind: 'cycle' | 'reload'): void {
+function work(kind: "cycle" | "reload"): void {
   if (!shooting.work(clock, kind)) return;
   // The hands leave the grip, and the head comes up off the scope with them.
   if (adsIn) toggleScope();
   syncUi();
 }
-$('bolt').onclick = () => work('cycle');
-$('reload').onclick = () => work('reload');
+$("bolt").onclick = () => work("cycle");
+$("reload").onclick = () => work("reload");
 
 /**
  * Scope-in and scope-out (see src/scope/ads.ts). The rifle stays on its bipod and the head moves: down onto
@@ -456,7 +492,7 @@ $('reload').onclick = () => work('reload');
  * it sets exposure and how blurred the surroundings look, and lags the head like real light adaptation.
  */
 let ads: AdsMotion | null = null;
-let adsIn = !params.has('out');
+let adsIn = !params.has("out");
 let adsMoves = 0;
 let headRest: Vec3 = adsIn ? { ...ON_WELD } : { ...HEAD_UP };
 let adapt = adsIn ? 1 : 0;
@@ -472,7 +508,7 @@ function toggleScope(): void {
   ads = (adsIn ? planScopeIn : planScopeOut)(clock, from, vel, adsMoves++);
   syncUi();
 }
-$('scope').onclick = () => toggleScope();
+$("scope").onclick = () => toggleScope();
 
 /** Share of the field that reaches the eye: eyebox light inside the eyepiece glass, averaged over the field. */
 function imageShare(eye: Eye, tilt: { x: number; y: number }): number {
@@ -532,7 +568,7 @@ function pickDrum(e: { clientX: number; clientY: number }): { dist: number; arcP
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   picker.setFromCamera(ndc, rifle.camera);
-  const hit = picker.intersectObject(rifle.drum, true).find((h) => h.object.name === 'drum');
+  const hit = picker.intersectObject(rifle.drum, true).find((h) => h.object.name === "drum");
   if (!hit) return null;
   const pxPerM = r.height / 2 / Math.tan((rifle.camera.fov * Math.PI) / 360) / hit.distance;
   // Which side of the drum's axis the pointer is on, as the shooter sees it.
@@ -545,7 +581,7 @@ function pickAci(e: { clientX: number; clientY: number }): boolean {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   picker.setFromCamera(ndc, rifle.camera);
-  return picker.intersectObject(rifle.aci, true).some((h) => h.object.name === 'aci');
+  return picker.intersectObject(rifle.aci, true).some((h) => h.object.name === "aci");
 }
 /**
  * Where the eye looks, and so focuses. The rifle stays blurred, as the eye is on the range, until the shooter
@@ -557,36 +593,48 @@ const LOOK_HOLD = 1.5;
 let focusInv = 0;
 let drumLook = false;
 /** What the eye looks at with the head up: the drum or the angle indicator. */
-let lookAt: 'drum' | 'aci' = 'drum';
+let lookAt: "drum" | "aci" = "drum";
 let lookUntil = -Infinity;
-const focusPinned = params.has('focus') ? num('focus', 0.29) : 0;
+const focusPinned = params.has("focus") ? num("focus", 0.29) : 0;
 const lookAway = () => {
   if (drumLook) lookUntil = clock + LOOK_HOLD;
   drumLook = false;
 };
 let drumDrag: { x: number; acc: number; moved: number; arcPx: number; side: number } | null = null;
-canvas.addEventListener('pointerdown', (e) => {
-  if (e.button === 2) { toggleScope(); return; }
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button === 2) {
+    toggleScope();
+    return;
+  }
   canvas.setPointerCapture(e.pointerId);
   const d = pickDrum(e);
   if (d) {
     drumDrag = { x: e.clientX, acc: 0, moved: 0, arcPx: d.arcPx, side: d.side };
     drumLook = true;
-    lookAt = 'drum';
+    lookAt = "drum";
     return;
   }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 });
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 const endDrumDrag = () => {
   // A tap without a drag clicks it once, toward the side that was tapped.
   if (drumDrag && drumDrag.moved < 4) drum.turn(drumDrag.side || 1);
   if (drumDrag) lookAway();
   drumDrag = null;
 };
-canvas.addEventListener('pointerup', (e) => { endDrumDrag(); pointers.delete(e.pointerId); pinch = 0; });
-canvas.addEventListener('pointercancel', (e) => { if (drumDrag) lookAway(); drumDrag = null; pointers.delete(e.pointerId); pinch = 0; });
-canvas.addEventListener('pointermove', (e) => {
+canvas.addEventListener("pointerup", (e) => {
+  endDrumDrag();
+  pointers.delete(e.pointerId);
+  pinch = 0;
+});
+canvas.addEventListener("pointercancel", (e) => {
+  if (drumDrag) lookAway();
+  drumDrag = null;
+  pointers.delete(e.pointerId);
+  pinch = 0;
+});
+canvas.addEventListener("pointermove", (e) => {
   if (drumDrag) {
     // Turning by its rim: the side facing the eye follows the finger, so dragging left brings higher numbers in.
     const dx = e.clientX - drumDrag.x;
@@ -600,14 +648,14 @@ canvas.addEventListener('pointermove', (e) => {
     }
     return;
   }
-  if (!pointers.size && e.pointerType === 'mouse') {
+  if (!pointers.size && e.pointerType === "mouse") {
     const d = pickDrum(e);
     const a = !d && pickAci(e);
     if (d || a) {
       drumLook = true;
-      lookAt = d ? 'drum' : 'aci';
+      lookAt = d ? "drum" : "aci";
     } else lookAway();
-    canvas.style.cursor = d ? 'ew-resize' : '';
+    canvas.style.cursor = d ? "ew-resize" : "";
   }
   const prev = pointers.get(e.pointerId);
   if (!prev) return;
@@ -629,69 +677,85 @@ canvas.addEventListener('pointermove', (e) => {
   }
 });
 let drumWheel = 0;
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  if (pickDrum(e)) {
-    lookUntil = clock + LOOK_HOLD;
-    lookAt = 'drum';
-    drumWheel += e.deltaY + e.deltaX;
-    while (Math.abs(drumWheel) >= 40) {
-      const s = Math.sign(drumWheel);
-      drum.turn(-s);
-      drumWheel -= s * 40;
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    if (pickDrum(e)) {
+      lookUntil = clock + LOOK_HOLD;
+      lookAt = "drum";
+      drumWheel += e.deltaY + e.deltaX;
+      while (Math.abs(drumWheel) >= 40) {
+        const s = Math.sign(drumWheel);
+        drum.turn(-s);
+        drumWheel -= s * 40;
+      }
+      return;
     }
-    return;
-  }
-  state.mag = clampMag(state.mag * Math.pow(1.0015, -e.deltaY));
-  syncUi();
-}, { passive: false });
+    state.mag = clampMag(state.mag * Math.pow(1.0015, -e.deltaY));
+    syncUi();
+  },
+  { passive: false },
+);
 const clampMag = (m: number) => Math.max(SCOPE.minMag, Math.min(SCOPE.maxMag, m));
 const keys = new Set<string>();
-addEventListener('keydown', (e) => {
+addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
-  if (e.code === 'KeyT') { state.reticle = ({ pso: 'tree', tree: 'vss', vss: 'pso' } as const)[state.reticle]; syncUi(); }
-  if (e.code === 'KeyB' && !e.repeat) work('cycle');
-  if (e.code === 'KeyR' && !e.repeat) work('reload');
-  if (e.code === 'KeyL') { state.illum = !state.illum; syncUi(); }
-  if (e.code === 'KeyG') { state.glass = GLASS_NEXT[state.glass]; glaze(); syncUi(); }
-  if (e.code === 'KeyH') document.body.classList.toggle('nohud');
-  if (e.code === 'KeyF' && !e.repeat) toggleScope();
-  if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && !shooting.busy()) {
-    // Shift: a whole mil of clicks on the mil turret, turned in one go.
-    const n = e.shiftKey && drumRifle().dial.kind === 'mil' ? 10 : 1;
-    drum.turn(e.code === 'BracketLeft' ? -n : n);
-    lookUntil = clock + LOOK_HOLD;
-    lookAt = 'drum';
+  if (e.code === "KeyT") {
+    state.reticle = ({ pso: "tree", tree: "vss", vss: "pso" } as const)[state.reticle];
+    syncUi();
   }
-  if (e.code === 'Space') {
+  if (e.code === "KeyB" && !e.repeat) work("cycle");
+  if (e.code === "KeyR" && !e.repeat) work("reload");
+  if (e.code === "KeyL") {
+    state.illum = !state.illum;
+    syncUi();
+  }
+  if (e.code === "KeyG") {
+    state.glass = GLASS_NEXT[state.glass];
+    glaze();
+    syncUi();
+  }
+  if (e.code === "KeyH") document.body.classList.toggle("nohud");
+  if (e.code === "KeyF" && !e.repeat) toggleScope();
+  if ((e.code === "BracketLeft" || e.code === "BracketRight") && !shooting.busy()) {
+    // Shift: a whole mil of clicks on the mil turret, turned in one go.
+    const n = e.shiftKey && drumRifle().dial.kind === "mil" ? 10 : 1;
+    drum.turn(e.code === "BracketLeft" ? -n : n);
+    lookUntil = clock + LOOK_HOLD;
+    lookAt = "drum";
+  }
+  if (e.code === "Space") {
     e.preventDefault();
     if (!e.repeat) fire();
   }
 });
-addEventListener('keyup', (e) => {
+addEventListener("keyup", (e) => {
   keys.delete(e.code);
   // Space must not also click whichever panel button has focus.
-  if (e.code === 'Space') e.preventDefault();
+  if (e.code === "Space") e.preventDefault();
 });
-for (const b of document.querySelectorAll('button')) b.addEventListener('click', () => b.blur());
-addEventListener('resize', () => { if (!shot) location.reload(); });
+for (const b of document.querySelectorAll("button")) b.addEventListener("click", () => b.blur());
+addEventListener("resize", () => {
+  if (!shot) location.reload();
+});
 
 /** Easy: a wind meter on a mast beside the hide, at the flags' height, so its reading goes straight onto the card. */
 function windText(): string {
   const [x, , z] = windAt(state.wind, eyePos.x, heightAt(eyePos.x, eyePos.z) + WIND_REF_M, eyePos.z, clock, windTmp);
   const sp = Math.hypot(x, z);
-  if (sp < 0.2) return 'calm';
+  if (sp < 0.2) return "calm";
   // It blows toward (x, z); it comes from the opposite bearing, clockwise from downrange.
   let c = (Math.atan2(-x, z) * 6) / Math.PI;
   c = ((Math.round(c * 2) / 2 + 11.5) % 12) + 0.5;
   const h = Math.floor(c);
-  return `${sp.toFixed(1)} m/s · from ${h === 0 ? 12 : h}${c % 1 ? ':30' : ''}`;
+  return `${sp.toFixed(1)} m/s · from ${h === 0 ? 12 : h}${c % 1 ? ":30" : ""}`;
 }
-const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : '∞');
-const readout = $('readout');
+const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
+const readout = $("readout");
 let lastReadout = 0;
-const woundCard = $('wound');
+const woundCard = $("wound");
 let woundDrawn = -1;
 
 const dir = new THREE.Vector3();
@@ -705,7 +769,10 @@ const nearVel = new THREE.Vector2();
 let watched = 0;
 const offAim = (i: number, dir: THREE.Vector3) => {
   const f = range.targets[i]!.foot;
-  return toT.set(f.x, f.y + 1, f.z).sub(eyePos).angleTo(dir);
+  return toT
+    .set(f.x, f.y + 1, f.z)
+    .sub(eyePos)
+    .angleTo(dir);
 };
 function watch(dir: THREE.Vector3): void {
   const cur = offAim(watched, dir);
@@ -720,7 +787,7 @@ function watch(dir: THREE.Vector3): void {
 const sunLocal = new THREE.Vector3();
 const rifleFrame = new THREE.Quaternion();
 const headQ = new THREE.Quaternion();
-const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const euler = new THREE.Euler(0, 0, 0, "YXZ");
 function frame(t: number, dt: number): void {
   clock = t;
   if (shelterDue && performance.now() > shelterDue) {
@@ -758,12 +825,12 @@ function frame(t: number, dt: number): void {
   }
   // Head keys: WASD slide the eye across the exit pupil, Q/E change eye relief.
   const k = dt * 6;
-  if (keys.has('KeyA')) state.eye.x -= k;
-  if (keys.has('KeyD')) state.eye.x += k;
-  if (keys.has('KeyW')) state.eye.y += k;
-  if (keys.has('KeyS')) state.eye.y -= k;
-  if (keys.has('KeyQ')) state.eye.z -= k * 3;
-  if (keys.has('KeyE')) state.eye.z += k * 3;
+  if (keys.has("KeyA")) state.eye.x -= k;
+  if (keys.has("KeyD")) state.eye.x += k;
+  if (keys.has("KeyW")) state.eye.y += k;
+  if (keys.has("KeyS")) state.eye.y -= k;
+  if (keys.has("KeyQ")) state.eye.z -= k * 3;
+  if (keys.has("KeyE")) state.eye.z += k * 3;
   if (keys.size) syncUi();
   const eye = { ...state.eye };
   if (state.drift) {
@@ -837,10 +904,7 @@ function frame(t: number, dt: number): void {
   const Dr = Number.isFinite(D) ? D : 1e9;
   // Reticle shift in canvas uv: object radians → apparent tan (×mag) → field-stop units (/th) → uv (×½).
   const toUv = (state.mag / th) * 0.5;
-  u.uPar!.value.set(
-    parallaxShiftRad(SCOPE, state.mag, eye.x, Dr, state.parallax) * toUv,
-    parallaxShiftRad(SCOPE, state.mag, eye.y, Dr, state.parallax) * toUv,
-  );
+  u.uPar!.value.set(parallaxShiftRad(SCOPE, state.mag, eye.x, Dr, state.parallax) * toUv, parallaxShiftRad(SCOPE, state.mag, eye.y, Dr, state.parallax) * toUv);
   // Focus: parallax knob is also focus. Blur circle = aperture · |1/D − 1/P|.
   const invP = Number.isFinite(state.parallax) ? 1 / state.parallax : 0;
   u.uFocus!.value = (SCOPE.objectiveMm / 1000) * Math.abs(1 / Dr - invP) * 0.5 * toUv;
@@ -860,9 +924,7 @@ function frame(t: number, dt: number): void {
   // while it works them (the plan's gaze carries its own focus), on the drum while the shooter looks at it with
   // the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
-  const drumDist = lookAt === 'aci'
-    ? Math.hypot(eye.x - rifle.aciMm.x, eye.y - rifle.aciMm.y, eye.z - rifle.aciMm.z) / 1000
-    : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
+  const drumDist = lookAt === "aci" ? Math.hypot(eye.x - rifle.aciMm.x, eye.y - rifle.aciMm.y, eye.z - rifle.aciMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
   const looking = drumLook || t < lookUntil;
   const working = acted.busy;
   const wantFocus = focusPinned ? 1 / focusPinned : working ? hp.invF : adsIn || !looking ? 0 : 1 / drumDist;
@@ -914,12 +976,12 @@ function frame(t: number, dt: number): void {
     const dial = drumRifle().dial;
     const turned = drum.pos - drumHome(dial);
     // The mil turret climbs its thread a turn at a time; the lift is the turn it is on.
-    rifle.setDrum(turned * drumStep(dial), dial.kind === 'mil' ? (turned / dial.clicksPerRev) * TURN_LIFT_MM : 0);
+    rifle.setDrum(turned * drumStep(dial), dial.kind === "mil" ? (turned / dial.clicksPerRev) * TURN_LIFT_MM : 0);
   }
   // The angle indicator's pendulum hangs true, so its needle shows the bore's slope.
   rifle.setSlope(pitch);
   // Blur radius of a point 1 m away in half-res px: half the eye pupil over the distance, as apparent tan.
-  const kNear = (0.5 * (eye.pupilMm / 1000) / th) * (R / 2);
+  const kNear = ((0.5 * (eye.pupilMm / 1000)) / th) * (R / 2);
   // The eyepiece's sweep across the view during one exposure, for the smear.
   const ocular = (e: Vec3, r: RecoilState) => {
     const d = SCOPE.eyeReliefMm + e.z + r.eye.z;
@@ -963,32 +1025,46 @@ function frame(t: number, dt: number): void {
     const tf = trueFovRad(SCOPE, state.mag);
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
     const fig = 1.7 / range.targets[watched]!.range / ret.unitRad;
-    const unit = ret.id === 'tree' ? 'mil' : 'th';
+    const unit = ret.id === "tree" ? "mil" : "th";
     const status = shooting.status(t);
     readout.innerHTML = [
-      ['Head', acted.busy ? 'up · hands on the action' : ads ? (ads.dir === 'in' ? 'going down' : 'coming up') : adsIn ? 'on the weld' : 'up'],
-      ['Magnification', `${state.mag.toFixed(1)}×`],
-      ['True field', `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
-      ['Exit pupil', `${ep.toFixed(1)} mm`],
-      ['Parallax set', fmt(state.parallax)],
+      ["Head", acted.busy ? "up · hands on the action" : ads ? (ads.dir === "in" ? "going down" : "coming up") : adsIn ? "on the weld" : "up"],
+      ["Magnification", `${state.mag.toFixed(1)}×`],
+      ["True field", `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
+      ["Exit pupil", `${ep.toFixed(1)} mm`],
+      ["Parallax set", fmt(state.parallax)],
       // A range drum's number is the zero (1 is 100 m, where the cut reticles are true); the turret's is mils over the 100 m zero.
-      ((dial) => dial.kind === 'range'
-        ? ['Zero', `${dialReading(dial, state.dial[state.reticle])} m · drum ${dialReading(dial, state.dial[state.reticle]) / 100}`]
-        : ['Turret', `${dialReading(dial, state.dial[state.reticle]).toFixed(1)} mil up · zero ${BATTLE_ZERO_M} m`])(drumRifle().dial),
-      ['Round', `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
-      ['Rounds', status.state ? `${status.rounds} · ${status.state}` : status.rounds],
-      ...(state.easy ? [['Wind meter', windText()]] : []),
-      ...(state.glass !== 'off' ? [['Glass', `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? 'right' : 'left'}` : 'square-on'}`]] : []),
-      ['Last shot', status.shot],
-      ['Aim point', fmt(D)],
-      ['Parallax error', `${Math.abs(par).toFixed(2)} ${unit}`],
-      ['Target 1.7 m', `${fig.toFixed(2)} ${unit}`],
-    ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+      ((dial) =>
+        dial.kind === "range"
+          ? ["Zero", `${dialReading(dial, state.dial[state.reticle])} m · drum ${dialReading(dial, state.dial[state.reticle]) / 100}`]
+          : ["Turret", `${dialReading(dial, state.dial[state.reticle]).toFixed(1)} mil up · zero ${BATTLE_ZERO_M} m`])(drumRifle().dial),
+      ["Round", `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
+      ["Rounds", status.state ? `${status.rounds} · ${status.state}` : status.rounds],
+      ...(state.easy ? [["Wind meter", windText()]] : []),
+      ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
+      ["Last shot", status.shot],
+      ["Aim point", fmt(D)],
+      ["Parallax error", `${Math.abs(par).toFixed(2)} ${unit}`],
+      ["Target 1.7 m", `${fig.toFixed(2)} ${unit}`],
+    ]
+      .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`)
+      .join("");
     const w = status.wound;
     woundCard.hidden = !w;
     if (w) {
-      $('wound-text').innerHTML = woundText(w.wound, w.speed, w.since, w.glass);
-      if (woundDrawn !== w.n) { $('wound-svg').innerHTML = woundSvg(w.wound); woundDrawn = w.n; }
+      $("wound-text").innerHTML = woundText(w.wound, w.speed, w.since, w.glass);
+      const closeBtn = document.createElement("button");
+      closeBtn.innerText = "×";
+      closeBtn.className = "close-btn";
+      closeBtn.onClick = () => {
+        woundCard.hidden = true;
+      };
+      $("wound-text").appendChild(closeBtn);
+
+      if (woundDrawn !== w.n) {
+        $("wound-svg").innerHTML = woundSvg(w.wound);
+        woundDrawn = w.n;
+      }
     }
   }
 }
@@ -997,31 +1073,34 @@ layout();
 syncUi();
 if (shot) {
   // Deterministic still: fixed clock, a couple of frames so shadows and MSAA settle.
-  const t = num('t', 2.4);
+  const t = num("t", 2.4);
   // recoil=<s>: the still is taken that long after the trigger.
-  if (params.has('recoil')) recoil = { start: t - num('recoil', 0), spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
+  if (params.has("recoil")) recoil = { start: t - num("recoil", 0), spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
   // fire=<s>: the still is taken that long after the bullet left the muzzle (recoil and all).
-  if (params.has('fire')) {
-    const exit = t - num('fire', 0);
+  if (params.has("fire")) {
+    const exit = t - num("fire", 0);
     shooting.fireAt(exit, eyePos, aimAt(exit), state.wind);
     // norecoil: keep the rifle still, to look at the impact.
-    if (!params.has('norecoil')) recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
+    if (!params.has("norecoil")) recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
   }
   // panrate=<right>,<up> (deg/s): the still is taken mid-swing, with the head trailing as it would.
-  if (params.has('panrate')) {
-    const [right = 0, up = 0] = params.get('panrate')!.split(',').map(Number);
+  if (params.has("panrate")) {
+    const [right = 0, up = 0] = params.get("panrate")!.split(",").map(Number);
     const lag = PAN_LAG * state.pan;
     panHead.yaw = state.yaw + ((right * Math.PI) / 180) * lag;
     panHead.pitch = state.pitch - ((up * Math.PI) / 180) * lag;
   }
   // act=<s> / reload=<s>: the still is taken that long after the hands start working the bolt (a magazine
   // change on the SVD and VSS) or changing the magazine; the head comes up off the weld as they start.
-  const handStart = params.has('act') ? t - num('act', 0) : params.has('reload') ? t - num('reload', 0) : null;
-  if (handStart !== null) shooting.handleAt(handStart, params.has('reload'));
+  const handStart = params.has("act") ? t - num("act", 0) : params.has("reload") ? t - num("reload", 0) : null;
+  if (handStart !== null) shooting.handleAt(handStart, params.has("reload"));
   // adsin=<s> / adsout=<s>: the still is taken that long after the head starts down / up.
-  for (const [k, inward] of [['adsin', true], ['adsout', false]] as const) {
-    if (!params.has(k) && !(k === 'adsout' && handStart !== null)) continue;
-    const start = k === 'adsout' && handStart !== null ? handStart : t - num(k, 0);
+  for (const [k, inward] of [
+    ["adsin", true],
+    ["adsout", false],
+  ] as const) {
+    if (!params.has(k) && !(k === "adsout" && handStart !== null)) continue;
+    const start = k === "adsout" && handStart !== null ? handStart : t - num(k, 0);
     headRest = inward ? { ...HEAD_UP } : { ...ON_WELD };
     adsIn = inward;
     ads = (inward ? planScopeIn : planScopeOut)(start, headRest, { x: 0, y: 0, z: 0 }, 0);

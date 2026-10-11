@@ -1,8 +1,8 @@
 /** Porticos: free-standing colonnades with a pediment, on the bay grid. */
-import { rect } from '../core/geom';
-import { snap } from '../core/rng';
-import type { Portico, StyleDef } from '../core/types';
-import type { MassingPlan } from './massing';
+import { rect } from "../core/geom";
+import { snap } from "../core/rng";
+import type { Portico, StyleDef } from "../core/types";
+import type { MassingPlan } from "./massing";
 
 export function planPorticos(m: MassingPlan, style: StyleDef): Portico[] {
   const out: Portico[] = [];
@@ -16,8 +16,8 @@ export function planPorticos(m: MassingPlan, style: StyleDef): Portico[] {
     const z = snap(zFace + m.gardenPortico.depth - r - 0.15, 0.01);
     const top = giant ? m.levels[1]! : m.levels[0]!;
     out.push({
-      id: 'portico-garden',
-      side: 'garden',
+      id: "portico-garden",
+      side: "garden",
       columns: Array.from({ length: bays + 1 }, (_, i) => ({ x: snap(-half + i * m.bay, 0.01), z })),
       columnRadius: r,
       baseY: terraceY,
@@ -35,13 +35,13 @@ export function planPorticos(m: MassingPlan, style: StyleDef): Portico[] {
     const z = snap(zFace - m.entrancePortico.depth + r + 0.15, 0.01);
     const top = m.levels[0]!;
     out.push({
-      id: 'portico-entrance',
-      side: 'entrance',
+      id: "portico-entrance",
+      side: "entrance",
       columns: Array.from({ length: bays + 1 }, (_, i) => ({ x: snap(-half + i * m.bay, 0.01), z })),
       columnRadius: r,
       baseY: terraceY,
       topY: snap(top.floorY + top.height, 0.01),
-      order: style.columnOrder === 'corinthian' ? 'ionic' : style.columnOrder,
+      order: style.columnOrder === "corinthian" ? "ionic" : style.columnOrder,
       rect: rect(snap(-half - r - 0.35, 0.01), snap(zFace - m.entrancePortico.depth - 0.1, 0.01), snap(half + r + 0.35, 0.01), zFace),
       pediment: true,
     });

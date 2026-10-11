@@ -9,12 +9,12 @@
  * Frame: the demo's scene frame. x right, y up, z toward the shooter (the range runs down -z). Metres,
  * seconds, radians.
  */
-import { AIR, ROUNDS, cdG7, zeroTiltRad, type Round, type RoundId } from './ballistics';
+import { AIR, ROUNDS, cdG7, zeroTiltRad, type Round, type RoundId } from "./ballistics";
 
 export type Vec3 = [number, number, number];
 
 export interface Rifle {
-  id: 'svd' | 'bolt' | 'vss';
+  id: "svd" | "bolt" | "vss";
   name: string;
   round: RoundId;
   /** Rifling: one turn in this many mm, right-hand. */
@@ -29,7 +29,7 @@ export interface Rifle {
   /** Trigger break to primer (lock time) and primer to muzzle (barrel time). */
   lockS: number;
   barrelS: number;
-  action: 'semi' | 'bolt';
+  action: "semi" | "bolt";
   /** Rounds in a full magazine. How long the bolt and a magazine change take is worked out in handling.ts. */
   magazine: number;
   /** How much dust the muzzle blast raises off dry ground in front of a prone shooter (SVD = 1). */
@@ -45,14 +45,12 @@ export interface Rifle {
  * dial, the PSO-1's): each detent puts the zero at its mark. A mil turret moves the reticle by a fixed angle a
  * click, the same for any load; its 0 is the rifle's 100 m zero and a zero stop keeps it from going below.
  */
-export type Dial =
-  | { kind: 'range'; marksM: readonly number[] }
-  | { kind: 'mil'; clickMil: number; clicksPerRev: number; clicks: number };
+export type Dial = { kind: "range"; marksM: readonly number[] } | { kind: "mil"; clickMil: number; clicksPerRev: number; clicks: number };
 
 /** How many detents the dial has. */
-export const dialDetents = (d: Dial): number => (d.kind === 'range' ? d.marksM.length : d.clicks + 1);
+export const dialDetents = (d: Dial): number => (d.kind === "range" ? d.marksM.length : d.clicks + 1);
 /** The detent of the 100 m zero: the range drum's 1, the mil turret's 0. */
-export const dialHome = (d: Dial): number => (d.kind === 'range' ? Math.max(0, d.marksM.indexOf(BATTLE_ZERO_M)) : 0);
+export const dialHome = (d: Dial): number => (d.kind === "range" ? Math.max(0, d.marksM.indexOf(BATTLE_ZERO_M)) : 0);
 
 /**
  * How far the dial on `detent` tilts the bore up from the line of sight. A range drum zeroes the rifle at its
@@ -61,18 +59,18 @@ export const dialHome = (d: Dial): number => (d.kind === 'range' ? Math.max(0, d
 export function dialTiltRad(rf: Rifle, detent: number): number {
   const d = rf.dial;
   const r = ROUNDS[rf.round];
-  if (d.kind === 'range') return zeroTiltRad(r, d.marksM[detent]!, rf.sightM);
+  if (d.kind === "range") return zeroTiltRad(r, d.marksM[detent]!, rf.sightM);
   return zeroTiltRad(r, BATTLE_ZERO_M, rf.sightM) + detent * d.clickMil * 0.001;
 }
 
 /** The dial's reading on `detent`, as its engraving gives it: metres on a range drum, mils on a turret. */
-export const dialReading = (d: Dial, detent: number): number => (d.kind === 'range' ? d.marksM[detent]! : detent * d.clickMil);
+export const dialReading = (d: Dial, detent: number): number => (d.kind === "range" ? d.marksM[detent]! : detent * d.clickMil);
 
 /** The drum's normal setting: the rifle is zeroed at 100 m, drum on 1, and the cut reticles are cut for it. */
 export const BATTLE_ZERO_M = 100;
 
 /** Drum marks every 50 m from 100 m to `max`. Like the real PSO-1's, the drum starts at 1. */
-const drum = (max: number): Dial => ({ kind: 'range', marksM: Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50) });
+const drum = (max: number): Dial => ({ kind: "range", marksM: Array.from({ length: (max - 100) / 50 + 1 }, (_, i) => 100 + i * 50) });
 
 const MOA = Math.PI / (180 * 60);
 
@@ -89,9 +87,21 @@ export const RIFLES = {
    * 14 cm with the 7N1 only for a scope 70 mm over the bore (tested). PSO-1 drum: 100–1000 m in 50 m clicks.
    */
   svd: {
-    id: 'svd', name: 'SVD', round: '7n1', twistMm: 240, bulletLenMm: 32.3, bulletDiaMm: 7.92,
-    sigmaRad: 0.4 * MOA, mvSd: 8, lockS: 0.006, barrelS: 0.0013,
-    action: 'semi', magazine: 10, blastDust: 1, sightM: 0.07, dial: drum(1000),
+    id: "svd",
+    name: "SVD",
+    round: "7n1",
+    twistMm: 240,
+    bulletLenMm: 32.3,
+    bulletDiaMm: 7.92,
+    sigmaRad: 0.4 * MOA,
+    mvSd: 8,
+    lockS: 0.006,
+    barrelS: 0.0013,
+    action: "semi",
+    magazine: 10,
+    blastDust: 1,
+    sightM: 0.07,
+    dial: drum(1000),
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
@@ -101,9 +111,21 @@ export const RIFLES = {
    * 100 m zero. Nothing on it or on the reticle is cut for the load: the shooter dials from the DOPE card.
    */
   bolt: {
-    id: 'bolt', name: 'Bolt rifle', round: 'm118lr', twistMm: 286, bulletLenMm: 31.5, bulletDiaMm: 7.82,
-    sigmaRad: 0.25 * MOA, mvSd: 4, lockS: 0.003, barrelS: 0.0013,
-    action: 'bolt', magazine: 5, blastDust: 0.6, sightM: 0.058, dial: { kind: 'mil', clickMil: 0.1, clicksPerRev: 100, clicks: 290 },
+    id: "bolt",
+    name: "Bolt rifle",
+    round: "m118lr",
+    twistMm: 286,
+    bulletLenMm: 31.5,
+    bulletDiaMm: 7.82,
+    sigmaRad: 0.25 * MOA,
+    mvSd: 4,
+    lockS: 0.003,
+    barrelS: 0.0013,
+    action: "bolt",
+    magazine: 5,
+    blastDust: 0.6,
+    sightM: 0.058,
+    dial: { kind: "mil", clickMil: 0.1, clicksPerRev: 100, clicks: 290 },
   },
   /**
    * VSS "Vintorez", SP-5: integrally suppressed and subsonic. Spec: 4 shots inside 75 mm at 100 m, prone off
@@ -116,9 +138,21 @@ export const RIFLES = {
    * the SP-5 out to 400 m.
    */
   vss: {
-    id: 'vss', name: 'VSS', round: 'sp5', twistMm: 210, bulletLenMm: 36, bulletDiaMm: 9.25,
-    sigmaRad: 0.45 * MOA, mvSd: 4, lockS: 0.005, barrelS: 0.0019,
-    action: 'semi', magazine: 10, blastDust: 0.05, sightM: 0.07, dial: drum(400),
+    id: "vss",
+    name: "VSS",
+    round: "sp5",
+    twistMm: 210,
+    bulletLenMm: 36,
+    bulletDiaMm: 9.25,
+    sigmaRad: 0.45 * MOA,
+    mvSd: 4,
+    lockS: 0.005,
+    barrelS: 0.0019,
+    action: "semi",
+    magazine: 10,
+    blastDust: 0.05,
+    sightM: 0.07,
+    dial: drum(400),
   },
 } as const satisfies Record<string, Rifle>;
 export type RifleId = keyof typeof RIFLES;
@@ -207,7 +241,7 @@ export interface Path {
  */
 export function fly(o: FlyOptions): Path {
   const r = o.round;
-  if (r.model !== 'G7') throw new Error('fly() only knows G7');
+  if (r.model !== "G7") throw new Error("fly() only knows G7");
   const k = ((Math.PI / 8) * AIR.density) / (r.bc * 703.0696);
   const maxT = o.maxT ?? 3;
   const floor = o.floor ?? 300;
@@ -217,7 +251,9 @@ export function fly(o: FlyOptions): Path {
   let dk = 1;
   // The air moves slowly next to the bullet: one wind sample per stored step (1 ms, under a metre) is plenty.
   const acc = (vx: number, vy: number, vz: number, a: Float64Array) => {
-    const rx = vx - W[0], ry = vy - W[1], rz = vz - W[2];
+    const rx = vx - W[0],
+      ry = vy - W[1],
+      rz = vz - W[2];
     const v = Math.hypot(rx, ry, rz);
     const d = k * dk * v * cdG7(v / AIR.sound);
     // Coriolis: −2 Ω × v.
@@ -231,11 +267,17 @@ export function fly(o: FlyOptions): Path {
   const pos = new Float64Array(cap * 3);
   const speed = new Float64Array(cap);
   let [x, y, z] = o.origin;
-  let vx = o.dir[0] * o.mv, vy = o.dir[1] * o.mv, vz = o.dir[2] * o.mv;
+  let vx = o.dir[0] * o.mv,
+    vy = o.dir[1] * o.mv,
+    vz = o.dir[2] * o.mv;
   // Spin drift goes to the right of the line of fire, level.
   const hl = Math.hypot(o.dir[0], o.dir[2]) || 1;
-  const rightX = -o.dir[2] / hl, rightZ = o.dir[0] / hl;
-  const a1 = new Float64Array(3), a2 = new Float64Array(3), a3 = new Float64Array(3), a4 = new Float64Array(3);
+  const rightX = -o.dir[2] / hl,
+    rightZ = o.dir[0] / hl;
+  const a1 = new Float64Array(3),
+    a2 = new Float64Array(3),
+    a3 = new Float64Array(3),
+    a4 = new Float64Array(3);
   let n = 0;
   const flown = o.flown ?? 0;
   const store = (t: number) => {
@@ -254,17 +296,21 @@ export function fly(o: FlyOptions): Path {
     if (o.drag) dk = o.drag(t + h);
     for (let s = 0; s < per; s++) {
       acc(vx, vy, vz, a1);
-      acc(vx + a1[0]! * h / 2, vy + a1[1]! * h / 2, vz + a1[2]! * h / 2, a2);
-      const bx = vx + a2[0]! * h / 2, by = vy + a2[1]! * h / 2, bz = vz + a2[2]! * h / 2;
+      acc(vx + (a1[0]! * h) / 2, vy + (a1[1]! * h) / 2, vz + (a1[2]! * h) / 2, a2);
+      const bx = vx + (a2[0]! * h) / 2,
+        by = vy + (a2[1]! * h) / 2,
+        bz = vz + (a2[2]! * h) / 2;
       acc(bx, by, bz, a3);
-      const cx = vx + a3[0]! * h, cy = vy + a3[1]! * h, cz = vz + a3[2]! * h;
+      const cx = vx + a3[0]! * h,
+        cy = vy + a3[1]! * h,
+        cz = vz + a3[2]! * h;
       acc(cx, cy, cz, a4);
-      x += (vx + 2 * (vx + a1[0]! * h / 2) + 2 * bx + cx) * h / 6;
-      y += (vy + 2 * (vy + a1[1]! * h / 2) + 2 * by + cy) * h / 6;
-      z += (vz + 2 * (vz + a1[2]! * h / 2) + 2 * bz + cz) * h / 6;
-      vx += (a1[0]! + 2 * a2[0]! + 2 * a3[0]! + a4[0]!) * h / 6;
-      vy += (a1[1]! + 2 * a2[1]! + 2 * a3[1]! + a4[1]!) * h / 6;
-      vz += (a1[2]! + 2 * a2[2]! + 2 * a3[2]! + a4[2]!) * h / 6;
+      x += ((vx + 2 * (vx + (a1[0]! * h) / 2) + 2 * bx + cx) * h) / 6;
+      y += ((vy + 2 * (vy + (a1[1]! * h) / 2) + 2 * by + cy) * h) / 6;
+      z += ((vz + 2 * (vz + (a1[2]! * h) / 2) + 2 * bz + cz) * h) / 6;
+      vx += ((a1[0]! + 2 * a2[0]! + 2 * a3[0]! + a4[0]!) * h) / 6;
+      vy += ((a1[1]! + 2 * a2[1]! + 2 * a3[1]! + a4[1]!) * h) / 6;
+      vz += ((a1[2]! + 2 * a2[2]! + 2 * a3[2]! + a4[2]!) * h) / 6;
       t += h;
     }
     store(t);
@@ -321,12 +367,15 @@ export function firstHit(p: Path, ground: (x: number, z: number) => number, soli
     const s = solid?.(a, b);
     // The terrain under the segment's end: if it is already below ground, find where it went in.
     const below = (f: number) => {
-      const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, z = a[2] + (b[2] - a[2]) * f;
+      const x = a[0] + (b[0] - a[0]) * f,
+        y = a[1] + (b[1] - a[1]) * f,
+        z = a[2] + (b[2] - a[2]) * f;
       return y < ground(x, z);
     };
     let g: number | null = null;
     if (below(1)) {
-      let lo = 0, hi = 1;
+      let lo = 0,
+        hi = 1;
       for (let k = 0; k < 24; k++) {
         const m = (lo + hi) / 2;
         if (below(m)) hi = m;
@@ -335,9 +384,9 @@ export function firstHit(p: Path, ground: (x: number, z: number) => number, soli
       g = hi;
     }
     if (s && (g === null || s.f <= g)) return make(i, s.f, s.what);
-    if (g !== null) return make(i, g, 'ground');
+    if (g !== null) return make(i, g, "ground");
   }
-  return make(p.n - 2, 1, 'none');
+  return make(p.n - 2, 1, "none");
 }
 
 /** Seeded normal pairs (mulberry32 + Box–Muller), so a shot's dispersion is repeatable for stills. */
@@ -375,10 +424,24 @@ export function dispersion(rf: Rifle, seed: number): Dispersion {
  * as a range card gives it. The hold is this ÷ range.
  */
 export function crossDriftPerMs(round: Round, ranges: readonly number[]): number[] {
-  const p = fly({ round, mv: round.mv, origin: [0, 0, 0], dir: [0, 0, -1], wind: (_x, _y, _z, _t, o) => { o[0] = 1; o[1] = 0; o[2] = 0; return o; }, maxT: 6, floor: 1e4 });
+  const p = fly({
+    round,
+    mv: round.mv,
+    origin: [0, 0, 0],
+    dir: [0, 0, -1],
+    wind: (_x, _y, _z, _t, o) => {
+      o[0] = 1;
+      o[1] = 0;
+      o[2] = 0;
+      return o;
+    },
+    maxT: 6,
+    floor: 1e4,
+  });
   return ranges.map((r) => {
     for (let i = 0; i < p.n - 1; i++) {
-      const z0 = -p.pos[i * 3 + 2]!, z1 = -p.pos[(i + 1) * 3 + 2]!;
+      const z0 = -p.pos[i * 3 + 2]!,
+        z1 = -p.pos[(i + 1) * 3 + 2]!;
       if (z1 >= r) return p.pos[i * 3]! + ((p.pos[(i + 1) * 3]! - p.pos[i * 3]!) * (r - z0)) / (z1 - z0);
     }
     return NaN;

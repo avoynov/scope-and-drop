@@ -37,23 +37,50 @@
 export type Vec3 = [number, number, number];
 
 /** Ellipsoid: centre and semi-axes. */
-export interface Ellipsoid { kind: 'e'; c: Vec3; r: Vec3 }
+export interface Ellipsoid {
+  kind: "e";
+  c: Vec3;
+  r: Vec3;
+}
 /** Capsule: segment a–b and radius. */
-export interface Capsule { kind: 'c'; a: Vec3; b: Vec3; r: number }
+export interface Capsule {
+  kind: "c";
+  a: Vec3;
+  b: Vec3;
+  r: number;
+}
 export type Shape = Ellipsoid | Capsule;
 
 export type Tissue =
-  | 'brain' | 'brainstem' | 'cord' | 'skull' | 'face'
-  | 'heart' | 'artery' | 'vein' | 'hilum' | 'lung' | 'airway'
-  | 'liver' | 'spleen' | 'kidney' | 'stomach' | 'gut'
-  | 'vertebra' | 'pelvis' | 'hip' | 'femur' | 'sternum' | 'rib';
+  | "brain"
+  | "brainstem"
+  | "cord"
+  | "skull"
+  | "face"
+  | "heart"
+  | "artery"
+  | "vein"
+  | "hilum"
+  | "lung"
+  | "airway"
+  | "liver"
+  | "spleen"
+  | "kidney"
+  | "stomach"
+  | "gut"
+  | "vertebra"
+  | "pelvis"
+  | "hip"
+  | "femur"
+  | "sternum"
+  | "rib";
 
 /**
  * Spinal cord levels by what an injury there does: C1–C4 takes the diaphragm (breathing stops), C5–T1 the arms
  * and everything below, T2–L1 the legs (the cord's lumbar and sacral segments lie at vertebrae T11–L1), and
  * below L1/L2 only the cauda equina's nerve roots run.
  */
-export type CordLevel = 'C1-C4' | 'C5-T1' | 'T2-L1' | 'cauda';
+export type CordLevel = "C1-C4" | "C5-T1" | "T2-L1" | "cauda";
 
 export interface Part {
   id: string;
@@ -64,8 +91,8 @@ export interface Part {
   level?: CordLevel;
 }
 
-const e = (c: Vec3, r: Vec3): Ellipsoid => ({ kind: 'e', c, r });
-const cap = (a: Vec3, b: Vec3, r: number): Capsule => ({ kind: 'c', a, b, r });
+const e = (c: Vec3, r: Vec3): Ellipsoid => ({ kind: "e", c, r });
+const cap = (a: Vec3, b: Vec3, r: number): Capsule => ({ kind: "c", a, b, r });
 /** Both sides: a left one (x as given) and a right one (x mirrored). */
 const pair = (id: string, name: string, tissue: Tissue, shape: (s: 1 | -1) => Shape): Part[] => [
   { id: `${id}-l`, name: `left ${name}`, tissue, shape: shape(1) },
@@ -80,7 +107,14 @@ export const HEAD = e([0, 1.59, 0], [0.076, 0.114, 0.097]);
  * lumbar lordosis, 5–6 cm under the skin of the back.
  */
 const CANAL: [number, number][] = [
-  [1.555, -0.024], [1.505, -0.021], [1.455, -0.036], [1.3, -0.058], [1.165, -0.052], [1.13, -0.05], [0.985, -0.048], [0.95, -0.072],
+  [1.555, -0.024],
+  [1.505, -0.021],
+  [1.455, -0.036],
+  [1.3, -0.058],
+  [1.165, -0.052],
+  [1.13, -0.05],
+  [0.985, -0.048],
+  [0.95, -0.072],
 ];
 const canal = (i: number, dz = 0): Vec3 => [0, CANAL[i]![0], CANAL[i]![1] + dz];
 
@@ -89,75 +123,75 @@ const canal = (i: number, dz = 0): Vec3 => [0, CANAL[i]![0], CANAL[i]![1] + dz];
  */
 export const PARTS: Part[] = [
   // ---- head and neck ----
-  { id: 'brainstem', name: 'brainstem', tissue: 'brainstem', shape: cap([0, 1.605, -0.004], [0, 1.557, -0.022], 0.012) },
-  { id: 'cerebellum', name: 'cerebellum', tissue: 'brain', shape: e([0, 1.565, -0.055], [0.048, 0.028, 0.028]) },
+  { id: "brainstem", name: "brainstem", tissue: "brainstem", shape: cap([0, 1.605, -0.004], [0, 1.557, -0.022], 0.012) },
+  { id: "cerebellum", name: "cerebellum", tissue: "brain", shape: e([0, 1.565, -0.055], [0.048, 0.028, 0.028]) },
   // The ventricles, thalami and basal ganglia: a track through them is the deadliest kind of head wound.
-  { id: 'deep', name: 'deep brain and ventricles', tissue: 'brain', shape: e([0, 1.625, -0.008], [0.025, 0.025, 0.035]) },
-  ...pair('orbit', 'eye socket', 'face', (s) => e([s * 0.032, 1.592, 0.07], [0.018, 0.017, 0.023])),
-  { id: 'cerebrum', name: 'brain', tissue: 'brain', shape: e([0, 1.632, -0.002], [0.064, 0.056, 0.077]) },
-  { id: 'cord-c1', name: 'spinal cord (C1–C4)', tissue: 'cord', level: 'C1-C4', shape: cap(canal(0), canal(1), 0.0055) },
-  { id: 'cord-c5', name: 'spinal cord (C5–T1)', tissue: 'cord', level: 'C5-T1', shape: cap(canal(1), canal(2), 0.0055) },
-  ...pair('vertebral', 'vertebral artery', 'artery', (s) => cap([s * 0.023, 1.455, -0.012], [s * 0.022, 1.545, -0.006], 0.002)),
-  ...pair('carotid', 'carotid artery', 'artery', (s) => cap([s * 0.022, 1.405, 0.02], [s * 0.026, 1.535, 0.006], 0.0045)),
-  ...pair('jugular', 'jugular vein', 'vein', (s) => cap([s * 0.036, 1.53, 0.002], [s * 0.033, 1.405, 0.014], 0.007)),
-  { id: 'cervical', name: 'cervical spine', tissue: 'vertebra', shape: cap([0, 1.545, -0.0085], [0, 1.455, -0.0205], 0.0085) },
-  { id: 'cervical-arch', name: 'cervical spine', tissue: 'vertebra', shape: cap([0, 1.545, -0.042], [0, 1.455, -0.0565], 0.011) },
-  { id: 'larynx', name: 'larynx', tissue: 'airway', shape: cap([0, 1.505, 0.03], [0, 1.455, 0.029], 0.014) },
-  { id: 'trachea', name: 'windpipe', tissue: 'airway', shape: cap([0, 1.455, 0.026], [0, 1.335, 0.008], 0.009) },
-  { id: 'face', name: 'face and jaw', tissue: 'face', shape: e([0, 1.53, 0.05], [0.05, 0.055, 0.045]) },
+  { id: "deep", name: "deep brain and ventricles", tissue: "brain", shape: e([0, 1.625, -0.008], [0.025, 0.025, 0.035]) },
+  ...pair("orbit", "eye socket", "face", (s) => e([s * 0.032, 1.592, 0.07], [0.018, 0.017, 0.023])),
+  { id: "cerebrum", name: "brain", tissue: "brain", shape: e([0, 1.632, -0.002], [0.064, 0.056, 0.077]) },
+  { id: "cord-c1", name: "spinal cord (C1–C4)", tissue: "cord", level: "C1-C4", shape: cap(canal(0), canal(1), 0.0055) },
+  { id: "cord-c5", name: "spinal cord (C5–T1)", tissue: "cord", level: "C5-T1", shape: cap(canal(1), canal(2), 0.0055) },
+  ...pair("vertebral", "vertebral artery", "artery", (s) => cap([s * 0.023, 1.455, -0.012], [s * 0.022, 1.545, -0.006], 0.002)),
+  ...pair("carotid", "carotid artery", "artery", (s) => cap([s * 0.022, 1.405, 0.02], [s * 0.026, 1.535, 0.006], 0.0045)),
+  ...pair("jugular", "jugular vein", "vein", (s) => cap([s * 0.036, 1.53, 0.002], [s * 0.033, 1.405, 0.014], 0.007)),
+  { id: "cervical", name: "cervical spine", tissue: "vertebra", shape: cap([0, 1.545, -0.0085], [0, 1.455, -0.0205], 0.0085) },
+  { id: "cervical-arch", name: "cervical spine", tissue: "vertebra", shape: cap([0, 1.545, -0.042], [0, 1.455, -0.0565], 0.011) },
+  { id: "larynx", name: "larynx", tissue: "airway", shape: cap([0, 1.505, 0.03], [0, 1.455, 0.029], 0.014) },
+  { id: "trachea", name: "windpipe", tissue: "airway", shape: cap([0, 1.455, 0.026], [0, 1.335, 0.008], 0.009) },
+  { id: "face", name: "face and jaw", tissue: "face", shape: e([0, 1.53, 0.05], [0.05, 0.055, 0.045]) },
   // Only the shell of bone round the brain counts as skull; the scalp and the nape below it are soft (classify).
-  { id: 'skull', name: 'skull', tissue: 'skull', shape: HEAD },
+  { id: "skull", name: "skull", tissue: "skull", shape: HEAD },
 
   // ---- chest ----
-  { id: 'cord-t', name: 'spinal cord (T2–L1)', tissue: 'cord', level: 'T2-L1', shape: cap(canal(2), canal(3), 0.0045) },
-  { id: 'cord-t2', name: 'spinal cord (T2–L1)', tissue: 'cord', level: 'T2-L1', shape: cap(canal(3), canal(5), 0.0045) },
-  { id: 'aorta-asc', name: 'ascending aorta', tissue: 'artery', shape: cap([0.005, 1.295, 0.045], [0.008, 1.365, 0.04], 0.0145) },
-  { id: 'aorta-arch', name: 'aortic arch', tissue: 'artery', shape: cap([0.008, 1.365, 0.04], [0.024, 1.375, -0.008], 0.013) },
-  { id: 'aorta-t', name: 'thoracic aorta', tissue: 'artery', shape: cap([0.024, 1.375, -0.008], [0.006, 1.17, -0.001], 0.012) },
-  { id: 'pulmonary', name: 'pulmonary trunk', tissue: 'artery', shape: cap([0.018, 1.3, 0.07], [0.012, 1.345, 0.035], 0.012) },
-  { id: 'svc', name: 'vena cava', tissue: 'vein', shape: cap([-0.027, 1.39, 0.042], [-0.025, 1.3, 0.045], 0.01) },
-  ...pair('subclavian', 'subclavian artery', 'artery', (s) => cap([s * 0.02, 1.405, 0.025], [s * 0.16, 1.395, 0.03], 0.004)),
-  ...pair('clavicle', 'collarbone', 'rib', (s) => cap([s * 0.02, 1.395, 0.08], [s * 0.17, 1.41, 0.03], 0.008)),
+  { id: "cord-t", name: "spinal cord (T2–L1)", tissue: "cord", level: "T2-L1", shape: cap(canal(2), canal(3), 0.0045) },
+  { id: "cord-t2", name: "spinal cord (T2–L1)", tissue: "cord", level: "T2-L1", shape: cap(canal(3), canal(5), 0.0045) },
+  { id: "aorta-asc", name: "ascending aorta", tissue: "artery", shape: cap([0.005, 1.295, 0.045], [0.008, 1.365, 0.04], 0.0145) },
+  { id: "aorta-arch", name: "aortic arch", tissue: "artery", shape: cap([0.008, 1.365, 0.04], [0.024, 1.375, -0.008], 0.013) },
+  { id: "aorta-t", name: "thoracic aorta", tissue: "artery", shape: cap([0.024, 1.375, -0.008], [0.006, 1.17, -0.001], 0.012) },
+  { id: "pulmonary", name: "pulmonary trunk", tissue: "artery", shape: cap([0.018, 1.3, 0.07], [0.012, 1.345, 0.035], 0.012) },
+  { id: "svc", name: "vena cava", tissue: "vein", shape: cap([-0.027, 1.39, 0.042], [-0.025, 1.3, 0.045], 0.01) },
+  ...pair("subclavian", "subclavian artery", "artery", (s) => cap([s * 0.02, 1.405, 0.025], [s * 0.16, 1.395, 0.03], 0.004)),
+  ...pair("clavicle", "collarbone", "rib", (s) => cap([s * 0.02, 1.395, 0.08], [s * 0.17, 1.41, 0.03], 0.008)),
   // The heart lies obliquely, its apex down, left and forward: the base and ventricles, and the apex. Standing,
   // it hangs a centimetre lower than the lying-down textbook figures and more upright, its apex lower still.
-  { id: 'heart', name: 'heart', tissue: 'heart', shape: e([0.012, 1.248, 0.04], [0.055, 0.055, 0.043]) },
-  { id: 'heart-apex', name: 'heart', tissue: 'heart', shape: e([0.058, 1.2, 0.046], [0.035, 0.03, 0.032]) },
-  { id: 'hilum-l', name: 'left lung root', tissue: 'hilum', shape: e([0.058, 1.315, 0.005], [0.02, 0.03, 0.025]) },
-  { id: 'hilum-r', name: 'right lung root', tissue: 'hilum', shape: e([-0.055, 1.3, 0.008], [0.02, 0.03, 0.025]) },
-  { id: 'manubrium', name: 'breastbone', tissue: 'sternum', shape: e([0, 1.36, 0.083], [0.025, 0.025, 0.007]) },
-  { id: 'sternum', name: 'breastbone', tissue: 'sternum', shape: e([0, 1.25, 0.093], [0.016, 0.085, 0.007]) },
-  { id: 'spine-t', name: 'thoracic spine', tissue: 'vertebra', shape: cap(canal(2, 0.0215), canal(3, 0.0215), 0.014) },
-  { id: 'spine-t2', name: 'thoracic spine', tissue: 'vertebra', shape: cap(canal(3, 0.0215), canal(4, 0.0215), 0.014) },
-  { id: 'spine-t-arch', name: 'thoracic spine', tissue: 'vertebra', shape: cap(canal(2, -0.0205), canal(3, -0.0205), 0.013) },
-  { id: 'spine-t2-arch', name: 'thoracic spine', tissue: 'vertebra', shape: cap(canal(3, -0.0205), canal(4, -0.0205), 0.013) },
+  { id: "heart", name: "heart", tissue: "heart", shape: e([0.012, 1.248, 0.04], [0.055, 0.055, 0.043]) },
+  { id: "heart-apex", name: "heart", tissue: "heart", shape: e([0.058, 1.2, 0.046], [0.035, 0.03, 0.032]) },
+  { id: "hilum-l", name: "left lung root", tissue: "hilum", shape: e([0.058, 1.315, 0.005], [0.02, 0.03, 0.025]) },
+  { id: "hilum-r", name: "right lung root", tissue: "hilum", shape: e([-0.055, 1.3, 0.008], [0.02, 0.03, 0.025]) },
+  { id: "manubrium", name: "breastbone", tissue: "sternum", shape: e([0, 1.36, 0.083], [0.025, 0.025, 0.007]) },
+  { id: "sternum", name: "breastbone", tissue: "sternum", shape: e([0, 1.25, 0.093], [0.016, 0.085, 0.007]) },
+  { id: "spine-t", name: "thoracic spine", tissue: "vertebra", shape: cap(canal(2, 0.0215), canal(3, 0.0215), 0.014) },
+  { id: "spine-t2", name: "thoracic spine", tissue: "vertebra", shape: cap(canal(3, 0.0215), canal(4, 0.0215), 0.014) },
+  { id: "spine-t-arch", name: "thoracic spine", tissue: "vertebra", shape: cap(canal(2, -0.0205), canal(3, -0.0205), 0.013) },
+  { id: "spine-t2-arch", name: "thoracic spine", tissue: "vertebra", shape: cap(canal(3, -0.0205), canal(4, -0.0205), 0.013) },
 
   // ---- abdomen ----
-  { id: 'aorta-a', name: 'abdominal aorta', tissue: 'artery', shape: cap([0.006, 1.17, -0.001], [0.01, 1.03, 0.016], 0.01) },
-  { id: 'ivc', name: 'vena cava', tissue: 'vein', shape: cap([-0.022, 1.205, 0.012], [-0.02, 1.0, 0.008], 0.011) },
-  ...pair('iliac', 'iliac artery', 'artery', (s) => cap([s * 0.01, 1.03, 0.016], [s * 0.04, 0.985, 0.005], 0.0055)),
-  ...pair('ext-iliac', 'iliac artery', 'artery', (s) => cap([s * 0.04, 0.985, 0.005], [s * 0.07, 0.9, 0.062], 0.0045)),
-  ...pair('femoral', 'femoral artery', 'artery', (s) => cap([s * 0.07, 0.9, 0.062], [s * 0.06, 0.56, -0.005], 0.0045)),
-  { id: 'cauda', name: 'cauda equina (L1–S)', tissue: 'cord', level: 'cauda', shape: cap(canal(5), canal(6), 0.007) },
-  { id: 'cauda-s', name: 'cauda equina (L1–S)', tissue: 'cord', level: 'cauda', shape: cap(canal(6), canal(7), 0.005) },
-  { id: 'spine-l', name: 'lumbar spine', tissue: 'vertebra', shape: cap([0, 1.165, -0.025], [0, 0.985, -0.019], 0.018) },
-  { id: 'spine-l-arch', name: 'lumbar spine', tissue: 'vertebra', shape: cap([0, 1.165, -0.076], [0, 0.985, -0.072], 0.015) },
-  ...pair('kidney', 'kidney', 'kidney', (s) => e([s * 0.07, s > 0 ? 1.12 : 1.105, -0.027], [0.028, 0.055, 0.019])),
-  { id: 'spleen', name: 'spleen', tissue: 'spleen', shape: e([0.105, 1.175, -0.045], [0.025, 0.05, 0.032]) },
-  { id: 'liver', name: 'liver', tissue: 'liver', shape: e([-0.07, 1.16, 0], [0.068, 0.072, 0.065]) },
-  { id: 'liver-left', name: 'liver', tissue: 'liver', shape: e([0.02, 1.17, 0.05], [0.065, 0.04, 0.035]) },
-  { id: 'stomach', name: 'stomach', tissue: 'stomach', shape: e([0.065, 1.155, 0.03], [0.045, 0.055, 0.035]) },
+  { id: "aorta-a", name: "abdominal aorta", tissue: "artery", shape: cap([0.006, 1.17, -0.001], [0.01, 1.03, 0.016], 0.01) },
+  { id: "ivc", name: "vena cava", tissue: "vein", shape: cap([-0.022, 1.205, 0.012], [-0.02, 1.0, 0.008], 0.011) },
+  ...pair("iliac", "iliac artery", "artery", (s) => cap([s * 0.01, 1.03, 0.016], [s * 0.04, 0.985, 0.005], 0.0055)),
+  ...pair("ext-iliac", "iliac artery", "artery", (s) => cap([s * 0.04, 0.985, 0.005], [s * 0.07, 0.9, 0.062], 0.0045)),
+  ...pair("femoral", "femoral artery", "artery", (s) => cap([s * 0.07, 0.9, 0.062], [s * 0.06, 0.56, -0.005], 0.0045)),
+  { id: "cauda", name: "cauda equina (L1–S)", tissue: "cord", level: "cauda", shape: cap(canal(5), canal(6), 0.007) },
+  { id: "cauda-s", name: "cauda equina (L1–S)", tissue: "cord", level: "cauda", shape: cap(canal(6), canal(7), 0.005) },
+  { id: "spine-l", name: "lumbar spine", tissue: "vertebra", shape: cap([0, 1.165, -0.025], [0, 0.985, -0.019], 0.018) },
+  { id: "spine-l-arch", name: "lumbar spine", tissue: "vertebra", shape: cap([0, 1.165, -0.076], [0, 0.985, -0.072], 0.015) },
+  ...pair("kidney", "kidney", "kidney", (s) => e([s * 0.07, s > 0 ? 1.12 : 1.105, -0.027], [0.028, 0.055, 0.019])),
+  { id: "spleen", name: "spleen", tissue: "spleen", shape: e([0.105, 1.175, -0.045], [0.025, 0.05, 0.032]) },
+  { id: "liver", name: "liver", tissue: "liver", shape: e([-0.07, 1.16, 0], [0.068, 0.072, 0.065]) },
+  { id: "liver-left", name: "liver", tissue: "liver", shape: e([0.02, 1.17, 0.05], [0.065, 0.04, 0.035]) },
+  { id: "stomach", name: "stomach", tissue: "stomach", shape: e([0.065, 1.155, 0.03], [0.045, 0.055, 0.035]) },
   // The lungs fill what the heart, great vessels, liver, spleen and stomach leave of each half of the chest.
-  ...pair('lung', 'lung', 'lung', (s) => e([s * 0.085, 1.295, -0.005], [0.063, 0.145, 0.08])),
+  ...pair("lung", "lung", "lung", (s) => e([s * 0.085, 1.295, -0.005], [0.063, 0.145, 0.08])),
 
   // ---- pelvis and legs ----
-  ...pair('hipjoint', 'hip joint', 'hip', (s) => e([s * 0.09, 0.895, 0.005], [0.03, 0.03, 0.03])),
-  ...pair('femur-neck', 'thigh bone', 'femur', (s) => cap([s * 0.09, 0.895, 0.005], [s * 0.12, 0.875, -0.005], 0.015)),
-  ...pair('femur', 'thigh bone', 'femur', (s) => cap([s * 0.12, 0.875, -0.005], [s * 0.075, 0.49, 0.005], 0.014)),
-  { id: 'sacrum', name: 'sacrum', tissue: 'pelvis', shape: cap([0, 0.98, -0.045], [0, 0.885, -0.085], 0.022) },
-  { id: 'pubis', name: 'pubic bone', tissue: 'pelvis', shape: e([0, 0.885, 0.065], [0.06, 0.02, 0.018]) },
-  ...pair('ilium', 'pelvic wing', 'pelvis', (s) => e([s * 0.12, 0.975, 0.025], [0.011, 0.05, 0.045])),
-  ...pair('ilium-back', 'pelvic wing', 'pelvis', (s) => e([s * 0.075, 0.965, -0.06], [0.028, 0.045, 0.022])),
-  { id: 'gut', name: 'intestines', tissue: 'gut', shape: e([0, 1.0, 0.03], [0.125, 0.11, 0.07]) },
+  ...pair("hipjoint", "hip joint", "hip", (s) => e([s * 0.09, 0.895, 0.005], [0.03, 0.03, 0.03])),
+  ...pair("femur-neck", "thigh bone", "femur", (s) => cap([s * 0.09, 0.895, 0.005], [s * 0.12, 0.875, -0.005], 0.015)),
+  ...pair("femur", "thigh bone", "femur", (s) => cap([s * 0.12, 0.875, -0.005], [s * 0.075, 0.49, 0.005], 0.014)),
+  { id: "sacrum", name: "sacrum", tissue: "pelvis", shape: cap([0, 0.98, -0.045], [0, 0.885, -0.085], 0.022) },
+  { id: "pubis", name: "pubic bone", tissue: "pelvis", shape: e([0, 0.885, 0.065], [0.06, 0.02, 0.018]) },
+  ...pair("ilium", "pelvic wing", "pelvis", (s) => e([s * 0.12, 0.975, 0.025], [0.011, 0.05, 0.045])),
+  ...pair("ilium-back", "pelvic wing", "pelvis", (s) => e([s * 0.075, 0.965, -0.06], [0.028, 0.045, 0.022])),
+  { id: "gut", name: "intestines", tissue: "gut", shape: e([0, 1.0, 0.03], [0.125, 0.11, 0.07]) },
 ];
 
 /**
@@ -166,8 +200,18 @@ export const PARTS: Part[] = [
  * chest, shallower at the waist, flat across the shoulders and round at the neck.
  */
 export const TORSO_PROFILE: [number, number, number][] = [
-  [0.0, 0.0, 0.72], [0.16, 0.0, 0.72], [0.17, 0.08, 0.68], [0.15, 0.24, 0.65], [0.17, 0.4, 0.66], [0.21, 0.5, 0.45],
-  [0.22, 0.54, 0.36], [0.17, 0.57, 0.36], [0.075, 0.6, 0.85], [0.06, 0.62, 0.95], [0.055, 0.7, 0.95], [0, 0.7, 0.95],
+  [0.0, 0.0, 0.72],
+  [0.16, 0.0, 0.72],
+  [0.17, 0.08, 0.68],
+  [0.15, 0.24, 0.65],
+  [0.17, 0.4, 0.66],
+  [0.21, 0.5, 0.45],
+  [0.22, 0.54, 0.36],
+  [0.17, 0.57, 0.36],
+  [0.075, 0.6, 0.85],
+  [0.06, 0.62, 0.95],
+  [0.055, 0.7, 0.95],
+  [0, 0.7, 0.95],
 ];
 /** The torso's base above the ground. */
 export const TORSO_BASE = 0.86;
@@ -180,7 +224,8 @@ function torsoAt(y: number): [number, number] {
   const p = TORSO_PROFILE;
   if (h < 0 || h > p[p.length - 1]![1]) return [0, 0];
   for (let i = 1; i < p.length; i++) {
-    const [r0, y0, f0] = p[i - 1]!, [r1, y1, f1] = p[i]!;
+    const [r0, y0, f0] = p[i - 1]!,
+      [r1, y1, f1] = p[i]!;
     if (h <= y1 && y1 > y0) {
       const t = (h - y0) / (y1 - y0);
       return [r0 + (r1 - r0) * t, f0 + (f1 - f0) * t];
@@ -195,19 +240,25 @@ export const torsoDepth = (y: number): number => torsoAt(y)[1];
 
 /** Signed distance from p to a shape's surface (negative inside). Ellipsoids are approximate off the surface. */
 export function sdf(s: Shape, p: Vec3): number {
-  if (s.kind === 'e') {
-    const qx = (p[0] - s.c[0]) / s.r[0], qy = (p[1] - s.c[1]) / s.r[1], qz = (p[2] - s.c[2]) / s.r[2];
+  if (s.kind === "e") {
+    const qx = (p[0] - s.c[0]) / s.r[0],
+      qy = (p[1] - s.c[1]) / s.r[1],
+      qz = (p[2] - s.c[2]) / s.r[2];
     return (Math.hypot(qx, qy, qz) - 1) * Math.min(s.r[0], s.r[1], s.r[2]);
   }
-  const bx = s.b[0] - s.a[0], by = s.b[1] - s.a[1], bz = s.b[2] - s.a[2];
-  const px = p[0] - s.a[0], py = p[1] - s.a[1], pz = p[2] - s.a[2];
+  const bx = s.b[0] - s.a[0],
+    by = s.b[1] - s.a[1],
+    bz = s.b[2] - s.a[2];
+  const px = p[0] - s.a[0],
+    py = p[1] - s.a[1],
+    pz = p[2] - s.a[2];
   const f = Math.max(0, Math.min(1, (px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz)));
   return Math.hypot(px - bx * f, py - by * f, pz - bz * f) - s.r;
 }
 
 /** Volume of a shape (m³). */
 export function volume(s: Shape): number {
-  if (s.kind === 'e') return (4 / 3) * Math.PI * s.r[0] * s.r[1] * s.r[2];
+  if (s.kind === "e") return (4 / 3) * Math.PI * s.r[0] * s.r[1] * s.r[2];
   const len = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1], s.b[2] - s.a[2]);
   return Math.PI * s.r * s.r * len + (4 / 3) * Math.PI * s.r ** 3;
 }
@@ -220,7 +271,7 @@ export function inBody(p: Vec3): boolean {
   return THIGHS.some((t) => sdf(t, p) < 0);
 }
 
-const BRAIN_PARTS = PARTS.filter((p) => p.tissue === 'brain' || p.tissue === 'brainstem');
+const BRAIN_PARTS = PARTS.filter((p) => p.tissue === "brain" || p.tissue === "brainstem");
 /** The skull's bone: 8 mm round the brain (bone and meninges), inside the head. */
 const SKULL_BONE_M = 0.008;
 
@@ -231,7 +282,7 @@ const SKULL_BONE_M = 0.008;
 export function classify(p: Vec3): Part | null {
   for (const part of PARTS) {
     if (sdf(part.shape, p) >= 0) continue;
-    if (part.tissue !== 'skull') return part;
+    if (part.tissue !== "skull") return part;
     let m = Infinity;
     for (const b of BRAIN_PARTS) m = Math.min(m, sdf(b.shape, p));
     return m < SKULL_BONE_M ? part : null;
@@ -248,11 +299,9 @@ export function partVolume(part: Part): number {
   const known = effective.get(part);
   if (known !== undefined) return known;
   const s = part.shape;
-  const lo: Vec3 = s.kind === 'e' ? [s.c[0] - s.r[0], s.c[1] - s.r[1], s.c[2] - s.r[2]]
-    : [Math.min(s.a[0], s.b[0]) - s.r, Math.min(s.a[1], s.b[1]) - s.r, Math.min(s.a[2], s.b[2]) - s.r];
-  const hi: Vec3 = s.kind === 'e' ? [s.c[0] + s.r[0], s.c[1] + s.r[1], s.c[2] + s.r[2]]
-    : [Math.max(s.a[0], s.b[0]) + s.r, Math.max(s.a[1], s.b[1]) + s.r, Math.max(s.a[2], s.b[2]) + s.r];
-  const thin = s.kind === 'e' ? Math.min(...s.r) : s.r;
+  const lo: Vec3 = s.kind === "e" ? [s.c[0] - s.r[0], s.c[1] - s.r[1], s.c[2] - s.r[2]] : [Math.min(s.a[0], s.b[0]) - s.r, Math.min(s.a[1], s.b[1]) - s.r, Math.min(s.a[2], s.b[2]) - s.r];
+  const hi: Vec3 = s.kind === "e" ? [s.c[0] + s.r[0], s.c[1] + s.r[1], s.c[2] + s.r[2]] : [Math.max(s.a[0], s.b[0]) + s.r, Math.max(s.a[1], s.b[1]) + s.r, Math.max(s.a[2], s.b[2]) + s.r];
+  const thin = s.kind === "e" ? Math.min(...s.r) : s.r;
   const h = Math.max(0.001, Math.min(0.006, thin / 4));
   let n = 0;
   for (let x = lo[0] + h / 2; x < hi[0]; x += h)

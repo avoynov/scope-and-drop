@@ -3,13 +3,13 @@
  * queue, drinks poured, sipped and set down, tipsiness, and people walking into each other
  * (milestone 2 plan: Bathrooms, drinks and tipsiness).
  */
-import type { Rng } from '../mansion/core/rng';
-import { TIME_SCALE } from './clock';
-import type { Pathfinder } from './path';
-import type { Places } from './places';
-import type { SoundKind } from './senses';
-import { ALCOHOL, DRINKS, type DrinkId, type PartyEvent, type Person, type Spot } from './types';
-import { AJAR, DRINK_IDS, type World } from './world';
+import type { Rng } from "../mansion/core/rng";
+import { TIME_SCALE } from "./clock";
+import type { Pathfinder } from "./path";
+import type { Places } from "./places";
+import type { SoundKind } from "./senses";
+import { ALCOHOL, DRINKS, type DrinkId, type PartyEvent, type Person, type Spot } from "./types";
+import { AJAR, DRINK_IDS, type World } from "./world";
 
 /** What the body systems need from the party. */
 export interface BodyHost {
@@ -18,7 +18,7 @@ export interface BodyHost {
   readonly places: Places;
   readonly world: World;
   readonly pf: Pathfinder;
-  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void;
+  log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   /** Walk to a spot as part of the current action (it stays unstarted until they arrive); false when there is no way. */
   goTo(p: Person, s: Spot): boolean;
   end(p: Person, done: boolean): void;
@@ -77,7 +77,7 @@ export class Body {
   private readonly lastBump = new Map<number, number>();
   private readonly counters: Counter[] = [];
   /** Which part of the evening the drinks follow: champagne before the toast, wine at dinner, a mix after. Set by the party. */
-  band: 'before' | 'dinner' | 'after' = 'before';
+  band: "before" | "dinner" | "after" = "before";
 
   constructor(
     private readonly host: BodyHost,
@@ -129,10 +129,10 @@ export class Body {
   // ------------------------------------------------------------- bathrooms
 
   /** What a person believes about a bathroom: taken (seen in the last 3 minutes), free, or not seen. */
-  known(p: Person, i: number): 'busy' | 'free' | null {
+  known(p: Person, i: number): "busy" | "free" | null {
     const k = p.id * this.B + i;
     if (this.host.t - this.seenT[k]! > SEEN_FOR) return null;
-    return this.seenBusy[k] ? 'busy' : 'free';
+    return this.seenBusy[k] ? "busy" : "free";
   }
 
   /** Whether a bathroom looks taken from outside: its door shut, or someone waiting. */
@@ -151,7 +151,7 @@ export class Body {
 
   /** May this person try this bathroom? A door seen shut lately is skipped unless they're desperate. */
   worthTrying(p: Person, i: number): boolean {
-    return this.known(p, i) !== 'busy' || p.needs.bladder < URGENT;
+    return this.known(p, i) !== "busy" || p.needs.bladder < URGENT;
   }
 
   /** Reached the bathroom door: go in, queue, or try elsewhere. */
@@ -160,12 +160,12 @@ export class Body {
     const i = a.ref!;
     const b = this.baths[i]!;
     if (b.occupant < 0 && !b.queue.length) return this.claim(p, i);
-    if (this.known(p, i) !== 'busy') {
+    if (this.known(p, i) !== "busy") {
       this.stats.taken++;
-      this.host.log('bathroom-taken', [p.id, b.occupant], p.room);
+      this.host.log("bathroom-taken", [p.id, b.occupant], p.room);
     }
     this.remember(p, i, true);
-    const elsewhere = this.host.places.bathrooms.some((_, j) => j !== i && this.known(p, j) !== 'busy');
+    const elsewhere = this.host.places.bathrooms.some((_, j) => j !== i && this.known(p, j) !== "busy");
     if (b.queue.length < 2 && (p.needs.bladder < QUEUE_BELOW || !elsewhere)) return this.joinQueue(p, i);
     this.host.end(p, false);
     p.thinkAt = this.host.t + 1;
@@ -195,11 +195,11 @@ export class Body {
       b.knocked = true;
       this.knockUntil[p.id] = t + 2;
       this.stats.knocks++;
-      this.host.log('knock', [p.id, b.occupant], p.room);
-      this.host.sound('knock', p, p.id, i);
+      this.host.log("knock", [p.id, b.occupant], p.room);
+      this.host.sound("knock", p, p.id, i);
       const o = this.host.people[b.occupant]!;
       const oa = o.action;
-      if (oa?.id === 'toilet' && oa.startedAt !== null) oa.duration = Math.min(oa.duration, t - oa.startedAt + this.rng.range(20, 40));
+      if (oa?.id === "toilet" && oa.startedAt !== null) oa.duration = Math.min(oa.duration, t - oa.startedAt + this.rng.range(20, 40));
     }
   }
 
@@ -210,7 +210,7 @@ export class Body {
   /** Their toilet action ended or was dropped: leave the queue, or unbolt and head out. */
   release(p: Person): void {
     const a = p.action;
-    if (a?.id !== 'toilet' || a.ref === undefined) return;
+    if (a?.id !== "toilet" || a.ref === undefined) return;
     const i = a.ref;
     const b = this.baths[i]!;
     this.leaveQueue(p, i);
@@ -226,7 +226,7 @@ export class Body {
     b.occupant = p.id;
     b.knocked = false;
     const a = p.action!;
-    a.note = 'inside';
+    a.note = "inside";
     a.startedAt = null;
     if (!this.host.goTo(p, this.host.places.bathrooms[i]!.inside)) {
       b.occupant = -1;
@@ -241,7 +241,7 @@ export class Body {
     b.queue.push(p.id);
     if (b.queue.length === 1) b.frontSince = this.host.t;
     this.stats.queued++;
-    a.note = 'queue';
+    a.note = "queue";
     a.until = this.host.t + this.rng.range(120, 240);
     this.toQueueSpot(p, i, b.queue.length - 1);
   }
@@ -278,7 +278,7 @@ export class Body {
     const room = this.host.places.bathrooms[i]!.room.index;
     if (this.host.world.lightOn[room] && !this.host.world.litAtStart(room)) {
       this.host.world.setLight(room, false);
-      this.host.log('light', [], room, 'off');
+      this.host.log("light", [], room, "off");
     }
   }
 
@@ -289,18 +289,18 @@ export class Body {
     if (b.occupant >= 0) {
       const o = this.host.people[b.occupant]!;
       const a = o.action;
-      const using = a?.id === 'toilet' && a.ref === i && a.note === 'inside';
+      const using = a?.id === "toilet" && a.ref === i && a.note === "inside";
       const d = this.doorOf(i);
       if (using && o.room === room && d && !d.locked && this.host.world.doorAtPoint(o.level, o.x, o.z) !== d.id) {
         // In: shut the door and bolt it (once nobody else is in there), and switch the light on if it's dark.
         this.host.world.swing(d, 0);
         if (!this.host.people.some((q) => q !== o && q.present && q.room === room)) {
           this.host.world.setLocked(d, true, o.id);
-          this.host.sound('bolt', { level: d.level, x: d.x, z: d.z, room }, o.id, i);
+          this.host.sound("bolt", { level: d.level, x: d.x, z: d.z, room }, o.id, i);
         }
         if (!this.host.world.lightOn[room]) {
           this.host.world.setLight(room, true);
-          this.host.log('light', [o.id], room, 'on');
+          this.host.log("light", [o.id], room, "on");
         }
       }
       if (!using && (o.room !== room || !o.present)) this.free(i);
@@ -317,11 +317,11 @@ export class Body {
     if (p.staff) return;
     const s = this.host.places.bathrooms[i]!.door;
     const busy = this.looksTaken(i) && this.baths[i]!.occupant !== p.id && !this.baths[i]!.queue.includes(p.id);
-    const wasBusy = this.known(p, i) === 'busy';
+    const wasBusy = this.known(p, i) === "busy";
     this.remember(p, i, busy);
     // On the way there and it has just been taken: try elsewhere unless it's urgent.
     const a = p.action;
-    if (busy && !wasBusy && a?.id === 'toilet' && a.ref === i && a.note === 'door' && a.startedAt === null && Math.hypot(s.x - p.x, s.z - p.z) > 1.5 && p.needs.bladder >= QUEUE_BELOW) {
+    if (busy && !wasBusy && a?.id === "toilet" && a.ref === i && a.note === "door" && a.startedAt === null && Math.hypot(s.x - p.x, s.z - p.z) > 1.5 && p.needs.bladder >= QUEUE_BELOW) {
       this.host.end(p, false);
       p.thinkAt = this.host.t + 1;
     }
@@ -356,7 +356,7 @@ export class Body {
   carry(p: Person, drink: DrinkId): void {
     const { world, t } = this.host;
     if (p.item >= 0) this.setDown(p);
-    const id = world.items.add('glass', 'full', p.id, p.id, p, t);
+    const id = world.items.add("glass", "full", p.id, p.id, p, t);
     world.items.drink[id] = DRINK_IDS.indexOf(drink);
     world.items.fill[id] = 1;
     p.item = id;
@@ -416,23 +416,23 @@ export class Body {
     }
     items.holder[id] = -1;
     items.place(id, spot);
-    items.set(id, items.kindOf(id) === 'glass' && items.fill[id]! <= 0 ? 'empty' : 'down', t);
+    items.set(id, items.kindOf(id) === "glass" && items.fill[id]! <= 0 ? "empty" : "down", t);
     p.item = -1;
-    if (p.held && (DRINKS.has(p.held) || p.held === 'tray')) p.held = null;
+    if (p.held && (DRINKS.has(p.held) || p.held === "tray")) p.held = null;
     this.absorb[p.id] = 0;
   }
 
   /** What someone asks for: usually their favourite, never the drink they don't touch, water when they've had plenty. */
-  choose(p: Person, phase: 'before' | 'dinner' | 'after'): DrinkId {
-    const fav = p.fav !== p.never ? p.fav : 'water';
+  choose(p: Person, phase: "before" | "dinner" | "after"): DrinkId {
+    const fav = p.fav !== p.never ? p.fav : "water";
     if (this.rng.chance(0.55) && !(p.tipsy > 0.6 && ALCOHOL.has(fav))) return fav;
     const w: Array<readonly [DrinkId, number]> = [
-      ['champagne', phase === 'before' ? 2 : 1],
-      ['red', phase === 'dinner' ? 3 : 2],
-      ['white', phase === 'dinner' ? 3 : 2],
-      ['beer', 1.6],
-      ['whisky', phase === 'after' ? 1.4 : 0.8],
-      ['water', p.tipsy > 0.6 ? 5 : 1],
+      ["champagne", phase === "before" ? 2 : 1],
+      ["red", phase === "dinner" ? 3 : 2],
+      ["white", phase === "dinner" ? 3 : 2],
+      ["beer", 1.6],
+      ["whisky", phase === "after" ? 1.4 : 0.8],
+      ["water", p.tipsy > 0.6 ? 5 : 1],
     ];
     return this.rng.weighted(w.filter(([d]) => d !== p.never));
   }
@@ -441,20 +441,20 @@ export class Body {
   loadTray(w: Person, drink: DrinkId, toast = false): void {
     const { world, t } = this.host;
     let id = w.item;
-    if (id < 0 || world.items.kindOf(id) !== 'tray') {
+    if (id < 0 || world.items.kindOf(id) !== "tray") {
       if (id >= 0) this.setDown(w);
-      id = world.items.add('tray', 'carried', w.id, w.id, w, t);
+      id = world.items.add("tray", "carried", w.id, w.id, w, t);
       w.item = id;
     }
     world.items.drink[id] = DRINK_IDS.indexOf(drink);
     world.items.count[id] = toast ? this.rng.int(10, 12) : this.rng.int(6, 8);
-    w.held = 'tray';
+    w.held = "tray";
   }
 
   /** Glasses left on a waiter's tray (0 when they carry none). */
   trayCount(w: Person): number {
     const items = this.host.world.items;
-    return w.item >= 0 && items.kindOf(w.item) === 'tray' ? items.count[w.item]! : 0;
+    return w.item >= 0 && items.kindOf(w.item) === "tray" ? items.count[w.item]! : 0;
   }
 
   trayDrink(w: Person): DrinkId | null {
@@ -472,7 +472,7 @@ export class Body {
 
   /** Whether someone would take this drink if offered. */
   wants(p: Person, drink: DrinkId): boolean {
-    return drink !== p.never && !(drink !== 'water' && p.tipsy > 0.85);
+    return drink !== p.never && !(drink !== "water" && p.tipsy > 0.85);
   }
 
   /** Staff clear empty and abandoned glasses near them. */
@@ -481,9 +481,9 @@ export class Body {
     let n = 0;
     for (let i = 0; i < items.n; i++) {
       const st = items.stateOf(i);
-      if ((st !== 'empty' && st !== 'down') || items.kindOf(i) !== 'glass' || items.level[i] !== near.level) continue;
+      if ((st !== "empty" && st !== "down") || items.kindOf(i) !== "glass" || items.level[i] !== near.level) continue;
       if (Math.hypot(items.x[i]! - near.x, items.z[i]! - near.z) > r) continue;
-      items.set(i, 'cleared', this.host.t);
+      items.set(i, "cleared", this.host.t);
       n++;
     }
     return n;
@@ -492,7 +492,7 @@ export class Body {
   private sip(p: Person, dt: number): void {
     const items = this.host.world.items;
     const id = p.item;
-    if (id < 0 || items.kindOf(id) !== 'glass' || items.fill[id]! <= 0) return;
+    if (id < 0 || items.kindOf(id) !== "glass" || items.fill[id]! <= 0) return;
     const drink = items.drinkOf(id);
     const k = dt / DRINK_LIFE[drink];
     items.fill[id] = Math.max(0, items.fill[id]! - k);
@@ -502,7 +502,7 @@ export class Body {
       p.tipsy = Math.min(1, p.tipsy + take);
     }
     if (items.fill[id]! <= 0) {
-      items.set(id, 'empty', this.host.t);
+      items.set(id, "empty", this.host.t);
       this.setDown(p);
     }
   }
@@ -531,26 +531,25 @@ export class Body {
       const p = people[c.pouring]!;
       c.pouring = -1;
       const a = p.action;
-      if (a?.id === 'drink' && a.note === 'bar-wait') {
+      if (a?.id === "drink" && a.note === "bar-wait") {
         const drink = this.choose(p, this.band);
         this.pour(p, drink);
         this.stats.pours++;
-        this.host.log('pour', [p.id], p.room, drink);
-        a.note = 'bar';
+        this.host.log("pour", [p.id], p.room, drink);
+        a.note = "bar";
         a.startedAt = t;
       }
     }
     while (c.queue.length && c.pouring < 0) {
       const id = c.queue.shift()!;
       const a = people[id]!.action;
-      if (a?.id !== 'drink' || a.note !== 'bar-wait') continue;
+      if (a?.id !== "drink" || a.note !== "bar-wait") continue;
       const first = places.bars[c.spots[0]!]!;
-      const tender = people.some((q) => q.role === 'bartender' && q.present && q.level === first.level && Math.hypot(q.x - first.x, q.z - first.z) < 3.5);
+      const tender = people.some((q) => q.role === "bartender" && q.present && q.level === first.level && Math.hypot(q.x - first.x, q.z - first.z) < 3.5);
       c.pouring = id;
       c.until = t + this.rng.range(8, 15) * (tender ? 1 : 1.5);
     }
   }
-
 
   // ------------------------------------------------------------------ bumps
 
@@ -578,17 +577,17 @@ export class Body {
     const hit = fast === a ? b : a;
     const items = this.host.world.items;
     let slop = false;
-    if (hit.item >= 0 && items.kindOf(hit.item) === 'glass' && items.fill[hit.item]! > 0.2 && this.rng.chance(0.25 * (1 + hit.tipsy))) {
+    if (hit.item >= 0 && items.kindOf(hit.item) === "glass" && items.fill[hit.item]! > 0.2 && this.rng.chance(0.25 * (1 + hit.tipsy))) {
       items.fill[hit.item]! -= 0.15;
       slop = true;
       this.stats.slops++;
       // Whoever sees it remembers the spill.
-      hit.notable = 'spill';
+      hit.notable = "spill";
       hit.notableObj = fast.id;
       hit.notableRoom = -1;
       hit.notableUntil = this.host.t + 6;
     }
     this.stats.bumps++;
-    this.host.log('bump', [fast.id, hit.id], hit.room, slop ? 'slop' : undefined);
+    this.host.log("bump", [fast.id, hit.id], hit.room, slop ? "slop" : undefined);
   }
 }

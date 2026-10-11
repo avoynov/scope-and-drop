@@ -6,44 +6,44 @@
  * fact gets into someone's head. Confidence fades lazily from each fact's half-life, so
  * nothing ticks per step; familiarity with rooms fades the same way.
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Person } from './types';
+import type { Rng } from "../mansion/core/rng";
+import type { Person } from "./types";
 
-export type FactKind = 'romance' | 'odd' | 'mishap' | 'house' | 'request' | 'whereabouts' | 'case';
+export type FactKind = "romance" | "odd" | "mishap" | "house" | "request" | "whereabouts" | "case";
 
 /** What a fact says. Odd acts carry a suspicion weight (the plan's starting values). */
 export type Verb =
-  | 'flirting'
-  | 'couple'
-  | 'cheating'
-  | 'left-bedroom'
-  | 'startled'
-  | 'fumbled'
-  | 'no-champagne'
-  | 'out-of-step'
-  | 'slapped'
-  | 'bandage-gone'
-  | 'not-themselves'
-  | 'wrong-turn'
-  | 'locked-door'
-  | 'rumour'
-  | 'spill'
-  | 'cut'
-  | 'tipsy'
-  | 'bathroom-taken'
-  | 'dark'
-  | 'crash'
-  | 'raised-voices'
-  | 'scream'
-  | 'looking-for'
-  | 'was-in'
-  | 'gone'
-  | 'missing'
-  | 'blamed'
-  | 'snooping'
-  | 'hovering'
-  | 'rude'
-  | 'carrying';
+  | "flirting"
+  | "couple"
+  | "cheating"
+  | "left-bedroom"
+  | "startled"
+  | "fumbled"
+  | "no-champagne"
+  | "out-of-step"
+  | "slapped"
+  | "bandage-gone"
+  | "not-themselves"
+  | "wrong-turn"
+  | "locked-door"
+  | "rumour"
+  | "spill"
+  | "cut"
+  | "tipsy"
+  | "bathroom-taken"
+  | "dark"
+  | "crash"
+  | "raised-voices"
+  | "scream"
+  | "looking-for"
+  | "was-in"
+  | "gone"
+  | "missing"
+  | "blamed"
+  | "snooping"
+  | "hovering"
+  | "rude"
+  | "carrying";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -61,43 +61,43 @@ export interface VerbSpec {
 
 const MIN = 60;
 export const VERBS: Record<Verb, VerbSpec> = {
-  flirting: { kind: 'romance', juicy: 0.9, odd: 0, halfLife: 90 * MIN },
-  couple: { kind: 'romance', juicy: 0.9, odd: 0, halfLife: 90 * MIN },
-  cheating: { kind: 'romance', juicy: 1, odd: 0, halfLife: 90 * MIN },
-  'left-bedroom': { kind: 'odd', juicy: 0.8, odd: 0.15, halfLife: 45 * MIN },
-  startled: { kind: 'odd', juicy: 0.6, odd: 0.1, halfLife: 45 * MIN },
-  fumbled: { kind: 'odd', juicy: 0.6, odd: 0.1, halfLife: 45 * MIN },
-  'no-champagne': { kind: 'odd', juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
-  'out-of-step': { kind: 'odd', juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
-  slapped: { kind: 'odd', juicy: 0.9, odd: 0.2, halfLife: 45 * MIN },
-  'bandage-gone': { kind: 'odd', juicy: 0.7, odd: 0.25, halfLife: 45 * MIN },
-  'not-themselves': { kind: 'odd', juicy: 0.5, odd: 0.02, halfLife: 45 * MIN },
-  'wrong-turn': { kind: 'odd', juicy: 0.2, odd: 0.03, halfLife: 45 * MIN },
-  'locked-door': { kind: 'odd', juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
-  rumour: { kind: 'odd', juicy: 1, odd: 0.15, halfLife: 45 * MIN },
-  spill: { kind: 'mishap', juicy: 0.6, odd: 0, halfLife: 60 * MIN },
-  cut: { kind: 'mishap', juicy: 0.7, odd: 0, halfLife: 60 * MIN },
-  tipsy: { kind: 'mishap', juicy: 0.3, odd: 0, halfLife: 60 * MIN },
-  'bathroom-taken': { kind: 'house', juicy: 0.2, odd: 0, halfLife: 20 * MIN },
-  dark: { kind: 'house', juicy: 0.5, odd: 0, halfLife: 20 * MIN },
-  crash: { kind: 'house', juicy: 0.5, odd: 0, halfLife: 20 * MIN },
-  'raised-voices': { kind: 'house', juicy: 0.6, odd: 0, halfLife: 20 * MIN },
-  scream: { kind: 'house', juicy: 1, odd: 0, halfLife: 20 * MIN },
-  'looking-for': { kind: 'request', juicy: 0.7, odd: 0, halfLife: Infinity },
-  'was-in': { kind: 'whereabouts', juicy: 0.2, odd: 0, halfLife: 30 * MIN },
+  flirting: { kind: "romance", juicy: 0.9, odd: 0, halfLife: 90 * MIN },
+  couple: { kind: "romance", juicy: 0.9, odd: 0, halfLife: 90 * MIN },
+  cheating: { kind: "romance", juicy: 1, odd: 0, halfLife: 90 * MIN },
+  "left-bedroom": { kind: "odd", juicy: 0.8, odd: 0.15, halfLife: 45 * MIN },
+  startled: { kind: "odd", juicy: 0.6, odd: 0.1, halfLife: 45 * MIN },
+  fumbled: { kind: "odd", juicy: 0.6, odd: 0.1, halfLife: 45 * MIN },
+  "no-champagne": { kind: "odd", juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
+  "out-of-step": { kind: "odd", juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
+  slapped: { kind: "odd", juicy: 0.9, odd: 0.2, halfLife: 45 * MIN },
+  "bandage-gone": { kind: "odd", juicy: 0.7, odd: 0.25, halfLife: 45 * MIN },
+  "not-themselves": { kind: "odd", juicy: 0.5, odd: 0.02, halfLife: 45 * MIN },
+  "wrong-turn": { kind: "odd", juicy: 0.2, odd: 0.03, halfLife: 45 * MIN },
+  "locked-door": { kind: "odd", juicy: 0.4, odd: 0.05, halfLife: 45 * MIN },
+  rumour: { kind: "odd", juicy: 1, odd: 0.15, halfLife: 45 * MIN },
+  spill: { kind: "mishap", juicy: 0.6, odd: 0, halfLife: 60 * MIN },
+  cut: { kind: "mishap", juicy: 0.7, odd: 0, halfLife: 60 * MIN },
+  tipsy: { kind: "mishap", juicy: 0.3, odd: 0, halfLife: 60 * MIN },
+  "bathroom-taken": { kind: "house", juicy: 0.2, odd: 0, halfLife: 20 * MIN },
+  dark: { kind: "house", juicy: 0.5, odd: 0, halfLife: 20 * MIN },
+  crash: { kind: "house", juicy: 0.5, odd: 0, halfLife: 20 * MIN },
+  "raised-voices": { kind: "house", juicy: 0.6, odd: 0, halfLife: 20 * MIN },
+  scream: { kind: "house", juicy: 1, odd: 0, halfLife: 20 * MIN },
+  "looking-for": { kind: "request", juicy: 0.7, odd: 0, halfLife: Infinity },
+  "was-in": { kind: "whereabouts", juicy: 0.2, odd: 0, halfLife: 30 * MIN },
   // Connecting the dots (register.ts): something gone with nobody to blame yet, someone missing,
   // a case settled on someone, and someone seen poking round a private room. Suspicion from a
   // case comes through the register, so these carry none of their own.
-  gone: { kind: 'case', juicy: 0.8, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
-  missing: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN },
-  blamed: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
-  snooping: { kind: 'odd', juicy: 0.7, odd: 0.05, halfLife: 45 * MIN },
+  gone: { kind: "case", juicy: 0.8, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
+  missing: { kind: "case", juicy: 0.9, odd: 0, halfLife: 90 * MIN },
+  blamed: { kind: "case", juicy: 0.9, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
+  snooping: { kind: "odd", juicy: 0.7, odd: 0.05, halfLife: 45 * MIN },
   // Everyday life (PR 3a): hovering at the edge of a circle nobody opened, breaking a practice's
   // norm (talking through the speech, sitting before the host), and carrying something of the
   // house's (the object is the thing).
-  hovering: { kind: 'odd', juicy: 0.3, odd: 0.03, halfLife: 45 * MIN },
-  rude: { kind: 'odd', juicy: 0.4, odd: 0.03, halfLife: 45 * MIN },
-  carrying: { kind: 'whereabouts', juicy: 0.3, odd: 0, halfLife: 30 * MIN, thing: true },
+  hovering: { kind: "odd", juicy: 0.3, odd: 0.03, halfLife: 45 * MIN },
+  rude: { kind: "odd", juicy: 0.4, odd: 0.03, halfLife: 45 * MIN },
+  carrying: { kind: "whereabouts", juicy: 0.3, odd: 0, halfLife: 30 * MIN, thing: true },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

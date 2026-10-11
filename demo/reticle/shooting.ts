@@ -18,23 +18,30 @@
  *  - glass: a bullet that meets a pane (glass.ts) is slowed, turned and set yawing by src/scope/glass.ts,
  *    and flown on from the back face; the pane cracks and throws its spray when the bullet gets there.
  */
-import * as THREE from 'three';
-import { AIR, ROUNDS } from '../../src/scope/ballistics';
-import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from '../../src/scope/handling';
-import { cycle, loaded, pull, reload, type ActionState } from '../../src/scope/action';
-import { SCOPE } from '../../src/scope/optics';
-import { assess, type Wound } from '../../src/body/wound';
-import { dragAfter, throughGlass, yawAfter, type Through } from '../../src/scope/glass';
-import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from '../../src/scope/shot';
-import { windAt, type Wind } from '../../src/scope/wind';
-import type { ImpactSound, Sound } from './audio';
-import { spray, type GlassScreens, type GlassSpray } from './glass';
-import { heightAt, type Range } from './scene';
+import * as THREE from "three";
+import { AIR, ROUNDS } from "../../src/scope/ballistics";
+import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from "../../src/scope/handling";
+import { cycle, loaded, pull, reload, type ActionState } from "../../src/scope/action";
+import { SCOPE } from "../../src/scope/optics";
+import { assess, type Wound } from "../../src/body/wound";
+import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
+import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from "../../src/scope/shot";
+import { windAt, type Wind } from "../../src/scope/wind";
+import type { ImpactSound, Sound } from "./audio";
+import { spray, type GlassScreens, type GlassSpray } from "./glass";
+import { heightAt, type Range } from "./scene";
 
 type Kind = ImpactSound;
 const KIND: Record<string, Kind> = {
-  ground: 'dirt', boulder: 'rock', torso: 'plastic', head: 'plastic', stake: 'wood', tripod: 'steel', 'post-steel': 'steel', 'post-wood': 'wood',
-  frame: 'wood',
+  ground: "dirt",
+  boulder: "rock",
+  torso: "plastic",
+  head: "plastic",
+  stake: "wood",
+  tripod: "steel",
+  "post-steel": "steel",
+  "post-wood": "wood",
+  frame: "wood",
 };
 
 /** A bullet through (or off) a pane: what the glass did to it, and what the pane throws. */
@@ -68,7 +75,7 @@ interface Shot {
 }
 
 interface Handling {
-  kind: 'cycle' | 'reload';
+  kind: "cycle" | "reload";
   start: number;
   dur: number;
   /** Where the rifle is left when it is done (yaw right, pitch up, rad). */
@@ -140,15 +147,15 @@ function splice(a: Path, tCut: number, b: Path): Path {
 /** Dust and debris: camera-facing soft sprites, lit from the sun, one draw for every impact. */
 function createParticles() {
   const geo = new THREE.InstancedBufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+  geo.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
   const iPos = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 3), 3).setUsage(THREE.DynamicDrawUsage);
   const iCol = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 3), 3).setUsage(THREE.DynamicDrawUsage);
   // size (m), alpha, seed, hardness (0 = dust, 1 = a solid fleck, 2 = a bullet)
   const iPar = new THREE.InstancedBufferAttribute(new Float32Array(MAX_P * 4), 4).setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('iPos', iPos);
-  geo.setAttribute('iCol', iCol);
-  geo.setAttribute('iPar', iPar);
+  geo.setAttribute("iPos", iPos);
+  geo.setAttribute("iCol", iCol);
+  geo.setAttribute("iPar", iPar);
   geo.instanceCount = 0;
   const mat = new THREE.ShaderMaterial({
     transparent: true,
@@ -203,13 +210,17 @@ function createParticles() {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   // The pixel floor needs the height of whichever view is drawing.
-  mesh.onBeforeRender = (r) => { mat.uniforms.uHalfPx!.value = (r.getRenderTarget()?.height ?? r.domElement.height) / 2; };
+  mesh.onBeforeRender = (r) => {
+    mat.uniforms.uHalfPx!.value = (r.getRenderTarget()?.height ?? r.domElement.height) / 2;
+  };
   mesh.renderOrder = 2;
   let n = 0;
   return {
     mesh,
     mat,
-    begin() { n = 0; },
+    begin() {
+      n = 0;
+    },
     add(x: number, y: number, z: number, size: number, alpha: number, c: THREE.Color, seed: number, hard: number) {
       if (n >= MAX_P || alpha <= 0.002) return;
       iPos.setXYZ(n, x, y, z);
@@ -221,9 +232,12 @@ function createParticles() {
       geo.instanceCount = n;
       mesh.visible = n > 0;
       iPos.needsUpdate = iCol.needsUpdate = iPar.needsUpdate = true;
-      iPos.clearUpdateRanges(); iPos.addUpdateRange(0, n * 3);
-      iCol.clearUpdateRanges(); iCol.addUpdateRange(0, n * 3);
-      iPar.clearUpdateRanges(); iPar.addUpdateRange(0, n * 4);
+      iPos.clearUpdateRanges();
+      iPos.addUpdateRange(0, n * 3);
+      iCol.clearUpdateRanges();
+      iCol.addUpdateRange(0, n * 3);
+      iPar.clearUpdateRanges();
+      iPar.addUpdateRange(0, n * 4);
     },
   };
 }
@@ -265,18 +279,20 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       ray.far = len;
       hits.push(...ray.intersectObjects(objs, recursive));
     };
-    range.targets.forEach((m, i) => { if (segDist(A, Bv, targetCentres[i]!) < 1.6) cast([m.group], true); });
+    range.targets.forEach((m, i) => {
+      if (segDist(A, Bv, targetCentres[i]!) < 1.6) cast([m.group], true);
+    });
     if (segDist(A, Bv, boulderCentre) < 6.5) cast([range.boulder], false);
     // The fence runs z = −360 − 0.12·x for |x| ≤ 350.
     if (Math.max(a[2], b[2]) > -402 && Math.min(a[2], b[2]) < -318 && Math.min(a[1], b[1]) < heightAt(a[0], a[2]) + 1.4) cast(posts, false);
     // The glass screens: the panes by their plane, the frames by raycast.
     const pane = glass.cross(a, b);
     if (glass.glazing) for (let i = 0; i < glass.count; i++) if (segDist(A, Bv, glass.centre(i)) < 2.5) cast(glass.frames(i), false);
-    const real = hits.filter((h) => h.object.name !== 'hole').sort((p, q) => p.distance - q.distance);
+    const real = hits.filter((h) => h.object.name !== "hole").sort((p, q) => p.distance - q.distance);
     const solidF = real.length ? real[0]!.distance / len : Infinity;
     if (pane && pane.f <= solidF) return { f: pane.f, what: `glass:${pane.screen}` };
     if (!real.length) return null;
-    return { f: solidF, what: real[0]!.object.name || 'boulder' };
+    return { f: solidF, what: real[0]!.object.name || "boulder" };
   };
 
   // ---- the mannequins' holes and rocking ----
@@ -293,7 +309,9 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   /** The mannequin nearest a point on the ground plan. */
   const nearestTarget = (x: number, z: number) => {
     let best = 0;
-    range.targets.forEach((m, i) => { if (Math.hypot(m.foot.x - x, m.foot.z - z) < Math.hypot(range.targets[best]!.foot.x - x, range.targets[best]!.foot.z - z)) best = i; });
+    range.targets.forEach((m, i) => {
+      if (Math.hypot(m.foot.x - x, m.foot.z - z) < Math.hypot(range.targets[best]!.foot.x - x, range.targets[best]!.foot.z - z)) best = i;
+    });
     return best;
   };
 
@@ -306,8 +324,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   }
 
   /** Starts working the action ('cycle': the bolt or the charging handle) or changing the magazine at `now`. */
-  function handle(now: number, kind: 'cycle' | 'reload'): void {
-    const reload = kind === 'reload';
+  function handle(now: number, kind: "cycle" | "reload"): void {
+    const reload = kind === "reload";
     const seed = handlingCount++;
     const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held });
     handling = {
@@ -326,7 +344,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
    * B and R: work the action, or change the magazine, whenever the hands are free, needed or not. Working it
    * with a round chambered throws that round out; a magazine change keeps whatever is in the chamber.
    */
-  function work(now: number, kind: 'cycle' | 'reload'): boolean {
+  function work(now: number, kind: "cycle" | "reload"): boolean {
     sound.unlock();
     if (handling) return false;
     handle(now, kind);
@@ -346,8 +364,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     sound.unlock();
     if (handling) return null;
     const r = pull(gun, rifle.id);
-    if (r !== 'fire') {
-      sound.cue(r === 'click' ? 'dry-fire' : 'trigger', rifle.id, r === 'click' ? rifle.lockS * 0.5 : 0);
+    if (r !== "fire") {
+      sound.cue(r === "click" ? "dry-fire" : "trigger", rifle.id, r === "click" ? rifle.lockS * 0.5 : 0);
       return null;
     }
     const exit = now + rifle.lockS + rifle.barrelS;
@@ -358,7 +376,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   const fwd = new THREE.Vector3();
   const right = new THREE.Vector3();
   const up = new THREE.Vector3();
-  const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const euler = new THREE.Euler(0, 0, 0, "YXZ");
   const W: Vec3 = [0, 0, 0];
 
   /** Flies a bullet that left the muzzle at `exit` along `aim`, and works out what it hits. */
@@ -375,9 +393,16 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const jump = aeroJumpRad(rifle, sg, W[0] * right.x + W[2] * right.z);
     // The bore runs under the scope, tilted up by the dial so the bullet climbs to the line of sight at the zero.
     const tilt = tiltRad;
-    const dir = fwd.clone().addScaledVector(right, d.dx).addScaledVector(up, d.dy + jump + tilt).normalize();
+    const dir = fwd
+      .clone()
+      .addScaledVector(right, d.dx)
+      .addScaledVector(up, d.dy + jump + tilt)
+      .normalize();
     const air = {
-      round, t0: exit, spin: RANGE_SPIN, sg,
+      round,
+      t0: exit,
+      spin: RANGE_SPIN,
+      sg,
       wind: (x: number, y: number, z: number, t: number, o: Vec3) => windAt(wind, x, y, z, t, o),
       // Nothing to fly for once it is in the ground.
       until: (x: number, y: number, z: number) => y < heightAt(x, z) - 0.5,
@@ -390,26 +415,46 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     // its jacket, until it meets something else (another pane, at most a few).
     const passes: GlassPass[] = [];
     let carry: Through | null = null;
-    for (let k = 0; k < 3 && hit.what.startsWith('glass:'); k++) {
+    for (let k = 0; k < 3 && hit.what.startsWith("glass:"); k++) {
       const i = Number(hit.what.slice(6));
       const glazing = glass.glazingAt(i, hit.pos);
       if (!glazing) break;
       const seed = n * 7 + k;
       const th: Through = throughGlass({
-        round: rifle.round, pos: hit.pos, vel: hit.vel, normal: glass.normal(i), glazing, twistM: rifle.twistMm / 1000, sg, seed,
-        ...(carry ? { massKg: carry.massKg, stripped: carry.stripped, yawMax: carry.yawMax, swingM: carry.swingM, sinceM: Math.hypot(hit.pos[0] - carry.pos[0], hit.pos[1] - carry.pos[1], hit.pos[2] - carry.pos[2]) } : {}),
+        round: rifle.round,
+        pos: hit.pos,
+        vel: hit.vel,
+        normal: glass.normal(i),
+        glazing,
+        twistM: rifle.twistMm / 1000,
+        sg,
+        seed,
+        ...(carry
+          ? {
+              massKg: carry.massKg,
+              stripped: carry.stripped,
+              yawMax: carry.yawMax,
+              swingM: carry.swingM,
+              sinceM: Math.hypot(hit.pos[0] - carry.pos[0], hit.pos[1] - carry.pos[1], hit.pos[2] - carry.pos[2]),
+            }
+          : {}),
       });
       passes.push({ th, spray: glass.punch(i, th, exit + hit.t, rifle.bulletDiaMm / 1000, seed) });
       carry = th;
       const tCut = hit.t;
-      if (th.outcome === 'stopped') {
-        hit = { t: tCut, pos: th.pos, vel: [0, 0, 0], speed: 0, what: 'glass' };
+      if (th.outcome === "stopped") {
+        hit = { t: tCut, pos: th.pos, vel: [0, 0, 0], speed: 0, what: "glass" };
         break;
       }
       // The glass is a few hundredths of a millisecond deep: the flight picks up again at the same moment.
       const on = fly({
-        ...air, mv: th.speed, origin: th.pos, dir: [th.vel[0] / th.speed, th.vel[1] / th.speed, th.vel[2] / th.speed],
-        t0: exit + tCut, flown: tCut, maxT: Math.max(0.2, 3 - tCut),
+        ...air,
+        mv: th.speed,
+        origin: th.pos,
+        dir: [th.vel[0] / th.speed, th.vel[1] / th.speed, th.vel[2] / th.speed],
+        t0: exit + tCut,
+        flown: tCut,
+        maxT: Math.max(0.2, 3 - tCut),
         drag: (t) => dragAfter(th, th.speed * t),
       });
       path = splice(path, tCut, on);
@@ -422,23 +467,27 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     range.targets.forEach((m, k) => {
       const tz = m.foot.z;
       for (let i = 0; i < path.n - 1; i++) {
-        const z0 = path.pos[i * 3 + 2]!, z1 = path.pos[i * 3 + 5]!;
+        const z0 = path.pos[i * 3 + 2]!,
+          z1 = path.pos[i * 3 + 5]!;
         if (z1 <= tz && z0 > tz) {
           if ((i + 1) * path.dt > hit.t + path.dt) break;
           const f = (tz - z0) / (z1 - z0);
           const x = path.pos[i * 3]! + (path.pos[i * 3 + 3]! - path.pos[i * 3]!) * f;
           const y = path.pos[i * 3 + 1]! + (path.pos[i * 3 + 4]! - path.pos[i * 3 + 1]!) * f;
           const off: [number, number] = [x - m.foot.x, y - (m.foot.y + 1.2)];
-          if (!miss || Math.hypot(...off) < Math.hypot(...miss)) { miss = off; target = k; }
+          if (!miss || Math.hypot(...off) < Math.hypot(...miss)) {
+            miss = off;
+            target = k;
+          }
           break;
         }
       }
     });
     const kind = KIND[hit.what] ?? null;
-    if (kind === 'plastic' || hit.what === 'stake' || hit.what === 'tripod') target = nearestTarget(hit.pos[0], hit.pos[2]);
+    if (kind === "plastic" || hit.what === "stake" || hit.what === "tripod") target = nearestTarget(hit.pos[0], hit.pos[2]);
     // The mannequin stands in for a person facing the shooter: the wound track runs in its own frame.
     let wound: Wound | null = null;
-    if (kind === 'plastic') {
+    if (kind === "plastic") {
       const m = range.targets[target]!.group;
       const inv = m.quaternion.clone().invert();
       const entry = new THREE.Vector3(...hit.pos).sub(m.position).applyQuaternion(inv);
@@ -453,7 +502,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     if (delay !== null) {
       sound.shot(delay, rifle.id);
       // A semi-automatic throws its case out as it fires; it lands in the dirt to the right half a second later.
-      if (rifle.action === 'semi') sound.cue('case-land', rifle.id, delay + 0.45 + 0.12 * rnd(n, 9));
+      if (rifle.action === "semi") sound.cue("case-land", rifle.id, delay + 0.45 + 0.12 * rnd(n, 9));
       if (kind) {
         const dist = Math.hypot(hit.pos[0] - eye.x, hit.pos[1] - eye.y, hit.pos[2] - eye.z);
         sound.impact(delay + hit.t + dist / 343, dist, kind);
@@ -463,12 +512,12 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         const sp = g.spray[0];
         if (!sp) continue;
         const dist = Math.hypot(sp.pos[0] - eye.x, sp.pos[1] - eye.y, sp.pos[2] - eye.z);
-        sound.impact(delay + sp.at - exit + dist / 343, dist, g.spray.some((x) => x.tempered) ? 'tempered' : 'glass');
+        sound.impact(delay + sp.at - exit + dist / 343, dist, g.spray.some((x) => x.tempered) ? "tempered" : "glass");
       }
     }
     // The mannequin rocks on its stake. A 9.8 g bullet at 550 m/s carries 5.4 N·s; going straight through
     // the plastic it leaves perhaps a fifth of that, enough to rock it a degree or so.
-    if (kind === 'plastic' || hit.what === 'stake' || hit.what === 'tripod') {
+    if (kind === "plastic" || hit.what === "stake" || hit.what === "tripod") {
       const p = new THREE.Vector3(...hit.pos);
       const v = new THREE.Vector3(...hit.vel).normalize();
       const h = Math.max(0.2, p.y - range.targets[target]!.foot.y);
@@ -537,7 +586,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         P.set(head[0], head[1], head[2]);
         const dh = P.distanceTo(eye);
         proj.copy(P).project(scopeCam);
-        const bx = proj.x * 0.5 + 0.5, by = proj.y * 0.5 + 0.5;
+        const bx = proj.x * 0.5 + 0.5,
+          by = proj.y * 0.5 + 0.5;
         const tail = pathAt(s.path, tb, tmp);
         P.set(tail[0], tail[1], tail[2]);
         const dt_ = Math.max(1, P.distanceTo(eye));
@@ -573,7 +623,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       m.group.quaternion.copy(rockQ);
     });
     for (const s of shots) {
-      if (s.holed || s.kind !== 'plastic' || now < s.exit + s.hit.t) continue;
+      if (s.holed || s.kind !== "plastic" || now < s.exit + s.hit.t) continue;
       // A true-size hole: a 7.62 mm one is under a pixel at 412 m even at 20×, as in life.
       s.holed = true;
       const m = range.targets[s.target]!.group;
@@ -582,7 +632,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const hole = new THREE.Mesh(holeGeo(s.rifle.bulletDiaMm), holeMat);
       hole.position.copy(m.worldToLocal(new THREE.Vector3(...s.hit.pos).addScaledVector(v, -0.002)));
       hole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v.negate().applyQuaternion(q.copy(m.quaternion).invert()));
-      hole.name = 'hole';
+      hole.name = "hole";
       m.add(hole);
     }
     // The shadow map is drawn once for the static range; redraw it only while the rock is big enough to see.
@@ -605,14 +655,14 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const u = (now - handling.start) / handling.dur;
       if (u >= 1) {
         fold = handling.shift;
-        if (handling.kind === 'reload') reload(gun, rifle.id);
+        if (handling.kind === "reload") reload(gun, rifle.id);
         else cycle(gun, rifle.id);
         handling = null;
       } else {
         const e = u * u * (3 - 2 * u);
         const bump = Math.sin(Math.PI * u);
-        const shake = Math.sin(2 * Math.PI * (handling.kind === 'reload' ? 2.5 : 3.2) * u) * bump;
-        const big = handling.kind === 'reload' ? 1 : 0.35;
+        const shake = Math.sin(2 * Math.PI * (handling.kind === "reload" ? 2.5 : 3.2) * u) * bump;
+        const big = handling.kind === "reload" ? 1 : 0.35;
         hand = {
           yaw: handling.shift[0] * e + 0.0012 * big * shake,
           pitch: handling.shift[1] * e + 0.0009 * big * shake * (rnd(handling.seed, 3) - 0.5) * 2,
@@ -635,7 +685,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     gun = loaded(rifle.id);
     gun.mag = reload ? 0 : rifle.magazine - 2;
     pull(gun, rifle.id);
-    handle(now, reload ? 'reload' : 'cycle');
+    handle(now, reload ? "reload" : "cycle");
   }
 
   /** One impact's debris and dust, `age` s after it. */
@@ -645,18 +695,20 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const v = s.hit.vel;
     const vh = Math.hypot(v[0], v[2]) || 1;
     // Along the bullet's ground track, across it, and up.
-    const fx = v[0] / vh, fz = v[2] / vh;
-    const sx = -fz, sz = fx;
+    const fx = v[0] / vh,
+      fz = v[2] / vh;
+    const sx = -fz,
+      sz = fx;
     const e = s.hit.speed * s.hit.speed * 0.5 * ROUNDS[s.rifle.round].bulletGr * 0.0000648;
     const scale = Math.min(1.3, Math.sqrt(e / 1500));
     const g = 9.81;
     windAt(wind, hx, hy + 0.5, hz, now, W);
     const seed = s.n * 31;
     const kind = s.kind!;
-    const dusty = kind === 'dirt' ? 1 : kind === 'rock' ? 0.7 : kind === 'plastic' ? 0.18 : 0.25;
-    const dustCol = kind === 'rock' ? ROCK : kind === 'plastic' ? WHITE : kind === 'steel' ? STEEL : kind === 'wood' ? WOOD : SOIL;
-    const fleckCol = kind === 'dirt' ? CLOD : kind === 'rock' ? ROCK : kind === 'plastic' ? WHITE : kind === 'steel' ? STEEL : WOOD;
-    const ground = kind === 'dirt' || kind === 'rock';
+    const dusty = kind === "dirt" ? 1 : kind === "rock" ? 0.7 : kind === "plastic" ? 0.18 : 0.25;
+    const dustCol = kind === "rock" ? ROCK : kind === "plastic" ? WHITE : kind === "steel" ? STEEL : kind === "wood" ? WOOD : SOIL;
+    const fleckCol = kind === "dirt" ? CLOD : kind === "rock" ? ROCK : kind === "plastic" ? WHITE : kind === "steel" ? STEEL : WOOD;
+    const ground = kind === "dirt" || kind === "rock";
     // Flecks: clods, chips or plastic, thrown forward and up, falling back under gravity.
     const nFleck = ground ? 14 : 7;
     for (let i = 0; i < nFleck; i++) {
@@ -668,7 +720,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const x = hx + (fx * fwd + sx * side) * age;
       const z = hz + (fz * fwd + sz * side) * age;
       const y = hy + upv * age - 0.5 * g * age * age;
-      const size = (ground ? 0.015 + 0.035 * rnd(seed, i * 5 + 3) : 0.006 + 0.012 * rnd(seed, i * 5 + 3));
+      const size = ground ? 0.015 + 0.035 * rnd(seed, i * 5 + 3) : 0.006 + 0.012 * rnd(seed, i * 5 + 3);
       particles.add(x, y, z, size, 1, fleckCol, rnd(seed, i * 5 + 4), 1);
     }
     // Dust: a forward-leaning cloud that slows in the air, swells, rises a little and drifts with the wind.
@@ -713,43 +765,48 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     busy: () => !!handling,
     status(now: number) {
       const last = shots[shots.length - 1];
-      let shot = '–';
+      let shot = "–";
       if (last) {
         const landed = now >= last.exit + last.hit.t;
         const pane = last.glass.at(-1)?.th.outcome;
-        if (!landed) shot = 'in flight';
-        else if (pane === 'stopped') shot = 'stopped in the glass';
+        if (!landed) shot = "in flight";
+        else if (pane === "stopped") shot = "stopped in the glass";
         else if (last.wound) shot = `hit ${last.what} · ${last.wound.outcome}`;
-        else if (last.kind === 'plastic') shot = `hit · ${last.what}`;
+        else if (last.kind === "plastic") shot = `hit · ${last.what}`;
         else if (last.miss) {
           const [mx, my] = last.miss;
           const cm = (m: number) => (Math.abs(m) < 1 ? `${Math.round(Math.abs(m) * 100)} cm` : `${Math.abs(m).toFixed(1)} m`);
-          shot = `miss · ${cm(my)} ${my >= 0 ? 'high' : 'low'}, ${cm(mx)} ${mx >= 0 ? 'right' : 'left'}`;
-        } else if (last.what === 'ground') {
+          shot = `miss · ${cm(my)} ${my >= 0 ? "high" : "low"}, ${cm(mx)} ${mx >= 0 ? "right" : "left"}`;
+        } else if (last.what === "ground") {
           const short = Math.hypot(last.hit.pos[0], last.hit.pos[2]);
           shot = `miss · ground at ${Math.round(short)} m`;
         } else shot = `miss · ${last.what}`;
-        if (landed && pane === 'through') shot = `through glass · ${shot}`;
-        if (landed && pane === 'ricochet') shot = `glanced off the glass · ${shot}`;
+        if (landed && pane === "through") shot = `through glass · ${shot}`;
+        if (landed && pane === "ricochet") shot = `glanced off the glass · ${shot}`;
       }
       // What the shooter is doing; at rest, nothing: keeping track of the chamber is the shooter's job.
-      const state = handling
-        ? handling.kind === 'reload' ? 'changing magazine' : rifle.action === 'bolt' ? 'working the bolt' : 'racking'
-        : '';
+      const state = handling ? (handling.kind === "reload" ? "changing magazine" : rifle.action === "bolt" ? "working the bolt" : "racking") : "";
       // The last bullet into a person, once it has struck: the wound, its striking speed, and how long ago.
       const hurt = [...shots].reverse().find((s) => s.wound && now >= s.exit + s.hit.t);
       const g = hurt?.glass.at(-1)?.th;
-      const wound = hurt ? {
-        n: hurt.n, wound: hurt.wound!, speed: hurt.hit.speed, since: now - hurt.exit - hurt.hit.t,
-        // What the glass did to it on the way: share of its speed lost, the yaw it struck with, jacket gone.
-        glass: g ? {
-          lost: 1 - g.speed / hurt.glass[0]!.th.sheets[0]!.speedIn,
-          stripped: g.stripped,
-          yawRad: yawAfter(g.yawMax, g.swingM, Math.hypot(hurt.hit.pos[0] - g.pos[0], hurt.hit.pos[1] - g.pos[1], hurt.hit.pos[2] - g.pos[2])),
-        } : null,
-      } : null;
+      const wound = hurt
+        ? {
+            n: hurt.n,
+            wound: hurt.wound!,
+            speed: hurt.hit.speed,
+            since: now - hurt.exit - hurt.hit.t,
+            // What the glass did to it on the way: share of its speed lost, the yaw it struck with, jacket gone.
+            glass: g
+              ? {
+                  lost: 1 - g.speed / hurt.glass[0]!.th.sheets[0]!.speedIn,
+                  stripped: g.stripped,
+                  yawRad: yawAfter(g.yawMax, g.swingM, Math.hypot(hurt.hit.pos[0] - g.pos[0], hurt.hit.pos[1] - g.pos[1], hurt.hit.pos[2] - g.pos[2])),
+                }
+              : null,
+          }
+        : null;
       // Rounds counted as a shooter counts them: what was loaded, less what was fired or thrown out.
-      return { rounds: `${gun.mag + (gun.chamber === 'live' ? 1 : 0)}`, state, shot, wound };
+      return { rounds: `${gun.mag + (gun.chamber === "live" ? 1 : 0)}`, state, shot, wound };
     },
   };
 }

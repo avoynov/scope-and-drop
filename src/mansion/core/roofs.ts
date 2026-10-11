@@ -2,7 +2,7 @@
  * Roof surface heights, as pure maths shared by the generator (which sizes
  * the dome's drum) and the renderer (which builds the same roofs).
  */
-import type { Mass } from './types';
+import type { Mass } from "./types";
 
 const DEG = Math.PI / 180;
 /** Roof planes start this far above the eave line (top of the cornice). */
@@ -59,13 +59,13 @@ export function hipParams(m: Mass): { pitchDeg: number; lift: number; inset: num
  * `main` is the main block (a pavilion's roof runs back into it).
  */
 export function roofSurfaceY(masses: Mass[], x: number, z: number, mainMass?: Mass): number {
-  const main = mainMass ?? masses.find((m) => m.kind === 'main');
+  const main = mainMass ?? masses.find((m) => m.kind === "main");
   let best = -Infinity;
   for (const m of masses) {
     const yb = m.roof.eaveY + ROOF_BASE;
-    if (m.kind === 'pavilion') {
+    if (m.kind === "pavilion") {
       if (!main) continue;
-      const garden = (m.roof.pediment ?? 'garden') === 'garden';
+      const garden = (m.roof.pediment ?? "garden") === "garden";
       const x0 = m.rect.x0 - EAVE_OVERHANG;
       const x1 = m.rect.x1 + EAVE_OVERHANG;
       const zA = garden ? main.rect.z1 - 2.5 : m.rect.z0 - EAVE_OVERHANG;
@@ -79,13 +79,13 @@ export function roofSurfaceY(masses: Mass[], x: number, z: number, mainMass?: Ma
     if (x < r.x0 || x > r.x1 || z < r.z0 || z > r.z1) continue;
     const d = Math.min(x - r.x0, r.x1 - x, z - r.z0, r.z1 - z);
     switch (m.roof.kind) {
-      case 'flat':
+      case "flat":
         best = Math.max(best, yb + 0.05);
         break;
-      case 'glass':
+      case "glass":
         best = Math.max(best, yb + d * Math.tan(32 * DEG));
         break;
-      case 'mansard': {
+      case "mansard": {
         const { height, inset } = mansardBreak(m);
         best = Math.max(best, d < inset ? yb + (d / inset) * height : yb + height + (d - inset) * Math.tan(MANSARD_TOP_PITCH * DEG));
         break;

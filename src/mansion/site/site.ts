@@ -3,12 +3,12 @@
  * that frame the vista without blocking it, the sniper's perch on a wooded
  * rise, and blue-hour sky parameters.
  */
-import { rect, type Rect, type Vec2 } from '../core/geom';
-import { snap, type Rng } from '../core/rng';
-import type { LightSpec, Perch, Portico, Prop, Site, SkySpec, StyleDef, Terrace, TerrainSpec, Tree } from '../core/types';
-import type { MassingPlan } from '../layout/massing';
-import { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEyeAt, perchPlan } from './perch';
-import { terrainHeight } from './terrain';
+import { rect, type Rect, type Vec2 } from "../core/geom";
+import { snap, type Rng } from "../core/rng";
+import type { LightSpec, Perch, Portico, Prop, Site, SkySpec, StyleDef, Terrace, TerrainSpec, Tree } from "../core/types";
+import type { MassingPlan } from "../layout/massing";
+import { PERCH_ARC_DEG, PERCH_MAX_ELEVATION_DEG, perchEyeAt, perchPlan } from "./perch";
+import { terrainHeight } from "./terrain";
 
 export interface SiteInput {
   rng: Rng;
@@ -80,7 +80,7 @@ export function poissonDisc(rng: Rng, area: Rect, minDist: number, accept: (x: n
   return pts;
 }
 
-const TREE_SIZES: Record<Tree['kind'], { h: [number, number]; c: [number, number] }> = {
+const TREE_SIZES: Record<Tree["kind"], { h: [number, number]; c: [number, number] }> = {
   oak: { h: [15, 21], c: [6, 8.5] },
   beech: { h: [18, 26], c: [5, 7.5] },
   cedar: { h: [17, 24], c: [7, 10] },
@@ -98,9 +98,9 @@ export function planSite(input: SiteInput): SiteOutput {
   const warm = (k: number): [number, number, number] => [1, 0.62 + 0.08 * k, 0.32 + 0.1 * k];
 
   /* ---------------- Terrace ---------------- */
-  const gardenPortico = input.porticos.find((p) => p.side === 'garden');
+  const gardenPortico = input.porticos.find((p) => p.side === "garden");
   const pav = m.gardenPavilion?.depth ?? 0;
-  const gardenWing = m.wings.find((w) => w.toward === 'garden');
+  const gardenWing = m.wings.find((w) => w.toward === "garden");
   const frontMost = Math.max(m.zGarden + pav, gardenPortico ? gardenPortico.rect.z1 : -Infinity, gardenWing ? gardenWing.rect.z1 : -Infinity);
   const td = snap(rng.range(gardenWing ? 4.5 : 6.5, gardenWing ? 7.5 : 10.5), 0.1);
   const ext = snap(gardenWing ? rng.range(2.0, 4.0) : rng.range(0.0, 3.0), 0.1);
@@ -118,7 +118,7 @@ export function planSite(input: SiteInput): SiteOutput {
       { a: { x: tx0, z: tz1 }, b: { x: -stepW / 2, z: tz1 }, height: 1.0 },
       { a: { x: stepW / 2, z: tz1 }, b: { x: tx1, z: tz1 }, height: 1.0 },
     ],
-    steps: [{ rect: rect(-stepW / 2, tz1, stepW / 2, tz1 + stepRun), dir: '+z', y0: terraceY, y1: 0, count: stepCount }],
+    steps: [{ rect: rect(-stepW / 2, tz1, stepW / 2, tz1 + stepRun), dir: "+z", y0: terraceY, y1: 0, count: stepCount }],
   };
   // Side balustrades run back to the façade; optional side stairs halfway.
   const sideSteps = rng.chance(0.5);
@@ -129,7 +129,7 @@ export function planSite(input: SiteInput): SiteOutput {
       const sw = 3.2;
       terrace.balustrades.push({ a: { x: sx, z: back }, b: { x: sx, z: zc - sw / 2 }, height: 1.0 });
       terrace.balustrades.push({ a: { x: sx, z: zc + sw / 2 }, b: { x: sx, z: tz1 }, height: 1.0 });
-      const dir = sx < 0 ? '-x' : '+x';
+      const dir = sx < 0 ? "-x" : "+x";
       terrace.steps.push({
         rect: sx < 0 ? rect(sx - stepRun, zc - sw / 2, sx, zc + sw / 2) : rect(sx, zc - sw / 2, sx + stepRun, zc + sw / 2),
         dir,
@@ -148,14 +148,14 @@ export function planSite(input: SiteInput): SiteOutput {
   const fountainR = snap(rng.range(3.5, 6.5), 0.1);
   const pathW = snap(Math.min(stepW, rng.range(4, 6.5)), 0.1);
   const gardenEnd = fountainZ + fountainR + rng.range(18, 34);
-  const paths: Site['paths'] = [
-    { rect: rect(tx0 - 2, walkZ0, tx1 + 2, walkZ0 + 3.2), kind: 'gravel' },
-    { rect: rect(-pathW / 2, walkZ0, pathW / 2, gardenEnd), kind: 'gravel' },
-    { rect: rect(-fountainR - 16, fountainZ - 1.6, fountainR + 16, fountainZ + 1.6), kind: 'gravel' },
+  const paths: Site["paths"] = [
+    { rect: rect(tx0 - 2, walkZ0, tx1 + 2, walkZ0 + 3.2), kind: "gravel" },
+    { rect: rect(-pathW / 2, walkZ0, pathW / 2, gardenEnd), kind: "gravel" },
+    { rect: rect(-fountainR - 16, fountainZ - 1.6, fountainR + 16, fountainZ + 1.6), kind: "gravel" },
   ];
-  const parterres: Site['parterres'] = [];
-  const topiary: Site['topiary'] = [];
-  const pattern = rng.pick(['cross', 'diamond', 'ring', 'quarters'] as const);
+  const parterres: Site["parterres"] = [];
+  const topiary: Site["topiary"] = [];
+  const pattern = rng.pick(["cross", "diamond", "ring", "quarters"] as const);
   const bedW = snap(rng.range(9, 15), 0.1);
   const bedZ0 = walkZ0 + 5;
   const bedZ1 = fountainZ - fountainR - 4;
@@ -173,16 +173,16 @@ export function planSite(input: SiteInput): SiteOutput {
         [r.x0, r.z1],
         [r.x1, r.z1],
       ] as const) {
-        topiary.push({ x: cx, z: cz, height: 1.7, radius: 0.55, shape: 'cone' });
+        topiary.push({ x: cx, z: cz, height: 1.7, radius: 0.55, shape: "cone" });
       }
     }
   }
-  for (const sx of [-stepW / 2 - 1.2, stepW / 2 + 1.2]) topiary.push({ x: sx, z: walkZ0 + 1.6, height: 2.3, radius: 0.75, shape: rng.pick(['cone', 'ball', 'spiral'] as const) });
+  for (const sx of [-stepW / 2 - 1.2, stepW / 2 + 1.2]) topiary.push({ x: sx, z: walkZ0 + 1.6, height: 2.3, radius: 0.75, shape: rng.pick(["cone", "ball", "spiral"] as const) });
 
   /* ---------------- Exterior props + lights ---------------- */
   const lamp = (x: number, z: number, y: number) => {
-    props.push({ id: `px${pid++}`, kind: 'lamppost', roomId: null, level: 0, x, y, z, yaw: 0, w: 0.5, d: 0.5, h: 3.4, variant: 0, mount: 'floor', blocksNav: true, occludes: false });
-    lights.push({ id: `lx${lid++}`, kind: 'lamppost', scope: 'exterior', x, y: y + 3.25, z, color: warm(0.2), intensity: 160, range: 18 });
+    props.push({ id: `px${pid++}`, kind: "lamppost", roomId: null, level: 0, x, y, z, yaw: 0, w: 0.5, d: 0.5, h: 3.4, variant: 0, mount: "floor", blocksNav: true, occludes: false });
+    lights.push({ id: `lx${lid++}`, kind: "lamppost", scope: "exterior", x, y: y + 3.25, z, color: warm(0.2), intensity: 160, range: 18 });
   };
   lamp(-stepW / 2 - 0.5, tz1 - 0.6, terraceY);
   lamp(stepW / 2 + 0.5, tz1 - 0.6, terraceY);
@@ -193,7 +193,23 @@ export function planSite(input: SiteInput): SiteOutput {
   // Urns on the balustrade piers.
   for (const b of terrace.balustrades) {
     for (const p of [b.a, b.b]) {
-      props.push({ id: `px${pid++}`, kind: 'urn', roomId: null, level: 0, x: p.x, y: terraceY + b.height, z: p.z, yaw: 0, w: 0.6, d: 0.6, h: 0.9, variant: 0, mount: 'floor', blocksNav: false, occludes: false });
+      props.push({
+        id: `px${pid++}`,
+        kind: "urn",
+        roomId: null,
+        level: 0,
+        x: p.x,
+        y: terraceY + b.height,
+        z: p.z,
+        yaw: 0,
+        w: 0.6,
+        d: 0.6,
+        h: 0.9,
+        variant: 0,
+        mount: "floor",
+        blocksNav: false,
+        occludes: false,
+      });
     }
   }
   if (gardenPortico) {
@@ -201,8 +217,8 @@ export function planSite(input: SiteInput): SiteOutput {
       // Floodlights a little in front of each column: they wash the shaft, not the paving.
       lights.push({
         id: `lx${lid++}`,
-        kind: 'uplight',
-        scope: 'exterior',
+        kind: "uplight",
+        scope: "exterior",
         x: c.x,
         y: gardenPortico.baseY + 0.25,
         z: c.z + gardenPortico.columnRadius + 0.7,
@@ -214,7 +230,7 @@ export function planSite(input: SiteInput): SiteOutput {
       });
     }
   }
-  lights.push({ id: `lx${lid++}`, kind: 'uplight', scope: 'exterior', x: 0, y: 0.6, z: fountainZ, color: [1, 0.86, 0.66], intensity: 90, range: fountainR + 8 });
+  lights.push({ id: `lx${lid++}`, kind: "uplight", scope: "exterior", x: 0, y: 0.6, z: fountainZ, color: [1, 0.86, 0.66], intensity: 90, range: fountainR + 8 });
 
   /* ---------------- Perch, terrain, sky ---------------- */
   // Always draw both, so overriding one never reshuffles the rest of the site.
@@ -286,10 +302,9 @@ export function planSite(input: SiteInput): SiteOutput {
     return false;
   };
   const trees: Tree[] = [];
-  const nearHouse = (x: number, z: number, r: number) =>
-    x > footprint.x0 - 6 - r && x < footprint.x1 + 6 + r && z > footprint.z0 - 6 - r && z < tz1 + stepRun + 6 + r;
+  const nearHouse = (x: number, z: number, r: number) => x > footprint.x0 - 6 - r && x < footprint.x1 + 6 + r && z > footprint.z0 - 6 - r && z < tz1 + stepRun + 6 + r;
   const nearGarden = (x: number, z: number, r: number) => x > -fountainR - 26 - r && x < fountainR + 26 + r && z > walkZ0 - 2 && z < gardenEnd + 4 + r;
-  const addTrees = (area: Rect, minDist: number, kinds: Tree['kind'][], cap: number) => {
+  const addTrees = (area: Rect, minDist: number, kinds: Tree["kind"][], cap: number) => {
     const pts = poissonDisc(rng, area, minDist, (x, z) => !inCone(x, z, 8) && !nearHouse(x, z, 6) && !nearGarden(x, z, 6), cap);
     for (const p of pts) {
       const kind = rng.pick(kinds);
@@ -300,12 +315,12 @@ export function planSite(input: SiteInput): SiteOutput {
     }
   };
   // Woods behind the house: silhouettes above the roofline.
-  addTrees(rect(footprint.x0 - 70, footprint.z0 - 110, footprint.x1 + 70, footprint.z0 - 16), 9, ['beech', 'oak', 'cedar', 'beech', 'poplar'], 160);
+  addTrees(rect(footprint.x0 - 70, footprint.z0 - 110, footprint.x1 + 70, footprint.z0 - 16), 9, ["beech", "oak", "cedar", "beech", "poplar"], 160);
   // Flanking belts.
-  addTrees(rect(fx1 + 18, footprint.z0 - 30, fx1 + 140, arcZ - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
-  addTrees(rect(fx0 - 140, footprint.z0 - 30, fx0 - 18, arcZ - 25), 10, ['oak', 'beech', 'oak', 'cedar'], 120);
+  addTrees(rect(fx1 + 18, footprint.z0 - 30, fx1 + 140, arcZ - 25), 10, ["oak", "beech", "oak", "cedar"], 120);
+  addTrees(rect(fx0 - 140, footprint.z0 - 30, fx0 - 18, arcZ - 25), 10, ["oak", "beech", "oak", "cedar"], 120);
   // The sniper's treeline along the ridge, behind and beside every firing position.
-  addTrees(rect(-arcX - 150, arcZ - 30, arcX + 150, m.zGarden + dist + 50), 7.5, ['oak', 'beech', 'yew', 'oak'], 420);
+  addTrees(rect(-arcX - 150, arcZ - 30, arcX + 150, m.zGarden + dist + 50), 7.5, ["oak", "beech", "yew", "oak"], 420);
   // A specimen cedar or two on the lawn.
   for (const side of [-1, 1]) {
     if (!rng.chance(0.7)) continue;
@@ -313,13 +328,13 @@ export function planSite(input: SiteInput): SiteOutput {
     const z = m.zGarden + rng.range(8, 40);
     const crown = rng.range(8, 10.5);
     if (inCone(x, z, crown)) continue;
-    trees.push({ x: snap(x, 0.01), z: snap(z, 0.01), y: snap(terrainHeight(terrain, x, z), 0.01), height: snap(rng.range(18, 24), 0.1), crown: snap(crown, 0.1), kind: 'cedar' });
+    trees.push({ x: snap(x, 0.01), z: snap(z, 0.01), y: snap(terrainHeight(terrain, x, z), 0.01), height: snap(rng.range(18, 24), 0.1), crown: snap(crown, 0.1), kind: "cedar" });
   }
   // Clipped yews along the terrace foot.
   if (rng.chance(0.6)) {
     for (let x = tx0 + 3; x <= tx1 - 3; x += 6) {
       if (Math.abs(x) < stepW / 2 + 2) continue;
-      topiary.push({ x: snap(x, 0.01), z: snap(walkZ0 + 3.8, 0.01), height: 2.6, radius: 0.7, shape: 'cone' });
+      topiary.push({ x: snap(x, 0.01), z: snap(walkZ0 + 3.8, 0.01), height: 2.6, radius: 0.7, shape: "cone" });
     }
   }
 

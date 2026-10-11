@@ -7,14 +7,14 @@
  * turn. Each member stays 5 to 15 minutes, then takes an exit. People who know each other
  * greet when they first see each other tonight: a wave, the approach, a handshake or a kiss.
  */
-import type { Rng } from '../mansion/core/rng';
-import type { Candidate, MindWorld } from './mind';
-import type { Pathfinder } from './path';
-import { yawTo } from './places';
-import { SUSPICIOUS, WARY, type Memory } from './memory';
-import { TIE_WEIGHT, type Ident } from './ident';
-import type { ActionState, Gesture, Group, PartyEvent, Person, Pose, Spot } from './types';
-import type { Verb } from './memory';
+import type { Rng } from "../mansion/core/rng";
+import type { Candidate, MindWorld } from "./mind";
+import type { Pathfinder } from "./path";
+import { yawTo } from "./places";
+import { SUSPICIOUS, WARY, type Memory } from "./memory";
+import { TIE_WEIGHT, type Ident } from "./ident";
+import type { ActionState, Gesture, Group, PartyEvent, Person, Pose, Spot } from "./types";
+import type { Verb } from "./memory";
 
 /** A pair stands face to face this far apart (m). */
 export const PAIR_GAP = 0.9;
@@ -43,7 +43,7 @@ export interface GroupsHost {
   noiseIn(room: number): number;
   /** 0 before dinner, rising to 1 by the dancing: how far the evening has mixed people. */
   readonly mixing: number;
-  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void;
+  log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   gesture(p: Person, g: Gesture, secs: number): void;
   glance(p: Person, x: number, z: number, secs: number): void;
   notable(p: Person, verb: Verb, obj: number, secs: number): void;
@@ -88,7 +88,17 @@ export class Groups {
 
   /** A new circle round a spot a step in front of whoever starts it. */
   open(p: Person, at: Spot): Group {
-    const g: Group = { id: this.next++, level: at.level, x: at.x + Math.sin(at.yaw) * PAIR_GAP / 2, z: at.z + Math.cos(at.yaw) * PAIR_GAP / 2, room: at.room, members: [p.id], speaker: p.id, speakerUntil: 0, quietUntil: 0 };
+    const g: Group = {
+      id: this.next++,
+      level: at.level,
+      x: at.x + (Math.sin(at.yaw) * PAIR_GAP) / 2,
+      z: at.z + (Math.cos(at.yaw) * PAIR_GAP) / 2,
+      room: at.room,
+      members: [p.id],
+      speaker: p.id,
+      speakerUntil: 0,
+      quietUntil: 0,
+    };
     this.map.set(g.id, g);
     return g;
   }
@@ -102,7 +112,7 @@ export class Groups {
     const at = (m: number) => people[m]!.action?.target ?? people[m]!;
     // The widest gap in the ring, counting those already waiting at its edge.
     const round = [...g.members];
-    for (const q of people) if (q.present && q.action?.id === 'mingle' && q.action.ref === g.id && q.action.note !== 'in') round.push(q.id);
+    for (const q of people) if (q.present && q.action?.id === "mingle" && q.action.ref === g.id && q.action.note !== "in") round.push(q.id);
     const angles = round.map((m) => Math.atan2(at(m).x - g.x, at(m).z - g.z)).sort((a, b) => a - b);
     let a = 0;
     if (angles.length === 1) a = angles[0]! + Math.PI;
@@ -148,11 +158,11 @@ export class Groups {
         const o = people[m]!;
         mod += 0.35 * o.traits.talk;
         // Uneasy people keep closer to their own.
-        if (o.id === p.partner) mod += (p.archetype === 'plus-one' ? 2.5 : 1.2) * (1 + tension);
+        if (o.id === p.partner) mod += (p.archetype === "plus-one" ? 2.5 : 1.2) * (1 + tension);
         if (p.friends.includes(o.id)) mod += 0.6 * (1 + tension);
-        if (o.id === p.linked && p.archetype === 'employee') mod += 2;
-        if (o.archetype === 'honoree') mod += 0.6;
-        if (o.archetype === 'bore' && p.id !== o.id) mod *= 0.5;
+        if (o.id === p.linked && p.archetype === "employee") mod += 2;
+        if (o.archetype === "honoree") mod += 0.6;
+        if (o.archetype === "bore" && p.id !== o.id) mod *= 0.5;
         if (o.id === p.ex) mod *= 0.1;
         if (o.look.sex === p.look.sex) same++;
         const s = w.suspects(p.id, m);
@@ -162,11 +172,11 @@ export class Groups {
       // Early on people keep to their own sex; it fades by the dancing.
       mod *= 1 + 0.6 * (1 - this.host.mixing) * (same / g.members.length - 0.5);
       if (g.members.length >= this.maxSize(g.room)) mod *= 0.35;
-      if (p.archetype === 'gossip') mod *= 1.3;
+      if (p.archetype === "gossip") mod *= 1.3;
       // Nobody seeks out a quiet word with someone they're wary of.
       if (wary && g.members.length === 1) mod *= 0.2;
       else if (suspect) mod *= 0.5;
-      out.push({ id: 'mingle', target: slot, duration: 99999, pose: 'talk', gain: { social: 0.6 }, ref: g.id, note: 'edge', mod: Math.max(0.01, mod) });
+      out.push({ id: "mingle", target: slot, duration: 99999, pose: "talk", gain: { social: 0.6 }, ref: g.id, note: "edge", mod: Math.max(0.01, mod) });
     }
     return out;
   }
@@ -197,36 +207,36 @@ export class Groups {
       const here: Spot = { level: p.level, x: p.x, z: p.z, yaw: p.yaw, room: p.room };
       const ng = this.open(p, here);
       a.ref = ng.id;
-      a.note = 'in';
+      a.note = "in";
       a.until = h.t + this.stay(p, ng);
       a.duration = a.until - h.t;
       return false;
     }
     const open = this.openness(g, p);
-    const hovering = a.note === 'hover';
+    const hovering = a.note === "hover";
     const members = this.settled(g);
     if (this.rng.chance(hovering ? open * 0.5 : open)) {
       this.stats.joins++;
-      h.log('join', [p.id, ...members], g.room, 'open');
+      h.log("join", [p.id, ...members], g.room, "open");
       g.members.push(p.id);
-      a.note = 'in';
+      a.note = "in";
       a.until = h.t + this.stay(p, g);
       a.duration = a.until - h.t;
       this.reslot(g, p.id);
       return true;
     }
     // Closed: nobody moves, nobody looks up. Most walk off rather than push; the shy linger a little longer first.
-    if (!hovering && (p.traits.nerves > 0.6 || p.archetype === 'plus-one') && this.rng.chance(0.5)) {
-      a.note = 'hover';
+    if (!hovering && (p.traits.nerves > 0.6 || p.archetype === "plus-one") && this.rng.chance(0.5)) {
+      a.note = "hover";
       a.until = h.t + this.rng.range(HOVER[0], HOVER[1]);
       return false;
     }
     this.stats.rebuffs++;
-    h.log('join', [p.id, ...members], g.room, 'closed');
+    h.log("join", [p.id, ...members], g.room, "closed");
     p.avoid.set(`group:${g.id}`, h.t + REBUFF);
     if (hovering) {
       this.stats.ghosts++;
-      h.notable(p, 'hovering', -1, 10);
+      h.notable(p, "hovering", -1, 10);
     }
     h.end(p, false);
     return false;
@@ -260,10 +270,10 @@ export class Groups {
     for (const m of g.members) {
       if (m === p.id) continue;
       if (m === p.partner || p.friends.includes(m)) k = Math.max(k, 1.3);
-      if (people[m]!.archetype === 'bore') k *= 0.6;
+      if (people[m]!.archetype === "bore") k *= 0.6;
     }
-    if (p.archetype === 'gossip') k *= 0.5;
-    if (p.archetype === 'bore') k *= 1.4;
+    if (p.archetype === "gossip") k *= 0.5;
+    if (p.archetype === "bore") k *= 1.4;
     return this.rng.range(STAY[0], STAY[1]) * k;
   }
 
@@ -299,7 +309,7 @@ export class Groups {
       if (room === -1) return;
       const p = people[c.m]!;
       const act = p.action;
-      if (!act || act.id !== 'mingle') return;
+      if (!act || act.id !== "mingle") return;
       const here = act.startedAt == null ? act.target : p;
       if (c.m !== joiner && here && Math.hypot(here.x - s.x, here.z - s.z) < 0.25) return;
       const spot: Spot = { level: g.level, x: s.x, z: s.z, yaw: yawTo(s.x, s.z, g.x, g.z), room };
@@ -362,10 +372,10 @@ export class Groups {
     g.members = g.members.filter((m) => !go.includes(m));
     for (const m of go) {
       const a = people[m]!.action;
-      if (a?.id === 'mingle') a.ref = ng.id;
+      if (a?.id === "mingle") a.ref = ng.id;
     }
     this.stats.splits++;
-    h.log('split', go, g.room);
+    h.log("split", go, g.room);
     this.reslot(g);
     this.reslot(ng);
     return ng;
@@ -405,12 +415,12 @@ export class Groups {
       const d = Math.hypot(q.x - p.x, q.z - p.z);
       if (d > GREET_RANGE) continue;
       this.markGreeted(p.id, j);
-      h.gesture(p, 'wave', 2);
+      h.gesture(p, "wave", 2);
       h.glance(p, q.x, q.z, 2);
       // Close friends and family, or anyone they're fond of, come over; acquaintances just wave.
-      if (free && d > 1.6 && (h.ident.tieOf(p.id, j) >= 3 || this.rng.chance(0.3)) && q.action?.id !== 'toilet' && q.action?.id !== 'leave') return j;
+      if (free && d > 1.6 && (h.ident.tieOf(p.id, j) >= 3 || this.rng.chance(0.3)) && q.action?.id !== "toilet" && q.action?.id !== "leave") return j;
       this.stats.greetings++;
-      h.log('greet', [p.id, j], p.room, 'wave');
+      h.log("greet", [p.id, j], p.room, "wave");
       return -1;
     }
     return -1;
@@ -419,13 +429,13 @@ export class Groups {
   /** Close enough: a handshake or a kiss on the cheek by how well they know each other. */
   greetPose(p: Person, q: Person): Pose {
     const tie = this.host.ident.tieOf(p.id, q.id);
-    const twoMen = p.look.sex === 'm' && q.look.sex === 'm';
-    return tie >= 3 && !twoMen ? 'kiss' : 'shake';
+    const twoMen = p.look.sex === "m" && q.look.sex === "m";
+    return tie >= 3 && !twoMen ? "kiss" : "shake";
   }
 
   /** The kiss or handshake happened. */
   greeted(p: Person, q: Person, pose: Pose): void {
     this.stats.greetings++;
-    this.host.log('greet', [p.id, q.id], p.room, pose);
+    this.host.log("greet", [p.id, q.id], p.room, pose);
   }
 }

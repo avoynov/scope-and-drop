@@ -3,8 +3,24 @@
  * tile, terrain grid and shelter grid go up as half-float textures, and `windAt()` in GLSL does the same sums
  * as the CPU's, so a bush sways to the very gust the bullet flies through.
  */
-import * as THREE from 'three';
-import { CREST_PER_M, GUST_TILE_M, GUST_TILE_N, LEE_DROP, LEE_SLOPE, ROUGHNESS_M, TERRAIN_FADE_M, WIND_REF_M, gustFrame, gustSwing, gustTile, type GustFrame, type ShelterWind, type TerrainWind, type Wind } from '../../src/scope/wind';
+import * as THREE from "three";
+import {
+  CREST_PER_M,
+  GUST_TILE_M,
+  GUST_TILE_N,
+  LEE_DROP,
+  LEE_SLOPE,
+  ROUGHNESS_M,
+  TERRAIN_FADE_M,
+  WIND_REF_M,
+  gustFrame,
+  gustSwing,
+  gustTile,
+  type GustFrame,
+  type ShelterWind,
+  type TerrainWind,
+  type Wind,
+} from "../../src/scope/wind";
 
 /** Uniforms every wind-aware material shares, and the GLSL that reads them. */
 export interface WindGL {
@@ -31,8 +47,7 @@ type Grid = TerrainWind | ShelterWind;
 const gridTexture = (g: Grid | undefined) =>
   g ? halfTexture(g.data, g.nx, g.nz, THREE.RGBAFormat, THREE.ClampToEdgeWrapping) : halfTexture(new Float32Array(16), 2, 2, THREE.RGBAFormat, THREE.ClampToEdgeWrapping);
 // Texel centres sit on the grid's nodes: node i at uv (i + 0.5) / n.
-const gridBox = (g: Grid | undefined, out = new THREE.Vector4()) =>
-  g ? out.set(g.x0 - g.cell / 2, g.z0 - g.cell / 2, 1 / (g.nx * g.cell), 1 / (g.nz * g.cell)) : out.set(0, 0, 1, 1);
+const gridBox = (g: Grid | undefined, out = new THREE.Vector4()) => (g ? out.set(g.x0 - g.cell / 2, g.z0 - g.cell / 2, 1 / (g.nx * g.cell), 1 / (g.nz * g.cell)) : out.set(0, 0, 1, 1));
 
 export function createWindGL(wind: Wind): WindGL {
   let shelter = wind.shelter;

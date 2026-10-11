@@ -2,10 +2,10 @@
  * Sniper perch geometry. The sniper may lie anywhere along an arc of the
  * treeline facing the garden front; the bearing is chosen before the mission.
  */
-import type { Vec3 } from '../core/geom';
-import { snap } from '../core/rng';
-import type { TerrainSpec } from '../core/types';
-import { terrainHeight } from './terrain';
+import type { Vec3 } from "../core/geom";
+import { snap } from "../core/rng";
+import type { TerrainSpec } from "../core/types";
+import { terrainHeight } from "./terrain";
 
 /** Half-width of the arc the sniper can choose from, degrees off the garden axis. */
 export const PERCH_ARC_DEG = 38;

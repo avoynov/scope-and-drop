@@ -2,9 +2,9 @@
  * Room recipes: what goes where, per room type. Recipes only describe intent;
  * the Placer enforces clearances, window rules and reachability.
  */
-import type { Rect } from '../core/geom';
-import type { PoiType, Prop, RoomType } from '../core/types';
-import { SIDES, type Placer, type Side } from './placer';
+import type { Rect } from "../core/geom";
+import type { PoiType, Prop, RoomType } from "../core/types";
+import { SIDES, type Placer, type Side } from "./placer";
 
 export const TUNGSTEN: [number, number, number] = [1.0, 0.6, 0.3];
 export const WARM: [number, number, number] = [1.0, 0.54, 0.24];
@@ -15,7 +15,7 @@ export interface RecipeOptions {
   wantBar: boolean;
 }
 
-const opposite: Record<Side, Side> = { n: 's', s: 'n', e: 'w', w: 'e' };
+const opposite: Record<Side, Side> = { n: "s", s: "n", e: "w", w: "e" };
 
 function mark(prop: Prop | null, poi: PoiType): Prop | null {
   if (prop) prop.poi = poi;
@@ -29,7 +29,7 @@ function backSide(p: Placer): Side {
 }
 
 function perpendicularSides(s: Side): Side[] {
-  return s === 'n' || s === 's' ? ['e', 'w'] : ['n', 's'];
+  return s === "n" || s === "s" ? ["e", "w"] : ["n", "s"];
 }
 
 /* ------------------------------------------------------------------ */
@@ -47,10 +47,10 @@ export function chandeliers(p: Placer, perArea = 42, max = 4): void {
   const intensity = Math.min(900, Math.max(260, (area / n) * 9)) * p.room.lit;
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 0.5 : (i + 0.5) / n;
-    const x = p.longAxis === 'x' ? p.inner.x0 + t * p.width : p.cx;
-    const z = p.longAxis === 'z' ? p.inner.z0 + t * p.depth : p.cz;
-    p.add('chandelier', x, z, 0, w, w, h, { y: p.ceilY - h, blocks: false, mount: 'ceiling', variant: p.room.role === 'party' ? 0 : 1 });
-    if (p.room.lit > 0) p.light('chandelier', x, p.ceilY - h * 0.6, z, TUNGSTEN, intensity, Math.max(9, long * 0.9));
+    const x = p.longAxis === "x" ? p.inner.x0 + t * p.width : p.cx;
+    const z = p.longAxis === "z" ? p.inner.z0 + t * p.depth : p.cz;
+    p.add("chandelier", x, z, 0, w, w, h, { y: p.ceilY - h, blocks: false, mount: "ceiling", variant: p.room.role === "party" ? 0 : 1 });
+    if (p.room.lit > 0) p.light("chandelier", x, p.ceilY - h * 0.6, z, TUNGSTEN, intensity, Math.max(9, long * 0.9));
   }
 }
 
@@ -68,10 +68,10 @@ export function sconces(p: Placer, spacing = 3.4): void {
         if (count >= 10) return;
         const t = a + ((k + 0.5) * (b - a)) / n;
         if (info.windows === 0 && b - a < 1.0) continue;
-        const prop = p.onWall(side, 'sconce', 0.32, 0.45, y, { prefer: t, sweep: false });
+        const prop = p.onWall(side, "sconce", 0.32, 0.45, y, { prefer: t, sweep: false });
         if (prop) {
           const at = p.at(side, t, 0.25);
-          p.light('sconce', at.x, y + 0.12, at.z, WARM, 55 * p.room.lit, 6);
+          p.light("sconce", at.x, y + 0.12, at.z, WARM, 55 * p.room.lit, 6);
           count++;
         }
       }
@@ -95,9 +95,9 @@ export function paintings(p: Placer, count: number, opts: { sides?: Side[]; poi?
         if (b - a < w + 0.4) continue;
         const yc = p.floorY + Math.min(clear - h / 2 - 0.35, 1.25 + Math.max(0.6, h / 2) + (pass ? 0.2 : 0));
         const t = pass === 0 ? (a + b) / 2 : a + (b - a) * p.rng.range(0.25, 0.75);
-        const prop = p.onWall(side, 'painting', w, h, yc, { prefer: t, variant: p.rng.int(0, 7) });
+        const prop = p.onWall(side, "painting", w, h, yc, { prefer: t, variant: p.rng.int(0, 7) });
         if (prop) {
-          if (opts.poi) prop.poi = 'painting';
+          if (opts.poi) prop.poi = "painting";
           placed++;
         }
       }
@@ -111,15 +111,15 @@ function fireplace(p: Placer, sides: Side[]): Side | null {
     if (!runs.length) continue;
     const [a, b] = runs[0]!;
     const t = (a + b) / 2;
-    const fp = p.againstWall(side, 'fireplace', 2.0, 0.55, 1.4, { prefer: t, sweep: false, variant: p.rng.int(0, 2) });
+    const fp = p.againstWall(side, "fireplace", 2.0, 0.55, 1.4, { prefer: t, sweep: false, variant: p.rng.int(0, 2) });
     if (!fp) continue;
-    fp.poi = 'fireplace';
+    fp.poi = "fireplace";
     const clear = p.ceilY - p.floorY;
     const mh = Math.min(1.6, clear - 2.0);
-    if (mh > 0.6) p.onWall(side, p.rng.chance(0.6) ? 'mirror' : 'painting', 1.3, mh, p.floorY + 1.45 + mh / 2 + 0.1, { prefer: t, sweep: false, variant: p.rng.int(0, 7) });
+    if (mh > 0.6) p.onWall(side, p.rng.chance(0.6) ? "mirror" : "painting", 1.3, mh, p.floorY + 1.45 + mh / 2 + 0.1, { prefer: t, sweep: false, variant: p.rng.int(0, 7) });
     if (p.room.lit > 0) {
       const at = p.at(side, t, 0.3);
-      p.light('fire', at.x, p.floorY + 0.35, at.z, FIRE, 45, 5.5);
+      p.light("fire", at.x, p.floorY + 0.35, at.z, FIRE, 45, 5.5);
     }
     return side;
   }
@@ -127,7 +127,7 @@ function fireplace(p: Placer, sides: Side[]): Side | null {
 }
 
 /** Sofa + two armchairs + table around a focus, facing `face` side's wall. */
-function conversation(p: Placer, cx: number, cz: number, axis: 'x' | 'z', withRug = true): boolean {
+function conversation(p: Placer, cx: number, cz: number, axis: "x" | "z", withRug = true): boolean {
   const added: Prop[] = [];
   const take = (q: Prop | null) => {
     if (q) added.push(q);
@@ -135,29 +135,29 @@ function conversation(p: Placer, cx: number, cz: number, axis: 'x' | 'z', withRu
   };
   // Sofa on one side of the axis, armchairs opposite or flanking.
   const sofa =
-    axis === 'z'
-      ? take(p.add('sofa', cx, cz + 1.3, Math.PI, 2.1, 0.9, 0.85, { variant: p.rng.int(0, 2) }))
-      : take(p.add('sofa', cx + 1.3, cz, -Math.PI / 2, 2.1, 0.9, 0.85, { variant: p.rng.int(0, 2) }));
+    axis === "z"
+      ? take(p.add("sofa", cx, cz + 1.3, Math.PI, 2.1, 0.9, 0.85, { variant: p.rng.int(0, 2) }))
+      : take(p.add("sofa", cx + 1.3, cz, -Math.PI / 2, 2.1, 0.9, 0.85, { variant: p.rng.int(0, 2) }));
   if (!sofa) return false;
-  take(p.add('coffee-table', cx, cz, axis === 'z' ? 0 : Math.PI / 2, 1.2, 0.65, 0.45));
-  if (axis === 'z') {
-    take(p.add('armchair', cx - 1.45, cz - 0.1, Math.PI / 2, 0.85, 0.85, 0.95));
-    take(p.add('armchair', cx + 1.45, cz - 0.1, -Math.PI / 2, 0.85, 0.85, 0.95));
+  take(p.add("coffee-table", cx, cz, axis === "z" ? 0 : Math.PI / 2, 1.2, 0.65, 0.45));
+  if (axis === "z") {
+    take(p.add("armchair", cx - 1.45, cz - 0.1, Math.PI / 2, 0.85, 0.85, 0.95));
+    take(p.add("armchair", cx + 1.45, cz - 0.1, -Math.PI / 2, 0.85, 0.85, 0.95));
   } else {
-    take(p.add('armchair', cx - 0.1, cz - 1.45, 0, 0.85, 0.85, 0.95));
-    take(p.add('armchair', cx - 0.1, cz + 1.45, Math.PI, 0.85, 0.85, 0.95));
+    take(p.add("armchair", cx - 0.1, cz - 1.45, 0, 0.85, 0.85, 0.95));
+    take(p.add("armchair", cx - 0.1, cz + 1.45, Math.PI, 0.85, 0.85, 0.95));
   }
-  if (withRug) take(p.add('rug', cx, cz, axis === 'z' ? 0 : Math.PI / 2, 3.6, 2.8, 0.012, { blocks: false, variant: p.rng.int(0, 3) }));
+  if (withRug) take(p.add("rug", cx, cz, axis === "z" ? 0 : Math.PI / 2, 3.6, 2.8, 0.012, { blocks: false, variant: p.rng.int(0, 3) }));
   // Lamp on a side table at the sofa end.
-  const st = axis === 'z' ? p.add('side-table', cx + 1.45, cz + 1.3, 0, 0.5, 0.5, 0.6) : p.add('side-table', cx + 1.3, cz + 1.45, 0, 0.5, 0.5, 0.6);
+  const st = axis === "z" ? p.add("side-table", cx + 1.45, cz + 1.3, 0, 0.5, 0.5, 0.6) : p.add("side-table", cx + 1.3, cz + 1.45, 0, 0.5, 0.5, 0.6);
   if (st && p.room.lit > 0) {
-    p.add('lamp', st.x, st.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.6, blocks: false });
-    p.light('lamp', st.x, p.floorY + 1.15, st.z, WARM, 60 * p.room.lit, 5);
+    p.add("lamp", st.x, st.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.6, blocks: false });
+    p.light("lamp", st.x, p.floorY + 1.15, st.z, WARM, 60 * p.room.lit, 5);
   }
   return true;
 }
 
-function cornerStatues(p: Placer, max: number, poi = true, kind: 'statue' | 'bust' | 'plant' = 'statue'): number {
+function cornerStatues(p: Placer, max: number, poi = true, kind: "statue" | "bust" | "plant" = "statue"): number {
   const i = p.inner;
   const off = 0.95;
   const corners = p.rng.shuffle([
@@ -172,11 +172,11 @@ function cornerStatues(p: Placer, max: number, poi = true, kind: 'statue' | 'bus
     const yaw = Math.atan2(p.cx - x, p.cz - z);
     const q = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
     const prop =
-      kind === 'plant'
-        ? p.add('plant', x, z, 0, 0.8, 0.8, 1.9, { occludes: true, variant: p.rng.int(0, 2) })
-        : p.add(kind, x, z, q, 0.75, 0.75, kind === 'statue' ? 2.25 : 1.75, { occludes: true, variant: p.rng.int(0, 3) });
+      kind === "plant"
+        ? p.add("plant", x, z, 0, 0.8, 0.8, 1.9, { occludes: true, variant: p.rng.int(0, 2) })
+        : p.add(kind, x, z, q, 0.75, 0.75, kind === "statue" ? 2.25 : 1.75, { occludes: true, variant: p.rng.int(0, 3) });
     if (prop) {
-      if (poi && kind !== 'plant') prop.poi = 'statue';
+      if (poi && kind !== "plant") prop.poi = "statue";
       n++;
     }
   }
@@ -190,7 +190,7 @@ function chairsAlong(p: Placer, side: Side, spacing: number, max: number): numbe
     for (let k = 0; k < count && n < max; k++) {
       const t = a + (k + 0.5) * ((b - a) / count);
       const at = p.at(side, t, 0.32);
-      if (p.add('chair', at.x, at.z, sideYaw(side), 0.5, 0.52, 0.95, { variant: 1 })) n++;
+      if (p.add("chair", at.x, at.z, sideYaw(side), 0.5, 0.52, 0.95, { variant: 1 })) n++;
     }
   }
   return n;
@@ -207,15 +207,15 @@ function bar(p: Placer): boolean {
   for (const side of order) {
     for (const [a, b] of p.freeRuns(side, 2.3, 3.4)) {
       for (const t of [(a + b) / 2, a + 1.7, b - 1.7]) {
-        const shelf = p.againstWall(side, 'bar-shelf', 3.0, 0.42, 2.2, { prefer: t, sweep: false, occludes: true });
+        const shelf = p.againstWall(side, "bar-shelf", 3.0, 0.42, 2.2, { prefer: t, sweep: false, occludes: true });
         if (!shelf) continue;
         const at = p.at(side, t, 0.42 + 1.05 + 0.35);
-        const counter = p.add('bar-counter', at.x, at.z, sideYaw(side), 3.0, 0.7, 1.1, { occludes: false });
+        const counter = p.add("bar-counter", at.x, at.z, sideYaw(side), 3.0, 0.7, 1.1, { occludes: false });
         if (!counter) {
           p.remove(shelf);
           continue;
         }
-        counter.poi = 'bar';
+        counter.poi = "bar";
         barLight(p, side, t);
         return true;
       }
@@ -226,9 +226,9 @@ function bar(p: Placer): boolean {
     for (const [a, b] of p.freeRuns(side, 1.15, 2.8)) {
       const t = (a + b) / 2;
       const at = p.at(side, t, 0.9 + 0.35);
-      const counter = p.add('bar-counter', at.x, at.z, sideYaw(side), 2.6, 0.7, 1.1, { occludes: false });
+      const counter = p.add("bar-counter", at.x, at.z, sideYaw(side), 2.6, 0.7, 1.1, { occludes: false });
       if (!counter) continue;
-      counter.poi = 'bar';
+      counter.poi = "bar";
       barLight(p, side, t);
       return true;
     }
@@ -239,7 +239,7 @@ function bar(p: Placer): boolean {
 function barLight(p: Placer, side: Side, t: number): void {
   if (p.room.lit <= 0) return;
   const l = p.at(side, t, 1.0);
-  p.light('lamp', l.x, p.floorY + 2.3, l.z, WARM, 80, 5);
+  p.light("lamp", l.x, p.floorY + 2.3, l.z, WARM, 80, 5);
 }
 
 function bookcases(p: Placer, sides: Side[], maxPoi: number): number {
@@ -252,11 +252,11 @@ function bookcases(p: Placer, sides: Side[], maxPoi: number): number {
       const w = (b - a) / count - 0.02;
       for (let k = 0; k < count; k++) {
         const t = a + (k + 0.5) * ((b - a) / count);
-        const bc = p.againstWall(side, 'bookcase', w, 0.45, h, { prefer: t, sweep: false, occludes: true, variant: p.rng.int(0, 3) });
+        const bc = p.againstWall(side, "bookcase", w, 0.45, h, { prefer: t, sweep: false, occludes: true, variant: p.rng.int(0, 3) });
         if (bc) {
           n++;
           if (pois < maxPoi && k === Math.floor(count / 2)) {
-            bc.poi = 'bookshelf';
+            bc.poi = "bookshelf";
             pois++;
           }
         }
@@ -275,8 +275,8 @@ type Recipe = (p: Placer, o: RecipeOptions) => void;
 /** The great chandelier under the dome: one fitting, lighting the hall and every gallery round it. */
 function domeChandelier(p: Placer, fitting: boolean): void {
   const d = p.dome!;
-  if (fitting) p.add('chandelier', d.x, d.z, 0, 2.8, 2.8, 3.2, { y: d.y - 1.6, blocks: false, mount: 'ceiling', variant: 0 });
-  if (p.room.lit > 0) p.light('chandelier', d.x, d.y, d.z, TUNGSTEN, (fitting ? 760 : 520) * p.room.lit, 22);
+  if (fitting) p.add("chandelier", d.x, d.z, 0, 2.8, 2.8, 3.2, { y: d.y - 1.6, blocks: false, mount: "ceiling", variant: 0 });
+  if (p.room.lit > 0) p.light("chandelier", d.x, d.y, d.z, TUNGSTEN, (fitting ? 760 : 520) * p.room.lit, 22);
 }
 
 const ballroom: Recipe = (p, o) => {
@@ -296,10 +296,10 @@ const ballroom: Recipe = (p, o) => {
     const ei = p.sides[e];
     for (const inset of [2.4, 3.6, 5.0]) {
       for (const off of [1.9, 3.2]) {
-        const tEnd = e === 'e' || e === 'n' ? ei.line - inset : ei.line + inset;
+        const tEnd = e === "e" || e === "n" ? ei.line - inset : ei.line + inset;
         const at = p.at(back, tEnd, off);
-        const yaw = sideYaw(back) + (e === 'e' || e === 'n' ? -0.35 : 0.35);
-        piano = p.add('grand-piano', at.x, at.z, Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2), 1.55, 2.1, 1.0, { variant: 0 });
+        const yaw = sideYaw(back) + (e === "e" || e === "n" ? -0.35 : 0.35);
+        piano = p.add("grand-piano", at.x, at.z, Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2), 1.55, 2.1, 1.0, { variant: 0 });
         if (piano) {
           end = e;
           pianoAt = at;
@@ -311,19 +311,19 @@ const ballroom: Recipe = (p, o) => {
   }
   if (piano) {
     piano.yaw = pianoYaw;
-    piano.poi = 'piano';
+    piano.poi = "piano";
     for (let k = 0; k < 3; k++) {
       const off = (k - 1) * 0.9;
-      const s = p.at(back, (back === 'n' || back === 's' ? pianoAt.x : pianoAt.z) + (end === 'e' || end === 'n' ? -2.2 : 2.2) + off, 2.4);
-      p.add('music-stand', s.x, s.z, sideYaw(back), 0.45, 0.4, 1.2);
-      const c = p.at(back, (back === 'n' || back === 's' ? pianoAt.x : pianoAt.z) + (end === 'e' || end === 'n' ? -2.2 : 2.2) + off, 1.7);
-      p.add('chair', c.x, c.z, sideYaw(back), 0.5, 0.52, 0.95, { variant: 1 });
+      const s = p.at(back, (back === "n" || back === "s" ? pianoAt.x : pianoAt.z) + (end === "e" || end === "n" ? -2.2 : 2.2) + off, 2.4);
+      p.add("music-stand", s.x, s.z, sideYaw(back), 0.45, 0.4, 1.2);
+      const c = p.at(back, (back === "n" || back === "s" ? pianoAt.x : pianoAt.z) + (end === "e" || end === "n" ? -2.2 : 2.2) + off, 1.7);
+      p.add("chair", c.x, c.z, sideYaw(back), 0.5, 0.52, 0.95, { variant: 1 });
     }
   }
   void bi;
   if (piano) {
-    const h = p.at(back, (back === 'n' || back === 's' ? pianoAt.x : pianoAt.z) + (end === 'e' || end === 'n' ? -4.6 : 4.6), 1.6);
-    p.add('harp', h.x, h.z, sideYaw(back), 0.6, 0.9, 1.7);
+    const h = p.at(back, (back === "n" || back === "s" ? pianoAt.x : pianoAt.z) + (end === "e" || end === "n" ? -4.6 : 4.6), 1.6);
+    p.add("harp", h.x, h.z, sideYaw(back), 0.6, 0.9, 1.7);
   }
   if (o.wantBar) bar(p);
   ballroomLife(p);
@@ -336,10 +336,10 @@ const ballroom: Recipe = (p, o) => {
       const info = p.sides[ws];
       const t = info.t0 + frac * (info.t1 - info.t0);
       const at = p.at(ws, t, 2.2);
-      p.add('cocktail-table', at.x, at.z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+      p.add("cocktail-table", at.x, at.z, 0, 0.75, 0.75, 1.05, { variant: 1 });
     }
   }
-  for (const s of perpendicularSides(back)) p.onWall(s, 'mirror', 1.4, Math.min(2.6, p.ceilY - p.floorY - 1.6), p.floorY + 1.0 + Math.min(2.6, p.ceilY - p.floorY - 1.6) / 2, {});
+  for (const s of perpendicularSides(back)) p.onWall(s, "mirror", 1.4, Math.min(2.6, p.ceilY - p.floorY - 1.6), p.floorY + 1.0 + Math.min(2.6, p.ceilY - p.floorY - 1.6) / 2, {});
   paintings(p, 2, { sides: [back], big: true, poi: true });
   sconces(p, 3.0);
 };
@@ -367,7 +367,7 @@ function ballroomLife(p: Placer): void {
   const cx = p.dome?.x ?? p.cx;
   // Toward the windows from the middle: the stair comes down at the back.
   const cz0 = p.dome?.z ?? p.cz;
-  const towardFront = front === 'n' || front === 's' ? Math.sign(p.sides[front].line - p.cz) : 0;
+  const towardFront = front === "n" || front === "s" ? Math.sign(p.sides[front].line - p.cz) : 0;
   // The stair comes down across the back of the hall, so the floor lies between it and the windows:
   // the largest clear rectangle found on the axis.
   let floor: Rect | null = null;
@@ -379,7 +379,7 @@ function ballroomLife(p: Placer): void {
   if (floor) {
     const w = floor.x1 - floor.x0;
     const d = floor.z1 - floor.z0;
-    p.add('dance-floor', (floor.x0 + floor.x1) / 2, (floor.z0 + floor.z1) / 2, 0, w, d, 0.02, { blocks: false });
+    p.add("dance-floor", (floor.x0 + floor.x1) / 2, (floor.z0 + floor.z1) / 2, 0, w, d, 0.02, { blocks: false });
     // Nothing stands on the dance floor.
     p.keep.push(floor);
     // Tables to stand at, round its edge.
@@ -391,7 +391,7 @@ function ballroomLife(p: Placer): void {
       [floor.x0 + w * 0.25, floor.z1 + 1.0],
       [floor.x0 + w * 0.75, floor.z1 + 1.0],
     ] as const) {
-      p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+      p.add("cocktail-table", x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
     }
   }
   // Supper: a long buffet against a side wall.
@@ -399,9 +399,9 @@ function ballroomLife(p: Placer): void {
     const info = p.sides[side];
     // Toward the window end of the wall, clear of the stair.
     const t = towardFront >= 0 ? info.t0 + (info.t1 - info.t0) * 0.7 : info.t0 + (info.t1 - info.t0) * 0.3;
-    const buffet = p.againstWall(side, 'buffet', 3.8, 0.95, 0.78, { prefer: t });
+    const buffet = p.againstWall(side, "buffet", 3.8, 0.95, 0.78, { prefer: t });
     if (buffet) {
-      if (p.room.lit > 0) p.light('lamp', buffet.x, p.floorY + 2.2, buffet.z, WARM, 70 * p.room.lit, 5);
+      if (p.room.lit > 0) p.light("lamp", buffet.x, p.floorY + 2.2, buffet.z, WARM, 70 * p.room.lit, 5);
       break;
     }
   }
@@ -410,10 +410,10 @@ function ballroomLife(p: Placer): void {
   for (const fz of [0.3, 0.62, 0.86]) {
     for (const x of [i.x0 + 2.6, i.x1 - 2.6]) {
       if (Math.abs(x - cx) < 4) continue;
-      conversation(p, x, i.z0 + p.depth * fz, 'z');
+      conversation(p, x, i.z0 + p.depth * fz, "z");
     }
   }
-  cornerStatues(p, 2, false, 'plant');
+  cornerStatues(p, 2, false, "plant");
 }
 
 /** Dance room: a lit floor, a DJ at one end, a mirror ball, banquettes round the walls. Dark but for its colours. */
@@ -426,9 +426,9 @@ const disco: Recipe = (p) => {
   if (floor) {
     const fx = (floor.x0 + floor.x1) / 2;
     const fz = (floor.z0 + floor.z1) / 2;
-    p.add('disco-floor', fx, fz, 0, floor.x1 - floor.x0, floor.z1 - floor.z0, 0.06, { blocks: false });
+    p.add("disco-floor", fx, fz, 0, floor.x1 - floor.x0, floor.z1 - floor.z0, 0.06, { blocks: false });
     p.keep.push(floor);
-    p.add('mirror-ball', fx, fz, 0, 0.7, 0.7, 0.7, { y: p.ceilY - 1.9, blocks: false, mount: 'ceiling' });
+    p.add("mirror-ball", fx, fz, 0, 0.7, 0.7, 0.7, { y: p.ceilY - 1.9, blocks: false, mount: "ceiling" });
     const lit = Math.max(0.6, p.room.lit);
     const cols: [number, number, number][] = [
       [1.0, 0.25, 0.65],
@@ -441,29 +441,29 @@ const disco: Recipe = (p) => {
       [floor.x1, floor.z0],
       [floor.x1, floor.z1],
       [floor.x0, floor.z1],
-    ].forEach(([x, z], k) => p.light('lamp', x!, p.floorY + 2.3, z!, cols[k]!, 60 * lit, 7));
-    p.light('lamp', fx, p.floorY + 0.5, fz, [0.7, 0.5, 1.0], 50 * lit, 6);
+    ].forEach(([x, z], k) => p.light("lamp", x!, p.floorY + 2.3, z!, cols[k]!, 60 * lit, 7));
+    p.light("lamp", fx, p.floorY + 0.5, fz, [0.7, 0.5, 1.0], 50 * lit, 6);
   }
   // The DJ, flanked by speakers.
   for (const side of wallsBackFirst(p)) {
     const info = p.sides[side];
     const mid = (info.t0 + info.t1) / 2;
     // Against the wall, or standing clear of it where windows or doors take the wall.
-    let booth = p.againstWall(side, 'dj-booth', 2.4, 0.95, 1.05);
+    let booth = p.againstWall(side, "dj-booth", 2.4, 0.95, 1.05);
     for (const dt of [0, -1.5, 1.5, -3, 3]) {
       if (booth) break;
       const at = p.at(side, mid + dt, 1.3);
-      booth = p.add('dj-booth', at.x, at.z, sideYaw(side), 2.4, 0.95, 1.05);
+      booth = p.add("dj-booth", at.x, at.z, sideYaw(side), 2.4, 0.95, 1.05);
     }
     if (!booth) continue;
-    const t = side === 'n' || side === 's' ? booth.x : booth.z;
-    for (const dt of [-2.0, 2.0]) p.againstWall(side, 'speaker', 0.65, 0.55, 1.7, { prefer: t + dt, sweep: false, occludes: true });
+    const t = side === "n" || side === "s" ? booth.x : booth.z;
+    for (const dt of [-2.0, 2.0]) p.againstWall(side, "speaker", 0.65, 0.55, 1.7, { prefer: t + dt, sweep: false, occludes: true });
     break;
   }
   // Banquettes and standing tables round the walls.
   for (const side of [...perpendicularSides(back), opposite[back]]) {
     const info = p.sides[side];
-    for (const f of [0.25, 0.75]) p.againstWall(side, 'sofa', 2.1, 0.9, 0.85, { prefer: info.t0 + (info.t1 - info.t0) * f, sweep: false, variant: 2 });
+    for (const f of [0.25, 0.75]) p.againstWall(side, "sofa", 2.1, 0.9, 0.85, { prefer: info.t0 + (info.t1 - info.t0) * f, sweep: false, variant: 2 });
   }
   const i = p.inner;
   for (const [x, z] of [
@@ -472,7 +472,7 @@ const disco: Recipe = (p) => {
     [i.x0 + 1.6, i.z1 - 1.6],
     [i.x1 - 1.6, i.z1 - 1.6],
   ] as const) {
-    p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+    p.add("cocktail-table", x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
   }
 };
 
@@ -484,34 +484,34 @@ const drawingRoom: Recipe = (p, o) => {
   if (fs) {
     const t = (p.sides[fs].t0 + p.sides[fs].t1) / 2;
     const c = p.at(fs, t, 2.3);
-    conversation(p, c.x, c.z, fs === 'n' || fs === 's' ? 'z' : 'x');
+    conversation(p, c.x, c.z, fs === "n" || fs === "s" ? "z" : "x");
   }
   if (o.wantBar) bar(p);
   if (Math.max(p.width, p.depth) > 8.5) {
     const along = p.longAxis;
-    const cx = along === 'x' ? p.inner.x0 + p.width * (fs === 'w' ? 0.72 : 0.28) : p.cx;
-    const cz = along === 'z' ? p.inner.z0 + p.depth * (fs === 's' ? 0.72 : 0.28) : p.cz;
-    conversation(p, cx, cz, along === 'x' ? 'z' : 'x');
+    const cx = along === "x" ? p.inner.x0 + p.width * (fs === "w" ? 0.72 : 0.28) : p.cx;
+    const cz = along === "z" ? p.inner.z0 + p.depth * (fs === "s" ? 0.72 : 0.28) : p.cz;
+    conversation(p, cx, cz, along === "x" ? "z" : "x");
   }
-  const cs = p.againstWall(back, p.rng.chance(0.5) ? 'console' : 'sideboard', 1.6, 0.5, 0.9);
+  const cs = p.againstWall(back, p.rng.chance(0.5) ? "console" : "sideboard", 1.6, 0.5, 0.9);
   if (cs && p.room.lit > 0) {
-    p.add('lamp', cs.x, cs.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.9, blocks: false });
-    p.light('lamp', cs.x, p.floorY + 1.45, cs.z, WARM, 55 * p.room.lit, 5);
+    p.add("lamp", cs.x, cs.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.9, blocks: false });
+    p.light("lamp", cs.x, p.floorY + 1.45, cs.z, WARM, 55 * p.room.lit, 5);
   }
   if (p.rng.chance(0.5)) cardTable(p, p.cx, p.cz);
-  cornerStatues(p, 2, false, 'plant');
-  if (p.rng.chance(0.5)) cornerStatues(p, 1, true, 'statue');
+  cornerStatues(p, 2, false, "plant");
+  if (p.rng.chance(0.5)) cornerStatues(p, 1, true, "statue");
   paintings(p, 4, { poi: true });
   sconces(p);
 };
 
 function cardTable(p: Placer, x: number, z: number): boolean {
-  const t = p.add('card-table', x, z, 0, 0.9, 0.9, 0.74, { variant: p.rng.int(0, 1) });
+  const t = p.add("card-table", x, z, 0, 0.9, 0.9, 0.74, { variant: p.rng.int(0, 1) });
   if (!t) return false;
-  p.add('chair', x, z - 0.75, 0, 0.5, 0.52, 0.95);
-  p.add('chair', x, z + 0.75, Math.PI, 0.5, 0.52, 0.95);
-  p.add('chair', x - 0.75, z, Math.PI / 2, 0.5, 0.52, 0.95);
-  p.add('chair', x + 0.75, z, -Math.PI / 2, 0.5, 0.52, 0.95);
+  p.add("chair", x, z - 0.75, 0, 0.5, 0.52, 0.95);
+  p.add("chair", x, z + 0.75, Math.PI, 0.5, 0.52, 0.95);
+  p.add("chair", x - 0.75, z, Math.PI / 2, 0.5, 0.52, 0.95);
+  p.add("chair", x + 0.75, z, -Math.PI / 2, 0.5, 0.52, 0.95);
   return true;
 }
 
@@ -524,20 +524,20 @@ const library: Recipe = (p, o) => {
   const along = p.longAxis;
   const tl = Math.min(3.0, Math.max(p.width, p.depth) - 4.5);
   if (tl >= 1.6) {
-    const yaw = along === 'x' ? Math.PI / 2 : 0;
-    const t = p.add('dining-table', p.cx, p.cz, yaw, 1.1, tl, 0.78, { variant: 2 });
+    const yaw = along === "x" ? Math.PI / 2 : 0;
+    const t = p.add("dining-table", p.cx, p.cz, yaw, 1.1, tl, 0.78, { variant: 2 });
     if (t && p.room.lit > 0) {
-      p.add('lamp', p.cx, p.cz, 0, 0.35, 0.35, 0.55, { y: p.floorY + 0.78, blocks: false, variant: 1 });
-      p.light('lamp', p.cx, p.floorY + 1.3, p.cz, WARM, 55 * p.room.lit, 5);
+      p.add("lamp", p.cx, p.cz, 0, 0.35, 0.35, 0.55, { y: p.floorY + 0.78, blocks: false, variant: 1 });
+      p.light("lamp", p.cx, p.floorY + 1.3, p.cz, WARM, 55 * p.room.lit, 5);
     }
     if (t) {
       for (const s of [-1, 1]) {
-        if (along === 'x') {
-          p.add('chair', p.cx - tl / 4, p.cz + s * 0.85, s > 0 ? Math.PI : 0, 0.5, 0.52, 0.95);
-          p.add('chair', p.cx + tl / 4, p.cz + s * 0.85, s > 0 ? Math.PI : 0, 0.5, 0.52, 0.95);
+        if (along === "x") {
+          p.add("chair", p.cx - tl / 4, p.cz + s * 0.85, s > 0 ? Math.PI : 0, 0.5, 0.52, 0.95);
+          p.add("chair", p.cx + tl / 4, p.cz + s * 0.85, s > 0 ? Math.PI : 0, 0.5, 0.52, 0.95);
         } else {
-          p.add('chair', p.cx + s * 0.85, p.cz - tl / 4, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 0.95);
-          p.add('chair', p.cx + s * 0.85, p.cz + tl / 4, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 0.95);
+          p.add("chair", p.cx + s * 0.85, p.cz - tl / 4, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 0.95);
+          p.add("chair", p.cx + s * 0.85, p.cz + tl / 4, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 0.95);
         }
       }
     }
@@ -546,9 +546,9 @@ const library: Recipe = (p, o) => {
   if (ws) {
     const info = p.sides[ws];
     const g = p.at(ws, info.t0 + (info.t1 - info.t0) * 0.15, 1.3);
-    mark(p.add('globe', g.x, g.z, 0, 0.7, 0.7, 1.05, { variant: 0 }), 'globe');
+    mark(p.add("globe", g.x, g.z, 0, 0.7, 0.7, 1.05, { variant: 0 }), "globe");
     const a = p.at(ws, info.t0 + (info.t1 - info.t0) * 0.85, 1.4);
-    p.add('armchair', a.x, a.z, sideYaw(ws) + Math.PI, 0.85, 0.85, 0.95, { variant: 1 });
+    p.add("armchair", a.x, a.z, sideYaw(ws) + Math.PI, 0.85, 0.85, 0.95, { variant: 1 });
   }
   if (o.wantBar) bar(p);
   sconces(p, 4);
@@ -558,35 +558,35 @@ const diningRoom: Recipe = (p, o) => {
   const along = p.longAxis;
   const long = Math.max(p.width, p.depth);
   const tl = Math.min(9, Math.max(2.4, long - 3.4));
-  const yaw = along === 'x' ? Math.PI / 2 : 0;
-  const table = p.add('dining-table', p.cx, p.cz, yaw, 1.25, tl, 0.76, { variant: 0 });
+  const yaw = along === "x" ? Math.PI / 2 : 0;
+  const table = p.add("dining-table", p.cx, p.cz, yaw, 1.25, tl, 0.76, { variant: 0 });
   if (table) {
     const n = Math.max(2, Math.floor((tl - 0.6) / 0.75));
     for (let k = 0; k < n; k++) {
       const u = -tl / 2 + 0.55 + (k * (tl - 1.1)) / Math.max(1, n - 1);
       for (const s of [-1, 1]) {
-        if (along === 'x') p.add('chair', p.cx + u, p.cz + s * 0.95, s > 0 ? Math.PI : 0, 0.5, 0.52, 1.05, { variant: 0 });
-        else p.add('chair', p.cx + s * 0.95, p.cz + u, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 1.05, { variant: 0 });
+        if (along === "x") p.add("chair", p.cx + u, p.cz + s * 0.95, s > 0 ? Math.PI : 0, 0.5, 0.52, 1.05, { variant: 0 });
+        else p.add("chair", p.cx + s * 0.95, p.cz + u, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.5, 0.52, 1.05, { variant: 0 });
       }
     }
     for (const s of [-1, 1]) {
-      if (along === 'x') p.add('chair', p.cx + s * (tl / 2 + 0.45), p.cz, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.55, 0.55, 1.15, { variant: 0 });
-      else p.add('chair', p.cx, p.cz + s * (tl / 2 + 0.45), s > 0 ? Math.PI : 0, 0.55, 0.55, 1.15, { variant: 0 });
+      if (along === "x") p.add("chair", p.cx + s * (tl / 2 + 0.45), p.cz, s > 0 ? -Math.PI / 2 : Math.PI / 2, 0.55, 0.55, 1.15, { variant: 0 });
+      else p.add("chair", p.cx, p.cz + s * (tl / 2 + 0.45), s > 0 ? Math.PI : 0, 0.55, 0.55, 1.15, { variant: 0 });
     }
     // Candelabra down the table.
     const nc = tl > 5 ? 3 : 2;
     for (let k = 0; k < nc; k++) {
       const u = -tl / 2 + ((k + 0.5) * tl) / nc;
-      const x = along === 'x' ? p.cx + u : p.cx;
-      const z = along === 'z' ? p.cz + u : p.cz;
-      p.add('lamp', x, z, 0, 0.35, 0.35, 0.6, { y: p.floorY + 0.76, blocks: false, variant: 2 });
-      if (p.room.lit > 0) p.light('candles', x, p.floorY + 1.3, z, CANDLE, 30 * p.room.lit, 4.5);
+      const x = along === "x" ? p.cx + u : p.cx;
+      const z = along === "z" ? p.cz + u : p.cz;
+      p.add("lamp", x, z, 0, 0.35, 0.35, 0.6, { y: p.floorY + 0.76, blocks: false, variant: 2 });
+      if (p.room.lit > 0) p.light("candles", x, p.floorY + 1.3, z, CANDLE, 30 * p.room.lit, 4.5);
     }
   }
   chandeliers(p, 30, 2);
   const back = backSide(p);
-  const sb = p.againstWall(back, 'sideboard', 2.2, 0.55, 0.95);
-  if (sb && p.room.lit > 0) p.light('candles', sb.x, p.floorY + 1.3, sb.z, CANDLE, 25 * p.room.lit, 4);
+  const sb = p.againstWall(back, "sideboard", 2.2, 0.55, 0.95);
+  if (sb && p.room.lit > 0) p.light("candles", sb.x, p.floorY + 1.3, sb.z, CANDLE, 25 * p.room.lit, 4);
   fireplace(p, perpendicularSides(back));
   if (o.wantBar) bar(p);
   paintings(p, 4, { poi: true });
@@ -599,24 +599,24 @@ const musicRoom: Recipe = (p, o) => {
   const info = p.sides[ws];
   const t = info.t0 + (info.t1 - info.t0) * p.rng.range(0.3, 0.7);
   const at = p.at(ws, t, 2.0);
-  const piano = p.add('grand-piano', at.x, at.z, sideYaw(ws) + Math.PI, 1.55, 2.1, 1.0);
+  const piano = p.add("grand-piano", at.x, at.z, sideYaw(ws) + Math.PI, 1.55, 2.1, 1.0);
   if (piano) {
     piano.yaw = sideYaw(ws) + Math.PI + p.rng.range(-0.4, 0.4);
-    piano.poi = 'piano';
+    piano.poi = "piano";
     const h = p.at(ws, t + (t > (info.t0 + info.t1) / 2 ? -1.9 : 1.9), 1.8);
-    p.add('harp', h.x, h.z, sideYaw(ws) + Math.PI, 0.7, 1.0, 1.8, { occludes: true });
+    p.add("harp", h.x, h.z, sideYaw(ws) + Math.PI, 0.7, 1.0, 1.8, { occludes: true });
   }
   // Two rows of chairs facing the piano.
   for (let row = 0; row < 2; row++) {
     for (let k = -2; k <= 2; k++) {
       const c = p.at(ws, t + k * 0.75, 4.4 + row * 1.0);
-      p.add('chair', c.x, c.z, sideYaw(ws) + Math.PI, 0.5, 0.52, 0.95, { variant: 1 });
+      p.add("chair", c.x, c.z, sideYaw(ws) + Math.PI, 0.5, 0.52, 0.95, { variant: 1 });
     }
   }
   const back = opposite[ws];
-  p.againstWall(back, 'sofa', 2.1, 0.9, 0.85);
+  p.againstWall(back, "sofa", 2.1, 0.9, 0.85);
   if (o.wantBar) bar(p);
-  cornerStatues(p, 2, false, 'plant');
+  cornerStatues(p, 2, false, "plant");
   paintings(p, 3, { poi: true });
   sconces(p);
 };
@@ -625,34 +625,34 @@ const gallery: Recipe = (p, o) => {
   chandeliers(p, 36, 4);
   const along = p.longAxis;
   const long = Math.max(p.width, p.depth);
-  const sides: Side[] = along === 'x' ? ['n', 's'] : ['e', 'w'];
+  const sides: Side[] = along === "x" ? ["n", "s"] : ["e", "w"];
   paintings(p, Math.max(4, Math.floor(long / 2.2) * 2), { sides, poi: true, big: p.rng.chance(0.4) });
   // Statues down the spine, benches between them.
   const n = Math.max(2, Math.floor(long / 5));
   for (let k = 0; k < n; k++) {
     const u = (k + 0.5) / n;
-    const x = along === 'x' ? p.inner.x0 + u * p.width : p.cx;
-    const z = along === 'z' ? p.inner.z0 + u * p.depth : p.cz;
-    if (k % 2 === 0) mark(p.add('statue', x, z, p.rng.pick([0, Math.PI]), 0.8, 0.8, 2.3, { occludes: true, variant: p.rng.int(0, 3) }), 'statue');
-    else p.add('bench', x, z, along === 'x' ? 0 : Math.PI / 2, 1.6, 0.5, 0.45);
+    const x = along === "x" ? p.inner.x0 + u * p.width : p.cx;
+    const z = along === "z" ? p.inner.z0 + u * p.depth : p.cz;
+    if (k % 2 === 0) mark(p.add("statue", x, z, p.rng.pick([0, Math.PI]), 0.8, 0.8, 2.3, { occludes: true, variant: p.rng.int(0, 3) }), "statue");
+    else p.add("bench", x, z, along === "x" ? 0 : Math.PI / 2, 1.6, 0.5, 0.45);
   }
   if (o.wantBar) bar(p);
   sconces(p, 4);
 };
 
 const billiardRoom: Recipe = (p, o) => {
-  const yaw = p.longAxis === 'x' ? Math.PI / 2 : 0;
-  const t = p.add('billiard-table', p.cx, p.cz, yaw, 1.7, 3.0, 0.82);
+  const yaw = p.longAxis === "x" ? Math.PI / 2 : 0;
+  const t = p.add("billiard-table", p.cx, p.cz, yaw, 1.7, 3.0, 0.82);
   if (t) {
-    p.add('lamp', p.cx, p.cz, yaw, 0.6, 2.2, 0.5, { y: p.floorY + 1.55, blocks: false, mount: 'ceiling', variant: 3 });
-    if (p.room.lit > 0) p.light('lamp', p.cx, p.floorY + 1.55, p.cz, WARM, 140 * p.room.lit, 4.5);
+    p.add("lamp", p.cx, p.cz, yaw, 0.6, 2.2, 0.5, { y: p.floorY + 1.55, blocks: false, mount: "ceiling", variant: 3 });
+    if (p.room.lit > 0) p.light("lamp", p.cx, p.floorY + 1.55, p.cz, WARM, 140 * p.room.lit, 4.5);
   }
   const back = backSide(p);
   if (o.wantBar) bar(p);
-  p.onWall(perpendicularSides(back)[0]!, 'cabinet', 1.2, 1.3, p.floorY + 1.4, { variant: 2 });
+  p.onWall(perpendicularSides(back)[0]!, "cabinet", 1.2, 1.3, p.floorY + 1.4, { variant: 2 });
   for (const s of perpendicularSides(back)) {
-    const a = p.againstWall(s, 'armchair', 0.85, 0.85, 0.95, { variant: 1 });
-    if (a) p.againstWall(s, 'side-table', 0.5, 0.5, 0.6);
+    const a = p.againstWall(s, "armchair", 0.85, 0.85, 0.95, { variant: 1 });
+    if (a) p.againstWall(s, "side-table", 0.5, 0.5, 0.6);
   }
   fireplace(p, [back]);
   paintings(p, 3, { poi: true });
@@ -671,7 +671,7 @@ const cardRoom: Recipe = (p, o) => {
   if (o.wantBar) bar(p);
   const back = backSide(p);
   fireplace(p, perpendicularSides(back));
-  p.againstWall(back, 'sideboard', 2.0, 0.55, 0.95);
+  p.againstWall(back, "sideboard", 2.0, 0.55, 0.95);
   paintings(p, 3, { poi: true });
   sconces(p);
 };
@@ -682,23 +682,23 @@ const morningRoom: Recipe = (p, o) => {
   if (ws) {
     const info = p.sides[ws];
     const at = p.at(ws, (info.t0 + info.t1) / 2, 1.9);
-    if (p.add('cocktail-table', at.x, at.z, 0, 1.1, 1.1, 0.75, { variant: 2 })) {
+    if (p.add("cocktail-table", at.x, at.z, 0, 1.1, 1.1, 0.75, { variant: 2 })) {
       for (const [dx, dz] of [
         [0.8, 0],
         [-0.8, 0],
         [0, 0.8],
         [0, -0.8],
       ] as const) {
-        p.add('chair', at.x + dx, at.z + dz, Math.atan2(-dx, -dz), 0.5, 0.52, 0.95, { variant: 1 });
+        p.add("chair", at.x + dx, at.z + dz, Math.atan2(-dx, -dz), 0.5, 0.52, 0.95, { variant: 1 });
       }
     }
   }
   const back = backSide(p);
   const c = p.at(back, (p.sides[back].t0 + p.sides[back].t1) / 2, 2.4);
-  conversation(p, c.x, c.z, back === 'n' || back === 's' ? 'z' : 'x');
+  conversation(p, c.x, c.z, back === "n" || back === "s" ? "z" : "x");
   if (o.wantBar) bar(p);
-  p.againstWall(perpendicularSides(back)[0]!, 'desk', 1.4, 0.7, 0.77);
-  cornerStatues(p, 2, false, 'plant');
+  p.againstWall(perpendicularSides(back)[0]!, "desk", 1.4, 0.7, 0.77);
+  cornerStatues(p, 2, false, "plant");
   paintings(p, 3, { poi: true });
   sconces(p);
 };
@@ -711,36 +711,36 @@ const conservatory: Recipe = (p) => {
     const n = Math.floor((info.t1 - info.t0) / 1.8);
     for (let k = 0; k < n; k++) {
       const at = p.at(s, info.t0 + (k + 0.5) * ((info.t1 - info.t0) / n), 0.55);
-      p.add('plant', at.x, at.z, 0, 0.8, 0.8, p.rng.range(1.6, 2.6), { occludes: true, variant: p.rng.int(0, 2) });
+      p.add("plant", at.x, at.z, 0, 0.8, 0.8, p.rng.range(1.6, 2.6), { occludes: true, variant: p.rng.int(0, 2) });
     }
   }
-  mark(p.add('statue', p.cx, p.cz, 0, 0.9, 0.9, 2.2, { occludes: true, variant: p.rng.int(0, 3) }), 'statue');
+  mark(p.add("statue", p.cx, p.cz, 0, 0.9, 0.9, 2.2, { occludes: true, variant: p.rng.int(0, 3) }), "statue");
   for (const dz of [-1, 1]) {
     const z = p.cz + dz * Math.min(2.6, p.depth / 3);
     const x = p.cx + (p.width > 5 ? dz * 1.6 : 0);
-    if (p.add('cocktail-table', x, z, 0, 0.7, 0.7, 0.72, { variant: 3 })) {
-      p.add('armchair', x - 0.8, z, Math.PI / 2, 0.75, 0.75, 0.9, { variant: 2 });
-      p.add('armchair', x + 0.8, z, -Math.PI / 2, 0.75, 0.75, 0.9, { variant: 2 });
+    if (p.add("cocktail-table", x, z, 0, 0.7, 0.7, 0.72, { variant: 3 })) {
+      p.add("armchair", x - 0.8, z, Math.PI / 2, 0.75, 0.75, 0.9, { variant: 2 });
+      p.add("armchair", x + 0.8, z, -Math.PI / 2, 0.75, 0.75, 0.9, { variant: 2 });
     }
   }
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.6, p.cz, WARM, 120 * p.room.lit, 9);
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.6, p.cz, WARM, 120 * p.room.lit, 9);
 };
 
 const entranceHall: Recipe = (p) => {
   chandeliers(p, 50, 2);
   // Statues flanking the axis, a ledger on a console by the door, a long-case clock.
-  const along: 'x' | 'z' = 'z';
+  const along: "x" | "z" = "z";
   void along;
   for (const s of [-1, 1]) {
-    mark(p.add('statue', p.cx + s * Math.min(2.2, p.width / 2 - 1.0), p.cz, 0, 0.8, 0.8, 2.3, { occludes: true, variant: p.rng.int(0, 3) }), 'statue');
+    mark(p.add("statue", p.cx + s * Math.min(2.2, p.width / 2 - 1.0), p.cz, 0, 0.8, 0.8, 2.3, { occludes: true, variant: p.rng.int(0, 3) }), "statue");
   }
-  const sides = ['e', 'w'] as Side[];
+  const sides = ["e", "w"] as Side[];
   let led: Prop | null = null;
-  for (const s of p.solidSides()) if ((led = p.againstWall(s, 'console', 1.5, 0.5, 0.88))) break;
-  if (led) led.poi = 'ledger';
-  p.againstWall(p.rng.pick(sides), 'console', 1.5, 0.5, 0.88);
-  mark(p.againstWall(p.rng.pick(sides), 'clock', 0.55, 0.38, 2.15, { occludes: true }), 'clock');
-  for (const s of sides) p.againstWall(s, 'bench', 1.6, 0.5, 0.45);
+  for (const s of p.solidSides()) if ((led = p.againstWall(s, "console", 1.5, 0.5, 0.88))) break;
+  if (led) led.poi = "ledger";
+  p.againstWall(p.rng.pick(sides), "console", 1.5, 0.5, 0.88);
+  mark(p.againstWall(p.rng.pick(sides), "clock", 0.55, 0.38, 2.15, { occludes: true }), "clock");
+  for (const s of sides) p.againstWall(s, "bench", 1.6, 0.5, 0.45);
   paintings(p, 2, { poi: true });
   sconces(p);
 };
@@ -748,29 +748,29 @@ const entranceHall: Recipe = (p) => {
 const stairHall: Recipe = (p) => {
   chandeliers(p, 60, 1);
   paintings(p, 3, { poi: true, big: true });
-  cornerStatues(p, 1, true, 'bust');
+  cornerStatues(p, 1, true, "bust");
   sconces(p);
 };
 
 const corridor: Recipe = (p) => {
   const along = p.longAxis;
-  const sides: Side[] = along === 'x' ? ['n', 's'] : ['e', 'w'];
+  const sides: Side[] = along === "x" ? ["n", "s"] : ["e", "w"];
   const long = Math.max(p.width, p.depth);
   const lit = p.room.lit;
   const n = Math.max(1, Math.floor(long / 6));
   for (let k = 0; k < n; k++) {
     const u = (k + 0.5) / n;
-    const x = along === 'x' ? p.inner.x0 + u * p.width : p.cx;
-    const z = along === 'z' ? p.inner.z0 + u * p.depth : p.cz;
-    p.add('chandelier', x, z, 0, 0.6, 0.6, 0.7, { y: p.ceilY - 0.7, blocks: false, mount: 'ceiling', variant: 2 });
-    if (lit > 0) p.light('chandelier', x, p.ceilY - 0.5, z, TUNGSTEN, 120 * lit, 7);
+    const x = along === "x" ? p.inner.x0 + u * p.width : p.cx;
+    const z = along === "z" ? p.inner.z0 + u * p.depth : p.cz;
+    p.add("chandelier", x, z, 0, 0.6, 0.6, 0.7, { y: p.ceilY - 0.7, blocks: false, mount: "ceiling", variant: 2 });
+    if (lit > 0) p.light("chandelier", x, p.ceilY - 0.5, z, TUNGSTEN, 120 * lit, 7);
   }
   if (Math.min(p.width, p.depth) >= 2.3) {
-    for (const s of sides) p.againstWall(s, p.rng.chance(0.5) ? 'console' : 'bench', 1.3, 0.38, 0.85);
-    if (long > 14) mark(p.againstWall(p.rng.pick(sides), 'clock', 0.55, 0.38, 2.15, { occludes: true }), 'clock');
+    for (const s of sides) p.againstWall(s, p.rng.chance(0.5) ? "console" : "bench", 1.3, 0.38, 0.85);
+    if (long > 14) mark(p.againstWall(p.rng.pick(sides), "clock", 0.55, 0.38, 2.15, { occludes: true }), "clock");
   }
   paintings(p, Math.floor(long / 4), { sides, poi: true });
-  if (long > 6) p.add('rug', p.cx, p.cz, along === 'x' ? Math.PI / 2 : 0, Math.min(p.width, p.depth) * 0.55, long - 1.2, 0.012, { blocks: false, variant: 4 });
+  if (long > 6) p.add("rug", p.cx, p.cz, along === "x" ? Math.PI / 2 : 0, Math.min(p.width, p.depth) * 0.55, long - 1.2, 0.012, { blocks: false, variant: 4 });
 };
 
 /** Ring gallery round the dome hall: kept clear to walk, lit by the chandelier and wall lights. */
@@ -786,9 +786,9 @@ const roofTerrace: Recipe = (p) => {
   const n = Math.max(1, Math.round(long / 6));
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) / n;
-    const x = p.longAxis === 'x' ? p.inner.x0 + t * p.width : p.cx;
-    const z = p.longAxis === 'z' ? p.inner.z0 + t * p.depth : p.cz;
-    p.add('cocktail-table', x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
+    const x = p.longAxis === "x" ? p.inner.x0 + t * p.width : p.cx;
+    const z = p.longAxis === "z" ? p.inner.z0 + t * p.depth : p.cz;
+    p.add("cocktail-table", x, z, 0, 0.75, 0.75, 1.05, { variant: 1 });
   }
   const i = p.inner;
   for (const [x, z] of [
@@ -797,13 +797,13 @@ const roofTerrace: Recipe = (p) => {
     [i.x0 + 0.5, i.z1 - 0.5],
     [i.x1 - 0.5, i.z1 - 0.5],
   ] as const) {
-    p.add('plant', x, z, 0, 0.6, 0.6, 1.4, { occludes: true });
+    p.add("plant", x, z, 0, 0.6, 0.6, 1.4, { occludes: true });
   }
 };
 
 const landing: Recipe = (p) => {
   chandeliers(p, 60, 1);
-  p.againstWall(p.solidSides()[0]!, 'console', 1.4, 0.45, 0.85);
+  p.againstWall(p.solidSides()[0]!, "console", 1.4, 0.45, 0.85);
   paintings(p, 2, { poi: true });
   sconces(p);
 };
@@ -813,20 +813,20 @@ const study: Recipe = (p) => {
   if (ws) {
     const info = p.sides[ws];
     const at = p.at(ws, (info.t0 + info.t1) / 2, 1.6);
-    if (p.add('desk', at.x, at.z, sideYaw(ws), 1.6, 0.8, 0.77)) {
-      p.add('chair', at.x + (ws === 'e' ? -0.7 : ws === 'w' ? 0.7 : 0), at.z + (ws === 'n' ? -0.7 : ws === 's' ? 0.7 : 0), sideYaw(ws) + Math.PI, 0.6, 0.6, 1.1, { variant: 2 });
+    if (p.add("desk", at.x, at.z, sideYaw(ws), 1.6, 0.8, 0.77)) {
+      p.add("chair", at.x + (ws === "e" ? -0.7 : ws === "w" ? 0.7 : 0), at.z + (ws === "n" ? -0.7 : ws === "s" ? 0.7 : 0), sideYaw(ws) + Math.PI, 0.6, 0.6, 1.1, { variant: 2 });
       if (p.room.lit > 0) {
-        p.add('lamp', at.x, at.z, 0, 0.35, 0.35, 0.55, { y: p.floorY + 0.77, blocks: false, variant: 1 });
-        p.light('lamp', at.x, p.floorY + 1.3, at.z, WARM, 60 * p.room.lit, 5);
+        p.add("lamp", at.x, at.z, 0, 0.35, 0.35, 0.55, { y: p.floorY + 0.77, blocks: false, variant: 1 });
+        p.light("lamp", at.x, p.floorY + 1.3, at.z, WARM, 60 * p.room.lit, 5);
       }
     }
   }
   const back = backSide(p);
   bookcases(p, [back], 1);
   const i = p.inner;
-  mark(p.add('safe', i.x0 + 0.5, i.z0 + 0.45, 0, 0.7, 0.6, 1.0), 'safe') ?? mark(p.add('safe', i.x1 - 0.5, i.z0 + 0.45, 0, 0.7, 0.6, 1.0), 'safe');
+  mark(p.add("safe", i.x0 + 0.5, i.z0 + 0.45, 0, 0.7, 0.6, 1.0), "safe") ?? mark(p.add("safe", i.x1 - 0.5, i.z0 + 0.45, 0, 0.7, 0.6, 1.0), "safe");
   fireplace(p, perpendicularSides(back));
-  p.againstWall(perpendicularSides(back)[1]!, 'armchair', 0.85, 0.85, 0.95, { variant: 1 });
+  p.againstWall(perpendicularSides(back)[1]!, "armchair", 0.85, 0.85, 0.95, { variant: 1 });
   // Every study has its globe.
   globe(p);
   paintings(p, 2);
@@ -834,8 +834,8 @@ const study: Recipe = (p) => {
 };
 
 const service: Recipe = (p) => {
-  for (const s of p.solidSides().slice(0, 2)) p.againstWall(s, 'cabinet', 1.4, 0.5, 1.9, { occludes: true });
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 60 * p.room.lit, 5);
+  for (const s of p.solidSides().slice(0, 2)) p.againstWall(s, "cabinet", 1.4, 0.5, 1.9, { occludes: true });
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 60 * p.room.lit, 5);
 };
 
 const bedroom: Recipe = (p) => {
@@ -843,26 +843,26 @@ const bedroom: Recipe = (p) => {
   const sides = ws ? [opposite[ws], ...perpendicularSides(ws)] : p.solidSides();
   let bed: Prop | null = null;
   for (const s of sides) {
-    bed = p.againstWall(s, 'bed', 1.8, 2.2, 2.3, { variant: p.rng.int(0, 1) });
+    bed = p.againstWall(s, "bed", 1.8, 2.2, 2.3, { variant: p.rng.int(0, 1) });
     if (bed) {
       const info = p.sides[s];
-      const t = s === 'n' || s === 's' ? bed.x : bed.z;
+      const t = s === "n" || s === "s" ? bed.x : bed.z;
       for (const d of [-1.35, 1.35]) {
-        const st = p.againstWall(s, 'side-table', 0.5, 0.45, 0.62, { prefer: t + d, sweep: false });
+        const st = p.againstWall(s, "side-table", 0.5, 0.45, 0.62, { prefer: t + d, sweep: false });
         if (st && p.room.lit > 0) {
-          p.add('lamp', st.x, st.z, 0, 0.32, 0.32, 0.5, { y: p.floorY + 0.62, blocks: false });
-          p.light('lamp', st.x, p.floorY + 1.05, st.z, WARM, 45 * p.room.lit, 4.5);
+          p.add("lamp", st.x, st.z, 0, 0.32, 0.32, 0.5, { y: p.floorY + 0.62, blocks: false });
+          p.light("lamp", st.x, p.floorY + 1.05, st.z, WARM, 45 * p.room.lit, 4.5);
         }
       }
       void info;
       break;
     }
   }
-  for (const s of p.solidSides()) if (p.againstWall(s, 'wardrobe', 1.6, 0.6, 2.3, { occludes: true })) break;
-  p.againstWall(p.solidSides()[1]!, 'console', 1.2, 0.5, 0.8);
-  const a = p.add('armchair', p.inner.x0 + 1.0, p.inner.z1 - 1.0, Math.PI * 0.75, 0.85, 0.85, 0.95);
+  for (const s of p.solidSides()) if (p.againstWall(s, "wardrobe", 1.6, 0.6, 2.3, { occludes: true })) break;
+  p.againstWall(p.solidSides()[1]!, "console", 1.2, 0.5, 0.8);
+  const a = p.add("armchair", p.inner.x0 + 1.0, p.inner.z1 - 1.0, Math.PI * 0.75, 0.85, 0.85, 0.95);
   void a;
-  p.add('rug', p.cx, p.cz, 0, Math.min(3.2, p.width - 1.2), Math.min(2.4, p.depth - 1.2), 0.012, { blocks: false, variant: p.rng.int(0, 3) });
+  p.add("rug", p.cx, p.cz, 0, Math.min(3.2, p.width - 1.2), Math.min(2.4, p.depth - 1.2), 0.012, { blocks: false, variant: p.rng.int(0, 3) });
   paintings(p, 2);
   if (p.room.lit > 0.5) chandeliers(p, 60, 1);
 };
@@ -870,25 +870,25 @@ const bedroom: Recipe = (p) => {
 const sittingRoom: Recipe = (p) => {
   const back = backSide(p);
   const c = p.at(back, (p.sides[back].t0 + p.sides[back].t1) / 2, 2.3);
-  conversation(p, c.x, c.z, back === 'n' || back === 's' ? 'z' : 'x');
-  p.againstWall(perpendicularSides(back)[0]!, 'bookcase', 1.2, 0.45, Math.min(2.4, p.ceilY - p.floorY - 0.4), { occludes: true });
-  p.againstWall(perpendicularSides(back)[1]!, 'desk', 1.4, 0.7, 0.77);
+  conversation(p, c.x, c.z, back === "n" || back === "s" ? "z" : "x");
+  p.againstWall(perpendicularSides(back)[0]!, "bookcase", 1.2, 0.45, Math.min(2.4, p.ceilY - p.floorY - 0.4), { occludes: true });
+  p.againstWall(perpendicularSides(back)[1]!, "desk", 1.4, 0.7, 0.77);
   paintings(p, 2);
   if (p.room.lit > 0) chandeliers(p, 60, 1);
 };
 
 const dressingRoom: Recipe = (p) => {
-  for (const s of p.solidSides().slice(0, 2)) p.againstWall(s, 'wardrobe', 1.6, 0.6, 2.3, { occludes: true });
-  p.onWall(p.solidSides()[2] ?? 'n', 'mirror', 0.9, 1.6, p.floorY + 1.3);
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.3, p.cz, WARM, 40 * p.room.lit, 4);
+  for (const s of p.solidSides().slice(0, 2)) p.againstWall(s, "wardrobe", 1.6, 0.6, 2.3, { occludes: true });
+  p.onWall(p.solidSides()[2] ?? "n", "mirror", 0.9, 1.6, p.floorY + 1.3);
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.3, p.cz, WARM, 40 * p.room.lit, 4);
 };
 
 const bathroom: Recipe = (p) => {
   const solid = p.solidSides();
-  for (const side of solid) if (p.againstWall(side, 'bathtub', 1.8, 0.85, 0.62)) break;
-  p.againstWall(solid[1] ?? solid[0]!, 'cabinet', 1.2, 0.55, 0.9, { variant: 1 });
-  p.onWall(solid[2] ?? solid[0]!, 'mirror', 0.8, 1.1, p.floorY + 1.5, {});
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 35 * p.room.lit, 4);
+  for (const side of solid) if (p.againstWall(side, "bathtub", 1.8, 0.85, 0.62)) break;
+  p.againstWall(solid[1] ?? solid[0]!, "cabinet", 1.2, 0.55, 0.9, { variant: 1 });
+  p.onWall(solid[2] ?? solid[0]!, "mirror", 0.8, 1.1, p.floorY + 1.5, {});
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 35 * p.room.lit, 4);
 };
 
 /** Furthest from the windows first: where the things that want a blank wall go. */
@@ -903,13 +903,13 @@ function globe(p: Placer): boolean {
     const info = p.sides[side];
     for (const f of [0.15, 0.85, 0.5, 0.3, 0.7]) {
       const at = p.at(side, info.t0 + (info.t1 - info.t0) * f, 1.1);
-      if (mark(p.add('globe', at.x, at.z, 0, 0.7, 0.7, 1.05, { variant: 0 }), 'globe')) return true;
+      if (mark(p.add("globe", at.x, at.z, 0, 0.7, 0.7, 1.05, { variant: 0 }), "globe")) return true;
     }
   }
   // Anywhere it fits, from the middle of the room outward.
   for (const fx of [0.5, 0.3, 0.7, 0.2, 0.8]) {
     for (const fz of [0.5, 0.3, 0.7, 0.2, 0.8]) {
-      if (mark(p.add('globe', p.inner.x0 + p.width * fx, p.inner.z0 + p.depth * fz, 0, 0.6, 0.6, 1.05, { variant: 0 }), 'globe')) return true;
+      if (mark(p.add("globe", p.inner.x0 + p.width * fx, p.inner.z0 + p.depth * fz, 0, 0.6, 0.6, 1.05, { variant: 0 }), "globe")) return true;
     }
   }
   return false;
@@ -921,23 +921,23 @@ const greatRoom: Recipe = (p) => {
   const back = backSide(p);
   const fs = fireplace(p, [back, ...perpendicularSides(back)]);
   const along = p.longAxis;
-  const cross = along === 'x' ? 'z' : 'x';
-  for (const f of p.longAxis === 'x' ? [0.5, 0.2, 0.8] : [0.5, 0.22, 0.78]) {
-    const cx = along === 'x' ? p.inner.x0 + p.width * f : p.cx;
-    const cz = along === 'z' ? p.inner.z0 + p.depth * f : p.cz;
+  const cross = along === "x" ? "z" : "x";
+  for (const f of p.longAxis === "x" ? [0.5, 0.2, 0.8] : [0.5, 0.22, 0.78]) {
+    const cx = along === "x" ? p.inner.x0 + p.width * f : p.cx;
+    const cz = along === "z" ? p.inner.z0 + p.depth * f : p.cz;
     conversation(p, cx, cz, cross);
   }
   void fs;
   for (const side of perpendicularSides(back)) {
-    const cs = p.againstWall(side, 'console', 1.8, 0.5, 0.9);
+    const cs = p.againstWall(side, "console", 1.8, 0.5, 0.9);
     if (cs && p.room.lit > 0) {
-      p.add('lamp', cs.x, cs.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.9, blocks: false });
-      p.light('lamp', cs.x, p.floorY + 1.45, cs.z, WARM, 55 * p.room.lit, 5);
+      p.add("lamp", cs.x, cs.z, 0, 0.4, 0.4, 0.7, { y: p.floorY + 0.9, blocks: false });
+      p.light("lamp", cs.x, p.floorY + 1.45, cs.z, WARM, 55 * p.room.lit, 5);
     }
   }
-  p.againstWall(back, 'bookcase', 1.6, 0.45, Math.min(2.6, p.ceilY - p.floorY - 0.45), { occludes: true });
-  cornerStatues(p, 2, false, 'plant');
-  cornerStatues(p, 1, true, 'statue');
+  p.againstWall(back, "bookcase", 1.6, 0.45, Math.min(2.6, p.ceilY - p.floorY - 0.45), { occludes: true });
+  cornerStatues(p, 2, false, "plant");
+  cornerStatues(p, 1, true, "statue");
   paintings(p, 5, { poi: true, big: true });
   sconces(p);
 };
@@ -947,37 +947,37 @@ const kitchen: Recipe = (p) => {
   const lit = Math.max(0.6, p.room.lit);
   let rangeSide: Side | null = null;
   for (const side of wallsBackFirst(p)) {
-    if (p.againstWall(side, 'range', 2.2, 0.75, 2.4, { occludes: true })) {
+    if (p.againstWall(side, "range", 2.2, 0.75, 2.4, { occludes: true })) {
       rangeSide = side;
       break;
     }
   }
   const along = p.longAxis;
-  const il = Math.min(4.2, (along === 'x' ? p.width : p.depth) - 3.2);
+  const il = Math.min(4.2, (along === "x" ? p.width : p.depth) - 3.2);
   if (il >= 1.8) {
-    const isl = p.add('kitchen-island', p.cx, p.cz, along === 'x' ? 0 : Math.PI / 2, il, 1.1, 0.92);
-    if (isl) for (const k of [-0.3, 0.3]) p.light('lamp', p.cx + (along === 'x' ? il * k : 0), p.floorY + 2.3, p.cz + (along === 'z' ? il * k : 0), TUNGSTEN, 70 * lit, 5);
+    const isl = p.add("kitchen-island", p.cx, p.cz, along === "x" ? 0 : Math.PI / 2, il, 1.1, 0.92);
+    if (isl) for (const k of [-0.3, 0.3]) p.light("lamp", p.cx + (along === "x" ? il * k : 0), p.floorY + 2.3, p.cz + (along === "z" ? il * k : 0), TUNGSTEN, 70 * lit, 5);
   }
   let n = 0;
   for (const side of wallsBackFirst(p)) {
     if (side === rangeSide) {
       const info = p.sides[side];
-      for (const f of [0.15, 0.85]) p.againstWall(side, 'sideboard', 1.6, 0.6, 0.92, { prefer: info.t0 + (info.t1 - info.t0) * f, sweep: false });
+      for (const f of [0.15, 0.85]) p.againstWall(side, "sideboard", 1.6, 0.6, 0.92, { prefer: info.t0 + (info.t1 - info.t0) * f, sweep: false });
       continue;
     }
-    if (n++ < 2) p.againstWall(side, 'cabinet', 1.6, 0.5, 2.1, { occludes: true });
+    if (n++ < 2) p.againstWall(side, "cabinet", 1.6, 0.5, 2.1, { occludes: true });
   }
-  p.light('lamp', p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 80 * lit, 6);
+  p.light("lamp", p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 80 * lit, 6);
 };
 
 /** Bar and wine cellar: the bar itself, walls of bottles, standing tables. */
 const barRoom: Recipe = (p) => {
-  if (!p.props.some((q) => q.poi === 'bar') && !bar(p)) {
+  if (!p.props.some((q) => q.poi === "bar") && !bar(p)) {
     // No wall will take it: an island bar in the middle of the room.
-    const c = p.add('bar-counter', p.cx, p.cz, p.longAxis === 'x' ? 0 : Math.PI / 2, 2.6, 0.7, 1.1, { occludes: false });
+    const c = p.add("bar-counter", p.cx, p.cz, p.longAxis === "x" ? 0 : Math.PI / 2, 2.6, 0.7, 1.1, { occludes: false });
     if (c) {
-      c.poi = 'bar';
-      if (p.room.lit > 0) p.light('lamp', p.cx, p.floorY + 2.3, p.cz, WARM, 80, 5);
+      c.poi = "bar";
+      if (p.room.lit > 0) p.light("lamp", p.cx, p.floorY + 2.3, p.cz, WARM, 80, 5);
     }
   }
   const h = Math.min(2.6, p.ceilY - p.floorY - 0.5);
@@ -987,7 +987,7 @@ const barRoom: Recipe = (p) => {
       const count = Math.min(4 - racks, Math.max(1, Math.floor((b - a) / 1.45)));
       for (let k = 0; k < count; k++) {
         const t = a + (k + 0.5) * ((b - a) / count);
-        if (p.againstWall(side, 'wine-rack', 1.3, 0.4, h, { prefer: t, sweep: false, occludes: true })) racks++;
+        if (p.againstWall(side, "wine-rack", 1.3, 0.4, h, { prefer: t, sweep: false, occludes: true })) racks++;
       }
       if (racks >= 4) break;
     }
@@ -998,11 +998,11 @@ const barRoom: Recipe = (p) => {
     [0.65, 0.5],
     [0.5, 0.3],
   ] as const) {
-    p.add('cocktail-table', p.inner.x0 + p.width * fx, p.inner.z0 + p.depth * fz, 0, 0.75, 0.75, 1.05, { variant: 1 });
+    p.add("cocktail-table", p.inner.x0 + p.width * fx, p.inner.z0 + p.depth * fz, 0, 0.75, 0.75, 1.05, { variant: 1 });
   }
   paintings(p, 2);
   sconces(p, 3.2);
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.4, p.cz, CANDLE, 60 * p.room.lit, 6);
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.4, p.cz, CANDLE, 60 * p.room.lit, 6);
 };
 
 /** Home cinema: a screen on a blank wall, rows of armchairs facing it, low light. */
@@ -1014,7 +1014,7 @@ const cinema: Recipe = (p) => {
     // The widest screen the wall takes between its doors.
     for (const sw of [Math.min(5.2, len - 1.2), 3.6, 2.6]) {
       if (sw < 2.4 || sw > len - 0.6) continue;
-      if (p.onWall(side, 'cinema-screen', sw, sh, p.floorY + 0.9 + sh / 2, {})) {
+      if (p.onWall(side, "cinema-screen", sw, sh, p.floorY + 0.9 + sh / 2, {})) {
         screenSide = side;
         break;
       }
@@ -1024,37 +1024,37 @@ const cinema: Recipe = (p) => {
   if (screenSide) {
     const info = p.sides[screenSide];
     const mid = (info.t0 + info.t1) / 2;
-    const depth = screenSide === 'n' || screenSide === 's' ? p.depth : p.width;
+    const depth = screenSide === "n" || screenSide === "s" ? p.depth : p.width;
     const cols = Math.max(2, Math.min(6, Math.floor((info.t1 - info.t0 - 2.2) / 1.05)));
     for (let row = 0; row < 4; row++) {
       const off = 3.2 + row * 1.5;
       if (off > depth - 1.4) break;
       for (let c = 0; c < cols; c++) {
         const at = p.at(screenSide, mid + (c - (cols - 1) / 2) * 1.05, off);
-        p.add('armchair', at.x, at.z, sideYaw(screenSide) + Math.PI, 0.85, 0.85, 0.95, { variant: 1 });
+        p.add("armchair", at.x, at.z, sideYaw(screenSide) + Math.PI, 0.85, 0.85, 0.95, { variant: 1 });
       }
     }
     // The glow of the picture.
     const g = p.at(screenSide, mid, 1.2);
-    p.light('lamp', g.x, p.floorY + 2.0, g.z, [0.75, 0.85, 1.0], 55 * Math.max(0.5, p.room.lit), 7);
+    p.light("lamp", g.x, p.floorY + 2.0, g.z, [0.75, 0.85, 1.0], 55 * Math.max(0.5, p.room.lit), 7);
   }
-  p.againstWall(opposite[screenSide ?? backSide(p)], 'sideboard', 1.6, 0.5, 0.9);
+  p.againstWall(opposite[screenSide ?? backSide(p)], "sideboard", 1.6, 0.5, 0.9);
   sconces(p, 4.5);
 };
 
 /** Spa and pool: the pool down the middle of the room, loungers along both sides, palms in the corners. */
 const spa: Recipe = (p) => {
   const along = p.longAxis;
-  const len = along === 'x' ? p.width : p.depth;
-  const cross = along === 'x' ? p.depth : p.width;
-  const yaw = along === 'x' ? 0 : Math.PI / 2;
+  const len = along === "x" ? p.width : p.depth;
+  const cross = along === "x" ? p.depth : p.width;
+  const yaw = along === "x" ? 0 : Math.PI / 2;
   let pool: Prop | null = null;
   // As large as leaves a walk all round; smaller if doors need the room.
   for (const k of [1, 0.8, 0.6]) {
     const L = (len - 3.6) * k;
     const Wd = Math.min(5, cross - 4.4) * (k === 1 ? 1 : 0.85);
     if (L < 3 || Wd < 2) break;
-    pool = p.add('pool', p.cx, p.cz, yaw, L, Wd, 0.12);
+    pool = p.add("pool", p.cx, p.cz, yaw, L, Wd, 0.12);
     if (pool) break;
   }
   if (pool) {
@@ -1062,15 +1062,15 @@ const spa: Recipe = (p) => {
     const off = pool.d / 2 + 1.0;
     if (p.room.lit > 0) {
       // Underwater lights.
-      for (const k of [-0.3, 0.3]) p.light('lamp', p.cx + (along === 'x' ? L * k : 0), p.floorY + 0.4, p.cz + (along === 'z' ? L * k : 0), [0.45, 0.85, 1.0], 70 * p.room.lit, 6);
+      for (const k of [-0.3, 0.3]) p.light("lamp", p.cx + (along === "x" ? L * k : 0), p.floorY + 0.4, p.cz + (along === "z" ? L * k : 0), [0.45, 0.85, 1.0], 70 * p.room.lit, 6);
     }
     const n = Math.max(1, Math.floor(L / 2.6));
     for (const s of [-1, 1]) {
       for (let k = 0; k < n; k++) {
         const t = ((k + 0.5) / n - 0.5) * L;
-        const x = p.cx + (along === 'x' ? t : s * off);
-        const z = p.cz + (along === 'z' ? t : s * off);
-        p.add('bench', x, z, yaw, 1.9, 0.7, 0.42);
+        const x = p.cx + (along === "x" ? t : s * off);
+        const z = p.cz + (along === "z" ? t : s * off);
+        p.add("bench", x, z, yaw, 1.9, 0.7, 0.42);
       }
     }
   }
@@ -1082,12 +1082,12 @@ const spa: Recipe = (p) => {
       [i.x0 + inset, i.z1 - inset],
       [i.x1 - inset, i.z1 - inset],
     ] as const) {
-      if (!p.props.some((q) => q.kind === 'plant' && Math.hypot(q.x - x, q.z - z) < 1.2)) p.add('plant', x, z, 0, 0.6, 0.6, 1.6, { occludes: true });
+      if (!p.props.some((q) => q.kind === "plant" && Math.hypot(q.x - x, q.z - z) < 1.2)) p.add("plant", x, z, 0, 0.6, 0.6, 1.6, { occludes: true });
     }
   }
-  cornerStatues(p, 1, true, 'statue');
+  cornerStatues(p, 1, true, "statue");
   sconces(p, 3.6);
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.4, p.cz, WARM, 70 * p.room.lit, 7);
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.4, p.cz, WARM, 70 * p.room.lit, 7);
 };
 
 /** Gym: machines facing the windows, weights along a wall, a mirror wall. */
@@ -1097,56 +1097,57 @@ const gym: Recipe = (p) => {
   const n = Math.max(1, Math.min(4, Math.floor((info.t1 - info.t0 - 1) / 1.5)));
   for (let k = 0; k < n; k++) {
     const at = p.at(ws, info.t0 + ((k + 0.5) * (info.t1 - info.t0)) / n, 1.9);
-    p.add('treadmill', at.x, at.z, sideYaw(ws) + Math.PI, 0.85, 1.9, 1.4);
+    p.add("treadmill", at.x, at.z, sideYaw(ws) + Math.PI, 0.85, 1.9, 1.4);
   }
   const back = backSide(p);
   for (const side of [back, ...perpendicularSides(back)]) {
-    if (p.againstWall(side, 'weights', 2.2, 0.6, 1.1)) break;
+    if (p.againstWall(side, "weights", 2.2, 0.6, 1.1)) break;
   }
-  for (const side of perpendicularSides(back)) p.onWall(side, 'mirror', 1.8, 1.9, p.floorY + 1.25, {});
-  p.add('bench', p.cx, p.cz, p.longAxis === 'x' ? 0 : Math.PI / 2, 1.4, 0.45, 0.45);
-  if (p.room.lit > 0) p.light('lamp', p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 60 * p.room.lit, 6);
+  for (const side of perpendicularSides(back)) p.onWall(side, "mirror", 1.8, 1.9, p.floorY + 1.25, {});
+  p.add("bench", p.cx, p.cz, p.longAxis === "x" ? 0 : Math.PI / 2, 1.4, 0.45, 0.45);
+  if (p.room.lit > 0) p.light("lamp", p.cx, p.ceilY - 0.3, p.cz, TUNGSTEN, 60 * p.room.lit, 6);
 };
 
 /** Private theatre: a stage at one end, rows of chairs facing it, an aisle down the middle. */
 const theatre: Recipe = (p) => {
   chandeliers(p, 55, 2);
   const along = p.longAxis;
-  const len = along === 'x' ? p.width : p.depth;
+  const len = along === "x" ? p.width : p.depth;
   // Stage at an end of the long axis, the blanker end first; narrower, or to one side, if doors are in the way.
   const solid = p.solidSides();
-  const ends = (along === 'x' ? (['w', 'e'] as Side[]) : (['n', 's'] as Side[])).sort((a, b) => solid.indexOf(a) - solid.indexOf(b));
+  const ends = (along === "x" ? (["w", "e"] as Side[]) : (["n", "s"] as Side[])).sort((a, b) => solid.indexOf(a) - solid.indexOf(b));
   const sd = Math.min(3.6, Math.max(2.2, len * 0.26));
   let stage: Prop | null = null;
   let end: Side = ends[0]!;
   let mid = 0;
   let sw = 0;
   // Last resort: any wall, and over a door's clear zone so long as every door can still be reached.
-  search: for (const pass of [0, 1]) for (const e of pass === 0 ? ends : solid) {
-    const info = p.sides[e];
-    const full = Math.min(9, info.t1 - info.t0 - 0.6);
-    for (const frac of [1, 0.75, 0.55, 0.4]) {
-      const w = full * frac;
-      if (w < 2.4) break;
-      for (const align of [0, -1, 1]) {
-        const t = (info.t0 + info.t1) / 2 + (align * (info.t1 - info.t0 - 0.6 - w)) / 2;
-        const at = p.at(e, t, sd / 2 + 0.05);
-        stage = p.add('stage', at.x, at.z, sideYaw(e), w, sd, 0.7, { occludes: false, ignoreKeep: pass === 1 });
-        if (stage) {
-          end = e;
-          mid = t;
-          sw = w;
-          break search;
+  search: for (const pass of [0, 1])
+    for (const e of pass === 0 ? ends : solid) {
+      const info = p.sides[e];
+      const full = Math.min(9, info.t1 - info.t0 - 0.6);
+      for (const frac of [1, 0.75, 0.55, 0.4]) {
+        const w = full * frac;
+        if (w < 2.4) break;
+        for (const align of [0, -1, 1]) {
+          const t = (info.t0 + info.t1) / 2 + (align * (info.t1 - info.t0 - 0.6 - w)) / 2;
+          const at = p.at(e, t, sd / 2 + 0.05);
+          stage = p.add("stage", at.x, at.z, sideYaw(e), w, sd, 0.7, { occludes: false, ignoreKeep: pass === 1 });
+          if (stage) {
+            end = e;
+            mid = t;
+            sw = w;
+            break search;
+          }
+          if (frac === 1) break;
         }
-        if (frac === 1) break;
       }
     }
-  }
   if (stage) {
     const info = p.sides[end];
     const centre = (info.t0 + info.t1) / 2;
     const cols = Math.max(2, Math.min(8, Math.floor((info.t1 - info.t0 - 2.4) / 0.75)));
-    const run = end === 'n' || end === 's' ? p.depth : p.width;
+    const run = end === "n" || end === "s" ? p.depth : p.width;
     for (let row = 0; row < 6; row++) {
       const off = sd + 1.8 + row * 1.05;
       if (off > run - 1.6) break;
@@ -1154,13 +1155,13 @@ const theatre: Recipe = (p) => {
         // Aisle down the middle.
         const k = c - (cols - 1) / 2;
         const a = p.at(end, centre + k * 0.75 + Math.sign(k || 1) * 0.5, off);
-        p.add('chair', a.x, a.z, sideYaw(end) + Math.PI, 0.5, 0.52, 0.95, { variant: 1 });
+        p.add("chair", a.x, a.z, sideYaw(end) + Math.PI, 0.5, 0.52, 0.95, { variant: 1 });
       }
     }
     // Footlights.
     for (const k of [-0.3, 0.3]) {
       const f = p.at(end, mid + sw * k, sd + 0.3);
-      p.light('lamp', f.x, p.floorY + 1.0, f.z, WARM, 80 * Math.max(0.5, p.room.lit), 6);
+      p.light("lamp", f.x, p.floorY + 1.0, f.z, WARM, 80 * Math.max(0.5, p.room.lit), 6);
     }
   }
   paintings(p, 2);
@@ -1171,27 +1172,27 @@ const none: Recipe = () => {};
 
 export const RECIPES: Record<RoomType, Recipe> = {
   ballroom,
-  'grand-salon': drawingRoom,
-  'drawing-room': drawingRoom,
-  'music-room': musicRoom,
+  "grand-salon": drawingRoom,
+  "drawing-room": drawingRoom,
+  "music-room": musicRoom,
   library,
-  'dining-room': diningRoom,
+  "dining-room": diningRoom,
   gallery,
-  'billiard-room': billiardRoom,
-  'card-room': cardRoom,
-  'morning-room': morningRoom,
+  "billiard-room": billiardRoom,
+  "card-room": cardRoom,
+  "morning-room": morningRoom,
   conservatory,
-  'entrance-hall': entranceHall,
-  'stair-hall': stairHall,
+  "entrance-hall": entranceHall,
+  "stair-hall": stairHall,
   corridor,
   landing,
-  'hall-gallery': hallGallery,
-  'roof-terrace': roofTerrace,
-  'service-stair': none,
+  "hall-gallery": hallGallery,
+  "roof-terrace": roofTerrace,
+  "service-stair": none,
   study,
   cloakroom: service,
   pantry: service,
-  'great-room': greatRoom,
+  "great-room": greatRoom,
   kitchen,
   bar: barRoom,
   cinema,
@@ -1200,8 +1201,8 @@ export const RECIPES: Record<RoomType, Recipe> = {
   theatre,
   disco,
   bedroom,
-  'sitting-room': sittingRoom,
-  'dressing-room': dressingRoom,
+  "sitting-room": sittingRoom,
+  "dressing-room": dressingRoom,
   bathroom,
 };
 

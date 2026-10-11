@@ -12,10 +12,10 @@
  *  - a brass case in the dirt is a soft thud and a short, damped ring.
  * Pure numbers, no audio API: `render` returns a mono buffer peaking at 1.
  */
-import type { SoundEvent } from '../../src/scope/handling';
-import type { RifleId } from '../../src/scope/shot';
+import type { SoundEvent } from "../../src/scope/handling";
+import type { RifleId } from "../../src/scope/shot";
 
-export type Synth = SoundEvent | 'shot';
+export type Synth = SoundEvent | "shot";
 
 /** Mulberry32: a small seeded generator, so each variant is repeatable. */
 function rng(seed: number): () => number {
@@ -40,7 +40,11 @@ type Mode = [freq: number, tau: number, amp: number];
 
 class Buf {
   readonly d: Float32Array;
-  constructor(readonly sr: number, seconds: number, readonly r: () => number) {
+  constructor(
+    readonly sr: number,
+    seconds: number,
+    readonly r: () => number,
+  ) {
     this.d = new Float32Array(Math.ceil(sr * seconds));
   }
   /** Ringing modes struck at t0, each with a little random detune and phase. */
@@ -154,9 +158,19 @@ class Buf {
 
 /** Seconds of buffer each sound needs. */
 const LENGTH: Record<Synth, number> = {
-  shot: 2.2, 'bolt-up': 0.2, 'bolt-back': 0.32, 'bolt-forward': 0.32, 'bolt-down': 0.18, 'case-land': 0.22,
-  'mag-release': 0.08, 'mag-out': 0.3, 'mag-in': 0.45, 'charge-back': 0.3, 'charge-release': 0.4,
-  'dry-fire': 0.2, trigger: 0.06,
+  shot: 2.2,
+  "bolt-up": 0.2,
+  "bolt-back": 0.32,
+  "bolt-forward": 0.32,
+  "bolt-down": 0.18,
+  "case-land": 0.22,
+  "mag-release": 0.08,
+  "mag-out": 0.3,
+  "mag-in": 0.45,
+  "charge-back": 0.3,
+  "charge-release": 0.4,
+  "dry-fire": 0.2,
+  trigger: 0.06,
 };
 
 /** One take of a sound, `seed` choosing the variant, at `sr` samples per second. */
@@ -167,63 +181,182 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
   const p = P.pitch;
   const heavy = P.mass;
   switch (ev) {
-    case 'shot':
-      if (rifle === 'vss') {
+    case "shot":
+      if (rifle === "vss") {
         // Suppressed and subsonic: a muffled pop and the gas easing out of the can, with the bolt carrier
         // slamming back and home as loud as the shot itself, and the case pinging off the ejector.
         b.blast(0, 0.32, 0.0032, 1.6, 0.0004, 0.5, 0.05, 1400);
         b.scrape(0.002, 0.06, 0.16, 1200, 500, 0.3, 0.9);
-        b.modes(0.009, 0.42, [[1350, 0.035, 1], [2350, 0.024, 0.75], [3800, 0.014, 0.5], [6100, 0.007, 0.3]], p);
+        b.modes(
+          0.009,
+          0.42,
+          [
+            [1350, 0.035, 1],
+            [2350, 0.024, 0.75],
+            [3800, 0.014, 0.5],
+            [6100, 0.007, 0.3],
+          ],
+          p,
+        );
         b.thump(0.009, 0.25, 160, 0.03);
-        b.modes(0.024, 0.08, [[4200, 0.02, 1], [6900, 0.012, 0.5]], 1);
-        b.modes(0.058, 0.5, [[1180, 0.04, 1], [2050, 0.028, 0.7], [3300, 0.016, 0.45], [5200, 0.008, 0.3]], p);
+        b.modes(
+          0.024,
+          0.08,
+          [
+            [4200, 0.02, 1],
+            [6900, 0.012, 0.5],
+          ],
+          1,
+        );
+        b.modes(
+          0.058,
+          0.5,
+          [
+            [1180, 0.04, 1],
+            [2050, 0.028, 0.7],
+            [3300, 0.016, 0.45],
+            [5200, 0.008, 0.3],
+          ],
+          p,
+        );
       } else {
         // Open muzzle, 160 dB at the ear: a sharp crack-boom, the ground's echo almost on top of it, and the
         // desert's short roll. The SVD's action cycles under it; the bolt rifle's brake throws the blast back.
-        const svd = rifle === 'svd';
+        const svd = rifle === "svd";
         b.blast(0, 1, svd ? 0.00095 : 0.0008, 1.25, 0.0006, svd ? 0.18 : 0.22, 0.45, 2600);
         b.thump(0, 0.55, 75, 0.06);
         b.click(0, 0.6, 0.0003);
         if (svd) {
-          b.modes(0.012, 0.22, [[1150, 0.04, 1], [1950, 0.03, 0.7], [3100, 0.018, 0.45]], p);
-          b.modes(0.07, 0.3, [[1250, 0.05, 1], [2100, 0.035, 0.7], [3300, 0.02, 0.45]], p);
+          b.modes(
+            0.012,
+            0.22,
+            [
+              [1150, 0.04, 1],
+              [1950, 0.03, 0.7],
+              [3100, 0.018, 0.45],
+            ],
+            p,
+          );
+          b.modes(
+            0.07,
+            0.3,
+            [
+              [1250, 0.05, 1],
+              [2100, 0.035, 0.7],
+              [3300, 0.02, 0.45],
+            ],
+            p,
+          );
         } else {
           // The barrel and brake ring for a moment after the blast.
-          b.modes(0.001, 0.05, [[2900, 0.06, 1], [5300, 0.04, 0.5]], 1);
+          b.modes(
+            0.001,
+            0.05,
+            [
+              [2900, 0.06, 1],
+              [5300, 0.04, 0.5],
+            ],
+            1,
+          );
         }
       }
       break;
-    case 'bolt-up':
+    case "bolt-up":
       // The cocking cam lifts the striker: a rough rising scrape, then the cocking piece drops into its notch.
       b.scrape(0, 0.085, 0.13, 2400, 3600, 0.7);
-      b.modes(0.085, 0.33, [[3150, 0.018, 1], [5230, 0.012, 0.6], [7900, 0.006, 0.35]], p);
+      b.modes(
+        0.085,
+        0.33,
+        [
+          [3150, 0.018, 1],
+          [5230, 0.012, 0.6],
+          [7900, 0.006, 0.35],
+        ],
+        p,
+      );
       b.modes(0.088, 0.08, [[1200, 0.02, 1]], p);
       break;
-    case 'bolt-back':
+    case "bolt-back":
       // The bolt body runs back along the raceways; the ejector flicks the case out and the bolt stop catches it.
       b.scrape(0, 0.16, 0.15, 1700, 2600, 0.35, 1.2);
-      b.modes(0.14, 0.18, [[4300, 0.03, 1], [6900, 0.02, 0.5], [9800, 0.01, 0.3]], 1);
-      b.modes(0.166, 0.55, [[1850, 0.035, 1], [3250, 0.022, 0.7], [5100, 0.012, 0.45], [7400, 0.006, 0.3]], p);
+      b.modes(
+        0.14,
+        0.18,
+        [
+          [4300, 0.03, 1],
+          [6900, 0.02, 0.5],
+          [9800, 0.01, 0.3],
+        ],
+        1,
+      );
+      b.modes(
+        0.166,
+        0.55,
+        [
+          [1850, 0.035, 1],
+          [3250, 0.022, 0.7],
+          [5100, 0.012, 0.45],
+          [7400, 0.006, 0.3],
+        ],
+        p,
+      );
       b.thump(0.166, 0.14, 220, 0.025);
       break;
-    case 'bolt-forward':
+    case "bolt-forward":
       // Forward: the bolt face strips the top round off the magazine lips, the round chambers, the bolt stops.
       b.scrape(0, 0.17, 0.14, 1900, 2500, 0.35, 1.2);
       b.scrape(0.045, 0.03, 0.2, 3400, 4800, 0.8, 2);
-      b.modes(0.05, 0.12, [[3000, 0.012, 1], [5500, 0.007, 0.5]], 1);
+      b.modes(
+        0.05,
+        0.12,
+        [
+          [3000, 0.012, 1],
+          [5500, 0.007, 0.5],
+        ],
+        1,
+      );
       b.scrape(0.1, 0.07, 0.08, 2800, 3600, 0.5);
-      b.modes(0.176, 0.6, [[1400, 0.04, 1], [2600, 0.025, 0.6], [4100, 0.014, 0.4], [6300, 0.007, 0.25]], p);
+      b.modes(
+        0.176,
+        0.6,
+        [
+          [1400, 0.04, 1],
+          [2600, 0.025, 0.6],
+          [4100, 0.014, 0.4],
+          [6300, 0.007, 0.25],
+        ],
+        p,
+      );
       b.thump(0.176, 0.18, 160, 0.03);
       break;
-    case 'bolt-down':
+    case "bolt-down":
       // The lugs turn into their recesses and the handle seats in its notch.
       b.scrape(0, 0.06, 0.07, 2600, 3400, 0.5);
-      b.modes(0.07, 0.42, [[2300, 0.02, 1], [4400, 0.012, 0.5], [6900, 0.006, 0.3]], p);
+      b.modes(
+        0.07,
+        0.42,
+        [
+          [2300, 0.02, 1],
+          [4400, 0.012, 0.5],
+          [6900, 0.006, 0.3],
+        ],
+        p,
+      );
       b.thump(0.07, 0.08, 200, 0.02);
       break;
-    case 'case-land': {
+    case "case-land": {
       // A fired case in the dirt a metre to the right: a soft thud and a damped ring, then a smaller bounce.
-      const ring: Mode[] = P.steelCase ? [[4300, 0.008, 1], [7100, 0.005, 0.6], [10400, 0.003, 0.3]] : [[5600, 0.012, 1], [8800, 0.007, 0.6], [12100, 0.004, 0.3]];
+      const ring: Mode[] = P.steelCase
+        ? [
+            [4300, 0.008, 1],
+            [7100, 0.005, 0.6],
+            [10400, 0.003, 0.3],
+          ]
+        : [
+            [5600, 0.012, 1],
+            [8800, 0.007, 0.6],
+            [12100, 0.004, 0.3],
+          ];
       b.scrape(0, 0.006, 0.12, 500, 300, 1, 0.8);
       b.modes(0, 0.07, ring, 1);
       const t2 = 0.06 + 0.04 * r();
@@ -231,66 +364,163 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
       b.modes(t2, 0.028, ring, 1.02);
       break;
     }
-    case 'mag-release':
-      b.modes(0, 0.18 * heavy, [[3600, 0.01, 1], [6200, 0.006, 0.5]], p);
+    case "mag-release":
+      b.modes(
+        0,
+        0.18 * heavy,
+        [
+          [3600, 0.01, 1],
+          [6200, 0.006, 0.5],
+        ],
+        p,
+      );
       break;
-    case 'mag-out':
-      if (rifle === 'bolt') {
+    case "mag-out":
+      if (rifle === "bolt") {
         // The box slides down out of the well, its spring and follower rattling.
         b.scrape(0, 0.07, 0.12, 1500, 1100, 0.6);
-        b.modes(0.06, 0.2, [[950, 0.04, 1], [1750, 0.03, 0.7], [2600, 0.02, 0.5]], 1);
+        b.modes(
+          0.06,
+          0.2,
+          [
+            [950, 0.04, 1],
+            [1750, 0.03, 0.7],
+            [2600, 0.02, 0.5],
+          ],
+          1,
+        );
       } else {
         // Rocked forward off the catch: the steel body grinds round its front lug and drops off it.
         b.scrape(0, 0.12, 0.13, 1300, 900, 0.6);
-        b.modes(0.11, 0.3 * heavy, [[820, 0.05, 1], [1500, 0.035, 0.7], [2300, 0.02, 0.5]], p);
+        b.modes(
+          0.11,
+          0.3 * heavy,
+          [
+            [820, 0.05, 1],
+            [1500, 0.035, 0.7],
+            [2300, 0.02, 0.5],
+          ],
+          p,
+        );
         b.thump(0.11, 0.1, 180, 0.03);
       }
       break;
-    case 'mag-in':
-      if (rifle === 'bolt') {
+    case "mag-in":
+      if (rifle === "bolt") {
         // Pushed straight up the well until the catch snaps over, with the heel of the hand behind it.
         b.scrape(0, 0.13, 0.12, 1300, 1900, 0.5);
-        b.modes(0.145, 0.6, [[2800, 0.02, 1], [4600, 0.014, 0.6], [7000, 0.007, 0.35]], p);
+        b.modes(
+          0.145,
+          0.6,
+          [
+            [2800, 0.02, 1],
+            [4600, 0.014, 0.6],
+            [7000, 0.007, 0.35],
+          ],
+          p,
+        );
         b.thump(0.145, 0.22, 180, 0.03);
       } else {
         // Front lug into its recess (a clunk), rocked back with a grind, and the catch snaps over the rear lug.
-        b.modes(0, 0.25 * heavy, [[900, 0.04, 1], [1600, 0.025, 0.6]], p);
+        b.modes(
+          0,
+          0.25 * heavy,
+          [
+            [900, 0.04, 1],
+            [1600, 0.025, 0.6],
+          ],
+          p,
+        );
         b.scrape(0.01, 0.23, 0.11, 1000, 1500, 0.55);
-        b.modes(0.245, 0.65, [[2500, 0.025, 1], [4100, 0.016, 0.6], [6300, 0.008, 0.35]], p);
+        b.modes(
+          0.245,
+          0.65,
+          [
+            [2500, 0.025, 1],
+            [4100, 0.016, 0.6],
+            [6300, 0.008, 0.35],
+          ],
+          p,
+        );
         b.thump(0.245, 0.25, 170, 0.035);
       }
       break;
-    case 'charge-back':
+    case "charge-back":
       // Hand-pulled against the recoil spring until the carrier hits the back of its travel.
       b.spring(0, 0.16, 0.05, 1500 * p);
       b.scrape(0, 0.16, 0.13, 1500, 2200, 0.45);
-      b.modes(0.16, 0.4, [[1600, 0.03, 1], [2900, 0.02, 0.6], [4500, 0.01, 0.35]], p);
+      b.modes(
+        0.16,
+        0.4,
+        [
+          [1600, 0.03, 1],
+          [2900, 0.02, 0.6],
+          [4500, 0.01, 0.35],
+        ],
+        p,
+      );
       b.thump(0.16, 0.1, 190, 0.025);
       break;
-    case 'charge-release':
+    case "charge-release":
       // Let go: the spring slams the carrier home, stripping a round on the way and locking the bolt.
       b.spring(0, 0.045, 0.07, 1700 * p);
       b.scrape(0, 0.045, 0.12, 2000, 2800, 0.5);
       b.scrape(0.018, 0.02, 0.18, 3000, 4200, 0.9, 2);
-      b.modes(0.046, 0.85, [[1250, 0.055, 1], [2100, 0.04, 0.75], [3300, 0.025, 0.5], [5200, 0.012, 0.3]], p);
+      b.modes(
+        0.046,
+        0.85,
+        [
+          [1250, 0.055, 1],
+          [2100, 0.04, 0.75],
+          [3300, 0.025, 0.5],
+          [5200, 0.012, 0.3],
+        ],
+        p,
+      );
       b.thump(0.046, 0.3, 150, 0.04);
       break;
-    case 'dry-fire':
-      if (rifle !== 'svd') {
+    case "dry-fire":
+      if (rifle !== "svd") {
         // The striker snaps forward onto an empty chamber: a sharp click and its spring buzzing out.
         b.click(0, 0.5, 0.0002);
-        b.modes(0, 0.5, [[3900, 0.012, 1], [6400, 0.008, 0.6], [9100, 0.004, 0.3]], p);
+        b.modes(
+          0,
+          0.5,
+          [
+            [3900, 0.012, 1],
+            [6400, 0.008, 0.6],
+            [9100, 0.004, 0.3],
+          ],
+          p,
+        );
         b.spring(0, 0.012, 0.15, 2600 * p);
       } else {
         // The hammer falls on the firing pin of an empty chamber: a heavier snap, ringing in the receiver.
         b.click(0, 0.6, 0.0003);
-        b.modes(0, 0.6, [[2700, 0.018, 1], [4500, 0.012, 0.6], [7200, 0.006, 0.35]], p);
+        b.modes(
+          0,
+          0.6,
+          [
+            [2700, 0.018, 1],
+            [4500, 0.012, 0.6],
+            [7200, 0.006, 0.35],
+          ],
+          p,
+        );
         b.thump(0, 0.12, 260, 0.015);
       }
       break;
-    case 'trigger':
+    case "trigger":
       // A dead trigger: the blade comes back against its stop with nothing to let go.
-      b.modes(0, 0.3, [[5200, 0.004, 1], [8100, 0.003, 0.5]], p);
+      b.modes(
+        0,
+        0.3,
+        [
+          [5200, 0.004, 1],
+          [8100, 0.003, 0.5],
+        ],
+        p,
+      );
       break;
   }
   // Every take peaks at full scale: how loud each sound plays against the others is set where it is played.

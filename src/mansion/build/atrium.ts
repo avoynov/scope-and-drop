@@ -3,15 +3,15 @@
  * gallery columns, the rotunda's curved wall, the oculus ceiling, and outside,
  * the drum and glass dome standing through the roof.
  */
-import type { Rect, Vec2 } from '../core/geom';
-import { roofSurfaceY } from '../core/roofs';
-import type { Atrium, Room, StairArm, Wall } from '../core/types';
-import { archFill, archSoffit, vquad, wallMaterialKey, wbox, type ArchContext } from './arch';
-import { pointInPoly } from '../layout/atrium';
-import { ALL, PY, type GeometryBuilder, type V3 } from './geometry';
+import type { Rect, Vec2 } from "../core/geom";
+import { roofSurfaceY } from "../core/roofs";
+import type { Atrium, Room, StairArm, Wall } from "../core/types";
+import { archFill, archSoffit, vquad, wallMaterialKey, wbox, type ArchContext } from "./arch";
+import { pointInPoly } from "../layout/atrium";
+import { ALL, PY, type GeometryBuilder, type V3 } from "./geometry";
 
 const tup = (p: Vec2): [number, number] => [p.x, p.z];
-const STONE = '#ece6da';
+const STONE = "#ece6da";
 
 /** Turned baluster (interior or exterior stone). */
 function turned(g: GeometryBuilder, key: string, x: number, z: number, y: number, h: number): void {
@@ -103,7 +103,7 @@ function stairArm(g: GeometryBuilder, arm: StairArm): void {
   const tread = w.total / arm.steps;
   const riser = arm.rise / arm.steps;
   const hw = arm.width / 2;
-  const key = 'marble';
+  const key = "marble";
   const edge = (s: number) => {
     const p = w.at(s);
     // Left of travel.
@@ -148,12 +148,12 @@ function stairArm(g: GeometryBuilder, arm: StairArm): void {
 }
 
 /** Openings in the rectangular walls of a room, as plan spans, so the rotunda's curved wall can leave doorways. */
-function doorways(walls: Wall[], roomId: string): { axis: 'x' | 'z'; line: number; t0: number; t1: number; y1: number }[] {
-  const out: { axis: 'x' | 'z'; line: number; t0: number; t1: number; y1: number }[] = [];
+function doorways(walls: Wall[], roomId: string): { axis: "x" | "z"; line: number; t0: number; t1: number; y1: number }[] {
+  const out: { axis: "x" | "z"; line: number; t0: number; t1: number; y1: number }[] = [];
   for (const w of walls) {
     if (w.neg !== roomId && w.pos !== roomId) continue;
-    const base = w.axis === 'x' ? w.a.x : w.a.z;
-    const line = w.axis === 'x' ? w.a.z : w.a.x;
+    const base = w.axis === "x" ? w.a.x : w.a.z;
+    const line = w.axis === "x" ? w.a.z : w.a.x;
     for (const o of w.openings) out.push({ axis: w.axis, line, t0: base + o.u0 - 0.14, t1: base + o.u1 + 0.14, y1: o.y1 });
   }
   return out;
@@ -170,7 +170,7 @@ function curvedWall(ctx: ArchContext, a: Atrium, run: Vec2[], room: Room, y0: nu
   g.setTint(f.wallColor);
   let s = 0;
   let prevDoor: (typeof doors)[number] | undefined;
-  const hit = (p: Vec2) => doors.find((d) => (d.axis === 'x' ? p.x > d.t0 && p.x < d.t1 && Math.abs(p.z - d.line) < 1.1 : p.z > d.t0 && p.z < d.t1 && Math.abs(p.x - d.line) < 1.1));
+  const hit = (p: Vec2) => doors.find((d) => (d.axis === "x" ? p.x > d.t0 && p.x < d.t1 && Math.abs(p.z - d.line) < 1.1 : p.z > d.t0 && p.z < d.t1 && Math.abs(p.x - d.line) < 1.1));
   const face = (p: Vec2, q: Vec2, ya: number, yb: number, sa: number, sb: number) => {
     if (yb - ya < 1e-3) return;
     const mx = (p.x + q.x) / 2;
@@ -204,11 +204,11 @@ function curvedWall(ctx: ArchContext, a: Atrium, run: Vec2[], room: Room, y0: nu
     const jambDoor = door && door.y1 > y0 + 0.5 ? door : undefined;
     if (jambDoor !== prevDoor) {
       const d = (jambDoor ?? prevDoor)!;
-      const back: Vec2 = d.axis === 'x' ? { x: p.x, z: d.line } : { x: d.line, z: p.z };
+      const back: Vec2 = d.axis === "x" ? { x: p.x, z: d.line } : { x: d.line, z: p.z };
       const top = Math.min(y1, d.y1);
       g.setTint(f.trimColor);
-      g.quad('int-trim', [p.x, y0, p.z], [back.x, y0, back.z], [back.x, top, back.z], [p.x, top, p.z]);
-      g.quad('int-trim', [back.x, y0, back.z], [p.x, y0, p.z], [p.x, top, p.z], [back.x, top, back.z]);
+      g.quad("int-trim", [p.x, y0, p.z], [back.x, y0, back.z], [back.x, top, back.z], [p.x, top, p.z]);
+      g.quad("int-trim", [back.x, y0, back.z], [p.x, y0, p.z], [p.x, top, p.z], [back.x, top, back.z]);
       g.setTint(f.wallColor);
     }
     prevDoor = jambDoor;
@@ -238,7 +238,7 @@ export function buildAtrium(ctx: ArchContext): void {
     g.flatPoly(`floor-${f.floor}`, gl.outline.map(tup), gl.y, true);
     g.scope = below.index;
     g.setTint(f.ceilingColor);
-    g.flatPoly('ceiling', gl.outline.map(tup), soffit, false);
+    g.flatPoly("ceiling", gl.outline.map(tup), soffit, false);
     // Slab edge facing the void.
     g.setTint(f.trimColor);
     for (const rail of gl.rails) {
@@ -248,13 +248,13 @@ export function buildAtrium(ctx: ArchContext): void {
         const nx = -(q.z - p.z);
         const nz = q.x - p.x;
         const sgn = nx * (cx - (p.x + q.x) / 2) + nz * (cz - (p.z + q.z) / 2) >= 0 ? 1 : -1;
-        g.quadFacing('int-trim', [p.x, soffit, p.z], [q.x, soffit, q.z], [q.x, gl.y, q.z], [p.x, gl.y, p.z], nx * sgn, 0, nz * sgn);
+        g.quadFacing("int-trim", [p.x, soffit, p.z], [q.x, soffit, q.z], [q.x, gl.y, q.z], [p.x, gl.y, p.z], nx * sgn, 0, nz * sgn);
       }
     }
     // The floor zone on the garden wall, which no gallery covers.
-    g.quadFacing('int-trim', [a.inner.x0, soffit, a.inner.z1], [a.inner.x1, soffit, a.inner.z1], [a.inner.x1, gl.y, a.inner.z1], [a.inner.x0, gl.y, a.inner.z1], 0, 0, -1);
+    g.quadFacing("int-trim", [a.inner.x0, soffit, a.inner.z1], [a.inner.x1, soffit, a.inner.z1], [a.inner.x1, gl.y, a.inner.z1], [a.inner.x0, gl.y, a.inner.z1], 0, 0, -1);
     g.scope = room.index;
-    for (const rail of gl.rails) balustrade(g, 'int-trim', rail, gl.y);
+    for (const rail of gl.rails) balustrade(g, "int-trim", rail, gl.y);
   }
 
   // Columns under the gallery edge, storey by storey.
@@ -263,7 +263,7 @@ export function buildAtrium(ctx: ArchContext): void {
   for (const lv of levels) {
     if (lv.index >= top.index) continue;
     g.scope = roomAt(lv.index).index;
-    for (const c of a.columns) column(g, 'marble', c.x, c.z, a.columnRadius, lv.floorY, lv.ceilingY);
+    for (const c of a.columns) column(g, "marble", c.x, c.z, a.columnRadius, lv.floorY, lv.ceilingY);
   }
 
   // The stair.
@@ -283,17 +283,17 @@ export function buildAtrium(ctx: ArchContext): void {
     }
     // Solid in plan: the corner behind the curve is masonry, not floor.
     g.scope = hall.index;
-    g.setTint('#050505');
+    g.setTint("#050505");
     const corner: Vec2 = { x: run[run.length - 1]!.x, z: run[0]!.z };
-    g.flatPoly('lacquer', [...run.map(tup), tup(corner)], hall.floorY + 0.03, true);
+    g.flatPoly("lacquer", [...run.map(tup), tup(corner)], hall.floorY + 0.03, true);
   }
 
   // Chain from the crown of the dome to the chandelier.
-  const fitting = bp.props.find((p) => p.roomId === hall.id && p.kind === 'chandelier' && p.w > 2.5);
+  const fitting = bp.props.find((p) => p.roomId === hall.id && p.kind === "chandelier" && p.w > 2.5);
   if (fitting) {
     g.scope = hall.index;
-    g.setTint('#ffffff');
-    g.beam('brass', [fitting.x, fitting.y + fitting.h, fitting.z], [cx, a.dome.springY + a.dome.height, cz], 0.05);
+    g.setTint("#ffffff");
+    g.beam("brass", [fitting.x, fitting.y + fitting.h, fitting.z], [cx, a.dome.springY + a.dome.height, cz], 0.05);
   }
   g.scope = -1;
 }
@@ -318,24 +318,24 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   const base = domeBase(a);
   // Everything the roofs put over the hall goes: slates, ridge trims, glazing bars.
   g.cutRectHole(roofMark, () => true, { x0: base.x0 - ATTIC_T + 0.04, z0: base.z0 - ATTIC_T + 0.04, x1: base.x1 + ATTIC_T - 0.04, z1: base.z1 + ATTIC_T - 0.04 });
-  const main = bp.masses.find((m) => m.kind === 'main')!;
+  const main = bp.masses.find((m) => m.kind === "main")!;
   const eave = main.roof.eaveY;
   const y0 = eave - 0.3;
   const R = d.radius;
   const topGallery = a.galleries[a.galleries.length - 1];
   const inside = bp.rooms.find((r) => r.id === (topGallery?.roomId ?? a.roomId))?.index ?? -1;
   const wallKey = wallMaterialKey(style);
-  const wallTint = style.wallMaterial === 'brick' ? '#ffffff' : style.wallColor;
+  const wallTint = style.wallMaterial === "brick" ? "#ffffff" : style.wallColor;
 
   // Attic: stone sill and entablature, piers, arched lights between them. Each wall is built as an
   // outer skin (weather side, lit by the sky) and an inner skin (lit with the top gallery).
   const sill = eave + 0.5;
   const head = d.deckY - 0.4;
-  const sides: { axis: 'x' | 'z'; line: number; sgn: 1 | -1; t0: number; t1: number }[] = [
-    { axis: 'x', line: base.z1, sgn: 1, t0: base.x0 - ATTIC_T, t1: base.x1 + ATTIC_T },
-    { axis: 'x', line: base.z0, sgn: -1, t0: base.x0 - ATTIC_T, t1: base.x1 + ATTIC_T },
-    { axis: 'z', line: base.x1, sgn: 1, t0: base.z0, t1: base.z1 },
-    { axis: 'z', line: base.x0, sgn: -1, t0: base.z0, t1: base.z1 },
+  const sides: { axis: "x" | "z"; line: number; sgn: 1 | -1; t0: number; t1: number }[] = [
+    { axis: "x", line: base.z1, sgn: 1, t0: base.x0 - ATTIC_T, t1: base.x1 + ATTIC_T },
+    { axis: "x", line: base.z0, sgn: -1, t0: base.x0 - ATTIC_T, t1: base.x1 + ATTIC_T },
+    { axis: "z", line: base.x1, sgn: 1, t0: base.z0, t1: base.z1 },
+    { axis: "z", line: base.x0, sgn: -1, t0: base.z0, t1: base.z1 },
   ];
   for (const sd of sides) {
     const n = Math.max(2, Math.round((sd.t1 - sd.t0) / 2.3));
@@ -345,15 +345,15 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     const pierAt = (i: number) => (i === 0 || i === n ? pier + ATTIC_T : pier);
     const half = ATTIC_T / 2;
     const skins: { n0: number; n1: number; scope: number; stone: string; tint: string; trim: string; face: number; fsgn: 1 | -1 }[] = [
-      { n0: half, n1: ATTIC_T, scope: -1, stone: wallKey, tint: wallTint, trim: 'ext-trim', face: ATTIC_T, fsgn: sd.sgn },
-      { n0: 0, n1: half, scope: inside, stone: 'int-trim', tint: STONE, trim: 'int-trim', face: 0, fsgn: (-sd.sgn) as 1 | -1 },
+      { n0: half, n1: ATTIC_T, scope: -1, stone: wallKey, tint: wallTint, trim: "ext-trim", face: ATTIC_T, fsgn: sd.sgn },
+      { n0: 0, n1: half, scope: inside, stone: "int-trim", tint: STONE, trim: "int-trim", face: 0, fsgn: -sd.sgn as 1 | -1 },
     ];
     // How high the roof outside stands against each light: below that the light is blind (stone).
     const blind: number[] = [];
     for (let i = 0; i < n; i++) {
       const t = sd.t0 + (i + 0.5) * step;
       const out = sd.line + sd.sgn * (ATTIC_T + 0.25);
-      const roof = sd.axis === 'x' ? roofSurfaceY(bp.masses, t, out) : roofSurfaceY(bp.masses, out, t);
+      const roof = sd.axis === "x" ? roofSurfaceY(bp.masses, t, out) : roofSurfaceY(bp.masses, out, t);
       blind.push(Number.isFinite(roof) ? Math.max(sill, roof + 0.25) : sill);
     }
     for (const sk of skins) {
@@ -392,19 +392,19 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       const rise = Math.min((tb - ta) / 2, (head - sill) * 0.45);
       const lo = blind[i]!;
       if (lo > head - rise - 0.5) continue;
-      g.setTint('#ffffff');
-      vquad(g, 'glass', sd.axis, mid, sd.sgn, ta, tb, lo, head);
+      g.setTint("#ffffff");
+      vquad(g, "glass", sd.axis, mid, sd.sgn, ta, tb, lo, head);
       g.setTint(style.windowFrameColor);
       const tm = (ta + tb) / 2;
-      wbox(g, 'frame', sd.axis, mid, sd.sgn, tm - 0.025, tm + 0.025, -0.03, 0.03, lo, head);
-      wbox(g, 'frame', sd.axis, mid, sd.sgn, ta, tb, -0.03, 0.03, head - rise - 0.03, head - rise + 0.03);
-      wbox(g, 'frame', sd.axis, mid, sd.sgn, ta, tb, -0.03, 0.03, lo, lo + 0.07);
-      archSoffit(g, 'frame', sd.axis, mid - 0.03, mid + 0.03, ta, tb, head, rise);
+      wbox(g, "frame", sd.axis, mid, sd.sgn, tm - 0.025, tm + 0.025, -0.03, 0.03, lo, head);
+      wbox(g, "frame", sd.axis, mid, sd.sgn, ta, tb, -0.03, 0.03, head - rise - 0.03, head - rise + 0.03);
+      wbox(g, "frame", sd.axis, mid, sd.sgn, ta, tb, -0.03, 0.03, lo, lo + 0.07);
+      archSoffit(g, "frame", sd.axis, mid - 0.03, mid + 0.03, ta, tb, head, rise);
     }
     // Cornice.
     g.setTint(style.trimColor);
-    wbox(g, 'ext-trim', sd.axis, sd.line, sd.sgn, sd.t0 - (sd.axis === 'x' ? 0.22 : 0), sd.t1 + (sd.axis === 'x' ? 0.22 : 0), ATTIC_T, ATTIC_T + 0.1, d.deckY - 0.5, d.deckY - 0.3);
-    wbox(g, 'ext-trim', sd.axis, sd.line, sd.sgn, sd.t0 - (sd.axis === 'x' ? 0.34 : 0), sd.t1 + (sd.axis === 'x' ? 0.34 : 0), ATTIC_T, ATTIC_T + 0.22, d.deckY - 0.16, d.deckY + 0.06);
+    wbox(g, "ext-trim", sd.axis, sd.line, sd.sgn, sd.t0 - (sd.axis === "x" ? 0.22 : 0), sd.t1 + (sd.axis === "x" ? 0.22 : 0), ATTIC_T, ATTIC_T + 0.1, d.deckY - 0.5, d.deckY - 0.3);
+    wbox(g, "ext-trim", sd.axis, sd.line, sd.sgn, sd.t0 - (sd.axis === "x" ? 0.34 : 0), sd.t1 + (sd.axis === "x" ? 0.34 : 0), ATTIC_T, ATTIC_T + 0.22, d.deckY - 0.16, d.deckY + 0.06);
   }
 
   // The glass roof on the attic, the drum rising from the middle of it.
@@ -419,9 +419,9 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   const seg = 56;
   const circle = (r: number): [number, number][] => Array.from({ length: seg }, (_, i) => [d.x + Math.cos((i / seg) * Math.PI * 2) * r, d.z + Math.sin((i / seg) * Math.PI * 2) * r]);
   const foot = a.footprint.map(tup);
-  g.setTint('#ffffff');
-  g.flatPoly('roof-lead', corners, deck, true, [foot]);
-  g.flatPoly('roof-glass', foot, deck, true, [circle(R + 0.3)]);
+  g.setTint("#ffffff");
+  g.flatPoly("roof-lead", corners, deck, true, [foot]);
+  g.flatPoly("roof-glass", foot, deck, true, [circle(R + 0.3)]);
   g.setTint(style.windowFrameColor);
   const inFoot = (x: number, z: number) => pointInPoly(a.footprint, x, z);
   const bar = (x0: number, z0: number, x1: number, z1: number, w: number) => {
@@ -435,7 +435,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       if (on && !from) from = [x, z];
       if (from && (!on || i === n)) {
         const to: [number, number] = on ? [x, z] : [x0 + ((x1 - x0) * (i - 1)) / n, z0 + ((z1 - z0) * (i - 1)) / n];
-        if (Math.hypot(to[0] - from[0], to[1] - from[1]) > 0.3) g.beam('frame', [from[0], deck + 0.075, from[1]], [to[0], deck + 0.075, to[1]], w, 0.08);
+        if (Math.hypot(to[0] - from[0], to[1] - from[1]) > 0.3) g.beam("frame", [from[0], deck + 0.075, from[1]], [to[0], deck + 0.075, to[1]], w, 0.08);
         from = null;
       }
     }
@@ -457,7 +457,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
   const dy1 = d.springY - 0.3;
   g.setTint(style.trimColor);
   g.lathe(
-    'ext-trim',
+    "ext-trim",
     d.x,
     d.z,
     [
@@ -470,7 +470,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     false,
   );
   g.lathe(
-    'ext-trim',
+    "ext-trim",
     d.x,
     d.z,
     [
@@ -490,7 +490,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     const t1 = ((i + 1) / ribs) * Math.PI * 2;
     const [px, pz] = ring(t0, R + 0.2);
     g.setTint(style.trimColor);
-    g.beam('ext-trim', [px, dy0, pz], [px, dy1, pz], 0.3);
+    g.beam("ext-trim", [px, dy0, pz], [px, dy1, pz], 0.3);
     // Arched head of each light, as a bent bar.
     g.setTint(style.windowFrameColor);
     const steps = 6;
@@ -501,15 +501,25 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       const [x, z] = ring(t0 + (t1 - t0) * u, R + 0.16);
       const y = dy1 - rise + rise * Math.sqrt(Math.max(0, 1 - (2 * u - 1) * (2 * u - 1)));
       const pt: [number, number, number] = [x, y, z];
-      if (prev) g.beam('frame', prev, pt, 0.07);
+      if (prev) g.beam("frame", prev, pt, 0.07);
       prev = pt;
     }
     const [mx, mz] = ring((t0 + t1) / 2, R + 0.16);
-    g.beam('frame', [mx, dy0, mz], [mx, dy1 - 0.02, mz], 0.05);
+    g.beam("frame", [mx, dy0, mz], [mx, dy1 - 0.02, mz], 0.05);
   }
-  g.setTint('#ffffff');
+  g.setTint("#ffffff");
   // Inside every bar of the drum, clear of their faces.
-  g.lathe('glass', d.x, d.z, [[R + 0.09, dy0], [R + 0.09, dy1]], seg, false);
+  g.lathe(
+    "glass",
+    d.x,
+    d.z,
+    [
+      [R + 0.09, dy0],
+      [R + 0.09, dy1],
+    ],
+    seg,
+    false,
+  );
 
   // The dome: parabolic, as on the great iron conservatories, ribbed and hooped.
   const rg = R + 0.12;
@@ -520,7 +530,7 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
     const phi = (k / stepsUp) * phiMax;
     profile.push([rg * Math.cos(phi), d.springY + d.height * Math.sin(phi) * Math.sin(phi)]);
   }
-  g.lathe('glass', d.x, d.z, profile, seg, false);
+  g.lathe("glass", d.x, d.z, profile, seg, false);
   g.setTint(style.windowFrameColor);
   for (let i = 0; i < ribs; i++) {
     const t = (i / ribs) * Math.PI * 2;
@@ -528,18 +538,29 @@ export function buildDome(ctx: ArchContext, roofMark: Map<string, number>): void
       const [r0, ya] = profile[k]!;
       const [r1, yb] = profile[k + 1]!;
       const o = 0.07;
-      g.beam('frame', [d.x + Math.cos(t) * (r0 + o), ya, d.z + Math.sin(t) * (r0 + o)], [d.x + Math.cos(t) * (r1 + o), yb, d.z + Math.sin(t) * (r1 + o)], i % 2 === 0 ? 0.12 : 0.06);
+      g.beam("frame", [d.x + Math.cos(t) * (r0 + o), ya, d.z + Math.sin(t) * (r0 + o)], [d.x + Math.cos(t) * (r1 + o), yb, d.z + Math.sin(t) * (r1 + o)], i % 2 === 0 ? 0.12 : 0.06);
     }
   }
   for (const k of [2, 4, 6, 8, 10, 12]) {
     const [r, y] = profile[k]!;
-    g.lathe('frame', d.x, d.z, [[r + 0.02, y - 0.05], [r + 0.1, y], [r + 0.02, y + 0.05]], seg, false);
+    g.lathe(
+      "frame",
+      d.x,
+      d.z,
+      [
+        [r + 0.02, y - 0.05],
+        [r + 0.1, y],
+        [r + 0.02, y + 0.05],
+      ],
+      seg,
+      false,
+    );
   }
   // Crown: a small cupola and finial.
   const [rTop, yTop] = profile[profile.length - 1]!;
   g.setTint(style.trimColor);
   g.lathe(
-    'ext-trim',
+    "ext-trim",
     d.x,
     d.z,
     [

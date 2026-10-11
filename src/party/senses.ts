@@ -17,6 +17,7 @@ import type { Ident } from './ident';
 import { WARY, type Memory, type Verb } from './memory';
 import type { Mood } from './mood';
 import type { Places } from './places';
+import type { Register } from './register';
 import type { Sight } from './sight';
 import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from './types';
 import type { World } from './world';
@@ -97,6 +98,7 @@ export interface SensesHost {
   readonly memory: Memory;
   readonly mood: Mood;
   readonly ident: Ident;
+  readonly register: Register;
   readonly body: Body;
   readonly places: Places;
   readonly groups: Map<number, Group>;
@@ -256,8 +258,12 @@ export class Senses {
     const detail = d <= DETAIL_RANGE && Math.abs(off) <= DETAIL_FOV;
     if (detail && b.held && ALCOHOL.has(b.held as DrinkId)) memory.sawDrinking[a.id * n + b.id] = h.t;
     if (detail && b.tipsy > 0.6) memory.observe(a.id, 'tipsy', b.id);
-    // Something worth remembering: a wrong turn, a rattled door, coming out of a bedroom.
-    if (b.notable && h.t < b.notableUntil) memory.observe(a.id, b.notable, b.id, b.notableObj, b.room);
+    // Something worth remembering: a wrong turn, a rattled door, coming out of a bedroom. Somewhere
+    // private, or doing something notable, they go in the register too.
+    if (b.notable && h.t < b.notableUntil) {
+      const f = memory.observe(a.id, b.notable, b.id, b.notableObj, b.room);
+      h.register.see(a.id, b, b.notable, b.notableRoom >= 0 ? b.notableRoom : b.room, b.notableObj, f);
+    } else if (h.register.watching(a.id, b.room)) h.register.see(a.id, b, 'was-in', b.room);
     // Someone they know: do they look like themselves?
     if (ident.tie[a.id * n + b.id]) {
       const k = a.id * n + b.id;
@@ -394,7 +400,7 @@ export class Senses {
       if (s.kind !== 'laugh' || p.room !== s.room) if (p.pose !== 'walk' && p.pose !== 'climb') h.glance(p, s.x, s.z, 1);
       if (spec.tension) h.mood.witness(p.id, spec.tension);
       if ((s.kind === 'knock' || s.kind === 'bolt') && s.ref >= 0) h.body.heardBath(p, s.ref);
-      else if (spec.fact) h.memory.observe(p.id, spec.fact, -1, -1, s.room);
+      else if (spec.fact) h.register.heard(p.id, h.memory.observe(p.id, spec.fact, -1, -1, s.room));
       if (spec.db >= 80 && p.room !== s.room && p.traits.nosy > 0.7) h.goLook(p, s);
     }
   }

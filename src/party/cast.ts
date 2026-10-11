@@ -170,6 +170,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       lookUntil: 0,
       notable: null,
       notableObj: -1,
+      notableRoom: -1,
       notableUntil: 0,
       detour: null,
     };

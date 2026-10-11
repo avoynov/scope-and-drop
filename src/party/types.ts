@@ -224,6 +224,8 @@ export interface Person {
   notable: Verb | null;
   /** The other person (or door id) the notable thing involves, or -1. */
   notableObj: number;
+  /** Where it happened, when not where they are (the bedroom they've just come out of), or -1. */
+  notableRoom: number;
   notableUntil: number;
   /** A wrong turn in progress: the goal they meant to reach, when the look round ends (-1 still walking in), and the locked door they'll try (-1 none). */
   detour: { goal: Waypoint; until: number; door: number } | null;
@@ -274,7 +276,21 @@ export type EventKind =
   /** Someone asked the way (note: 'pointed' or 'shrug'; actors: asker, answerer). */
   | 'ask'
   /** A nosy guest heard something loud and went to look (note: the sound). */
-  | 'heard';
+  | 'heard'
+  /** Someone noticed something with a blank in it, like a thing gone (note: the case; actors: who noticed, whose it is). */
+  | 'case'
+  /** Someone asked a group about an open case (note: the case; actors: the asker, then whoever answered). */
+  | 'ask-around'
+  /** Someone passed on what points at their leading candidate (note: the case; actors: the speaker, the one pointed at). */
+  | 'lead'
+  /** Someone connected the dots and settled a case (note: the case; actors: who settled it, whom they blame). */
+  | 'blame'
+  /** Something didn't fit (note: 'two-places', 'claim' or 'not-themselves'; actors: who noticed, whom it's about). */
+  | 'conflict'
+  /** A description put a name to someone, and it bears on a case (actors: who, whom). */
+  | 'recognised'
+  /** A guest told the host what they'd worked out (actors: the guest, the host). */
+  | 'tell';
 
 export interface PartyEvent {
   t: number;

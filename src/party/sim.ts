@@ -13,23 +13,32 @@ import { Body, type BodyHost } from './body';
 import { makeProgramme, PARTY_LENGTH, phaseIndexAt, phaseProgress, TIME_SCALE, type Phase, type PhaseId } from './clock';
 import { generateCast, type CastOptions } from './cast';
 import { Ident } from './ident';
-import { Memory, KNOWN, SUSPICIOUS, type MemoryHost, type Verb } from './memory';
+import { Memory, KNOWN, PASS_ON, SUSPICIOUS, VERBS, type MemoryHost, type Verb } from './memory';
 import { beside, choose, decayRates, destination, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from './mind';
 import { Mood, type MoodOverride } from './mood';
 import { Pathfinder } from './path';
 import { resolvePlaces, RoomCells, yawTo, type Places } from './places';
+import { CASES, Register, type CaseTalk, type RegisterHost } from './register';
 import { Senses, type Sound, type SoundKind, type SensesHost } from './senses';
 import { Sight } from './sight';
 import { DRINKS, NEED_IDS, type ActionId, type ActionState, type DrinkId, type Gesture, type Group, type Held, type PartyEvent, type Person, type Seat, type Spot, type Waypoint } from './types';
 import { DRINK_IDS, World } from './world';
 
-/** A fact put straight into someone's head at a time: the lab's "plant a rumour", and the tests. */
+/**
+ * Something planted at a time: the lab's buttons, and the tests. A fact (the default) goes
+ * straight into someone's head. A thing gone is noticed from a room (the subject is whose it
+ * was, -1 the house's) and opens a case. A sighting puts the subject in a room, seen by the
+ * witness with their own eyes; it moves nobody.
+ */
 export interface Provocation {
   t: number;
+  kind?: 'fact' | 'gone' | 'seen';
   /** Defaults to a rumour (juicy, a little odd). */
   verb?: Verb;
   subject: number;
-  /** Who hears it first; defaults to the first guest in a conversation who isn't the subject. */
+  /** Where a thing went missing, or where the subject was seen (defaults to where the witness, or the subject, is). */
+  room?: number;
+  /** Who hears it first (who notices a thing gone, who saw the subject); defaults to the first guest in a conversation who isn't the subject (for a thing gone, its owner, else the host). */
   witness?: number;
   /** Suspicion weight, overriding the verb's. */
   odd?: number;
@@ -58,6 +67,13 @@ export interface PartyStats {
   hushes: number;
   heard: number;
   sightings: number;
+  /** Connecting the dots: cases opened, settled on someone, things that didn't fit, descriptions put a name to, claims heard, groups asked. */
+  cases: number;
+  blames: number;
+  conflicts: number;
+  recognised: number;
+  claims: number;
+  askedAround: number;
 }
 
 /** In-game seconds per sim step (a sixth of a real second). */
@@ -106,7 +122,7 @@ const LOOK_ROUND = 2;
 /** Which drinks the waiters carry: champagne before the toast, wine at dinner, a mix after. */
 const bandOf = (id: PhaseId): Body['band'] => (id === 'dinner' ? 'dinner' : id === 'dancing' || id === 'games' || id === 'farewell' ? 'after' : 'before');
 
-export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
+export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, RegisterHost {
   readonly bp: MansionBlueprint;
   readonly pf: Pathfinder;
   readonly cells: RoomCells;
@@ -122,6 +138,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
   readonly mood: Mood;
   /** How people know each other by sight. */
   readonly ident: Ident;
+  /** Each person's cases, sightings and claims: connecting the dots. */
+  readonly register: Register;
   /** Looking and listening. */
   readonly senses: Senses;
   /** Per-stage time (ms) when the party was made with `profile`. */
@@ -184,6 +202,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
     this.nudges = [...(opts.mood ?? [])];
     this.mood = new Mood(this.people, this.nudges);
     this.ident = new Ident(this.people, root.fork('ident'));
+    this.register = new Register(this, bp.rooms.length, (r) => SNOOP.has(bp.rooms[r]!.type), root.fork('register'));
+    this.memory.onTold = (i, f, from) => this.register.told(i, f, from);
     this.senses = new Senses(this, root.fork('senses'));
     this.mapRng = root.fork('map');
     this.chat = root.fork('groups');
@@ -430,6 +450,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
       else if (q.present && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 15 && this.memory.lastT[p.id * this.people.length + j]! > this.t - 60) {
         const s = beside(q, p, this.pf);
         if (s) return void this.start(p, { id: 'ask', target: s, duration: 5, pose: 'talk', gain: { social: 0.1 }, ref: j, note: 'test' });
+      }
+    }
+    // Worked out who took something of the house's: go and tell the host, when they're about.
+    if (this.register.tellFor(p.id) >= 0) {
+      const h = this.host;
+      if (h.present && !h.gone && h.level === p.level && Math.hypot(h.x - p.x, h.z - p.z) < 25 && this.memory.lastT[p.id * this.people.length + h.id]! > this.t - 120) {
+        const s = beside(h, p, this.pf);
+        if (s) return void this.start(p, { id: 'ask', target: s, duration: 6, pose: 'talk', gain: { social: 0.1 }, ref: h.id, note: 'tell' });
       }
     }
     const c = choose(p, this);
@@ -1084,6 +1112,11 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
         const nearby = this.people.filter((q) => q.present && !here.includes(q.id) && q.level === g.level && Math.hypot(q.x - g.x, q.z - g.z) < 3).map((q) => q.id);
         this.passOn(sp, here, nearby, g.room, g.speakerUntil - this.t);
       }
+      // Someone with an open case may ask round about it, or say who it points at.
+      if (here.length > 1) {
+        const r = this.register.talk(here, sp.id);
+        if (r) this.caseTalk(sp, g.room, r, g.speakerUntil - this.t);
+      }
       if (this.chat.chance(sp.quirks.includes('big-laugh') ? 0.2 : 0.05)) this.senses.sound('laugh', sp, sp.id);
     }
   }
@@ -1107,18 +1140,33 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
     this.log('gossip', [sp.id, ...r.listeners], room, m.verbOf(r.fact));
     const subj = m.subject[r.fact]!;
     const odd = m.odd[r.fact]! > 0 && m.juicy[r.fact]! >= 0.6;
+    const placed = !VERBS[m.verbOf(r.fact)].elsewhere;
     for (const l of [...r.listeners, ...r.overheard]) {
       // Where it happened tells them where the subject was.
-      if (subj >= 0 && m.room[r.fact]! >= 0) m.toldWhere(l, subj, m.room[r.fact]!, m.t[r.fact]!);
+      if (placed && subj >= 0 && m.room[r.fact]! >= 0) m.toldWhere(l, subj, m.room[r.fact]!, m.t[r.fact]!);
       // Something juicy and odd unsettles a little.
       if (odd) this.mood.witness(l, 0.02);
     }
   }
 
-  /** Someone joins a conversation: strangers meet, and talk stops if they're wary of the newcomer. */
+  /** A turn of case talk: the asker leans in with a question, or the speaker leans in with a name. */
+  private caseTalk(sp: Person, room: number, r: CaseTalk, secs: number): void {
+    this.gesture(sp, r.what === 'ask' ? 'ask' : 'lean', Math.max(2, secs));
+    this.log(r.what === 'ask' ? 'ask-around' : 'lead', [sp.id, ...r.others], room, r.kind);
+  }
+
+  /** Someone joins a conversation: strangers meet (and may put a name to someone they'd only seen), the newcomer may say where they've been, and talk stops if they're wary of the newcomer. */
   private joinGroup(p: Person, g: Group): void {
     const others = g.members.filter((m) => m !== p.id && this.people[m]!.action?.startedAt != null);
-    for (const m of others) this.ident.meet(p.id, m);
+    for (const m of others) {
+      const fresh = !this.ident.tieOf(p.id, m);
+      this.ident.meet(p.id, m);
+      if (fresh) {
+        this.register.met(p.id, m);
+        this.register.met(m, p.id);
+      }
+    }
+    this.register.joinsGroup(p, others);
     const wary = others.filter((m) => this.memory.suspects(m, p.id) >= SUSPICIOUS);
     if (!wary.length) return;
     g.quietUntil = this.t + this.chat.range(10, 25);
@@ -1184,10 +1232,11 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
   /** Walked into a room: learnt, maybe noticed coming out of a bedroom, maybe the wrong turn at a junction. */
   private enterRoom(p: Person, from: number): void {
     this.memory.walkInto(p.id, p.room);
+    this.register.moved(p, p.room);
     const type = (r: number) => (r >= 0 ? this.bp.rooms[r]!.type : null);
     const fromType = type(from);
     const toType = type(p.room);
-    if (!p.staff && !this.memory.household[p.id] && fromType && SNOOP.has(fromType) && !(toType && SNOOP.has(toType))) this.notable(p, 'left-bedroom', -1, 8);
+    if (!p.staff && !this.memory.household[p.id] && fromType && SNOOP.has(fromType) && !(toType && SNOOP.has(toType))) this.notable(p, 'left-bedroom', -1, 8, from);
     this.maybeWrongTurn(p, from);
   }
 
@@ -1299,10 +1348,15 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
     a.startedAt = this.t;
     p.yaw = yawTo(p.x, p.z, q.x, q.z);
     this.glance(q, p.x, p.z, a.duration);
-    this.gesture(p, 'ask', 2);
+    this.gesture(p, a.note === 'tell' ? 'lean' : 'ask', 2);
     if (a.note === 'test') {
       this.ident.test(p.id, q.id, this.t);
       this.log('test', [p.id, q.id], p.room, 'passed');
+      return;
+    }
+    if (a.note === 'tell') {
+      this.register.tellHost(p.id, q.id);
+      this.log('tell', [p.id, q.id], p.room);
       return;
     }
     this.counts.asks++;
@@ -1431,16 +1485,47 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
   private provokeDue(): void {
     while (this.provoked < this.provoke.length && this.provoke[this.provoked]!.t <= this.t) {
       const v = this.provoke[this.provoked++]!;
+      if (v.kind === 'gone') {
+        this.goneFrom(v);
+        continue;
+      }
       // By default, a guest in a conversation (else any guest) hears it first.
       const guest = (q: Person) => q.present && !q.staff && q.role !== 'host' && q.id !== v.subject;
       const w = v.witness ?? (this.people.find((q) => guest(q) && q.action?.id === 'mingle' && q.action.startedAt !== null) ?? this.people.find(guest))?.id;
-      if (w !== undefined) this.memory.plant(w, v.verb ?? 'rumour', v.subject, v.odd);
+      if (w === undefined) continue;
+      if (v.kind === 'seen') this.seenIn(w, v.subject, v.room ?? this.people[v.subject]!.room);
+      else this.memory.plant(w, v.verb ?? 'rumour', v.subject, v.odd);
     }
   }
 
-  private notable(p: Person, verb: Verb, obj: number, secs: number): void {
+  /** Something of someone's (the house's, by default) is noticed gone from a room: a case with nobody to blame yet. */
+  private goneFrom(v: Provocation): void {
+    const host = this.host;
+    const owner = v.subject >= 0 ? this.people[v.subject]! : host;
+    const w = this.people[v.witness ?? (owner.present && !owner.gone ? owner.id : host.id)]!;
+    const room = v.room ?? w.room;
+    if (room === -1) return;
+    const f = this.memory.observe(w.id, 'gone', owner.id, -1, room);
+    const c = this.register.open(w.id, 'gone', owner.id, -1, room, this.t - CASES.gone.lookBack, this.t, f);
+    // Said out loud: whoever is close by hears of it at once.
+    const near = this.people.filter((q) => q !== w && q.present && q.level === w.level && q.room === w.room && Math.hypot(q.x - w.x, q.z - w.z) < 6);
+    this.register.raise(w.id, c, near.map((q) => q.id));
+    for (const q of near) this.memory.learn(q.id, f, PASS_ON, w.id, 1);
+    this.log('case', [w.id, owner.id], room, 'gone');
+  }
+
+  /** The witness saw someone poking round a room, with their own eyes: something to pass on, and a sighting in the register. */
+  private seenIn(w: number, x: number, room: number): void {
+    if (w === x || room === -1) return;
+    const f = this.memory.fact('snooping', x, -1, room);
+    this.memory.learn(w, f, 1, -1, 0);
+    this.register.see(w, this.people[x]!, 'snooping', room, -1, f);
+  }
+
+  private notable(p: Person, verb: Verb, obj: number, secs: number, room = -1): void {
     p.notable = verb;
     p.notableObj = obj;
+    p.notableRoom = room;
     p.notableUntil = this.t + secs;
   }
 
@@ -1520,6 +1605,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
       hushes: this.counts.hushes,
       heard: this.counts.heard,
       sightings: this.senses.stats.sightings,
+      cases: this.register.stats.cases,
+      blames: this.register.stats.settled,
+      conflicts: this.register.stats.conflicts,
+      recognised: this.register.stats.recognised,
+      claims: this.register.stats.claims,
+      askedAround: this.register.stats.asked,
     };
   }
 

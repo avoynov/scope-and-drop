@@ -9,7 +9,7 @@
 import type { Rng } from '../mansion/core/rng';
 import type { Person } from './types';
 
-export type FactKind = 'romance' | 'odd' | 'mishap' | 'house' | 'request' | 'whereabouts';
+export type FactKind = 'romance' | 'odd' | 'mishap' | 'house' | 'request' | 'whereabouts' | 'case';
 
 /** What a fact says. Odd acts carry a suspicion weight (the plan's starting values). */
 export type Verb =
@@ -36,7 +36,11 @@ export type Verb =
   | 'raised-voices'
   | 'scream'
   | 'looking-for'
-  | 'was-in';
+  | 'was-in'
+  | 'gone'
+  | 'missing'
+  | 'blamed'
+  | 'snooping';
 
 export interface VerbSpec {
   kind: FactKind;
@@ -46,6 +50,10 @@ export interface VerbSpec {
   odd: number;
   /** In-game seconds for confidence to halve. */
   halfLife: number;
+  /** The object is a thing (an item id), not a person. */
+  thing?: boolean;
+  /** The room is where it happened, not where the subject was then (a thing gone, a case settled). */
+  elsewhere?: boolean;
 }
 
 const MIN = 60;
@@ -74,6 +82,13 @@ export const VERBS: Record<Verb, VerbSpec> = {
   scream: { kind: 'house', juicy: 1, odd: 0, halfLife: 20 * MIN },
   'looking-for': { kind: 'request', juicy: 0.7, odd: 0, halfLife: Infinity },
   'was-in': { kind: 'whereabouts', juicy: 0.2, odd: 0, halfLife: 30 * MIN },
+  // Connecting the dots (register.ts): something gone with nobody to blame yet, someone missing,
+  // a case settled on someone, and someone seen poking round a private room. Suspicion from a
+  // case comes through the register, so these carry none of their own.
+  gone: { kind: 'case', juicy: 0.8, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
+  missing: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN },
+  blamed: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
+  snooping: { kind: 'odd', juicy: 0.7, odd: 0.05, halfLife: 45 * MIN },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 
@@ -111,6 +126,9 @@ export interface MemoryHost {
   /** Each person's tension (0 to 1), from the mood. */
   tensionOf(i: number): number;
 }
+
+/** Told about a fact: the register files its own copy (register.ts). */
+export type ToldHook = (i: number, f: number, from: number) => void;
 
 export interface Gossip {
   fact: number;
@@ -168,6 +186,8 @@ export class Memory {
   readonly household: Uint8Array;
 
   readonly stats = { told: 0, overheard: 0, facts: 0 };
+  /** Called whenever someone is told a fact, news or not (the register listens). */
+  onTold: ToldHook | null = null;
 
   constructor(
     private readonly host: MemoryHost,
@@ -315,9 +335,10 @@ export class Memory {
 
   /**
    * i comes to hold a fact, seen (from = -1) or told. Returns true when it is news to them.
-   * An odd fact about someone raises i's suspicion of them, less for a friend or a partner.
+   * An odd fact about someone raises i's suspicion of them, less for a friend or a partner
+   * (unless `quiet`: a conclusion the register has already weighed).
    */
-  learn(i: number, f: number, conf: number, from: number, hops: number): boolean {
+  learn(i: number, f: number, conf: number, from: number, hops: number, quiet = false): boolean {
     const t = this.host.t;
     const have = this.slotOf(i, f);
     if (have >= 0) {
@@ -350,12 +371,8 @@ export class Memory {
     this.sHops[slot] = Math.min(255, hops);
     const odd = this.odd[f]!;
     const j = this.subject[f]!;
-    if (odd > 0 && j >= 0 && j !== i) {
-      const p = this.host.people[i]!;
-      const trust = p.partner === j ? TRUST_PARTNER : p.friends.includes(j) ? TRUST_FRIEND : 0;
-      // Tense people make more of it.
-      this.suspicion[i * this.n + j] = Math.min(1, this.suspicion[i * this.n + j]! + odd * conf * (1 - trust) * (1 + this.host.tensionOf(i)));
-    }
+    // Tense people make more of it.
+    if (odd > 0 && j >= 0 && j !== i && !quiet) this.addSuspicion(i, j, odd * conf * (1 - this.trustIn(i, j)) * (1 + this.host.tensionOf(i)));
     return true;
   }
 
@@ -363,7 +380,9 @@ export class Memory {
   tell(i: number, f: number, from: number): boolean {
     const s = this.slotOf(from, f);
     if (s < 0) return false;
-    return this.learn(i, f, this.confAt(from, s) * PASS_ON, from, this.sHops[s]! + 1);
+    const news = this.learn(i, f, this.confAt(from, s) * PASS_ON, from, this.sHops[s]! + 1);
+    this.onTold?.(i, f, from);
+    return news;
   }
 
   /** Lab and tests: put a fact straight into someone's head, as if they'd seen it. */
@@ -397,7 +416,7 @@ export class Memory {
       const conf = this.confAt(speaker, s);
       if (conf <= PASS_MIN || this.settled[f]) continue;
       const subj = this.subject[f]!;
-      const obj = this.object[f]!;
+      const obj = VERBS[this.verbOf(f)].thing ? -1 : this.object[f]!;
       if (members.includes(subj) || (obj >= 0 && members.includes(obj))) continue;
       let unknown = 0;
       let concern = 1;
@@ -428,6 +447,17 @@ export class Memory {
 
   suspects(i: number, j: number): number {
     return this.suspicion[i * this.n + j]!;
+  }
+
+  /** How much i's trust lowers what counts against j: a partner most, a friend some, anyone else not at all. */
+  trustIn(i: number, j: number): number {
+    const p = this.host.people[i]!;
+    return p.partner === j ? TRUST_PARTNER : p.friends.includes(j) ? TRUST_FRIEND : 0;
+  }
+
+  addSuspicion(i: number, j: number, v: number): void {
+    const k = i * this.n + j;
+    this.suspicion[k] = Math.min(1, this.suspicion[k]! + v);
   }
 
   /** How suspected someone is on average by everyone else present. */

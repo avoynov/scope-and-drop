@@ -557,6 +557,7 @@ export class Body {
       // Whoever sees it remembers the spill.
       hit.notable = 'spill';
       hit.notableObj = fast.id;
+      hit.notableRoom = -1;
       hit.notableUntil = this.host.t + 6;
     }
     this.stats.bumps++;

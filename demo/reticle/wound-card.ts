@@ -79,13 +79,20 @@ export function woundSvg(w: Wound): string {
   return `<svg viewBox="0 0 ${width.toFixed(0)} ${H.toFixed(0)}" width="${width.toFixed(0)}" height="${H.toFixed(0)}">${view(w, 'front', fx)}${view(w, 'side', sx)}${label(fx, 'front')}${label(sx, 'side')}</svg>`;
 }
 
-const time = (s: number) => (s < 1 ? 'at once' : s < 90 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`);
+const time = (s: number) => (s < 1 ? 'at once' : s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min`
+  : s < 129600 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} days`);
+/** A stage's time, or a dash; a passing one says when it comes back. */
+const stage = (w: Wound, s: number, passes = false) => (s <= 43200 ? time(s) + (passes && w.recoverS < Infinity ? `, back at ${time(w.recoverS)}` : '') : '—');
 
 /** Where they are `since` seconds after the hit. */
 export function woundNow(w: Wound, since: number): string {
   if (since >= w.deathS) return 'dead';
   if (since >= w.unconsciousS && since < w.wakeS) return 'down, unconscious';
-  if (since >= w.incapacitatedS && since < w.recoverS) return since >= w.fallS ? 'down, awake but helpless' : 'awake but helpless';
+  const now = (s: number) => since >= s && since < w.recoverS;
+  if (now(w.incapacitatedS)) return 'down, awake but helpless';
+  if (now(w.lyingS)) return 'lying, cannot sit up';
+  if (now(w.cannotCrawlS)) return 'down, cannot crawl away';
+  if (now(w.cannotWalkS)) return 'down, can only crawl';
   if (since >= w.fallS) return w.reflexFall ? 'dropped, could get up' : w.outcome === 'wounded' ? 'down' : 'down, conscious';
   return 'on their feet';
 }
@@ -101,7 +108,7 @@ export interface GlassNote {
 export function woundText(w: Wound, speed: number, since: number, glass?: GlassNote | null): string {
   const verdict = w.outcome === 'killed' ? 'KILLED' : w.outcome === 'downed' ? 'DOWNED' : 'WOUNDED';
   const line = (k: string, v: string) => `<dt>${k}</dt><dd>${v}</dd>`;
-  const organs = w.damage.filter((d) => d.direct || d.frac > 0.05).slice(0, 5).map((d) => d.part.name).join(', ') || '—';
+  const organs = [...new Set(w.damage.filter((d) => d.direct || d.frac > 0.05).map((d) => d.part.name))].slice(0, 5).join(', ') || '—';
   return `<div class="wound-head"><b class="${w.outcome}">${verdict}</b><span>${woundNow(w, since)}</span></div>` +
     `<div class="wound-cause">${w.cause}</div><dl>` +
     line('Struck at', `${Math.round(speed)} m/s · ${Math.round(w.energyJ)} J left in`) +
@@ -109,9 +116,12 @@ export function woundText(w: Wound, speed: number, since: number, glass?: GlassN
     line('Bullet', w.exitSpeed > 0 ? `through, out at ${Math.round(w.exitSpeed)} m/s` : `stayed in, ${Math.round(w.trackM * 100)} cm deep`) +
     line('Hit', organs) +
     line('Falls', w.fallS < Infinity ? time(w.fallS) + (w.reflexFall ? ' (reflex)' : '') : 'stays up') +
-    line('Incapacitated', w.incapacitatedS < Infinity ? time(w.incapacitatedS) + (w.recoverS < Infinity ? `, recovers at ${time(w.recoverS)}` : '') : '—') +
+    line("Can't walk", stage(w, w.cannotWalkS, true)) +
+    line("Can't crawl", stage(w, w.cannotCrawlS, true)) +
+    line('Lies down', stage(w, w.lyingS, true)) +
+    line('Incapacitated', stage(w, w.incapacitatedS, true)) +
     line('Unconscious', w.unconsciousS < Infinity ? time(w.unconsciousS) + (w.wakeS < Infinity ? `, comes round at ${time(w.wakeS)}` : '') : '—') +
-    line('Dies', w.deathS < Infinity ? time(w.deathS) : 'not within the hour') +
+    line('Dies', w.deathS < Infinity ? time(w.deathS) + (w.deathS > 3600 ? ' untreated' : '') : 'survives untreated') +
     line('Lost in 1 min', `${w.bloodLost60} mL`) +
     `</dl>`;
 }

@@ -381,7 +381,7 @@ URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
-Each mannequin stands in for a person facing the shooter. A hit on its torso or head is run through a wound model that takes the bullet's **striking speed**, its direction and **where it went in**, and decides whether the person is **killed**, **downed** or only **wounded**, and when they fall, are incapacitated, lose consciousness and die. The **wound card** (bottom right) shows the verdict, a live state (on their feet, down, awake but helpless, unconscious, dead) running from the moment of impact, and the track drawn on the body from the front and the side.
+Each mannequin stands in for a person facing the shooter. A hit on its torso or head is run through a wound model that takes the bullet's **striking speed**, its direction and **where it went in**, and decides whether the person is **killed**, **downed** or only **wounded**, and when they fall, can no longer walk, crawl, sit up or act, lose consciousness and die. The **wound card** (bottom right) shows the verdict, a live state (on their feet, crawling, lying, helpless, unconscious, dead) running from the moment of impact, and the track drawn on the body from the front and the side.
 
 | SP-5 at 183 m through the spleen (killed in 13 min) · SP-5 through the left kidney and pelvis (downed, alive) · 7N1 at 412 m through the head (dead at once) |
 | --- |
@@ -398,6 +398,7 @@ Where things are (heights for 1.70 m, from stature ratios and surface anatomy):
 | | Where |
 | --- | --- |
 | Skull base, C7/T1, sternal notch | 1.555, 1.455, 1.39 m (T2/T3) |
+| Shoulders, base of the neck | 1.40 m (acromion), 1.47 m |
 | Heart | Behind the sternum from the 3rd to the 6th costal cartilage, right border 1–2 cm past the sternum's edge, apex in the left 5th space 8–9 cm out, against the descending aorta behind. Those are lying-down figures; standing, it hangs about 1 cm lower and more upright, apex 1.5 cm lower at the 6th rib (1.17–1.30 m) |
 | Diaphragm | Standing, right dome at 1.23 m (the 5th rib lying down), left a little lower; the liver fills the right dome, the lungs' bases curve over it |
 | Spleen, kidneys | Spleen under the left 9th–11th ribs at the back (1.14–1.24 m); kidneys T12–L3 (left 1.07–1.18 m, right 1.5 cm lower), 4–5 cm under the skin of the back |
@@ -432,25 +433,27 @@ The bullet is walked through the body in 2 mm steps, slowing by drag in tissue (
 | Vessels | Bleed at their share of the cardiac output: aorta 70–85 mL/s, pulmonary trunk 70, lung root 55, vena cava 35–40, iliac 22–28, carotid and femoral 18, subclavian 15, jugular 10, vertebral 4. A partial cut bleeds as freely as a clean one. All bleeding together is capped at a stressed heart's output, 100 mL/s | Femoral artery: unconscious in about 3 min, dead in about 4 |
 | Organs | Liver 30 mL/s fully torn, spleen 12, kidney 12 (held back in part behind the peritoneum), lung 6, gut 4. A narrow track (a grade III tear) oozes, rising steeply as the organ is torn apart (grade IV–V); tears under a quarter of the organ mostly clot over ~8 min, as most low-grade liver, spleen and kidney injuries do. Muscle and bone ooze, clotting over ~5 min | Trauma grading; non-operative management of solid-organ injury |
 | Blood loss | Pressure holds through class II (to 30 % lost, 90 % of normal), falls through class III (65 % at 40 %) and class IV (30 % at 50 %), and is gone at 55 %. **Down at 35 %**; unconscious once the brain's reserve runs out below ≈ 45 % pressure; **heart stops** after 45–120 s with under 20 % pressure, or at 55 % lost. Blood volume 4.5–5.5 L and the brain's reserve vary by person | ATLS classes |
-| Both lungs, or larynx and windpipe torn | Both lungs open: breathing fails from 2 min on. The airway torn open: blood runs into the lungs and swelling closes it, half the time | |
+| Lungs, larynx and windpipe | See "What they can still do" below. The airway torn open: blood runs into the lungs and swelling closes it, half the time, and breathing fails over the next 7 min | |
 | Anything else | **Most people drop anyway** (pain, shock, expectation): 35–92 %, more for a torso hit and the more energy left in; they could get up. The rest keep going for as long as their body lets them | Psychological incapacitation (FBI) |
 
-### Incapacitated
+### What they can still do
 
-**Incapacitated** on the card means they can no longer do anything on purpose (fight, aim, crawl to cover, call out sensibly) though they may still be awake. Unconscious always counts; these come before it or without it:
+The card counts down five stages after **Falls**: **Can't walk** (walk or run away), **Can't crawl** (drag themselves away), **Lies down** (cannot sit up), **Incapacitated** (cannot do anything on purpose: aim, shoot, call out sensibly, though still awake), then **Unconscious** and **Dies**. Each comes no later than the next.
 
-| Cause | Incapacitated | Basis |
+They are set two ways. **What the bullet broke**: a hip, thigh bone, the cord below T1 or the nerves to the legs take walking at once but leave the arms to drag them; a cord cut at C5–T1 takes everything but consciousness (no hands, no trunk); C1–C4 the same, and breathing. **What reaches the brain and muscles**: blood pressure × the blood's oxygen. Each stage goes when it falls short of a threshold for half the brain's reserve (pressure × oxygen under 80 %, 65 %, 55 % for walking, crawling, sitting; under 45 % the brain runs down to fainting), or when the blood lost passes ATLS's lines (33 %: faint if they stand; 40 %: class IV, barely move; 44 %: cannot sit up; 46 %: confused, helpless). So a heart shot leaves a few seconds of everything and then all of it goes together, while a slow bleed takes the legs minutes before the wits.
+
+The model tracks, besides the blood lost:
+
+| | | Basis |
 | --- | --- | --- |
-| Cord cut at C1–C4 | At once, conscious for 45–120 s more | Paralysed from the neck down |
-| Cord cut at C5–T1 | At once, for good, awake | The hands and most of the arms go with it (the brachial plexus) |
-| Cord stunned in the neck | At once; all four limbs come back in 10 min to 2 h | Transient quadriplegia (cervical cord neurapraxia) |
-| Brain, awake | Half of those who stay awake are too stunned to act | |
-| Skull graze | Stunned: dazed for 10 s–2 min. Knocked out: confused for 1–10 min after coming round | Post-concussion confusion |
-| Brain's blood running out (heart, great vessels, both carotids, bleeding out) | The last 3 s before fainting (sooner if the reserve is short: from 60 % of it): sight greys and goes, the eyes fix, the limbs stop obeying | Rossen, Kabat and Anderson's neck cuff; "almost loss of consciousness" under g |
-| Blood loss | At 40 % lost (class IV shock: confused and listless), a few minutes before fainting in a slow bleed | ATLS classes |
-| Both lungs open, or the airway torn | 30–120 s, fighting for breath | |
+| Collapsing lung | A holed lung lets air into its side of the chest: it collapses 40–100 % over 1–5 min. Blood from the lung and its root (and from the thoracic aorta, on the left) collects there too; 1.5 L crushes much of the lung. With one lung gone the other keeps the blood 85–90 % saturated at rest, so they can still walk; with both, or with blood filling the chest, oxygen falls and with it every stage | Haemopneumothorax |
+| Tension pneumothorax | One holed lung in four turns into it 5–30 min after the hit: the circulation fails over the next 7 min and they die within the hour | Leading preventable death in battlefield chest wounds |
+| Lung bleeding | Low pressure: most of it stops by itself, but a rifle's torn track keeps oozing into the chest, so an untreated lung wound that escapes tension still wears them down over hours | |
+| Tamponade | A small hole the heart beats on through (6 in 10 of them) bleeds into its sac: 100–200 mL there stops it filling, over one to a few minutes | Acute tamponade volumes |
+| Slow deaths | Twelve hours of bleeding are run, not one. Bowel or stomach holed: peritonitis kills 8 in 10 untreated in 1–4 days. A lung wound that survives the day festers (empyema) and kills about a third in days. A fatal brain wound not dead in the hour dies in 2–12 h as the brain swells | Pre-antibiotic and pre-surgical war series |
+| Concussion, stunned cord | A skull graze: dazed 10 s–2 min, or knocked out and confused for 1–10 min after coming round. The cord stunned in the neck takes all four limbs for 10 min–2 h; lower down, the legs for 5 min–1 h. The card says when it comes back | Transient quadriplegia; post-concussion confusion |
 
-A broken hip or thigh bone, a cord cut below T1 and one lung holed put them down but leave their hands and head working, so they are not incapacitated. Someone incapacitated for good counts as downed even if they first dropped by reflex.
+Organs do not "fail" in minutes: a holed liver, kidney or spleen kills by bleeding, which the stages already follow. Liver or kidney failure takes days and is not modelled. **Downed** now means down within the hour and not back up; someone whose only wound clears (a graze, a stunned cord) is **wounded**.
 
 **Dies** on the card means the heart and breathing have both stopped (clinical death). **Killed** means dead within the hour without help (as "killed in action" counts it). **Downed** means down and out of the fight but alive an hour later. **Wounded** means still on their feet (or dropped by reflex). Everything is seeded by the shot number, so a still and its card agree. The model is a game model: the bleeding rates, tear fractions and drop odds are reasoned estimates from the sources above, not measurements.
 

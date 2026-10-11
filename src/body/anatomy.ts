@@ -9,7 +9,8 @@
  * The outline is the range mannequin's (the scene builds its torso and head from TORSO_PROFILE and HEAD), so a
  * hit on the mannequin's mesh enters this body where it hit. Its depth front to back follows a lean man's
  * (anthropometric surveys scaled to 1.70 m): chest about 22 cm deep at the nipples, 20 cm at the waist, 23 cm
- * at the buttocks, a neck 11–12 cm deep, a head 15 cm wide and 19.5 cm long.
+ * at the buttocks, a neck 11–12 cm deep, a head 15 cm wide and 19.5 cm long; shoulders (acromion) at 1.40 m
+ * and the base of the neck at 1.47 m (ANSUR acromion and cervicale heights scaled to 1.70 m).
  *
  * Landmark heights (stature fractions from anthropometric surveys, vertebral levels from surface anatomy):
  *  - skull base (foramen magnum) 1.555, C3/C4 1.505, C7/T1 1.455, sternal notch 1.39 (T2/T3), nipples 1.24,
@@ -116,7 +117,7 @@ export const PARTS: Part[] = [
   { id: 'pulmonary', name: 'pulmonary trunk', tissue: 'artery', shape: cap([0.018, 1.3, 0.07], [0.012, 1.345, 0.035], 0.012) },
   { id: 'svc', name: 'vena cava', tissue: 'vein', shape: cap([-0.027, 1.39, 0.042], [-0.025, 1.3, 0.045], 0.01) },
   ...pair('subclavian', 'subclavian artery', 'artery', (s) => cap([s * 0.02, 1.405, 0.025], [s * 0.16, 1.395, 0.03], 0.004)),
-  ...pair('clavicle', 'collarbone', 'rib', (s) => cap([s * 0.02, 1.395, 0.08], [s * 0.17, 1.43, 0.03], 0.008)),
+  ...pair('clavicle', 'collarbone', 'rib', (s) => cap([s * 0.02, 1.395, 0.08], [s * 0.17, 1.41, 0.03], 0.008)),
   // The heart lies obliquely, its apex down, left and forward: the base and ventricles, and the apex. Standing,
   // it hangs a centimetre lower than the lying-down textbook figures and more upright, its apex lower still.
   { id: 'heart', name: 'heart', tissue: 'heart', shape: e([0.012, 1.248, 0.04], [0.055, 0.055, 0.043]) },
@@ -165,8 +166,8 @@ export const PARTS: Part[] = [
  * chest, shallower at the waist, flat across the shoulders and round at the neck.
  */
 export const TORSO_PROFILE: [number, number, number][] = [
-  [0.0, 0.0, 0.72], [0.16, 0.0, 0.72], [0.17, 0.08, 0.68], [0.15, 0.24, 0.65], [0.17, 0.4, 0.66], [0.21, 0.52, 0.45],
-  [0.22, 0.58, 0.36], [0.15, 0.63, 0.38], [0.06, 0.66, 0.95], [0.055, 0.7, 0.95], [0, 0.7, 0.95],
+  [0.0, 0.0, 0.72], [0.16, 0.0, 0.72], [0.17, 0.08, 0.68], [0.15, 0.24, 0.65], [0.17, 0.4, 0.66], [0.21, 0.5, 0.45],
+  [0.22, 0.54, 0.36], [0.17, 0.57, 0.36], [0.075, 0.6, 0.85], [0.06, 0.62, 0.95], [0.055, 0.7, 0.95], [0, 0.7, 0.95],
 ];
 /** The torso's base above the ground. */
 export const TORSO_BASE = 0.86;

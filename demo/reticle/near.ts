@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import type { HandlingPose } from '../../src/scope/handling';
 import { SCOPE } from '../../src/scope/optics';
-import type { RifleId } from '../../src/scope/shot';
+import type { Dial, RifleId } from '../../src/scope/shot';
 import { buildActions } from './actions';
 import { DRUM_R_MM, paintDrum } from './drum';
 
@@ -84,12 +84,17 @@ export interface NearLayer {
   camera: THREE.PerspectiveCamera;
   /** Light from the range, in the scope's frame. */
   setLight(sunDir: THREE.Vector3): void;
-  /** Turns the elevation drum this far from its 1 (radians, clockwise seen from above). */
-  setDrum(angle: number): void;
-  /** Engraves the drum with these range marks (metres), one per detent. */
-  setDrumMarks(marks: readonly number[]): void;
+  /** Turns the elevation drum this far from its zero (radians, clockwise seen from above), raised `liftMm` on its thread. */
+  setDrum(angle: number, liftMm?: number): void;
+  /** Engraves the drum for this dial: range marks, or a mil turret's clicks and turns. */
+  setDrumMarks(dial: Dial): void;
   /** The drum's meshes, for picking it with the pointer. */
   drum: THREE.Object3D;
+  /** The angle indicator's needle follows the bore's slope (radians, up positive). */
+  setSlope(rad: number): void;
+  /** The angle indicator, for picking it, and its centre in the scope frame (mm). */
+  aci: THREE.Object3D;
+  aciMm: THREE.Vector3;
   /** Which rifle is under the scope. */
   setRifle(id: RifleId): void;
   /** Where its moving parts and the hands are. */
@@ -185,6 +190,13 @@ export function buildRifle(): NearLayer {
   const capTop = add(new THREE.CylinderGeometry(mm(17.5), mm(DRUM_R_MM), mm(2), 48), anod, 0, mm(46), 0);
   capTop.name = 'drum';
   drum.add(capTop);
+  // Under the drum's skirt, on the turret's core: one white line per turn, hidden until the drum climbs its
+  // thread far enough to uncover it (the mil turret only; a range drum never makes a full turn).
+  {
+    const core = new THREE.CylinderGeometry(mm(18.3), mm(18.3), mm(6), 48, 1, true);
+    add(core, anod, 0, mm(18.5), -mm(272));
+    for (const y of [16.0, 17.2]) add(new THREE.CylinderGeometry(mm(18.5), mm(18.5), mm(0.5), 48, 1, true), paint, 0, mm(y), -mm(272));
+  }
   // Index line on the saddle, just behind the drum: a white line pointing at the number the rifle is zeroed to.
   add(new THREE.BoxGeometry(mm(1.2), mm(0.4), mm(14)), paint, 0, mm(15.7), -mm(272 - DRUM_R_MM - 8));
   const wind = new THREE.CylinderGeometry(mm(16.5), mm(16.5), mm(26), 48);
@@ -198,6 +210,36 @@ export function buildRifle(): NearLayer {
     tube(18.6, 18.6, h - 11, h + 11, steel);
     add(new THREE.BoxGeometry(mm(28), mm(18), mm(22)), steel, 0, -mm(24), -mm(h));
   }
+  // Angle indicator on the left of the rear ring, its dial turned back toward the shooter's eye with the head
+  // up (a real ACI's dial faces left; this one is turned so it can be read without leaning). A pendulum drives
+  // the needle through 2.5 : 1 gearing: degrees of slope, 0 at the top, to 60 either way.
+  const aciMm = new THREE.Vector3(-31, 16, -212);
+  const aci = new THREE.Group();
+  aci.position.set(mm(aciMm.x), mm(aciMm.y), mm(aciMm.z));
+  scene.add(aci);
+  aci.lookAt(mm(4), mm(62), mm(36));
+  const aciTex = new THREE.CanvasTexture(paintAci());
+  aciTex.colorSpace = THREE.SRGBColorSpace;
+  aciTex.anisotropy = 8;
+  {
+    const housing = new THREE.CylinderGeometry(mm(12), mm(12), mm(8), 48);
+    housing.rotateX(Math.PI / 2);
+    const h = add(housing, anod, 0, 0, -mm(4.2));
+    const face = add(new THREE.CircleGeometry(mm(10.5), 64), mat(0xffffff, 4, 0.05, 0, aciTex), 0, 0, mm(0.05));
+    for (const o of [h, face]) { o.name = 'aci'; aci.add(o); }
+    // Arm from the ring cap.
+    add(new THREE.BoxGeometry(mm(8), mm(14), mm(10)), steel, -mm(23), mm(6), -mm(208));
+  }
+  const needle = new THREE.Group();
+  needle.position.z = mm(0.4);
+  aci.add(needle);
+  {
+    const blade = add(new THREE.BoxGeometry(mm(0.6), mm(8.5), mm(0.2)), mat(0xf0552a, 4, 0.05), 0, mm(3.6), 0);
+    const hub = add(new THREE.CylinderGeometry(mm(1.1), mm(1.1), mm(0.4), 24).rotateX(Math.PI / 2), anod, 0, 0, 0);
+    needle.add(blade, hub);
+  }
+  // A crystal over the dial would only add glare at this distance: left out.
+
   // The rifle under the scope, its moving parts and the hands, in millimetres.
   const below = new THREE.Group();
   below.scale.setScalar(0.001);
@@ -211,17 +253,65 @@ export function buildRifle(): NearLayer {
     setLight(sunDir) {
       for (const m of mats) m.uniforms.uSun!.value.copy(sunDir);
     },
-    setDrum(angle) {
+    setDrum(angle, liftMm = 0) {
       drum.rotation.y = -angle;
+      drum.position.y = mm(liftMm);
     },
-    setDrumMarks(marks) {
-      drumTex.image = paintDrum(marks);
+    setDrumMarks(dial) {
+      drumTex.image = paintDrum(dial);
       drumTex.needsUpdate = true;
     },
     drum,
+    setSlope(rad) {
+      needle.rotation.z = -ACI_GEAR * Math.max(-ACI_MAX, Math.min(ACI_MAX, rad));
+    },
+    aci,
+    aciMm,
     setRifle: (id) => actions.setRifle(id),
     pose: (p) => actions.apply(p),
   };
+}
+
+/** The angle indicator's gearing (needle turn per radian of slope) and its stops. */
+const ACI_GEAR = 2.5;
+const ACI_MAX = (60 * Math.PI) / 180;
+
+/**
+ * The angle indicator's dial: a tick every degree to 20, every 5 beyond, numbers every 10, white on black.
+ * The needle turns 2.5° per degree of slope, clockwise for uphill.
+ */
+function paintAci(): HTMLCanvasElement {
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#0b0b0c';
+  g.fillRect(0, 0, S, S);
+  g.translate(S / 2, S / 2);
+  g.fillStyle = '#e4e4dc';
+  g.strokeStyle = '#e4e4dc';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `600 ${S * 0.085}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
+  const R = S * 0.47;
+  for (let d = -60; d <= 60; d++) {
+    const ten = d % 10 === 0;
+    const five = d % 5 === 0;
+    if (!five && Math.abs(d) > 20) continue;
+    // Canvas y runs down the face's texture (v up), so a positive angle here is clockwise as seen.
+    const a = (d * ACI_GEAR * Math.PI) / 180;
+    const sx = Math.sin(a), cy = -Math.cos(a);
+    const l = ten ? 0.17 : five ? 0.11 : 0.065;
+    g.lineWidth = ten ? S * 0.012 : S * 0.007;
+    g.beginPath();
+    g.moveTo(sx * R, cy * R);
+    g.lineTo(sx * R * (1 - l), cy * R * (1 - l));
+    g.stroke();
+    if (ten && d !== 0) g.fillText(String(Math.abs(d)), sx * R * 0.68, cy * R * 0.68);
+  }
+  g.font = `600 ${S * 0.06}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
+  g.fillText('DEG', 0, S * 0.2);
+  return c;
 }
 
 const FULLSCREEN_VS = 'void main(){ gl_Position = vec4(position.xy, 0., 1.); }';

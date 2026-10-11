@@ -156,12 +156,3 @@ export function zeroTiltRad(r: Round, zero: number, sight = 0): number {
 export function holdRad(r: Round, range: number, zero = 0, sight = 0): number {
   return (at(r, range).drop + sight) / range - zeroTiltRad(r, zero, sight);
 }
-
-/**
- * The hand method the mil-tree player is expected to use with the ammo card:
- * flight time ≈ range / mean of muzzle and target speeds, drop ≈ ½·g·t², hold = drop / range.
- */
-export function handHoldRad(muzzle: number, atTarget: number, range: number): number {
-  const t = range / ((muzzle + atTarget) / 2);
-  return (0.5 * AIR.g * t * t) / range;
-}

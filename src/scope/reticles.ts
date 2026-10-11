@@ -154,56 +154,74 @@ export function vssReticle(): Reticle {
 }
 
 /**
- * Mil-tree ("Christmas tree") in MRAD, after the reference footage: heavy posts from 8 mil, a fine
- * crosshair hashed every 0.5 mil with a floating centre dot, and a tree of hold rows every 2 mil whose
- * width grows with drop, crosses on whole mils and dots on halves, for wind holds at long range.
+ * Mil tree in MRAD for the bolt rifle, after two real FFP reticles the user picked, drawn from their published
+ * descriptions (not traced from the makers' drawings):
+ *  - Leupold PR2-MIL: every intersection open, a 0.05 mil floating dot, half-mil ticks on one side of the line
+ *    only, odd-numbered rows thinned so the view stays clear for spotting trace and splash.
+ *  - Vortex EBR-7D: 0.2 mil hashes near the centre for fine holds, and a tree of holdover dots on every whole
+ *    mil below the centre, widening with drop for wind holds.
+ * Heavy posts from 10.5 mil (20.5 mil below, past the tree). Nothing is cut for a load: the shooter dials the
+ * DOPE card's elevation on the turret, or holds it on the tree, and holds wind on the rows.
  */
 export function treeReticle(): Reticle {
   const p: Prim[] = [];
-  const fine = 0.05;
-  const post = 0.32;
+  const fine = 0.04;
+  const thin = 0.025;
+  const post = 0.4;
   const gap = 0.25;
+  const arm = 10.5;
+  const stem = 20.5;
   // Posts.
-  p.push({ kind: 'line', x1: -EDGE, y1: 0, x2: -8, y2: 0, w: post });
-  p.push({ kind: 'line', x1: 8, y1: 0, x2: EDGE, y2: 0, w: post });
-  p.push({ kind: 'line', x1: 0, y1: -EDGE, x2: 0, y2: -8, w: post });
-  p.push({ kind: 'line', x1: 0, y1: 12, x2: 0, y2: EDGE, w: post });
-  // Fine crosshair with a gap around the floating dot.
-  p.push({ kind: 'line', x1: -8, y1: 0, x2: -gap, y2: 0, w: fine, lit: true });
-  p.push({ kind: 'line', x1: gap, y1: 0, x2: 8, y2: 0, w: fine, lit: true });
-  p.push({ kind: 'line', x1: 0, y1: -8, x2: 0, y2: -gap, w: fine, lit: true });
-  p.push({ kind: 'line', x1: 0, y1: gap, x2: 0, y2: 12, w: fine, lit: true });
-  p.push({ kind: 'dot', x: 0, y: 0, r: 0.07, lit: true });
-  // Hashes: whole mil 0.4 long, half mil 0.2.
-  for (let i = 1; i < 16; i++) {
-    const v = i / 2;
-    const half = i % 2 === 1;
-    const l = half ? 0.1 : 0.2;
-    if (v < 8) for (const s of [-1, 1]) p.push({ kind: 'line', x1: s * v, y1: -l, x2: s * v, y2: l, w: fine });
-    if (v < 8) p.push({ kind: 'line', x1: -l, y1: -v, x2: l, y2: -v, w: fine });
-  }
-  for (let i = 1; i < 24; i++) {
-    const v = i / 2;
-    const l = i % 2 === 1 ? 0.1 : 0.2;
-    if (v % 2 !== 0) p.push({ kind: 'line', x1: -l, y1: v, x2: l, y2: v, w: fine });
-  }
-  for (const v of [2, 4, 6]) for (const s of [-1, 1]) p.push({ kind: 'text', x: s * v, y: -0.45, size: 0.32, text: String(v) });
-  // Tree rows.
-  for (let y = 2; y <= 10; y += 2) {
-    const hw = 1 + y / 2;
-    for (let k = -hw * 2; k <= hw * 2; k++) {
-      const x = k / 2;
-      if (x === 0) continue;
-      if (k % 2 === 0) {
-        const a = 0.12;
-        p.push({ kind: 'line', x1: x - a, y1: y, x2: x + a, y2: y, w: fine });
-        p.push({ kind: 'line', x1: x, y1: y - a, x2: x, y2: y + a, w: fine });
-      } else p.push({ kind: 'dot', x, y, r: 0.05 });
+  p.push({ kind: 'line', x1: -EDGE, y1: 0, x2: -arm, y2: 0, w: post });
+  p.push({ kind: 'line', x1: arm, y1: 0, x2: EDGE, y2: 0, w: post });
+  p.push({ kind: 'line', x1: 0, y1: -EDGE, x2: 0, y2: -arm, w: post });
+  p.push({ kind: 'line', x1: 0, y1: stem, x2: 0, y2: EDGE, w: post });
+  // Fine crosshair, open at the centre round the floating dot.
+  p.push({ kind: 'line', x1: -arm, y1: 0, x2: -gap, y2: 0, w: fine, lit: true });
+  p.push({ kind: 'line', x1: gap, y1: 0, x2: arm, y2: 0, w: fine, lit: true });
+  p.push({ kind: 'line', x1: 0, y1: -arm, x2: 0, y2: -gap, w: fine, lit: true });
+  p.push({ kind: 'line', x1: 0, y1: gap, x2: 0, y2: stem, w: fine, lit: true });
+  p.push({ kind: 'dot', x: 0, y: 0, r: 0.025, lit: true });
+  // Horizontal line and the stem above: whole mils across the line, half mils on one side only (below the
+  // horizontal, left of the stem), 0.2 mil hashes inside 2 mil.
+  for (let k = 1; k < arm * 10; k++) {
+    const v = k / 10;
+    const whole = k % 10 === 0;
+    const half = k % 5 === 0 && !whole;
+    const tenth = !whole && !half && k % 2 === 0 && v < 2;
+    if (!whole && !half && !tenth) continue;
+    const l = whole ? 0.25 : half ? 0.18 : 0.1;
+    for (const sgn of [-1, 1]) {
+      const x = sgn * v;
+      p.push({ kind: 'line', x1: x, y1: whole ? -l : 0, x2: x, y2: l, w: whole ? fine : thin });
     }
-    p.push({ kind: 'line', x1: -0.2, y1: y, x2: 0.2, y2: y, w: fine });
-    p.push({ kind: 'text', x: hw + 0.45, y: y + 0.12, size: 0.32, text: String(y), align: 'left' });
+    p.push({ kind: 'line', x1: -l, y1: -v, x2: whole ? l : 0, y2: -v, w: whole ? fine : thin });
   }
-  return { id: 'tree', name: 'MIL TREE', unitRad: MRAD, unitName: 'mrad', prims: p, round: 'm118lr', illum: 'rgb(255,52,30)' };
+  for (const v of [2, 4, 6, 8, 10]) {
+    for (const sgn of [-1, 1]) p.push({ kind: 'text', x: sgn * v, y: -0.55, size: 0.36, text: String(v) });
+    p.push({ kind: 'text', x: -0.6, y: -v, size: 0.36, text: String(v), align: 'right' });
+  }
+  // Stem below: 0.2 mil hashes to 2 mil, half mils on the left after.
+  for (let k = 1; k < 20 * 5; k++) {
+    const v = k / 5;
+    if (v % 1 === 0) continue;
+    if (v > 2 && Math.abs(v % 1 - 0.5) > 1e-9) continue;
+    const l = Math.abs(v % 1 - 0.5) < 1e-9 ? 0.18 : 0.1;
+    p.push({ kind: 'line', x1: -l, y1: v, x2: v < 2 ? l : 0, y2: v, w: thin });
+  }
+  // Tree: a row on every whole mil to 20, holdover dots every mil across, widening with drop. Even rows carry a
+  // short line across the stem and their number; odd rows are dots only, smaller.
+  for (let y = 1; y <= 20; y++) {
+    const even = y % 2 === 0;
+    const hw = Math.min(10, Math.floor(1 + y * 0.5));
+    for (let x = -hw; x <= hw; x++) {
+      if (x === 0) continue;
+      p.push({ kind: 'dot', x, y, r: even ? 0.05 : 0.035 });
+    }
+    p.push({ kind: 'line', x1: -(even ? 0.3 : 0.18), y1: y, x2: even ? 0.3 : 0.18, y2: y, w: even ? fine : thin });
+    if (even) p.push({ kind: 'text', x: hw + 0.5, y, size: 0.36, text: String(y), align: 'left' });
+  }
+  return { id: 'tree', name: 'PR2 · EBR TREE', unitRad: MRAD, unitName: 'mrad', prims: p, round: 'm118lr', illum: 'rgb(255,52,30)' };
 }
 
 export const RETICLES = { pso: psoReticle, tree: treeReticle, vss: vssReticle } as const;

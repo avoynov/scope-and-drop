@@ -19,13 +19,13 @@
  *    and flown on from the back face; the pane cracks and throws its spray when the bullet gets there.
  */
 import * as THREE from 'three';
-import { AIR, ROUNDS, zeroTiltRad } from '../../src/scope/ballistics';
+import { AIR, ROUNDS } from '../../src/scope/ballistics';
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from '../../src/scope/handling';
 import { cycle, loaded, pull, reload, type ActionState } from '../../src/scope/action';
 import { SCOPE } from '../../src/scope/optics';
 import { assess, type Wound } from '../../src/body/wound';
 import { dragAfter, throughGlass, yawAfter, type Through } from '../../src/scope/glass';
-import { BATTLE_ZERO_M, RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from '../../src/scope/shot';
+import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from '../../src/scope/shot';
 import { windAt, type Wind } from '../../src/scope/wind';
 import type { ImpactSound, Sound } from './audio';
 import { spray, type GlassScreens, type GlassSpray } from './glass';
@@ -238,8 +238,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   let gun: ActionState = loaded(rifle.id);
   let handling: Handling | null = null;
   let handlingCount = 0;
-  /** What the elevation drum is set to, in metres. */
-  let zeroM = BATTLE_ZERO_M;
+  /** How far the elevation dial tilts the bore up from the line of sight (shot.ts `dialTiltRad`). */
+  let tiltRad = 0;
 
   // ---- what a bullet can hit ----
   const ray = new THREE.Raycaster();
@@ -373,8 +373,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const sg = millerStability(rifle, d.mv);
     windAt(wind, eye.x, eye.y, eye.z, exit, W);
     const jump = aeroJumpRad(rifle, sg, W[0] * right.x + W[2] * right.z);
-    // The bore runs under the scope, tilted up by the drum so the bullet climbs to the line of sight at the zero.
-    const tilt = zeroTiltRad(round, zeroM, rifle.sightM);
+    // The bore runs under the scope, tilted up by the dial so the bullet climbs to the line of sight at the zero.
+    const tilt = tiltRad;
     const dir = fwd.clone().addScaledVector(right, d.dx).addScaledVector(up, d.dy + jump + tilt).normalize();
     const air = {
       round, t0: exit, spin: RANGE_SPIN, sg,
@@ -697,8 +697,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
 
   return {
     setRifle,
-    /** Sets the elevation drum to a range mark (metres). */
-    setZero: (m: number) => (zeroM = m),
+    /** Sets the bore's tilt from the elevation dial. */
+    setTilt: (rad: number) => (tiltRad = rad),
     press,
     work,
     /** For stills: a bullet that left the muzzle at `exit`. */

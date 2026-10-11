@@ -1,10 +1,12 @@
 /**
  * Party lab: one evening at a generated mansion, watched from the perch or from above.
  *
- *   /party/?seed=gala-night&t=90&speed=5&view=plan&sel=4&follow=1
+ *   /party/?seed=gala-night&t=90&speed=5&view=plan&sel=4&follow=1&ov=sight,map
  *
  * t is minutes after 19:00 (or a clock time such as 20:30); speed multiplies the
- * game's own pace, where 1× plays the three-hour party in one real hour.
+ * game's own pace, where 1× plays the three-hour party in one real hour. ov turns on
+ * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
+ * tension and energy= scales everyone's energy at time t.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -16,6 +18,10 @@ import { generateMansion, type MansionBlueprint, type MansionOptions } from '../
 import { buildMansion, type BuiltMansion, type Quality } from '../../src/mansion/build';
 import { createGradePass } from '../../src/mansion/build/grade';
 import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from '../../src/party';
+import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from '../../src/party/memory';
+import type { MoodOverride, RoomMood } from '../../src/party/mood';
+import { DETAIL_FOV, DETAIL_RANGE, FOV } from '../../src/party/senses';
+import type { Provocation } from '../../src/party/sim';
 import { Crowd, type FrameState } from '../../src/party/render/crowd';
 import { Fixtures } from '../../src/party/render/fixtures';
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from '../../src/party/types';
@@ -98,6 +104,7 @@ const ACTION_LABEL: Record<ActionId, string> = {
   dance: 'dancing',
   dinner: 'at dinner',
   toast: 'at the toast',
+  ask: 'asking someone',
   games: 'at the games',
   wander: 'wandering',
   leave: 'leaving',
@@ -148,6 +155,22 @@ let follow = params.has('follow');
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
+type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'map' | 'mood';
+const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'map', 'mood'];
+const overlays = new Set<Overlay>((params.get('ov') ?? '').split(',').filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
+
+/** What the lab has done to this evening (rumours planted, mood nudges), replayed whenever a seek goes back. */
+let planted: Provocation[] = [];
+let nudges: MoodOverride[] = [];
+
+/** The URL's mood: everyone's tension set, or their energy scaled, at time t. */
+function urlNudges(): MoodOverride[] {
+  const tension = params.get('tension');
+  const energy = params.get('energy');
+  if (tension === null && energy === null) return [];
+  return [{ t: parseTime(params.get('t')), target: 'all', tension: tension !== null ? Number(tension) : undefined, energy: energy !== null ? Number(energy) : undefined }];
+}
+
 // ------------------------------------------------------------------ setup
 
 function build(): void {
@@ -169,6 +192,9 @@ function build(): void {
   planPan.x = planPan.z = 0;
   aim = { yaw: 0, pitch: 0, fov: aim.fov };
   buildFloorButtons();
+  // A new house is a new cast: what was planted in the last one doesn't carry over.
+  planted = [];
+  nudges = urlNudges();
   newParty();
   if (selected >= party.people.length) selected = -1;
   setView(view);
@@ -181,7 +207,7 @@ function build(): void {
 
 /** A fresh evening in the current house (the same seed always gives the same evening). */
 function newParty(): void {
-  party = new Party(bp, { seed: params.get('party') ?? bp.seed, guests: params.has('guests') ? Number(params.get('guests')) : undefined });
+  party = new Party(bp, { seed: params.get('party') ?? bp.seed, guests: params.has('guests') ? Number(params.get('guests')) : undefined, provoke: planted, mood: nudges, profile: params.has('profile') });
   if (crowd) {
     scene.remove(crowd.root);
     crowd.dispose();
@@ -372,6 +398,9 @@ function frameStates(): FrameState[] {
       speaking: p.pose === 'talk' && speaking.has(p.id),
       room: p.room,
       visible: p.present && !p.gone,
+      gesture: party.t < p.gestureUntil ? p.gesture : null,
+      // A glance, or the way someone is pointing.
+      headYaw: party.t < p.lookUntil || (p.gesture === 'point' && party.t < p.gestureUntil) ? angleLerp(0, Math.atan2(p.lookX - p.x, p.lookZ - p.z) - p.yaw, 1) : 0,
     };
   });
 }
@@ -407,6 +436,7 @@ function draw(): void {
     crowd.selected = selected;
     crowd.update(states, animClock);
   }
+  drawOverlays(states);
   // Name tag over the selected person.
   const tag = $('tag');
   const at = sel && s?.visible && (view !== 'plan' || sel.level === planLevel) ? toScreen(s.x, s.y + (view === 'plan' ? 2.2 : sel.look.height + 0.25), s.z) : null;
@@ -415,6 +445,215 @@ function draw(): void {
     tag.textContent = sel!.name;
     tag.style.left = `${at.x}px`;
     tag.style.top = `${at.y - (view === 'plan' ? 12 : 4)}px`;
+  }
+}
+
+// ------------------------------------------------------------------ overlays
+
+const overlay = $('overlay') as HTMLCanvasElement;
+const octx = overlay.getContext('2d')!;
+let overlayDrawn = false;
+
+const MOOD_RGB: Record<RoomMood, string> = { festive: '224,181,106', relaxed: '111,163,200', uneasy: '217,137,74', tense: '212,82,74' };
+const KIND_COLOR: Record<FactKind, string> = { romance: '#e58fb0', odd: '#e0b56a', mishap: '#8fc7e5', house: '#a9b6c8', request: '#b6e58f', whereabouts: '#9a9486' };
+/** How long a sound or a piece of gossip stays drawn (in-game s). */
+const SOUND_FADE = 20;
+const GOSSIP_FADE = 40;
+
+/** Screen position of a point on the plan. */
+function planPx(x: number, z: number): [number, number] {
+  const f = planFrame();
+  const { w, h } = viewSize();
+  const k = h / (2 * f.half);
+  return [w / 2 + (x - f.x) * k, h / 2 + (z - f.z) * k];
+}
+
+/** A small label on a dark ground; skipped when it won't fit in `room` px. */
+function chip(text: string, x: number, y: number, color: string, room = Infinity): void {
+  octx.font = '11px ui-monospace, Menlo, monospace';
+  const w = octx.measureText(text).width + 8;
+  if (w > room) return;
+  octx.fillStyle = 'rgba(7, 8, 12, 0.66)';
+  octx.fillRect(x - w / 2, y - 8, w, 15);
+  octx.fillStyle = color;
+  octx.textAlign = 'center';
+  octx.textBaseline = 'middle';
+  octx.fillText(text, x, y);
+}
+
+function line(a: [number, number], b: [number, number], color: string, width: number, dash: number[] = []): void {
+  octx.strokeStyle = color;
+  octx.lineWidth = width;
+  octx.setLineDash(dash);
+  octx.beginPath();
+  octx.moveTo(a[0], a[1]);
+  octx.lineTo(b[0], b[1]);
+  octx.stroke();
+  octx.setLineDash([]);
+}
+
+/**
+ * The plan's overlays: the picked person's sight and mental map, who suspects whom, sounds
+ * and who heard them, gossip as it passes, and each room's mood.
+ */
+function drawOverlays(states: FrameState[]): void {
+  if (view !== 'plan' || !overlays.size) {
+    if (overlayDrawn) octx.clearRect(0, 0, overlay.width, overlay.height);
+    overlayDrawn = false;
+    return;
+  }
+  const { w, h } = viewSize();
+  const dpr = renderer.getPixelRatio();
+  if (overlay.width !== Math.round(w * dpr) || overlay.height !== Math.round(h * dpr)) {
+    overlay.width = Math.round(w * dpr);
+    overlay.height = Math.round(h * dpr);
+    overlay.style.width = `${w}px`;
+    overlay.style.height = `${h}px`;
+  }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, w, h);
+  overlayDrawn = true;
+  const pxPerM = h / (2 * planFrame().half);
+  const t = party.t;
+  const sel = party.people[selected];
+  const here = (i: number): [number, number] | null => {
+    const p = party.people[i];
+    const st = states[i];
+    return p && st?.visible && p.level === planLevel ? planPx(st.x, st.z) : null;
+  };
+
+  // Rooms: the mood under the picked person's map.
+  bp.rooms.forEach((r, i) => {
+    if (r.level !== planLevel) return;
+    const [x0, y0] = planPx(r.inner.x0, r.inner.z0);
+    const [x1, y1] = planPx(r.inner.x1, r.inner.z1);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    // The room's name sits at its top edge; these go in the middle, one above the other when there's room.
+    const both = overlays.has('mood') && overlays.has('map') && sel && y1 - y0 > 64;
+    const fits = y1 - y0 > 40 ? x1 - x0 - 4 : 0;
+    if (overlays.has('mood')) {
+      const m = party.mood.room(i);
+      if (m) {
+        octx.fillStyle = `rgba(${MOOD_RGB[m.label]}, 0.16)`;
+        octx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        if (both || !(overlays.has('map') && sel)) chip(m.label, cx, cy + (both ? 9 : 4), `rgb(${MOOD_RGB[m.label]})`, fits);
+      }
+    }
+    if (overlays.has('map') && sel) {
+      const k = party.familiarity(sel, i);
+      // Rooms they couldn't find their way to go dark.
+      octx.fillStyle = k < KNOWN ? 'rgba(0, 0, 0, 0.5)' : `rgba(120, 180, 255, ${0.06 + 0.22 * k})`;
+      octx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      chip(`${Math.round(k * 100)}%`, cx, cy - (both ? 9 : -4), k < KNOWN ? '#9a9486' : '#bcd8ff', fits);
+    }
+  });
+
+  // Sight: the field of view, the sharper cone for detail, and who is in view.
+  if (overlays.has('sight') && sel) {
+    const from = here(sel.id);
+    const st = states[sel.id]!;
+    if (from) {
+      const face = party.senses.facing(sel);
+      const wedge = (r: number, half: number, fill: string) => {
+        octx.beginPath();
+        octx.moveTo(from[0], from[1]);
+        for (let a = -half; a <= half + 1e-6; a += half / 16) {
+          const [x, y] = planPx(st.x + r * Math.sin(face + a), st.z + r * Math.cos(face + a));
+          octx.lineTo(x, y);
+        }
+        octx.closePath();
+        octx.fillStyle = fill;
+        octx.fill();
+        octx.strokeStyle = 'rgba(224, 181, 106, 0.55)';
+        octx.lineWidth = 1;
+        octx.stroke();
+      };
+      wedge(party.senses.range(sel.room), FOV, 'rgba(255, 236, 190, 0.16)');
+      wedge(DETAIL_RANGE, DETAIL_FOV, 'rgba(255, 236, 190, 0.2)');
+      // Solid: taken in on their last look. Dashed: in view, but their mind was elsewhere.
+      const took = new Set(party.senses.seenLast[sel.id]);
+      for (const q of party.people) {
+        if (q === sel || !q.present) continue;
+        const to = here(q.id);
+        if (!to) continue;
+        if (took.has(q.id)) line(from, to, 'rgba(224, 181, 106, 0.9)', 1.5);
+        else if (party.senses.canSee(sel, q)) line(from, to, 'rgba(224, 181, 106, 0.45)', 1, [3, 4]);
+      }
+    }
+  }
+
+  // Sounds: a ring where each was made, fading, and a line to everyone who heard it.
+  if (overlays.has('sound')) {
+    for (const snd of party.senses.recent) {
+      const age = (t - snd.t) / SOUND_FADE;
+      if (age < 0 || age > 1 || snd.level !== planLevel) continue;
+      const at = planPx(snd.x, snd.z);
+      octx.strokeStyle = `rgba(143, 199, 229, ${1 - age})`;
+      octx.lineWidth = 2;
+      octx.beginPath();
+      octx.arc(at[0], at[1], (0.6 + 5 * age) * pxPerM, 0, Math.PI * 2);
+      octx.stroke();
+      for (const i of snd.heard) {
+        const to = here(i);
+        if (to) line(at, to, `rgba(143, 199, 229, ${0.6 * (1 - age)})`, 1, [2, 3]);
+      }
+      chip(snd.kind.replace('-', ' '), at[0], at[1] - 14, `rgba(143, 199, 229, ${Math.max(0.4, 1 - age)})`);
+    }
+  }
+
+  // Gossip: speaker to listeners, coloured by the kind of fact.
+  if (overlays.has('gossip')) {
+    for (let k = party.events.length - 1; k >= 0; k--) {
+      const e = party.events[k]!;
+      if (t - e.t > GOSSIP_FADE) break;
+      if (e.kind !== 'gossip') continue;
+      const from = here(e.actors[0]!);
+      if (!from) continue;
+      const color = KIND_COLOR[VERBS[e.note as Verb]?.kind ?? 'odd'];
+      octx.globalAlpha = 1 - (t - e.t) / GOSSIP_FADE;
+      for (const i of e.actors.slice(1)) {
+        const to = here(i);
+        if (to) line(from, to, color, 2);
+      }
+      chip((e.note ?? '').replace(/-/g, ' '), from[0], from[1] - 16, color);
+      octx.globalAlpha = 1;
+    }
+  }
+
+  // Suspicion: how much the picked person suspects each other person, or, with nobody picked,
+  // how suspected each person is on average by everyone there.
+  if (overlays.has('suspicion')) {
+    const present = party.people.filter((q) => q.present);
+    for (const q of present) {
+      if (q === sel) continue;
+      const at = here(q.id);
+      if (!at) continue;
+      const v = sel ? party.suspects(sel.id, q.id) : party.memory.suspectedBy(q.id, present);
+      if (v < 0.01) continue;
+      const a = Math.min(1, v / SUSPICIOUS);
+      const r = Math.max(7, 0.62 * (crowd?.markerScale ?? 1) * pxPerM);
+      octx.strokeStyle = `rgba(212, 82, 74, ${0.35 + 0.65 * a})`;
+      octx.lineWidth = 1 + 3 * a;
+      octx.beginPath();
+      octx.arc(at[0], at[1], r, 0, Math.PI * 2);
+      octx.stroke();
+      chip(`${Math.round(v * 100)}`, at[0], at[1] + r + 9, '#e98a80');
+    }
+  }
+}
+
+function buildOverlayButtons(): void {
+  for (const o of OVERLAYS) {
+    const b = document.createElement('button');
+    b.textContent = o;
+    b.classList.toggle('on', overlays.has(o));
+    b.onclick = () => {
+      if (overlays.has(o)) overlays.delete(o);
+      else overlays.add(o);
+      b.classList.toggle('on', overlays.has(o));
+    };
+    $('overlays').appendChild(b);
   }
 }
 
@@ -504,13 +743,78 @@ function inHand(p: Person): string {
   return parts.join(' · ');
 }
 
+const pct = (v: number): string => `${Math.round(v * 100)}%`;
+/** Facts that name a second person. */
+const PAIRED: ReadonlySet<Verb> = new Set(['flirting', 'couple', 'cheating', 'spill', 'slapped']);
+
+function factText(f: number): string {
+  const m = party.memory;
+  const verb = m.verbOf(f);
+  const subj = m.subject[f]!;
+  const obj = m.object[f]!;
+  const room = m.room[f]!;
+  const where = room === -2 ? 'terrace' : room >= 0 ? bp.rooms[room]?.label.toLowerCase() : null;
+  return [
+    subj >= 0 ? `${party.people[subj]?.name ?? '?'}:` : null,
+    verb.replace(/-/g, ' '),
+    PAIRED.has(verb) && obj >= 0 ? `with ${party.people[obj]?.name ?? '?'}` : null,
+    where ? `· ${where}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** What's on their mind: mood, the house as they know it, whom they doubt or suspect, what they know. */
+function mindText(p: Person): string {
+  if (!p.present && !p.gone) return '';
+  const m = party.memory;
+  const name = (i: number) => party.people[i]?.name ?? '?';
+  const lines: string[] = [];
+  let known = 0;
+  for (let r = 0; r < bp.rooms.length; r++) if (party.familiarity(p, r) >= KNOWN) known++;
+  lines.push(`energy ${pct(party.energy(p))} · tension ${pct(party.tension(p))}`);
+  const tie = party.memory.household[p.id] ? 'lives here' : p.staff ? 'works here' : p.regular ? 'been here before' : 'first time here';
+  lines.push(`${tie} · knows ${known} of ${bp.rooms.length} rooms`);
+  const top = (f: (q: Person) => number, min: number, k: number) =>
+    party.people
+      .filter((q) => q !== p)
+      .map((q) => [q.id, f(q)] as const)
+      .filter(([, v]) => v >= min)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, k);
+  const doubts = top((q) => party.ident.doubtOf(p.id, q.id, party.t), 0.05, 3);
+  if (doubts.length) lines.push(`not sure it's really ${doubts.map(([i, v]) => `${name(i)} ${pct(v)}`).join(', ')}`);
+  const sus = top((q) => party.suspects(p.id, q.id), 0.005, 5);
+  lines.push(sus.length ? `suspects ${sus.map(([i, v]) => `${name(i)} ${pct(v)}`).join(', ')}` : 'suspects nobody');
+  const facts: Array<{ f: number; c: number; from: number }> = [];
+  for (let sl = p.id * SLOTS; sl < p.id * SLOTS + m.held[p.id]!; sl++) {
+    const c = m.confAt(p.id, sl);
+    if (c >= 0.05) facts.push({ f: m.sFact[sl]!, c, from: m.sFrom[sl]! });
+  }
+  facts.sort((a, b) => b.c - a.c);
+  lines.push(facts.length ? `knows ${facts.length} thing${facts.length > 1 ? 's' : ''}:` : 'knows nothing worth telling');
+  for (const x of facts.slice(0, 6)) lines.push(`  ${factText(x.f)} (${x.from < 0 ? 'saw it' : `from ${name(x.from)}`}, ${pct(x.c)})`);
+  return lines.join('\n');
+}
+
 function roomName(p: Person): string {
   if (p.room === -2) return 'terrace';
   const r = bp.rooms[p.room];
   return r ? r.label : 'outside';
 }
 
-const EVENT_KINDS: ReadonlySet<PartyEvent['kind']> = new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump']);
+type Kinds = ReadonlySet<PartyEvent['kind']>;
+/** The event log's filters. */
+const LOG_FILTERS: Record<string, Kinds> = {
+  'the evening': new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump', 'double-take', 'test', 'gossip', 'wrong-turn', 'hush', 'ask', 'heard']),
+  gossip: new Set(['gossip']),
+  noticing: new Set(['double-take', 'test', 'hush', 'heard']),
+  'finding the way': new Set(['wrong-turn', 'ask']),
+  'the house': new Set(['bathroom-taken', 'knock', 'bump', 'light']),
+  programme: new Set(['phase', 'announce', 'arrive', 'leave', 'toast']),
+};
+let logFilter = params.get('log') ?? 'the evening';
+if (!LOG_FILTERS[logFilter]) logFilter = 'the evening';
 
 function eventText(e: PartyEvent): string {
   const n = (i: number | undefined) => (i !== undefined ? (party.people[i]?.name ?? '?') : '?');
@@ -529,6 +833,26 @@ function eventText(e: PartyEvent): string {
       return `${n(e.actors[0])} knocks on the bathroom door`;
     case 'bump':
       return `${n(e.actors[0])} bumps into ${n(e.actors[1])}${e.note === 'slop' ? ', drink slops' : ''}`;
+    case 'announce':
+      return `${n(e.actors[0])} announces ${e.note?.toLowerCase() ?? ''}`;
+    case 'light':
+      return `lights ${e.note} in the ${e.room !== undefined ? (bp.rooms[e.room]?.label.toLowerCase() ?? 'room') : 'room'}`;
+    case 'double-take':
+      return `${n(e.actors[0])} looks twice at ${n(e.actors[1])}`;
+    case 'test':
+      return `${n(e.actors[0])} tries a shared joke on ${n(e.actors[1])}: it's them`;
+    case 'gossip': {
+      const to = e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1]);
+      return `${n(e.actors[0])} tells ${to}: ${(e.note ?? '').replace(/-/g, ' ')}`;
+    }
+    case 'wrong-turn':
+      return `${n(e.actors[0])} takes a wrong turn${e.note === 'door' ? ' and tries a locked door' : ''}`;
+    case 'hush':
+      return `talk stops as ${n(e.actors[0])} joins`;
+    case 'ask':
+      return `${n(e.actors[0])} asks ${n(e.actors[1])} the way${e.note === 'shrug' ? ", who doesn't know" : ''}`;
+    case 'heard':
+      return `${n(e.actors[0])} hears a ${(e.note ?? 'noise').replace('-', ' ')} and goes to look`;
     default:
       return e.kind;
   }
@@ -550,20 +874,28 @@ function refreshPanel(): void {
 
   // The latest few events worth reading.
   const lines: string[] = [];
+  const kinds = LOG_FILTERS[logFilter]!;
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
     // Bumps are many; only one that slops a drink is worth a line.
-    if (EVENT_KINDS.has(e.kind) && (e.kind !== 'bump' || e.note === 'slop')) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    if (kinds.has(e.kind) && (e.kind !== 'bump' || e.note === 'slop')) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
   $('events').textContent = lines.join('\n');
 
   const count = (f: (p: Person) => boolean) => guests.filter((p) => p.present && f(p)).length;
+  const st = party.stats;
   const talking = [...party.groups.values()].filter((g) => g.members.length > 1).length;
   $('stats').textContent = [
     `${talking} conversations · ${count((p) => p.pose === 'dance')} dancing · ${count((p) => p.pose === 'sit')} seated · ${count((p) => p.pose === 'walk' || p.pose === 'climb')} walking`,
     `${party.body.stats.taken} found a bathroom taken · ${party.body.stats.knocks} knocks · ${party.body.stats.bumps} bumps`,
+    `${st.told} things told · ${st.overheard} overheard · ${st.doubleTakes} double takes · ${st.tests} tests · ${st.hushes} hushes`,
+    `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} rumour${planted.length > 1 ? 's' : ''} planted` : ''}`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
-  ].join('\n');
+    // With profile in the URL: ms spent in each stage of the step so far.
+    party.profile ? `ms ${Object.entries(party.profile).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   party.people.forEach((p, i) => {
     const r = rows[i];
@@ -590,7 +922,7 @@ function refreshPanel(): void {
   ]
     .filter(Boolean)
     .join('\n');
-  (card.querySelector('.meta') as HTMLElement).style.whiteSpace = 'pre-wrap';
+  card.querySelector('.mind')!.textContent = mindText(p);
   const needs = $('needs');
   needs.replaceChildren();
   if (!p.staff) {
@@ -657,6 +989,53 @@ $('follow').onclick = () => {
   refreshPanel();
 };
 $('unsel').onclick = () => select(-1);
+buildOverlayButtons();
+{
+  const sel = $('evfilter') as HTMLSelectElement;
+  for (const k of Object.keys(LOG_FILTERS)) sel.add(new Option(k, k, k === logFilter, k === logFilter));
+  sel.onchange = () => {
+    logFilter = sel.value;
+    refreshPanel();
+  };
+}
+// Lab provocations go in at the current time and are kept, so a seek back replays them.
+$('rumour').onclick = () => {
+  if (!party.people[selected]) return;
+  const v: Provocation = { t: party.t, subject: selected };
+  planted.push(v);
+  party.plant(v);
+  refreshPanel();
+};
+{
+  const who = document.createElement('select');
+  who.title = "Whose mood: everyone, whoever is in the picked person's room, or just them";
+  for (const [v, label] of [
+    ['all', 'everyone'],
+    ['room', 'their room'],
+    ['person', 'them'],
+  ]) who.add(new Option(label, v));
+  const nudge = (label: string, title: string, o: { tension?: number; energy?: number }) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.title = title;
+    b.onclick = () => {
+      const p = party.people[selected];
+      const target: MoodOverride['target'] = who.value === 'person' && p ? { person: p.id } : who.value === 'room' && p?.present ? { room: p.room } : 'all';
+      const n: MoodOverride = { t: party.t, target, ...o };
+      nudges.push(n);
+      party.nudge(n);
+      refreshPanel();
+    };
+    return b;
+  };
+  $('mood').append(
+    who,
+    nudge('tense', 'Set tension to 60%', { tension: 0.6 }),
+    nudge('calm', 'Set tension to 0', { tension: 0 }),
+    nudge('liven', 'Energy × 1.5', { energy: 1.5 }),
+    nudge('dampen', 'Energy × 0.5', { energy: 0.5 }),
+  );
+}
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === ' ') {

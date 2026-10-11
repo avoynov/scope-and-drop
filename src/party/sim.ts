@@ -12,15 +12,52 @@ import { Rng } from '../mansion/core/rng';
 import { Body, type BodyHost } from './body';
 import { makeProgramme, PARTY_LENGTH, phaseIndexAt, phaseProgress, TIME_SCALE, type Phase, type PhaseId } from './clock';
 import { generateCast, type CastOptions } from './cast';
-import { choose, decayRates, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from './mind';
+import { Ident } from './ident';
+import { Memory, KNOWN, SUSPICIOUS, type MemoryHost, type Verb } from './memory';
+import { beside, choose, decayRates, destination, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from './mind';
+import { Mood, type MoodOverride } from './mood';
 import { Pathfinder } from './path';
 import { resolvePlaces, RoomCells, yawTo, type Places } from './places';
-import { DRINKS, NEED_IDS, type ActionId, type ActionState, type DrinkId, type Group, type Held, type PartyEvent, type Person, type Seat, type Spot, type Waypoint } from './types';
+import { Senses, type Sound, type SoundKind, type SensesHost } from './senses';
+import { Sight } from './sight';
+import { DRINKS, NEED_IDS, type ActionId, type ActionState, type DrinkId, type Gesture, type Group, type Held, type PartyEvent, type Person, type Seat, type Spot, type Waypoint } from './types';
 import { DRINK_IDS, World } from './world';
+
+/** A fact put straight into someone's head at a time: the lab's "plant a rumour", and the tests. */
+export interface Provocation {
+  t: number;
+  /** Defaults to a rumour (juicy, a little odd). */
+  verb?: Verb;
+  subject: number;
+  /** Who hears it first; defaults to the first guest in a conversation who isn't the subject. */
+  witness?: number;
+  /** Suspicion weight, overriding the verb's. */
+  odd?: number;
+}
 
 export interface PartyOptions extends CastOptions {
   /** Seed for the cast and every choice; defaults to the blueprint's seed. */
   seed?: string;
+  /** Lab nudges to the mood: set someone's tension, or scale their energy, at a time. */
+  mood?: MoodOverride[];
+  /** Facts planted at a time. */
+  provoke?: Provocation[];
+  /** Time each stage of the step into `party.profile` (ms). */
+  profile?: boolean;
+}
+
+/** What the party has noticed so far, for the lab and the tests. */
+export interface PartyStats {
+  facts: number;
+  told: number;
+  overheard: number;
+  doubleTakes: number;
+  tests: number;
+  wrongTurns: number;
+  asks: number;
+  hushes: number;
+  heard: number;
+  sightings: number;
 }
 
 /** In-game seconds per sim step (a sixth of a real second). */
@@ -39,17 +76,37 @@ const OFFER_TO: ReadonlySet<ActionId> = new Set(['arrive', 'mingle', 'sit', 'din
 const DOOR_LOOK = [0, 0.2, 0.4, 0.6] as const;
 /** A door this open lets people through. */
 const DOOR_PASS = 0.9;
+/** A corner of a route this close counts as reached when the next leg is open from here (m). */
+const CORNER = 0.3;
 /** Giving way: how far ahead (m) and how wide a lane walkers watch, and the most they shift aside in a step (m). */
 const SIDESTEP_AHEAD = 1.5;
 const SIDESTEP_LANE = 0.5;
 const SIDESTEP_MAX = 0.15;
 /** Rooms staff never step into on their rounds. */
 const PRIVATE: ReadonlySet<RoomType> = new Set(['bathroom', 'bedroom', 'dressing-room', 'study']);
+/** Rooms a guest has no business in: coming out of one is noticed. */
+const SNOOP: ReadonlySet<RoomType> = new Set(['bedroom', 'dressing-room', 'study']);
+/** Rooms the staff know only roughly (they serve the party rooms, the hall and the kitchen). */
+const STAFF_ROUGH: ReadonlySet<RoomType> = new Set(['bedroom', 'dressing-room', 'study']);
+/** Actions on the way to which a junction can go wrong (programme trips follow the crowd). */
+const LOSES_WAY: ReadonlySet<ActionId> = new Set(['toilet', 'mingle', 'drink', 'sit', 'art', 'terrace', 'dance', 'games']);
+/** What a nosy guest drops to go and see what that noise was. */
+const DROP_TO_LOOK: ReadonlySet<ActionId> = new Set(['mingle', 'sit', 'art', 'wander', 'terrace']);
+/** Doing something where talk happens without a conversation of its own: at table, in the toast ring, on a sofa, outside. */
+const SIDE_TALK: ReadonlySet<ActionId> = new Set(['dinner', 'toast', 'sit', 'terrace']);
+/** Chance a speaker passes something on at the start of a turn (times 0.4 + their talkativeness). */
+const GOSSIP = 0.25;
+/** Chance, every two in-game seconds, that someone at table or on a sofa says something to a neighbour (times 0.3 + talk). */
+const SIDE_GOSSIP = 0.02;
+/** How well someone knows the bathroom they've just been pointed to: a little better than the rooms on the way. */
+const POINTED = 0.4;
+/** A pause to look round after a wrong turn (in-game s). */
+const LOOK_ROUND = 2;
 
 /** Which drinks the waiters carry: champagne before the toast, wine at dinner, a mix after. */
 const bandOf = (id: PhaseId): Body['band'] => (id === 'dinner' ? 'dinner' : id === 'dancing' || id === 'games' || id === 'farewell' ? 'after' : 'before');
 
-export class Party implements MindWorld, BodyHost {
+export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost {
   readonly bp: MansionBlueprint;
   readonly pf: Pathfinder;
   readonly cells: RoomCells;
@@ -57,6 +114,18 @@ export class Party implements MindWorld, BodyHost {
   readonly world: World;
   /** Bathrooms, drinks, tipsiness and bumps. */
   readonly body: Body;
+  /** Who can see whom, through which doors and windows. */
+  readonly sight: Sight;
+  /** Last seen, facts, gossip, suspicion and everyone's mental map of the house. */
+  readonly memory: Memory;
+  /** Energy and tension, per person. */
+  readonly mood: Mood;
+  /** How people know each other by sight. */
+  readonly ident: Ident;
+  /** Looking and listening. */
+  readonly senses: Senses;
+  /** Per-stage time (ms) when the party was made with `profile`. */
+  readonly profile: Record<string, number> | null;
   readonly places: Places;
   readonly programme: Phase[];
   readonly people: Person[];
@@ -79,6 +148,24 @@ export class Party implements MindWorld, BodyHost {
   private floorY: number[] = [];
   private levelY = new Map<number, number>();
   private terraceY: number;
+  private stepNo = 0;
+  /** Draws for wrong turns, and for who speaks up and what gets passed on, kept apart from the minds'. */
+  private readonly mapRng: Rng;
+  private readonly chat: Rng;
+  private readonly provoke: Provocation[];
+  private provoked = 0;
+  /** Mood overrides; the mood reads this list, so one added later still applies. */
+  private readonly nudges: MoodOverride[];
+  /** Which bathroom someone was pointed to (-1 nobody knew), by asker. */
+  private readonly answers = new Map<number, number>();
+  /** People within 3 m of each other in the same room, and how many each has round them (for the mood). */
+  private pairs = new Int16Array(0);
+  private pairDist = new Float32Array(0);
+  private nPairs = 0;
+  private readonly crowd: Uint8Array;
+  /** When each person last took a wrong turn: once lost, they mind the way for the rest of the trip. */
+  private readonly lostAt: Float64Array;
+  private counts = { wrongTurns: 0, asks: 0, hushes: 0, heard: 0 };
 
   constructor(bp: MansionBlueprint, opts: PartyOptions = {}) {
     this.bp = bp;
@@ -92,6 +179,18 @@ export class Party implements MindWorld, BodyHost {
     this.programme = makeProgramme(root.fork('programme'));
     this.people = generateCast(root.fork('cast'), this.places, opts);
     this.body = new Body(this, root.fork('body'));
+    this.sight = new Sight(bp, this.pf, this.world);
+    this.memory = new Memory(this, bp.rooms.length, root.fork('gossip'));
+    this.nudges = [...(opts.mood ?? [])];
+    this.mood = new Mood(this.people, this.nudges);
+    this.ident = new Ident(this.people, root.fork('ident'));
+    this.senses = new Senses(this, root.fork('senses'));
+    this.mapRng = root.fork('map');
+    this.chat = root.fork('groups');
+    this.provoke = [...(opts.provoke ?? [])].sort((a, b) => a.t - b.t);
+    this.profile = opts.profile ? {} : null;
+    this.crowd = new Uint8Array(this.people.length);
+    this.lostAt = new Float64Array(this.people.length).fill(-1e9);
     this.things = root.fork('things');
     this.doorIn = new Int32Array(this.people.length).fill(-1);
     this.offeredAt = new Float64Array(this.people.length).fill(-1e9);
@@ -99,6 +198,7 @@ export class Party implements MindWorld, BodyHost {
     for (const r of bp.rooms) this.floorY[r.index] = r.floorY;
     for (const l of bp.levels) this.levelY.set(l.index, l.floorY);
     this.terraceY = bp.site.terrace.y;
+    this.knowTheHouse();
     // Staff and the host are in place before the first guest arrives.
     for (const p of this.people) {
       if (!p.staff && p.role !== 'host') continue;
@@ -150,7 +250,16 @@ export class Party implements MindWorld, BodyHost {
 
   step(): void {
     const dt = STEP;
+    const prof = this.profile;
+    let t0 = prof ? performance.now() : 0;
+    const lap = (stage: string) => {
+      if (!prof) return;
+      const now = performance.now();
+      prof[stage] = (prof[stage] ?? 0) + now - t0;
+      t0 = now;
+    };
     this.t += dt;
+    this.stepNo++;
     const idx = phaseIndexAt(this.programme, this.t);
     if (idx !== this.phaseIdx) {
       this.phaseIdx = idx;
@@ -167,10 +276,25 @@ export class Party implements MindWorld, BodyHost {
       this.log('phase', [], undefined, this.phase.label);
       this.announceUntil = this.t + 15;
       this.log('announce', [this.host.id], this.host.room, this.phase.label);
+      // The band strikes up: everyone can find the dance floor by ear. The host says where the games are, and how to get there.
+      const pl = this.places;
+      const to = this.phase.id === 'dancing' ? pl.danceSpots.slice(0, 1) : this.phase.id === 'games' ? pl.games.map((g) => g.spots[0]!) : [];
+      for (const s of to) {
+        for (const p of this.people) {
+          if (!p.present || p.staff) continue;
+          this.memory.pointed(p.id, this.roomsOnTheWay(p, s, p));
+          this.memory.startKnowing(p.id, s.room, 0.5);
+        }
+      }
     }
     const ph = this.phase;
     // Glasses go up once, on the step that crosses the raise.
-    if (ph.id === 'toast' && phaseProgress(ph, this.t - dt) < RAISE[0] && phaseProgress(ph, this.t) >= RAISE[0]) this.log('toast', [this.host.id], this.host.room);
+    if (ph.id === 'toast' && phaseProgress(ph, this.t - dt) < RAISE[0] && phaseProgress(ph, this.t) >= RAISE[0]) {
+      this.log('toast', [this.host.id], this.host.room);
+      // Anyone in the ring with nothing to raise stands out.
+      for (const p of this.people) if (!p.staff && p.present && p.action?.id === 'toast' && p.held !== 'champagne') this.notable(p, 'no-champagne', -1, 20);
+    }
+    this.provokeDue();
 
     this.body.beginStep();
     for (const p of this.people) {
@@ -194,10 +318,27 @@ export class Party implements MindWorld, BodyHost {
       if (p.action) this.act(p, dt);
       this.updatePose(p);
     }
+    lap('people');
     this.separate(dt);
+    lap('separate');
     this.body.endStep(dt);
     this.world.step(dt);
+    lap('body');
     this.updateGroups();
+    if (this.stepNo % 4 === 0) this.sideTalk();
+    lap('talk');
+    // Out of step with the programme: doing something else through the toast or dinner.
+    if ((ph.id === 'toast' || ph.id === 'dinner') && this.stepNo % 20 === 0) this.outOfStep();
+    this.senses.step(this.stepNo);
+    lap('senses');
+    this.mood.applyOverrides(this.t);
+    if (this.stepNo % 2 === 0) {
+      this.findPairs();
+      this.mood.step(2 * dt, (p) => this.moodInput(p), this.pairs, this.pairDist, this.nPairs);
+    }
+    lap('mood');
+    if (this.stepNo % 120 === 0) this.memory.upkeep(120 * dt);
+    lap('memory');
   }
 
   // ----------------------------------------------------------------- people
@@ -223,6 +364,7 @@ export class Party implements MindWorld, BodyHost {
     this.place(p, { ...e, x: off.x, z: off.z });
     p.present = true;
     p.phaseSeen = phaseIndexAt(this.programme, this.t - p.phaseLag);
+    this.memory.walkInto(p.id, p.room);
     this.log('arrive', [p.id], p.room);
     this.arriveWithThings(p);
     // Greet the host if they are by the door, else step into the hall.
@@ -279,6 +421,16 @@ export class Party implements MindWorld, BodyHost {
     if (p.role === 'host') {
       const c = this.hostPlan(p);
       if (c) return void this.start(p, c);
+    }
+    // Someone who didn't seem quite themselves: go and say hello, and settle it.
+    const j = this.ident.wantTest[p.id]!;
+    if (j >= 0) {
+      const q = this.people[j]!;
+      if (q.gone) this.ident.wantTest[p.id] = -1;
+      else if (q.present && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 15 && this.memory.lastT[p.id * this.people.length + j]! > this.t - 60) {
+        const s = beside(q, p, this.pf);
+        if (s) return void this.start(p, { id: 'ask', target: s, duration: 5, pose: 'talk', gain: { social: 0.1 }, ref: j, note: 'test' });
+      }
     }
     const c = choose(p, this);
     if (!c) {
@@ -364,6 +516,8 @@ export class Party implements MindWorld, BodyHost {
 
   private start(p: Person, c: Candidate): void {
     const a = toAction(c);
+    p.detour = null;
+    if (c.id === 'ask') a.until = this.t + 90;
     if (c.id === 'champagne') {
       // Take a glass from the nearest waiter with a tray, or from the bar.
       const w = this.nearestWaiter(p);
@@ -379,7 +533,7 @@ export class Party implements MindWorld, BodyHost {
       const yaw = a.target.yaw;
       const cx = a.target.x + Math.sin(yaw) * 0.7;
       const cz = a.target.z + Math.cos(yaw) * 0.7;
-      const g: Group = { id: this.nextGroup++, level: a.target.level, x: cx, z: cz, room: a.target.room, members: [], speaker: p.id, speakerUntil: 0 };
+      const g: Group = { id: this.nextGroup++, level: a.target.level, x: cx, z: cz, room: a.target.room, members: [], speaker: p.id, speakerUntil: 0, quietUntil: 0 };
       this.groups.set(g.id, g);
       a.ref = g.id;
     }
@@ -441,6 +595,7 @@ export class Party implements MindWorld, BodyHost {
 
   private act(p: Person, dt: number): void {
     const a = p.action!;
+    if (a.id === 'ask') return this.askStep(p, a, dt);
     if (a.id === 'toilet' && a.note === 'queue') {
       // Waiting by a bathroom door: body.ts moves the line along, knocks and gives up.
       this.body.queueStep(p);
@@ -501,6 +656,12 @@ export class Party implements MindWorld, BodyHost {
   }
 
   private walk(p: Person, dt: number): void {
+    // Looking round after a wrong turn, then back on the way.
+    if (p.detour && p.detour.until >= 0) {
+      if (this.t >= p.detour.until) this.backOnTheWay(p);
+      return;
+    }
+    const before = p.room;
     // Over 0.6 tipsiness people walk a little slower (and sway, in the renderer).
     let budget = ((p.speed * dt) / TIME_SCALE) * (p.tipsy > 0.6 ? 0.9 : 1);
     if (this.doorAhead(p)) return;
@@ -521,6 +682,7 @@ export class Party implements MindWorld, BodyHost {
           p.level = wp.level;
           p.room = this.pf.roomAt(wp.level, wp.x, wp.z);
           p.pathIndex++;
+          if (p.room !== before) this.enterRoom(p, before);
         } else {
           p.x += (dx / len) * stepLen;
           p.z += (dz / len) * stepLen;
@@ -537,6 +699,9 @@ export class Party implements MindWorld, BodyHost {
         p.x = wp.x;
         p.z = wp.z;
         budget -= d;
+        p.pathIndex++;
+      } else if (d < CORNER && this.cornerOpen(p)) {
+        // Close enough to a corner with the next leg open: round it (two people never fight over the same corner).
         p.pathIndex++;
       } else {
         let nx = p.x + (dx / d) * budget;
@@ -564,7 +729,18 @@ export class Party implements MindWorld, BodyHost {
       p.y = this.floorAt(p.level, room);
     }
     this.passDoor(p);
-    if (p.pathIndex >= p.path.length) this.arrived(p);
+    if (p.room !== before) this.enterRoom(p, before);
+    if (p.action && p.pathIndex >= p.path.length) {
+      if (p.detour) this.lookRound(p);
+      else this.arrived(p);
+    }
+  }
+
+  /** Whether the leg after the next corner runs clear from where someone stands now. */
+  private cornerOpen(p: Person): boolean {
+    const next = p.path[p.pathIndex + 1];
+    const n = this.pf.levels.get(p.level);
+    return !!next && !!n && !next.climb && next.level === p.level && this.pf.clear(n, p.x, p.z, next.x, next.z);
   }
 
   /**
@@ -691,7 +867,10 @@ export class Party implements MindWorld, BodyHost {
       if (a.id === 'dinner') this.log('seated', [p.id], p.room);
     } else if (a.id === 'mingle' && a.ref !== undefined) {
       const g = this.groups.get(a.ref);
-      if (g) p.yaw = yawTo(p.x, p.z, g.x, g.z);
+      if (g) {
+        p.yaw = yawTo(p.x, p.z, g.x, g.z);
+        this.joinGroup(p, g);
+      }
     } else if (a.target) p.yaw = a.target.yaw;
     // A stop on a waiter's round: empties onto the tray (glasses are offered while they stand there).
     if (a.id === 'staff' && a.note === 'serve') this.body.clearGlasses(p, 3);
@@ -702,6 +881,7 @@ export class Party implements MindWorld, BodyHost {
   goTo(p: Person, s: Spot): boolean {
     const a = p.action;
     if (!a) return false;
+    p.detour = null;
     a.target = s;
     a.startedAt = null;
     const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, s, p);
@@ -793,6 +973,7 @@ export class Party implements MindWorld, BodyHost {
     const wp = p.path[p.pathIndex];
     if (wp?.climb) this.place(p, wp);
     p.action = null;
+    p.detour = null;
     p.path = [];
     p.pathIndex = 0;
     p.pose = 'stand';
@@ -816,6 +997,11 @@ export class Party implements MindWorld, BodyHost {
   }
 
   private updatePose(p: Person): void {
+    if (p.gesture && this.t >= p.gestureUntil) p.gesture = null;
+    if (p.detour && p.detour.until >= 0) {
+      p.pose = 'look';
+      return;
+    }
     const a = p.action;
     if (a?.id === 'toilet' && a.note === 'queue' && a.startedAt !== null) {
       p.pose = this.body.knocking(p) ? 'knock' : 'wait';
@@ -877,14 +1063,464 @@ export class Party implements MindWorld, BodyHost {
     }
   }
 
+  /**
+   * Conversations take turns. A new speaker may pass something on (memory.ts decides what), now
+   * and then someone laughs, and a group that has just gone quiet stays so for a while.
+   */
   private updateGroups(): void {
     for (const g of this.groups.values()) {
+      if (this.t < g.quietUntil) {
+        g.speaker = -1;
+        continue;
+      }
       if (this.t < g.speakerUntil) continue;
       const here = g.members.filter((m) => this.people[m]!.action?.startedAt != null);
       if (!here.length) continue;
       g.speaker = this.rng.weighted(here.map((m) => [m, 0.05 + this.people[m]!.traits.talk ** 2] as const));
-      g.speakerUntil = this.t + this.rng.range(3, 9);
+      const sp = this.people[g.speaker]!;
+      // Tense talk comes quicker.
+      g.speakerUntil = this.t + this.rng.range(3, 9) * (1 - 0.4 * this.mood.tension[sp.id]!);
+      if (here.length > 1 && this.chat.chance(GOSSIP * (0.4 + sp.traits.talk))) {
+        const nearby = this.people.filter((q) => q.present && !here.includes(q.id) && q.level === g.level && Math.hypot(q.x - g.x, q.z - g.z) < 3).map((q) => q.id);
+        this.passOn(sp, here, nearby, g.room, g.speakerUntil - this.t);
+      }
+      if (this.chat.chance(sp.quirks.includes('big-laugh') ? 0.2 : 0.05)) this.senses.sound('laugh', sp, sp.id);
     }
+  }
+
+  /** Talk at table, in the toast ring, on a sofa or outside: now and then someone says something to whoever is beside them. */
+  private sideTalk(): void {
+    const by = (p: Person) => !p.staff && p.present && p.action !== null && p.action.startedAt !== null && SIDE_TALK.has(p.action.id);
+    for (const p of this.people) {
+      if (!by(p) || !this.chat.chance(SIDE_GOSSIP * (0.3 + p.traits.talk))) continue;
+      const near = this.people.filter((q) => q !== p && by(q) && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 1.6).map((q) => q.id);
+      if (near.length) this.passOn(p, [p.id, ...near], [], p.room, 3);
+    }
+  }
+
+  /** A speaker passes on one thing they know, if anything is worth it. */
+  private passOn(sp: Person, members: number[], nearby: number[], room: number, secs: number): void {
+    const m = this.memory;
+    const r = m.onTurn(members, sp.id, nearby);
+    if (!r) return;
+    this.gesture(sp, 'lean', Math.max(2, secs));
+    this.log('gossip', [sp.id, ...r.listeners], room, m.verbOf(r.fact));
+    const subj = m.subject[r.fact]!;
+    const odd = m.odd[r.fact]! > 0 && m.juicy[r.fact]! >= 0.6;
+    for (const l of [...r.listeners, ...r.overheard]) {
+      // Where it happened tells them where the subject was.
+      if (subj >= 0 && m.room[r.fact]! >= 0) m.toldWhere(l, subj, m.room[r.fact]!, m.t[r.fact]!);
+      // Something juicy and odd unsettles a little.
+      if (odd) this.mood.witness(l, 0.02);
+    }
+  }
+
+  /** Someone joins a conversation: strangers meet, and talk stops if they're wary of the newcomer. */
+  private joinGroup(p: Person, g: Group): void {
+    const others = g.members.filter((m) => m !== p.id && this.people[m]!.action?.startedAt != null);
+    for (const m of others) this.ident.meet(p.id, m);
+    const wary = others.filter((m) => this.memory.suspects(m, p.id) >= SUSPICIOUS);
+    if (!wary.length) return;
+    g.quietUntil = this.t + this.chat.range(10, 25);
+    g.speaker = -1;
+    for (const m of wary) this.glance(this.people[m]!, p.x, p.z, 3);
+    this.counts.hushes++;
+    this.log('hush', [p.id, ...wary], g.room);
+  }
+
+  /** Through the toast or dinner, a guest who knows what's on and is doing something else stands out. */
+  private outOfStep(): void {
+    for (const p of this.people) {
+      if (p.staff || p.role === 'host' || !p.present || p.phaseSeen !== this.phaseIdx) continue;
+      const a = p.action;
+      if (a && !['toast', 'dinner', 'champagne', 'toilet', 'leave'].includes(a.id)) this.notable(p, 'out-of-step', -1, 12);
+    }
+  }
+
+  // ------------------------------------------------------------- knowing the house
+
+  /**
+   * What everyone knows of the house as the evening starts: the host and their partner live here,
+   * staff know the rooms they work, regulars the party rooms and the nearest bathrooms, and every
+   * guest the entrance hall and the rooms it opens onto.
+   */
+  private knowTheHouse(): void {
+    const m = this.memory;
+    const pl = this.places;
+    const bp = this.bp;
+    const host = this.host;
+    m.household[host.id] = 1;
+    if (host.partner !== null) m.household[host.partner] = 1;
+    const party = new Set<number>([...pl.partyRooms.map((r) => r.index), pl.toastRoom.index]);
+    for (const r of [pl.dining, pl.danceRoom]) if (r) party.add(r.index);
+    const toast = pl.toastSpot;
+    const near = [...pl.bathrooms].sort((a, b) => far(a.door) - far(b.door)).slice(0, 2);
+    function far(s: Spot): number {
+      return Math.hypot(s.x - toast.x, s.z - toast.z) + 10 * Math.abs(s.level - toast.level);
+    }
+    const hall = pl.entranceRoom?.index ?? pl.entrance.room;
+    const offHall = (this.world.graph[hall] ?? []).filter((e) => e.kind !== 'stair').map((e) => e.to);
+    // Regulars know the party rooms, the nearest bathrooms and the way to each from the toast.
+    const known = new Set<number>([...party, ...near.map((b) => b.room.index)]);
+    for (const r of [...party]) {
+      const to = this.cells.random(r, this.mapRng);
+      if (to) for (const w of this.roomsOnTheWay(toast, to, null)) known.add(w);
+    }
+    for (const b of near) for (const w of this.roomsOnTheWay(toast, b.door, null)) known.add(w);
+    for (const p of this.people) {
+      if (m.household[p.id]) continue;
+      if (p.staff) {
+        for (const r of bp.rooms) m.startKnowing(p.id, r.index, STAFF_ROUGH.has(r.type) ? 0.3 : 0.9, 8);
+        m.startKnowing(p.id, -2, 0.9, 8);
+        continue;
+      }
+      // Known from before, so it never fades far.
+      if (p.regular) for (const r of known) m.startKnowing(p.id, r, 0.8, 8);
+      m.startKnowing(p.id, hall, 0.6, 1);
+      for (const r of offHall) m.startKnowing(p.id, r, 0.6);
+    }
+  }
+
+  /** Walked into a room: learnt, maybe noticed coming out of a bedroom, maybe the wrong turn at a junction. */
+  private enterRoom(p: Person, from: number): void {
+    this.memory.walkInto(p.id, p.room);
+    const type = (r: number) => (r >= 0 ? this.bp.rooms[r]!.type : null);
+    const fromType = type(from);
+    const toType = type(p.room);
+    if (!p.staff && !this.memory.household[p.id] && fromType && SNOOP.has(fromType) && !(toType && SNOOP.has(toType))) this.notable(p, 'left-bedroom', -1, 8);
+    this.maybeWrongTurn(p, from);
+  }
+
+  /**
+   * At a junction on the way somewhere, a guest may take the wrong doorway: a few steps into the
+   * wrong room (or up to a door that turns out locked), a look round, then back on the way. The
+   * chance is (0.5 − k) × (1 + tipsiness), where k is how well they know where they're going or
+   * the room the right doorway leads into, whichever is better: someone sure of the bathroom
+   * finds it from anywhere, and a hall crossed all evening fools nobody.
+   */
+  private maybeWrongTurn(p: Person, from: number): void {
+    const a = p.action;
+    if (!a || p.detour || p.staff || this.memory.household[p.id] || a.startedAt !== null || !LOSES_WAY.has(a.id)) return;
+    if ((a.id === 'toilet' && a.note !== 'door') || this.t - this.lostAt[p.id]! < 120) return;
+    const goal = p.path[p.path.length - 1];
+    if (!goal || p.room === -1) return;
+    const goalRoom = this.pf.roomAt(goal.level, goal.x, goal.z);
+    if (goalRoom === p.room || goalRoom === -1) return;
+    // The way they should go next.
+    let next = -1;
+    for (let i = p.pathIndex; i < p.path.length && next < 0; i++) {
+      const w = p.path[i]!;
+      if (w.climb) break;
+      const r = this.pf.roomAt(w.level, w.x, w.z);
+      if (r !== p.room && r !== -1) next = r;
+    }
+    const dest = this.memory.familiarity(p.id, destination(a, this.places));
+    const k = next !== -1 ? Math.max(dest, this.memory.familiarity(p.id, next)) : dest;
+    const chance = Memory.wrongTurnChance(k, p.tipsy);
+    if (chance <= 0 || !this.mapRng.chance(chance)) return;
+    const R = this.bp.rooms.length;
+    const edges = (this.world.graph[p.room < 0 ? R : p.room] ?? []).filter((e) => e.kind !== 'stair' && e.level === p.level && e.to !== next && e.to !== from && e.to !== goalRoom);
+    if (!edges.length) return;
+    const e = this.mapRng.pick(edges);
+    const d = Math.hypot(e.x - p.x, e.z - p.z);
+    if (d < 0.3) return;
+    const ux = (e.x - p.x) / d;
+    const uz = (e.z - p.z) / d;
+    const door = e.door >= 0 ? this.world.doors[e.door]! : null;
+    const locked = !!door && !this.world.canPass(door, p);
+    // Through the doorway and a step in, or up to the locked door.
+    const s = locked ? this.pf.snap(p.level, e.x - ux * 0.6, e.z - uz * 0.6, 0.5) : this.pf.snap(p.level, e.x + ux * 1.2, e.z + uz * 1.2, 0.6);
+    if (!s || (!locked && this.pf.roomAt(s.level, s.x, s.z) !== e.to)) return;
+    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, s, p);
+    if (!route) return;
+    p.detour = { goal, until: -1, door: locked ? door!.id : -1 };
+    this.lostAt[p.id] = this.t;
+    p.path = route;
+    p.pathIndex = 1;
+    this.notable(p, 'wrong-turn', -1, 20);
+    this.counts.wrongTurns++;
+    this.log('wrong-turn', [p.id], p.room, locked ? 'door' : undefined);
+  }
+
+  /** At the end of a wrong turn: try the locked door, or look round the wrong room. */
+  private lookRound(p: Person): void {
+    const dt = p.detour!;
+    dt.until = this.t + LOOK_ROUND;
+    if (dt.door >= 0) {
+      const d = this.world.doors[dt.door]!;
+      p.yaw = yawTo(p.x, p.z, d.x, d.z);
+      this.notable(p, 'locked-door', -1, 8);
+    }
+  }
+
+  private backOnTheWay(p: Person): void {
+    const goal = p.detour!.goal;
+    p.detour = null;
+    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, goal, p);
+    if (!route) return this.end(p, false);
+    p.path = route;
+    p.pathIndex = 1;
+  }
+
+  // ------------------------------------------------------------------ asking
+
+  /** Asking the way, or the friendly test: walk up to them (they may be moving), a word, then act on the answer. */
+  private askStep(p: Person, a: ActionState, dt: number): void {
+    const q = this.people[a.ref!]!;
+    if (a.startedAt !== null) {
+      p.yaw = yawTo(p.x, p.z, q.x, q.z);
+      if (this.t - a.startedAt < a.duration) return;
+      const bath = this.answers.get(p.id) ?? -1;
+      this.answers.delete(p.id);
+      this.end(p, true);
+      const b = this.places.bathrooms[bath];
+      if (b && this.worthTrying(p, bath)) this.start(p, { id: 'toilet', target: b.door, duration: this.rng.range(120, 240), pose: 'wait', gain: { bladder: 1 }, ref: bath, note: 'door' });
+      return;
+    }
+    if (!q.present || this.t >= a.until!) {
+      p.avoid.set(`ask:${q.id}`, this.t + 600);
+      return this.end(p, false);
+    }
+    if (q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 1.6) return this.answer(p, q, a);
+    // Re-aim when they've moved on (never halfway up a stair).
+    const tgt = a.target!;
+    if (!p.path[p.pathIndex]?.climb && (Math.hypot(q.x - tgt.x, q.z - tgt.z) > 1.5 || q.level !== tgt.level || p.pathIndex >= p.path.length)) {
+      const s = beside(q, p, this.pf);
+      const route = s ? this.pf.route({ level: p.level, x: p.x, z: p.z }, s, p) : null;
+      if (!s || !route) return this.end(p, false);
+      a.target = s;
+      p.path = route;
+      p.pathIndex = 1;
+    }
+    this.walk(p, dt);
+  }
+
+  private answer(p: Person, q: Person, a: ActionState): void {
+    a.startedAt = this.t;
+    p.yaw = yawTo(p.x, p.z, q.x, q.z);
+    this.glance(q, p.x, p.z, a.duration);
+    this.gesture(p, 'ask', 2);
+    if (a.note === 'test') {
+      this.ident.test(p.id, q.id, this.t);
+      this.log('test', [p.id, q.id], p.room, 'passed');
+      return;
+    }
+    this.counts.asks++;
+    // The bathroom they know nearest the one asking.
+    let best = -1;
+    let bd = Infinity;
+    this.places.bathrooms.forEach((b, i) => {
+      if (this.memory.familiarity(q.id, b.room.index) < KNOWN) return;
+      const d = Math.hypot(b.door.x - p.x, b.door.z - p.z) + 10 * Math.abs(b.door.level - p.level);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    this.answers.set(p.id, best);
+    if (best < 0) {
+      this.gesture(q, 'shrug', 2);
+      p.avoid.set(`ask:${q.id}`, this.t + 900);
+      this.log('ask', [p.id, q.id], p.room, 'shrug');
+      return;
+    }
+    const b = this.places.bathrooms[best]!;
+    this.gesture(q, 'point', 3);
+    q.lookX = b.door.x;
+    q.lookZ = b.door.z;
+    this.memory.pointed(p.id, this.roomsOnTheWay(p, b.door, p));
+    this.memory.startKnowing(p.id, b.room.index, POINTED);
+    this.log('ask', [p.id, q.id], p.room, 'pointed');
+  }
+
+  /** Rooms a route from one place to a spot passes through, sampled every metre. */
+  private roomsOnTheWay(from: Waypoint, s: Spot, who: Person | null): number[] {
+    const route = this.pf.route({ level: from.level, x: from.x, z: from.z }, s, who);
+    const out = new Set<number>();
+    if (!route) return [s.room];
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1]!;
+      const b = route[i]!;
+      if (b.climb) continue;
+      const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
+      for (let k = 0; k <= n; k++) {
+        const r = this.pf.roomAt(b.level, a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n);
+        if (r !== -1) out.add(r);
+      }
+    }
+    out.add(s.room);
+    return [...out];
+  }
+
+  /** Someone near and known to ask the way: a friend, a partner, staff, the host, or anyone met. Staff and the host first. */
+  answerer(p: Person): Person | null {
+    let best: Person | null = null;
+    let bd = 20;
+    const n = this.people.length;
+    for (const q of this.people) {
+      if (q === p || !q.present || q.level !== p.level || (p.avoid.get(`ask:${q.id}`) ?? -1) > this.t) continue;
+      if (q.action?.id === 'toilet' || q.action?.id === 'leave' || q.action?.id === 'ask') continue;
+      if (!(q.staff || q.role === 'host' || q.id === p.partner || p.friends.includes(q.id) || this.ident.tieOf(p.id, q.id) >= 1)) continue;
+      if (this.memory.lastT[p.id * n + q.id]! < this.t - 60) continue;
+      const d = Math.hypot(q.x - p.x, q.z - p.z) * (q.staff || q.role === 'host' ? 0.7 : 1);
+      if (d < bd) {
+        bd = d;
+        best = q;
+      }
+    }
+    return best;
+  }
+
+  // ------------------------------------------------------------- mood and senses
+
+  /** Pairs within 3 m in the same room, sitters too, and how many each has round them. */
+  private findPairs(): void {
+    const ps = this.people;
+    const cap = (ps.length * (ps.length - 1)) / 2;
+    if (this.pairs.length < 2 * cap) {
+      this.pairs = new Int16Array(2 * cap);
+      this.pairDist = new Float32Array(cap);
+    }
+    this.crowd.fill(0);
+    let k = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const a = ps[i]!;
+      if (!a.present) continue;
+      for (let j = i + 1; j < ps.length; j++) {
+        const b = ps[j]!;
+        if (!b.present || b.level !== a.level || b.room !== a.room) continue;
+        const d = Math.hypot(b.x - a.x, b.z - a.z);
+        if (d >= 3) continue;
+        this.pairs[2 * k] = i;
+        this.pairs[2 * k + 1] = j;
+        this.pairDist[k++] = d;
+        this.crowd[i]!++;
+        this.crowd[j]!++;
+      }
+    }
+    this.nPairs = k;
+  }
+
+  private moodInput(p: Person) {
+    const a = p.action;
+    const crowd = this.crowd[p.id]!;
+    return {
+      dancing: p.pose === 'dance',
+      music: this.senses.musicIn(p.room),
+      talking: a?.id === 'mingle' && a.startedAt !== null,
+      alone: p.pose === 'sit' && crowd === 0,
+      crowd,
+    };
+  }
+
+  /**
+   * Plant a fact from the next step on (the lab's button). The lab passes the same in `provoke`
+   * when it replays, which lands it on the same step.
+   */
+  plant(v: Provocation): void {
+    let i = this.provoked;
+    while (i < this.provoke.length && this.provoke[i]!.t <= v.t) i++;
+    this.provoke.splice(i, 0, { ...v, t: Math.max(v.t, this.t) });
+  }
+
+  /** A mood override from the next step on (the lab's mood row); replays pass it in `mood`. */
+  nudge(o: MoodOverride): void {
+    this.nudges.push({ ...o, t: Math.max(o.t, this.t) });
+  }
+
+  private provokeDue(): void {
+    while (this.provoked < this.provoke.length && this.provoke[this.provoked]!.t <= this.t) {
+      const v = this.provoke[this.provoked++]!;
+      // By default, a guest in a conversation (else any guest) hears it first.
+      const guest = (q: Person) => q.present && !q.staff && q.role !== 'host' && q.id !== v.subject;
+      const w = v.witness ?? (this.people.find((q) => guest(q) && q.action?.id === 'mingle' && q.action.startedAt !== null) ?? this.people.find(guest))?.id;
+      if (w !== undefined) this.memory.plant(w, v.verb ?? 'rumour', v.subject, v.odd);
+    }
+  }
+
+  private notable(p: Person, verb: Verb, obj: number, secs: number): void {
+    p.notable = verb;
+    p.notableObj = obj;
+    p.notableUntil = this.t + secs;
+  }
+
+  private gesture(p: Person, g: Gesture, secs: number): void {
+    p.gesture = g;
+    p.gestureUntil = this.t + secs;
+  }
+
+  /** Turn someone's head toward a point for a while. */
+  glance(p: Person, x: number, z: number, secs: number): void {
+    p.lookX = x;
+    p.lookZ = z;
+    p.lookUntil = this.t + secs;
+  }
+
+  /** A nosy guest drops what they're doing to see what that noise was. */
+  goLook(p: Person, s: Sound): void {
+    if (p.staff || p.role === 'host' || (p.action && !DROP_TO_LOOK.has(p.action.id)) || (p.avoid.get('look') ?? -1) > this.t) return;
+    const at = this.pf.snap(s.level, s.x, s.z, 2.5);
+    if (!at) return;
+    p.avoid.set('look', this.t + 300);
+    this.end(p, false);
+    this.start(p, { id: 'wander', target: { level: at.level, x: at.x, z: at.z, yaw: p.yaw, room: this.pf.roomAt(at.level, at.x, at.z) }, duration: this.rng.range(20, 40), pose: 'look', gain: { curiosity: 0.2 } });
+    this.counts.heard++;
+    this.log('heard', [p.id], s.room, s.kind);
+  }
+
+  /** Whether two people are in the same conversation, dancing together, or side by side at table. */
+  together(a: Person, b: Person): boolean {
+    const x = a.action;
+    const y = b.action;
+    if (!x || !y || x.startedAt === null || y.startedAt === null) return false;
+    if (x.id === 'mingle' && y.id === 'mingle') return x.ref === y.ref;
+    const close = a.level === b.level && Math.hypot(a.x - b.x, a.z - b.z) < 1.5;
+    return close && ((x.id === 'dance' && y.id === 'dance') || (x.id === 'dinner' && y.id === 'dinner') || x.id === 'ask' || y.id === 'ask');
+  }
+
+  sound(kind: SoundKind, at: { level: number; x: number; z: number; room: number }, source: number, ref = -1): void {
+    this.senses.sound(kind, at, source, ref);
+  }
+
+  get phaseId(): PhaseId {
+    return this.phase.id;
+  }
+
+  tensionOf(i: number): number {
+    return this.mood.tension[i]!;
+  }
+
+  familiarity(p: Person, room: number): number {
+    return this.memory.familiarity(p.id, room);
+  }
+
+  suspects(i: number, j: number): number {
+    return this.memory.suspects(i, j);
+  }
+
+  energy(p: Person): number {
+    return this.mood.energy[p.id]!;
+  }
+
+  tension(p: Person): number {
+    return this.mood.tension[p.id]!;
+  }
+
+  /** What the party has noticed so far. */
+  get stats(): PartyStats {
+    const m = this.memory.stats;
+    return {
+      facts: this.memory.count,
+      told: m.told,
+      overheard: m.overheard,
+      doubleTakes: this.ident.stats.doubleTakes,
+      tests: this.ident.stats.tests,
+      wrongTurns: this.counts.wrongTurns,
+      asks: this.counts.asks,
+      hushes: this.counts.hushes,
+      heard: this.counts.heard,
+      sightings: this.senses.stats.sightings,
+    };
   }
 
   log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void {
@@ -897,8 +1533,13 @@ export class Party implements MindWorld, BodyHost {
     const mix = (s: string) => {
       for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
     };
-    for (const p of this.people) mix(`${p.id}:${p.present ? 1 : 0}${p.gone ? 1 : 0}:${Math.round(p.x * 100)},${Math.round(p.z * 100)},${p.level}:${p.action?.id ?? '-'}:${Math.round(p.tipsy * 100)}:${p.item}`);
+    const { energy, tension } = this.mood;
+    for (const p of this.people) {
+      mix(`${p.id}:${p.present ? 1 : 0}${p.gone ? 1 : 0}:${Math.round(p.x * 100)},${Math.round(p.z * 100)},${p.level}:${p.action?.id ?? '-'}:${Math.round(p.tipsy * 100)}:${p.item}`);
+      mix(`${Math.round(energy[p.id]! * 20)},${Math.round(tension[p.id]! * 20)}`);
+    }
     for (const d of this.world.doors) mix(`${d.id}:${Math.round(d.open * 10)}${d.locked ? 1 : 0}`);
+    mix(`f${this.memory.count}`);
     return `${this.t}:${(h >>> 0).toString(16)}`;
   }
 

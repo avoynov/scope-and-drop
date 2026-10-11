@@ -18,8 +18,6 @@ export interface Bathroom {
   doorId: number;
   /** Up to two places to wait along the wall beside the door, first in line first. */
   queue: Spot[];
-  /** Rooms the door can be read from: a stand-in for sight until milestone 2's senses. */
-  sight: number[];
 }
 
 /**
@@ -127,7 +125,7 @@ export class RoomCells {
       const x = n.originX + (c + 0.5) * n.cell;
       const z = n.originZ + (r + 0.5) * n.cell;
       // Prefer open floor: all cells within the margin walkable.
-      const m = Math.ceil(margin / n.cell);
+      const m = Math.max(1, Math.ceil(margin / n.cell));
       let open = true;
       for (let dr = -m; dr <= m && open; dr += m) for (let dc = -m; dc <= m && open; dc += m) if (!this.pf.walkable(level, x + dc * n.cell, z + dr * n.cell)) open = false;
       if (open || tries === 11) return { level, x, z, yaw: rng.range(-Math.PI, Math.PI), room };
@@ -339,7 +337,7 @@ export function resolvePlaces(bp: MansionBlueprint, pf: Pathfinder, cells: RoomC
     const way = doors.find((d) => !PRIVATE.has(bp.rooms[world.otherSide(d, r.index)]!.type)) ?? doors[0];
     const at = way ? doorFront(bp, pf, world, way, world.otherSide(way, r.index)) : null;
     if (way && at) {
-      bathrooms.push({ room: r, inside, door: at.front, doorId: way.id, queue: at.queue, sight: sightRooms(bp, pf, world, at.front, world.otherSide(way, r.index)) });
+      bathrooms.push({ room: r, inside, door: at.front, doorId: way.id, queue: at.queue });
       continue;
     }
     // No door on the way in (an arch): wait just outside it.
@@ -353,7 +351,7 @@ export function resolvePlaces(bp: MansionBlueprint, pf: Pathfinder, cells: RoomC
       door = spotAt(pf, r.level, ox, oz, yawTo(ox, oz, link.x, link.z), 1.5);
     }
     const front = door ?? inside;
-    bathrooms.push({ room: r, inside, door: front, doorId: -1, queue: [], sight: front.room >= 0 ? [front.room] : [] });
+    bathrooms.push({ room: r, inside, door: front, doorId: -1, queue: [] });
   }
 
   const seats: Seat[] = [];
@@ -472,27 +470,6 @@ function doorFront(bp: MansionBlueprint, pf: Pathfinder, world: World, d: Door, 
     if (queue.length === 2) break;
   }
   return { front, queue };
-}
-
-/**
- * Rooms a door can be read from: the room it opens onto, and rooms joined to that one by an
- * arch or a door that stays open, when a clear line runs from inside them to the door.
- */
-function sightRooms(bp: MansionBlueprint, pf: Pathfinder, world: World, front: Spot, side: number): number[] {
-  const out = [side];
-  const n = pf.levels.get(front.level);
-  if (!n) return out;
-  for (const e of world.graph[side] ?? []) {
-    if (e.kind !== 'door' || e.to < 0 || out.includes(e.to)) continue;
-    if (e.door >= 0 && world.doors[e.door]!.lock !== 'none') continue;
-    const r = bp.rooms[e.to]!;
-    if (r.level !== front.level) continue;
-    const xs = [0.25, 0.5, 0.75].map((f) => r.inner.x0 + (r.inner.x1 - r.inner.x0) * f);
-    const zs = [0.25, 0.5, 0.75].map((f) => r.inner.z0 + (r.inner.z1 - r.inner.z0) * f);
-    const seen = xs.some((x) => zs.some((z) => pf.walkable(r.level, x, z) && pf.clear(n, x, z, front.x, front.z)));
-    if (seen) out.push(e.to);
-  }
-  return out;
 }
 
 /** A room's light switch: just inside its main door (one from a hall or corridor if it has one). */

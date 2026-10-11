@@ -7,6 +7,7 @@ import type { Rng } from '../mansion/core/rng';
 import { TIME_SCALE } from './clock';
 import type { Pathfinder } from './path';
 import type { Places } from './places';
+import type { SoundKind } from './senses';
 import { ALCOHOL, DRINKS, type DrinkId, type PartyEvent, type Person, type Spot } from './types';
 import { AJAR, DRINK_IDS, type World } from './world';
 
@@ -21,6 +22,8 @@ export interface BodyHost {
   /** Walk to a spot as part of the current action (it stays unstarted until they arrive); false when there is no way. */
   goTo(p: Person, s: Spot): boolean;
   end(p: Person, done: boolean): void;
+  /** Make a sound at a point (a knock, a bolt drawn). */
+  sound(kind: SoundKind, at: { level: number; x: number; z: number; room: number }, source: number, ref?: number): void;
 }
 
 /** How long a drink lasts in hand (in-game s): sipped from full to empty. */
@@ -31,8 +34,6 @@ const SEEN_FOR = 180;
 const QUEUE_BELOW = 0.35;
 /** Bladder level below which a bathroom known to be taken is tried anyway. */
 const URGENT = 0.2;
-/** How far a closed bathroom door can be read from (m). */
-const SEE_DOOR = 12;
 /** Tipsiness lost per in-game second (0.05 an hour). */
 const SOBER_RATE = 0.05 / 3600;
 /** Overlap and closing speed (real m/s) that make a bump. */
@@ -66,8 +67,6 @@ export class Body {
   /** When each person last saw each bathroom door, and whether it was taken. */
   private readonly seenT: Float32Array;
   private readonly seenBusy: Uint8Array;
-  /** Bathrooms whose door can be read from each room (by room index). */
-  private readonly viewers = new Map<number, number[]>();
   /** Alcohol still to come from the glass in hand, and the glass's full dose. */
   private readonly absorb: Float32Array;
   private readonly dose: Float32Array;
@@ -96,13 +95,6 @@ export class Body {
     this.prevX = new Float32Array(n);
     this.prevZ = new Float32Array(n);
     this.knockUntil = new Float32Array(n);
-    host.places.bathrooms.forEach((b, i) => {
-      for (const r of b.sight) {
-        let list = this.viewers.get(r);
-        if (!list) this.viewers.set(r, (list = []));
-        list.push(i);
-      }
-    });
     const counters = new Map<number, Counter>();
     host.places.barCounter.forEach((c, i) => {
       let k = counters.get(c);
@@ -122,7 +114,7 @@ export class Body {
     }
   }
 
-  /** After everyone has acted: sipping, sobering, bathroom doors and queues, what people see, the bars. */
+  /** After everyone has acted: sipping, sobering, bathroom doors and queues, the bars. What people see of the doors comes from the senses. */
   endStep(dt: number): void {
     const { people } = this.host;
     for (const p of people) {
@@ -131,7 +123,6 @@ export class Body {
       if (p.tipsy > 0) p.tipsy = Math.max(0, p.tipsy - SOBER_RATE * dt);
     }
     this.baths.forEach((_, i) => this.updateBath(i));
-    for (const p of people) if (p.present && !p.staff) this.observe(p);
     for (const c of this.counters) this.updateCounter(c);
   }
 
@@ -205,6 +196,7 @@ export class Body {
       this.knockUntil[p.id] = t + 2;
       this.stats.knocks++;
       this.host.log('knock', [p.id, b.occupant], p.room);
+      this.host.sound('knock', p, p.id, i);
       const o = this.host.people[b.occupant]!;
       const oa = o.action;
       if (oa?.id === 'toilet' && oa.startedAt !== null) oa.duration = Math.min(oa.duration, t - oa.startedAt + this.rng.range(20, 40));
@@ -302,7 +294,10 @@ export class Body {
       if (using && o.room === room && d && !d.locked && this.host.world.doorAtPoint(o.level, o.x, o.z) !== d.id) {
         // In: shut the door and bolt it (once nobody else is in there), and switch the light on if it's dark.
         this.host.world.swing(d, 0);
-        if (!this.host.people.some((q) => q !== o && q.present && q.room === room)) this.host.world.setLocked(d, true, o.id);
+        if (!this.host.people.some((q) => q !== o && q.present && q.room === room)) {
+          this.host.world.setLocked(d, true, o.id);
+          this.host.sound('bolt', { level: d.level, x: d.x, z: d.z, room }, o.id, i);
+        }
         if (!this.host.world.lightOn[room]) {
           this.host.world.setLight(room, true);
           this.host.log('light', [o.id], room, 'on');
@@ -317,24 +312,25 @@ export class Body {
     }
   }
 
-  /** Stand-in for sight (milestone 2 PR 2 replaces it): anyone in a room the door shows in, within range, reads it. */
-  private observe(p: Person): void {
-    const list = this.viewers.get(p.room);
-    if (!list) return;
-    const t = this.host.t;
-    for (const i of list) {
-      const s = this.host.places.bathrooms[i]!.door;
-      if (s.level !== p.level || Math.hypot(s.x - p.x, s.z - p.z) > SEE_DOOR) continue;
-      const busy = this.looksTaken(i) && this.baths[i]!.occupant !== p.id && !this.baths[i]!.queue.includes(p.id);
-      const wasBusy = this.known(p, i) === 'busy';
-      this.remember(p, i, busy);
-      // On the way there and it has just been taken: try elsewhere unless it's urgent.
-      const a = p.action;
-      if (busy && !wasBusy && a?.id === 'toilet' && a.ref === i && a.note === 'door' && a.startedAt === null && Math.hypot(s.x - p.x, s.z - p.z) > 1.5 && p.needs.bladder >= QUEUE_BELOW) {
-        this.host.end(p, false);
-        p.thinkAt = t + 1;
-      }
+  /** Someone saw a bathroom door (senses.ts): shut or ajar. */
+  sawDoor(p: Person, i: number): void {
+    if (p.staff) return;
+    const s = this.host.places.bathrooms[i]!.door;
+    const busy = this.looksTaken(i) && this.baths[i]!.occupant !== p.id && !this.baths[i]!.queue.includes(p.id);
+    const wasBusy = this.known(p, i) === 'busy';
+    this.remember(p, i, busy);
+    // On the way there and it has just been taken: try elsewhere unless it's urgent.
+    const a = p.action;
+    if (busy && !wasBusy && a?.id === 'toilet' && a.ref === i && a.note === 'door' && a.startedAt === null && Math.hypot(s.x - p.x, s.z - p.z) > 1.5 && p.needs.bladder >= QUEUE_BELOW) {
+      this.host.end(p, false);
+      p.thinkAt = this.host.t + 1;
     }
+  }
+
+  /** Someone heard a knock on a bathroom door, or its bolt drawn: it's taken. */
+  heardBath(p: Person, i: number): void {
+    if (p.staff || this.baths[i]!.occupant === p.id || this.baths[i]!.queue.includes(p.id)) return;
+    this.remember(p, i, true);
   }
 
   private remember(p: Person, i: number, busy: boolean): void {
@@ -558,6 +554,10 @@ export class Body {
       items.fill[hit.item]! -= 0.15;
       slop = true;
       this.stats.slops++;
+      // Whoever sees it remembers the spill.
+      hit.notable = 'spill';
+      hit.notableObj = fast.id;
+      hit.notableUntil = this.host.t + 6;
     }
     this.stats.bumps++;
     this.host.log('bump', [fast.id, hit.id], hit.room, slop ? 'slop' : undefined);

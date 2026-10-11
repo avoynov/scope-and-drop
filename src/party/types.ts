@@ -2,6 +2,7 @@
  * Data shapes for the party simulation (spec: Guests and the Spy).
  * Everything here is plain data so a run can be stepped headless, hashed and replayed.
  */
+import type { Verb } from './memory';
 
 export type Sex = 'f' | 'm';
 
@@ -63,6 +64,9 @@ export type Needs = Record<NeedId, number>;
 
 export type Pose = 'stand' | 'walk' | 'sit' | 'talk' | 'drink' | 'dance' | 'toast' | 'look' | 'play' | 'serve' | 'smoke' | 'greet' | 'announce' | 'wait' | 'climb' | 'knock';
 
+/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in to pass something on. */
+export type Gesture = 'ask' | 'point' | 'shrug' | 'lean';
+
 /** The six drinks of the evening. */
 export type DrinkId = 'champagne' | 'red' | 'white' | 'beer' | 'whisky' | 'water';
 export const ALCOHOL: ReadonlySet<DrinkId> = new Set(['champagne', 'red', 'white', 'beer', 'whisky']);
@@ -89,7 +93,9 @@ export type ActionId =
   | 'games'
   | 'wander'
   | 'leave'
-  | 'staff';
+  | 'staff'
+  /** Asking someone the way (note 'bathroom'), or a friendly test of someone who seems not themselves (note 'test'). */
+  | 'ask';
 
 /** A place someone can stand: always on a walkable nav cell. */
 export interface Spot {
@@ -155,6 +161,8 @@ export interface Person {
   quirks: Quirk[];
   partner: number | null;
   friends: number[];
+  /** Has been to the house before: knows the party rooms and the nearest bathrooms. */
+  regular: boolean;
   /** Index into Places.diningSeats; null when the dining room is full. */
   seat: number | null;
   /** Index into Places.supperSeats for those the dining room can't seat; null eats at the buffet. */
@@ -205,6 +213,20 @@ export interface Person {
   phaseSeen: number;
   /** Walking speed (m per real second). */
   speed: number;
+  /** A gesture over the pose, and the in-game time it ends. */
+  gesture: Gesture | null;
+  gestureUntil: number;
+  /** Where the head is turned (a glance) until `lookUntil`; the body keeps its yaw. */
+  lookX: number;
+  lookZ: number;
+  lookUntil: number;
+  /** Something odd or notable about what they're doing, picked up by whoever sees them until `notableUntil`. */
+  notable: Verb | null;
+  /** The other person (or door id) the notable thing involves, or -1. */
+  notableObj: number;
+  notableUntil: number;
+  /** A wrong turn in progress: the goal they meant to reach, when the look round ends (-1 still walking in), and the locked door they'll try (-1 none). */
+  detour: { goal: Waypoint; until: number; door: number } | null;
 }
 
 export interface Group {
@@ -217,6 +239,8 @@ export interface Group {
   /** Who is talking right now (for gestures). */
   speaker: number;
   speakerUntil: number;
+  /** Nobody speaks until then: someone they're wary of has just joined. */
+  quietUntil: number;
 }
 
 export type EventKind =
@@ -236,7 +260,21 @@ export type EventKind =
   /** Two people walked into each other (note 'slop' when a drink slopped). */
   | 'bump'
   /** A room's lights went on or off (note 'on' or 'off'). */
-  | 'light';
+  | 'light'
+  /** Someone looked twice at someone they know who didn't seem quite themselves. */
+  | 'double-take'
+  /** A friendly test (a nickname, a shared joke) put to someone who seemed not themselves (note 'passed'). */
+  | 'test'
+  /** A speaker passed something on (note: the verb; actors: speaker, then listeners). */
+  | 'gossip'
+  /** Someone took a wrong turn on the way somewhere (note 'door' when they tried a locked door). */
+  | 'wrong-turn'
+  /** A conversation went quiet as someone its members are wary of joined. */
+  | 'hush'
+  /** Someone asked the way (note: 'pointed' or 'shrug'; actors: asker, answerer). */
+  | 'ask'
+  /** A nosy guest heard something loud and went to look (note: the sound). */
+  | 'heard';
 
 export interface PartyEvent {
   t: number;

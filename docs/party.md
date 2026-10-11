@@ -173,6 +173,38 @@ Energy and tension per person, updated every in-game second; a room's mood is wo
 
 Ties come from the cast (partners 5, friends 3 or 4, the staff among themselves and with the host 3, the host and each guest 2, or 3 for a regular, regulars among themselves 2, and about half of one's friends' friends 2) and from meeting in a conversation tonight (1). Each person remembers how everyone they know looks: height, build, walk, voice, habits, the colour of their clothes. Each sighting compares, more closely face to face (within 1.5 m) than across a room, less in the dark or with drink taken. A difference they can't explain grows into doubt (weighted by how well they know the person); one they can explain (they saw them drinking, or know they're tipsy) counts a fifth as much and is got used to. At 0.2 doubt they look twice (`double-take`, a fact); at 0.45 they try a nickname or a shared joke when next face to face (`test`). The real person always passes, after which they're themselves for the evening. Milestone 3 lets an impostor fail.
 
+### Connecting the dots (`register.ts`)
+
+Beside their facts, each person keeps a register: up to 48 sightings (who was where, from when to when), 16 claims (what people say of themselves: "I was on the terrace") and 8 cases (something that wants explaining, with up to 6 candidates). Sightings and claims share one record: who (or, for someone they couldn't name, a description of sex, height, build, clothes and habits), what, the room, a window of time, how sure, who told them, the original witness and the hops. That one shape lets any kind of case use any kind of evidence.
+
+A case is opened from a template:
+
+| Case | Opened by | Matches on | Severity | Settles at |
+|---|---|---|---|---|
+| Thing gone | noticing or hearing something is gone (looks back 20 min) | place and time | 0.6 | 0.6 |
+| Person gone | someone missing | place and time | 0.5 | 0.6 |
+| Lights out, door locked | the house facts | place and time | 0.15, 0.1 | 0.6 |
+| A crash | a loud sound | place and time | 0 | 0.6 |
+| Cheating | a cheating hint | the pair | 0 | 0.52 |
+| Not themselves | two firm sightings that can't both be true | doubt | 0.05 | 0.6 |
+
+How a case weighs its candidates: each entry fits by room (same room 1, a room joined to it 0.4) times time (1 when the windows overlap, 0 at 10 minutes apart), times how sure it still is (halving over 45 minutes), times how far the source is believed (own eyes 1; someone told them 0.3 + 0.6 × the tie, times their belief in the teller; a forgotten source 0.3). One vote per original witness, so a story heard three times counts once. An unnamed description spreads half its weight over the known faces that resemble it. A claim that puts someone elsewhere takes off up to half; one that explains them being there (an errand) clears them. P = weight / (all weights + 0.5). A case settles when the leader reaches its line and the next is under half of it. The holder, the subject and, for the household's things, the household are never candidates.
+
+Order doesn't matter: a sighting filed before the case opens is found by the case (hindsight), and one heard after it feeds it (forward). A description that later meets a name (being introduced in a conversation) is re-checked and can resolve to that person (`recognised`).
+
+When a case settles, the holder blames the leader (a `blamed` fact, passed on as gossip), grows suspicious of them by severity × P × (1 − trust), only ever the rise, and keeps away. A guest who knows the host (tie 2 or more) goes and tells them about the host's own things, half the time, within 30 minutes (`tell`).
+
+Things that don't fit:
+
+- Two places at once. Two entries put one person in two rooms that can't both be true: the stretches they were surely there overlap by 2 minutes or more, or one whole window sits inside the other's sure stretch. The weaker entry gives way (its confidence halves) and the teller is believed less (up to 0.2 a time, back over an hour, never under 0.2). If both are firm and one is the holder's own eyes, they doubt it's really that person (`not themselves`, doubt + 0.15, suspicion + 0.05).
+- A broken claim. Someone said they were on the terrace; the holder saw them in the study: suspicion by the severity of the case it answered (0.1 if none), and the claim counts for little after. A second broken claim is treated as two places at once.
+
+Drink adds noise when something is filed: the window widens by 1 + 6 × tipsiness minutes, its centre drifts (σ 4 × tipsiness min), the room slips to a joined one at 0.3 × tipsiness, a description loses a feature (colour, then build, then height) with chance tipsiness, and who said it is forgotten at 0.5 × tipsiness.
+
+Talk: a person with an open case of severity 0.3 or more asks around in their conversation (every 10 minutes at most, 0.5 × (0.4 + talkativeness) a turn); everyone there learns the case, and whoever holds something that fits says so to all (up to two entries each, including their own last sight of people). A holder whose leader is at 0.3 or more passes on that lead (0.3 × talkativeness). Whoever notices something gone tells everyone within 6 m in the room. Joining a conversation, a person may say where they've just been (a claim; 0.3 × (0.4 + talkativeness)).
+
+Evidence travels, never a bare verdict: a listener weighs what they hear for themselves.
+
 ## Walking
 
 A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corners), and the path is string-pulled to a few waypoints with an exact grid traversal, so a straight leg never crosses a blocked cell. A walker within 0.3 m of a waypoint cuts the corner to the next one when the way is clear, so two people heading for the same doorway don't stall on one point. Stairs join the storeys; a route crosses one storey at a time through the stair with the shortest detour. Doors gate it all (see Things in the house). People push apart to 0.42 m, never into a doorway that is locked against them, and anyone pushed off their line finds a new route from where they stand.
@@ -193,9 +225,10 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 - Speeds: pause, 1× (the evening in an hour), 5×, 20× and 60×; back to 19:00; next phase. Space pauses.
 - Views: scope (from the perch; scroll to zoom, drag to aim), wide, plan (scroll to zoom, drag to pan, one storey at a time) and orbit.
 - The people list shows what everyone is doing. Click a name, or a person in any view, to see their role, habits, partner, what's in their glass and how full, how many drinks and how merry they are, their room, how visible they are from the perch, their energy and tension, how many rooms they know, whom they doubt and suspect, the things they know (with who told them and how sure they are), and their needs. The scope follows them; the plan turns to their floor.
-- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark) and **mood** (rooms tinted and named festive, relaxed, uneasy or tense).
+- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense) and **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room).
+- **Goes missing here** on the card makes something of the host's go missing from the picked person's room; **seen there** has the picked person seen poking round that room. Together they plant a theft for the guests to work out. The card's register block lists the picked person's cases and their candidates.
 - **Plant a rumour** on the card: a guest in a conversation hears something juicy and a little odd about the picked person. The **mood** row sets tension (tense, calm) or scales energy (liven, dampen) for everyone, the picked person's room or just them. Both take effect from the next step and are kept, so going back in time replays them where they were made; a new house clears them.
-- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, gossip, noticing (double takes, tests, hushes, a noise gone to look at), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house.
+- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house.
 
 | URL parameter | Meaning |
 |---|---|
@@ -205,9 +238,10 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 | `speed` | 0, 1, 5, 20 or 60 |
 | `view`, `fov`, `level`, `zoom`, `px`, `pz` | View, scope field of view, plan storey, plan zoom and pan (metres) |
 | `sel`, `follow` | Select a person by index; keep the scope on them |
-| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood` |
+| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases` |
+| `gone`, `seen` | Plant a theft: `gone=80:5` (minute, room), `seen=75:11:5` (minute, person, room); first house only |
 | `tension`, `energy` | Set everyone's tension (0–1), or scale their energy (0.5–1.5), at time `t` |
-| `log` | Log filter: `gossip`, `noticing`, `finding the way`, `the house`, `programme` |
+| `log` | Log filter: `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
 | `profile` | Time each stage of the step and show the totals under the stats |
 | `shot=1&w=&h=&ui=1` | Headless capture (`ui=1` keeps the panels) |
 
@@ -219,7 +253,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 
 | Measure | Result | Test asks |
 |---|---|---|
-| A whole evening, headless (21,600 steps) | 3.2–4.0 s (Things alone: 1.7–2.4 s on the same machine); about half of it seeing | under 15 s |
+| A whole evening, headless (21,600 steps) | 3.5–4.9 s with the register (the same as without it, measured side by side) (Things alone: 1.7–2.4 s on the same machine); about half of it seeing | under 15 s |
 | Guests holding champagne as the glasses go up | 70–95% | ≥ 60% |
 | Guests at the toast, 85% of the way through it | 91–100% | ≥ 70% |
 | Guests at dinner, 60% of the way through it | 100%, and every guest with a chair seated | ≥ 90% |
@@ -238,6 +272,9 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | Wrong turns, first hour and last hour | 0–8 and 1 (6.4× fewer in the last hour over 8 houses) | last hour a third of the first or less |
 | Asked the way, pointed to a bathroom | 21–41, 80–90% | over 5, mostly pointed |
 | Double takes, tests | 2–10, 0–3 | 1–30, no doubt after a test |
+| The register on an evening with nothing gone: entries filed, claims, cases, conflicts | 195–1,043, 36–56, 0, 0 | no case, 3 conflicts at most |
+| A planted theft (one guest seen there at 75 min, something gone at 80): who knows of it, blamed on the one seen, on anyone else | 24–31 people; 0–14; 0 | ≥ 5 people, ≥ 6 blames on the one seen over three houses, more than twice anyone else |
+| Highest suspicion of the one seen, by the end | 0.22–0.39 | |
 | Energy halfway through the dancing, dancers and the rest; halfway through dinner | 0.79–0.83 and 0.50–0.61; 0.41–0.46 | within 0–1 |
 
 ## Tuning notes
@@ -257,6 +294,8 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 - Routes don't yet avoid rooms a person doesn't know: the plan's knowledge-weighted route search isn't built. What someone knows decides which options they consider, where they can go wrong and when they ask; the route itself is still the true shortest one.
 - Going back in the lab replays the evening from 19:00, now 3–4 s for a whole evening. The plan's snapshots every 15 in-game minutes, due once a replay passes 2 s, aren't built.
 - Nothing yet makes the loud sounds (a tray dropped, glass breaking, a slap, a scream), so nobody goes to see a noise; mishaps and rows bring them.
+- The register: in `gala-night` the planted theft is asked about 27 times but never settled (the lead reaches 0.52); the one seen there is in a busy part of the house, so others seen nearby keep the case open. That's how it should be when the evidence is thin.
+- Departures from the register's design in the technical plan: the prior is 0.5, not 1 (with 1 a single witness never settled anything); a missing thing's severity is 0.6, not 0.3; claims travel in case talk and on joining a conversation, not as a gossip verb; cheating settles at 0.52; two places at once needs the sure stretches to overlap, since plain overlapping windows made 30 false conflicts an evening out of vague gossip; whoever notices something gone tells those nearby at once.
 - Departures from the technical plan, all found while tuning:
   - The knock is 58 dB, not 50, so it carries a couple of metres down a corridor over party noise.
   - The host's partner never forgets the house either, and regulars know the way to the party rooms and their bathrooms.
@@ -281,12 +320,14 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | `memory.ts` | Facts and each person's slots, gossip, last seen, suspicion, the mental map |
 | `mood.ts` | Energy and tension per person, contact spread, room moods, the lab's overrides |
 | `ident.ts` | Ties, how each person remembers the others' looks, doubt, double takes and tests |
+| `register.ts` | Sightings, claims and cases; fit and weighing; conflicts; drink noise; asking around, leads, telling the host |
 | `mind.ts` | Need decay, the options and their scores (filtered by what each person knows), the weighted choice |
 | `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the host, groups and gossip, coats, the lab's provocations |
 | `render/crowd.ts` | The instanced three.js crowd |
 | `render/fixtures.ts` | Door leaves and movable curtains |
 | `tests/party.test.ts` | Programme, cast, determinism and a whole evening |
 | `tests/party-things.test.ts` | Doors and locks, the room graph on 12 houses, curtains, lights, items, chains, bathrooms, drinks, tipsiness, coats, bumps |
+| `tests/party-register.test.ts` | Fit, hindsight and forward order, one vote per witness, settling, exclusions, drink noise, conflicts, broken claims, errands, recognising, asking around, quiet evenings, planted thefts, live and replay |
 | `tests/party-minds.test.ts` | Sight, hearing, memory, the mental map, mood, recognising people, hushes, five whole evenings with a planted rumour, the lab's provocations, golden digests |
 | `tests/party-perf.test.ts` | A whole evening's cost, stage by stage |
 | `tests/golden/party-digests.json` | Digests of three houses at 19:30, 20:15 and 21:30. Any change to what people do, see or remember changes them; when it's meant, check the lab and the numbers here, then `npx vitest run tests/party-minds.test.ts -u` |

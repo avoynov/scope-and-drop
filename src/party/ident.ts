@@ -154,6 +154,13 @@ export class Ident {
     return this.doubt[k]! * 0.5 ** ((t - this.doubtT[k]!) / DOUBT_HALF);
   }
 
+  /** Something i was told doesn't fit with j being themselves (the register's two places at once). */
+  addDoubt(i: number, j: number, v: number, t: number): void {
+    const k = i * this.n + j;
+    this.doubt[k] = this.doubtOf(i, j, t) + v;
+    this.doubtT[k] = t;
+  }
+
   /**
    * i sees j, whom they know. Salience is 1 face to face, 0.4 within 4 m, 0.15 within 10 m,
    * times the light and a clear head. Returns what the sighting brings about.

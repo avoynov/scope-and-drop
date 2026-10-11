@@ -21,6 +21,7 @@ import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_STA
 import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from '../../src/party/memory';
 import type { MoodOverride, RoomMood } from '../../src/party/mood';
 import { DETAIL_FOV, DETAIL_RANGE, FOV } from '../../src/party/senses';
+import { CASES, type CaseKind } from '../../src/party/register';
 import type { Provocation } from '../../src/party/sim';
 import { Crowd, type FrameState } from '../../src/party/render/crowd';
 import { Fixtures } from '../../src/party/render/fixtures';
@@ -155,12 +156,16 @@ let follow = params.has('follow');
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'map' | 'mood';
-const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'map', 'mood'];
+type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'cases' | 'map' | 'mood';
+const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'cases', 'map', 'mood'];
 const overlays = new Set<Overlay>((params.get('ov') ?? '').split(',').filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
-/** What the lab has done to this evening (rumours planted, mood nudges), replayed whenever a seek goes back. */
+/** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
 let planted: Provocation[] = [];
+/** Where the lab last made something go missing: "seen there" puts someone in that room. */
+let goneRoom = -1;
+/** The URL's provocations apply to the house it names, not to one built later. */
+let built0 = true;
 let nudges: MoodOverride[] = [];
 
 /** The URL's mood: everyone's tension set, or their energy scaled, at time t. */
@@ -169,6 +174,23 @@ function urlNudges(): MoodOverride[] {
   const energy = params.get('energy');
   if (tension === null && energy === null) return [];
   return [{ t: parseTime(params.get('t')), target: 'all', tension: tension !== null ? Number(tension) : undefined, energy: energy !== null ? Number(energy) : undefined }];
+}
+
+/**
+ * The URL's provocations: `gone=80:5` (something of the house's goes missing from room 5 at
+ * 80 min), `seen=75:16:5` (person 16 seen poking round room 5 at 75 min). Several are joined by commas.
+ */
+function urlProvocations(): Provocation[] {
+  const out: Provocation[] = [];
+  for (const g of (params.get('gone') ?? '').split(',').filter(Boolean)) {
+    const [t, room] = g.split(':').map(Number);
+    if (Number.isFinite(t) && Number.isFinite(room)) out.push({ t: t! * 60, kind: 'gone', subject: -1, room });
+  }
+  for (const g of (params.get('seen') ?? '').split(',').filter(Boolean)) {
+    const [t, who, room] = g.split(':').map(Number);
+    if (Number.isFinite(t) && Number.isFinite(who) && Number.isFinite(room)) out.push({ t: t! * 60, kind: 'seen', subject: who!, room });
+  }
+  return out.sort((a, b) => a.t - b.t);
 }
 
 // ------------------------------------------------------------------ setup
@@ -192,8 +214,10 @@ function build(): void {
   planPan.x = planPan.z = 0;
   aim = { yaw: 0, pitch: 0, fov: aim.fov };
   buildFloorButtons();
-  // A new house is a new cast: what was planted in the last one doesn't carry over.
-  planted = [];
+  // A new house is a new cast: what was planted in the last one doesn't carry over (the URL's own, on the first build, does).
+  planted = built0 ? urlProvocations() : [];
+  built0 = false;
+  goneRoom = [...planted].reverse().find((v) => v.kind === 'gone')?.room ?? -1;
   nudges = urlNudges();
   newParty();
   if (selected >= party.people.length) selected = -1;
@@ -455,7 +479,9 @@ const octx = overlay.getContext('2d')!;
 let overlayDrawn = false;
 
 const MOOD_RGB: Record<RoomMood, string> = { festive: '224,181,106', relaxed: '111,163,200', uneasy: '217,137,74', tense: '212,82,74' };
-const KIND_COLOR: Record<FactKind, string> = { romance: '#e58fb0', odd: '#e0b56a', mishap: '#8fc7e5', house: '#a9b6c8', request: '#b6e58f', whereabouts: '#9a9486' };
+const KIND_COLOR: Record<FactKind, string> = { romance: '#e58fb0', odd: '#e0b56a', mishap: '#8fc7e5', house: '#a9b6c8', request: '#b6e58f', whereabouts: '#9a9486', case: '#c99ae0' };
+const CASE_RGB = '201, 154, 224';
+const CASE_LABEL: Record<CaseKind, string> = { gone: 'something gone', 'person-gone': 'someone missing', dark: 'lights out', locked: 'a door locked', noise: 'a crash', cheating: 'cheating?', 'not-themselves': 'not themselves' };
 /** How long a sound or a piece of gossip stays drawn (in-game s). */
 const SOUND_FADE = 20;
 const GOSSIP_FADE = 40;
@@ -621,6 +647,46 @@ function drawOverlays(states: FrameState[]): void {
     }
   }
 
+  // Cases: the picked person's (their rooms outlined, a line to each candidate with their share),
+  // or, with nobody picked, how many hold an open case about each room.
+  if (overlays.has('cases')) {
+    const outline = (room: number, a: number) => {
+      const r = bp.rooms[room];
+      if (!r || r.level !== planLevel) return null;
+      const [x0, y0] = planPx(r.inner.x0, r.inner.z0);
+      const [x1, y1] = planPx(r.inner.x1, r.inner.z1);
+      octx.fillStyle = `rgba(${CASE_RGB}, ${0.08 * a})`;
+      octx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      octx.strokeStyle = `rgba(${CASE_RGB}, ${0.4 + 0.5 * a})`;
+      octx.lineWidth = 2;
+      octx.setLineDash([6, 4]);
+      octx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      octx.setLineDash([]);
+      return [(x0 + x1) / 2, (y0 + y1) / 2] as [number, number];
+    };
+    if (sel) {
+      for (const c of party.register.casesOf(sel.id)) {
+        if (c.state === 'closed' || c.room < 0) continue;
+        const mid = outline(c.room, c.state === 'settled' ? 1 : 0.6);
+        if (!mid) continue;
+        chip(`${CASE_LABEL[c.kind]}${c.state === 'settled' ? ' · settled' : ''}`, mid[0], mid[1] + 20, `rgb(${CASE_RGB})`);
+        for (const k of c.candidates) {
+          const to = here(k.who);
+          if (!to || k.p < 0.05) continue;
+          line(mid, to, `rgba(${CASE_RGB}, ${0.35 + 0.65 * Math.min(1, k.p / CASES[c.kind].settle)})`, 1 + 3 * k.p, c.state === 'settled' ? undefined : [4, 3]);
+          chip(pct(k.p), to[0], to[1] - 16, `rgb(${CASE_RGB})`);
+        }
+      }
+    } else {
+      const holders = new Map<number, number>();
+      for (const q of party.people) for (const c of party.register.casesOf(q.id)) if (c.state !== 'closed' && c.room >= 0) holders.set(c.room, (holders.get(c.room) ?? 0) + 1);
+      for (const [room, k] of holders) {
+        const mid = outline(room, Math.min(1, k / 10));
+        if (mid) chip(`${k} know`, mid[0], mid[1] + 20, `rgb(${CASE_RGB})`);
+      }
+    }
+  }
+
   // Suspicion: how much the picked person suspects each other person, or, with nobody picked,
   // how suspected each person is on average by everyone there.
   if (overlays.has('suspicion')) {
@@ -754,6 +820,8 @@ function factText(f: number): string {
   const obj = m.object[f]!;
   const room = m.room[f]!;
   const where = room === -2 ? 'terrace' : room >= 0 ? bp.rooms[room]?.label.toLowerCase() : null;
+  if (verb === 'gone') return `something of ${party.people[subj]?.name ?? 'the house'}'s gone${where ? ` · ${where}` : ''}`;
+  if (verb === 'blamed') return `${party.people[subj]?.name ?? '?'} took it${where ? ` · ${where}` : ''}`;
   return [
     subj >= 0 ? `${party.people[subj]?.name ?? '?'}:` : null,
     verb.replace(/-/g, ' '),
@@ -794,6 +862,20 @@ function mindText(p: Person): string {
   facts.sort((a, b) => b.c - a.c);
   lines.push(facts.length ? `knows ${facts.length} thing${facts.length > 1 ? 's' : ''}:` : 'knows nothing worth telling');
   for (const x of facts.slice(0, 6)) lines.push(`  ${factText(x.f)} (${x.from < 0 ? 'saw it' : `from ${name(x.from)}`}, ${pct(x.c)})`);
+  // Connecting the dots: open cases first, each with its room, window and who it points at.
+  const reg = party.register;
+  const cases = reg.casesOf(p.id).filter((c) => c.state !== 'closed');
+  const entries = reg.entriesOf(p.id);
+  const claims = entries.filter((e) => e.claim).length;
+  lines.push(`register: ${entries.length - claims} sightings · ${claims} claims${cases.length ? ' · cases:' : ''}`);
+  for (const c of cases.slice(0, 4)) {
+    const where = c.room === -2 ? 'terrace' : c.room >= 0 ? bp.rooms[c.room]?.label.toLowerCase() : null;
+    const what = c.kind === 'gone' && c.subject >= 0 ? `something of ${name(c.subject)}'s gone` : `${CASE_LABEL[c.kind]}${c.subject >= 0 && c.kind !== 'noise' ? `: ${name(c.subject)}` : ''}`;
+    const span = c.room >= 0 || c.room === -2 ? ` · ${clockLabel(c.from)}–${clockLabel(c.to)}` : '';
+    const who = c.candidates.filter((k) => k.p >= 0.05).slice(0, 3);
+    lines.push(`  ${what}${where ? ` · ${where}` : ''}${span}${c.state === 'settled' ? ' · settled' : ''}${c.firstHand ? ' (saw it)' : c.teller >= 0 ? ` (from ${name(c.teller)})` : ''}`);
+    lines.push(`    ${who.length ? who.map((k) => `${name(k.who)} ${pct(k.p)}`).join(', ') : 'nobody in mind yet'}`);
+  }
   return lines.join('\n');
 }
 
@@ -806,8 +888,9 @@ function roomName(p: Person): string {
 type Kinds = ReadonlySet<PartyEvent['kind']>;
 /** The event log's filters. */
 const LOG_FILTERS: Record<string, Kinds> = {
-  'the evening': new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump', 'double-take', 'test', 'gossip', 'wrong-turn', 'hush', 'ask', 'heard']),
+  'the evening': new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump', 'double-take', 'test', 'gossip', 'wrong-turn', 'hush', 'ask', 'heard', 'case', 'blame', 'tell', 'conflict']),
   gossip: new Set(['gossip']),
+  'connecting the dots': new Set(['case', 'ask-around', 'lead', 'blame', 'tell', 'conflict', 'recognised']),
   noticing: new Set(['double-take', 'test', 'hush', 'heard']),
   'finding the way': new Set(['wrong-turn', 'ask']),
   'the house': new Set(['bathroom-taken', 'knock', 'bump', 'light']),
@@ -815,6 +898,12 @@ const LOG_FILTERS: Record<string, Kinds> = {
 };
 let logFilter = params.get('log') ?? 'the evening';
 if (!LOG_FILTERS[logFilter]) logFilter = 'the evening';
+
+/** " in the study", for an event that names a room. */
+function roomOf(e: PartyEvent): string {
+  if (e.room === undefined || e.room === -1) return '';
+  return e.room === -2 ? ' on the terrace' : ` in the ${bp.rooms[e.room]?.label.toLowerCase() ?? 'room'}`;
+}
 
 function eventText(e: PartyEvent): string {
   const n = (i: number | undefined) => (i !== undefined ? (party.people[i]?.name ?? '?') : '?');
@@ -853,6 +942,20 @@ function eventText(e: PartyEvent): string {
       return `${n(e.actors[0])} asks ${n(e.actors[1])} the way${e.note === 'shrug' ? ", who doesn't know" : ''}`;
     case 'heard':
       return `${n(e.actors[0])} hears a ${(e.note ?? 'noise').replace('-', ' ')} and goes to look`;
+    case 'case':
+      return `${n(e.actors[0])} notices ${e.note === 'gone' ? `something of ${e.actors[1] === e.actors[0] ? 'theirs' : `${n(e.actors[1])}'s`} gone` : CASE_LABEL[e.note as CaseKind] ?? e.note}${roomOf(e)}`;
+    case 'ask-around':
+      return `${n(e.actors[0])} asks round about ${CASE_LABEL[e.note as CaseKind] ?? e.note}${e.actors.length > 1 ? `: ${e.actors.slice(1).map(n).join(', ')} saw something` : ', nobody saw anything'}`;
+    case 'lead':
+      return `${n(e.actors[0])} says it points at ${n(e.actors[1])}`;
+    case 'blame':
+      return `${n(e.actors[0])} puts it together: ${n(e.actors[1])}${e.note === 'gone' ? ' took it' : ''}${roomOf(e)}`;
+    case 'tell':
+      return `${n(e.actors[0])} tells ${n(e.actors[1])} what they worked out`;
+    case 'conflict':
+      return e.note === 'claim' ? `${n(e.actors[0])} catches ${n(e.actors[1])} out: not where they said` : e.note === 'not-themselves' ? `${n(e.actors[0])}: ${n(e.actors[1])} seen in two places at once?` : `${n(e.actors[0])} hears ${n(e.actors[1])} was somewhere they can't have been`;
+    case 'recognised':
+      return `${n(e.actors[0])} realises who they saw: ${n(e.actors[1])}`;
     default:
       return e.kind;
   }
@@ -889,7 +992,8 @@ function refreshPanel(): void {
     `${talking} conversations · ${count((p) => p.pose === 'dance')} dancing · ${count((p) => p.pose === 'sit')} seated · ${count((p) => p.pose === 'walk' || p.pose === 'climb')} walking`,
     `${party.body.stats.taken} found a bathroom taken · ${party.body.stats.knocks} knocks · ${party.body.stats.bumps} bumps`,
     `${st.told} things told · ${st.overheard} overheard · ${st.doubleTakes} double takes · ${st.tests} tests · ${st.hushes} hushes`,
-    `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} rumour${planted.length > 1 ? 's' : ''} planted` : ''}`,
+    `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} planted` : ''}`,
+    `${st.cases} cases · ${st.askedAround} asked round · ${st.blames} settled on someone · ${st.conflicts} didn't fit · ${st.recognised} faces put a name to · ${st.claims} said where they'd been`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile ? `ms ${Object.entries(party.profile).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ')}` : '',
@@ -999,12 +1103,24 @@ buildOverlayButtons();
   };
 }
 // Lab provocations go in at the current time and are kept, so a seek back replays them.
-$('rumour').onclick = () => {
-  if (!party.people[selected]) return;
-  const v: Provocation = { t: party.t, subject: selected };
+const provoke = (v: Provocation) => {
   planted.push(v);
   party.plant(v);
   refreshPanel();
+};
+$('rumour').onclick = () => {
+  if (party.people[selected]) provoke({ t: party.t, subject: selected });
+};
+$('gone').onclick = () => {
+  const p = party.people[selected];
+  if (!p?.present || p.room === -1) return;
+  goneRoom = p.room;
+  provoke({ t: party.t, kind: 'gone', subject: -1, witness: p.id, room: p.room });
+};
+$('seen').onclick = () => {
+  const p = party.people[selected];
+  if (!p?.present) return;
+  provoke({ t: party.t, kind: 'seen', subject: p.id, room: goneRoom !== -1 ? goneRoom : p.room });
 };
 {
   const who = document.createElement('select');

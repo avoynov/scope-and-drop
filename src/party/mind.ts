@@ -8,11 +8,16 @@
  * it refills, c a response curve on urgency, T traits, D a distance penalty and K
  * whether the person knows it is possible (their memory of a busy bathroom, say).
  * The choice is a weighted draw over the best few, not the maximum.
+ *
+ * Minds that notice (milestone 2): people only plan toward rooms they know; with no bathroom
+ * known they ask someone the way. Energy draws them to the dance floor, tension toward friends,
+ * and they keep clear of conversations with someone they're wary of.
  */
 import type { Rng } from '../mansion/core/rng';
 import { PARTY_LENGTH, type PhaseId } from './clock';
 import type { Places, RoomCells } from './places';
 import type { Pathfinder } from './path';
+import { KNOWN, SUSPICIOUS, WARY } from './memory';
 import { DRINKS, type ActionId, type ActionState, type Group, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from './types';
 
 /** How fitting each action is in each phase (0 = never chosen). */
@@ -84,7 +89,21 @@ export interface MindWorld {
   glassFill(p: Person): number;
   /** Phase the person believes is running, and how far into it. */
   phaseOf(p: Person): { id: PhaseId; progress: number };
+  /** How well this person knows a room (-2 the terrace), 0 to 1. */
+  familiarity(p: Person, room: number): number;
+  /** How much i suspects j, 0 to 1. */
+  suspects(i: number, j: number): number;
+  /** How lively and how uneasy this person feels, 0 to 1. */
+  energy(p: Person): number;
+  tension(p: Person): number;
+  /** Someone near and known to ask the way, or null. */
+  answerer(p: Person): Person | null;
 }
+
+/** Actions that go wherever the evening or the crowd goes, known room or not. */
+const ANYWHERE: ReadonlySet<ActionId> = new Set(['champagne', 'toast', 'dinner', 'leave', 'wander', 'ask']);
+/** Below this bladder level someone goes looking for any bathroom, known or not. */
+const DESPERATE = 0.1;
 
 export const spotKey = (s: Spot): string => `${s.level}:${s.x.toFixed(2)},${s.z.toFixed(2)}`;
 
@@ -142,11 +161,24 @@ export function groupSlot(g: Group, people: Person[], pf: Pathfinder): Spot | nu
 
 /** Every action this person could start now, before scoring. */
 export function candidates(p: Person, w: MindWorld): Candidate[] {
+  const all = allCandidates(p, w);
+  // Only toward rooms they know (a desperate bathroom trip aside).
+  return all.filter((c) => ANYWHERE.has(c.id) || !c.target || (c.id === 'toilet' && p.needs.bladder < DESPERATE) || w.familiarity(p, destination(c, w.places)) >= KNOWN);
+}
+
+/** The room someone has in mind when they set off: the bathroom itself, not the corridor outside its door. */
+export function destination(a: { id: ActionId; target: Spot | null; ref?: number }, places: Places): number {
+  if (a.id === 'toilet' && a.ref !== undefined) return places.bathrooms[a.ref]?.room.index ?? a.target?.room ?? -1;
+  return a.target?.room ?? -1;
+}
+
+function allCandidates(p: Person, w: MindWorld): Candidate[] {
   const { rng, places, cells, people } = w;
   const out: Candidate[] = [];
   const phase = w.phaseOf(p);
   const W = PHASE_WEIGHTS[phase.id];
   const has = (a: ActionId) => (W[a] ?? 0) > 0 || (a === 'leave' && phase.id === 'farewell');
+  const tension = w.tension(p);
 
   if (has('mingle')) {
     for (const g of w.groups.values()) {
@@ -154,13 +186,22 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
       const slot = groupSlot(g, people, w.pf);
       if (!slot) continue;
       let mod = 1;
+      let wary = false;
+      let suspect = false;
       for (const m of g.members) {
         const o = people[m]!;
         mod += 0.35 * o.traits.talk;
-        if (o.id === p.partner) mod += 1.2;
-        if (p.friends.includes(o.id)) mod += 0.6;
+        // Uneasy people keep closer to their own.
+        if (o.id === p.partner) mod += 1.2 * (1 + tension);
+        if (p.friends.includes(o.id)) mod += 0.6 * (1 + tension);
+        const s = w.suspects(p.id, m);
+        if (s >= WARY) wary = true;
+        if (s >= SUSPICIOUS) suspect = true;
       }
       if (g.members.length >= 5) mod *= 0.6;
+      // Nobody seeks out a quiet word with someone they're wary of.
+      if (wary && g.members.length === 1) mod *= 0.2;
+      else if (suspect) mod *= 0.5;
       out.push({ id: 'mingle', target: slot, duration: rng.range(240, 720), pose: 'talk', gain: { social: 0.6 }, ref: g.id, mod });
     }
     for (let i = 0; i < 2; i++) {
@@ -186,6 +227,12 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
       if ((p.avoid.get(`bath:${i}`) ?? -1) > w.t || !w.worthTrying(p, i)) return;
       out.push({ id: 'toilet', target: b.door, duration: rng.range(120, 240), pose: 'wait', gain: { bladder: 1 }, ref: i, note: 'door' });
     });
+    // No idea where one is: ask someone (scored as the bathroom itself).
+    if (places.bathrooms.length && places.bathrooms.every((b) => w.familiarity(p, b.room.index) < KNOWN)) {
+      const q = w.answerer(p);
+      const s = q ? beside(q, p, w.pf) : null;
+      if (q && s) out.push({ id: 'ask', target: s, duration: 4, pose: 'talk', gain: { bladder: 1 }, ref: q.id, note: 'bathroom' });
+    }
   }
   if (has('sit')) {
     const free = places.seats.filter((s) => !w.seatTaken(s));
@@ -221,7 +268,9 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
       }
       if (w.taken(spotKey(s))) continue;
       const after = p.quirks.includes('dances-after-drink') && p.tipsy > 0.15 ? 1.6 : 1;
-      out.push({ id: 'dance', target: s, duration: rng.range(240, 600), pose: 'dance', gain: { dance: 0.8, social: 0.2 }, key: spotKey(s), mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after });
+      // Lively people take to the floor.
+      const energy = 0.6 + 0.8 * w.energy(p);
+      out.push({ id: 'dance', target: s, duration: rng.range(240, 600), pose: 'dance', gain: { dance: 0.8, social: 0.2 }, key: spotKey(s), mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after * energy });
     }
   }
   if (has('games')) {
@@ -272,6 +321,17 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
   return out;
 }
 
+/** A walkable spot a step from someone, on the side toward another person, facing them. */
+export function beside(q: Person, from: { x: number; z: number }, pf: Pathfinder, gap = 0.9): Spot | null {
+  const d = Math.hypot(from.x - q.x, from.z - q.z);
+  const ux = d > 1e-3 ? (from.x - q.x) / d : Math.sin(q.yaw);
+  const uz = d > 1e-3 ? (from.z - q.z) / d : Math.cos(q.yaw);
+  const s = pf.snap(q.level, q.x + ux * gap, q.z + uz * gap, 0.8);
+  if (!s) return null;
+  const room = pf.roomAt(s.level, s.x, s.z);
+  return room === -1 ? null : { level: s.level, x: s.x, z: s.z, yaw: Math.atan2(q.x - s.x, q.z - s.z), room };
+}
+
 /** Round the host, facing in: a ring 2–5 m from the toast spot. */
 export function toastSpot(w: MindWorld): Spot | null {
   const c = w.places.toastSpot;
@@ -288,7 +348,7 @@ export function toastSpot(w: MindWorld): Spot | null {
 
 export function score(p: Person, c: Candidate, w: MindWorld): number {
   const phase = w.phaseOf(p);
-  const W = c.id === 'leave' ? 1 : (PHASE_WEIGHTS[phase.id][c.id] ?? 0);
+  const W = c.id === 'leave' ? 1 : (PHASE_WEIGHTS[phase.id][c.id === 'ask' ? 'toilet' : c.id] ?? 0);
   if (W <= 0) return 0;
   const needs = c.programme ? 1 : needTerm(p, c.gain);
   const d = distance(p, c.target);

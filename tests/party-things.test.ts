@@ -427,20 +427,7 @@ describe('an evening with things', () => {
 });
 
 describe('determinism', () => {
-  // Golden digests: any change to what people do changes these. When a change is meant, check the lab and the numbers in
-  // docs/party.md, then paste the new values here.
-  it('matches the golden evenings', () => {
-    const golden: Array<[string, string]> = [
-      ['gala-night', '2700:b9a7464c'],
-      ['orangery-1', '2700:3cb9d3a4'],
-    ];
-    for (const [seed, digest] of golden) {
-      const party = new Party(seed === 'gala-night' ? bp : generateMansion({ seed }), { seed: 'golden' });
-      party.advance(45 * 60);
-      expect(party.digest(), seed).toBe(digest);
-    }
-  });
-
+  // The golden digests live in tests/golden/party-digests.json (tests/party-minds.test.ts).
   it('replays the same evening, doors, drinks and all', () => {
     const a = new Party(bp, { seed: 'twice' });
     const b = new Party(bp, { seed: 'twice' });

@@ -46,7 +46,9 @@
       #detail { border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-bottom: 8px; display: none; }
       #detail.on { display: block; }
       #detail .name { font-size: 14px; }
-      #detail .meta { color: var(--muted); margin: 2px 0 6px; }
+      #detail .meta { color: var(--muted); margin: 2px 0 6px; white-space: pre-wrap; }
+      #detail .mind { color: var(--muted); margin: 0 0 8px; white-space: pre-wrap; max-height: 13em; overflow: auto; }
+      #detail .mind b { color: var(--ink); font-weight: 400; }
       #needs { display: grid; grid-template-columns: 74px 1fr; gap: 3px 8px; align-items: center; }
       #needs span { color: var(--muted); }
       #needs div { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
@@ -59,11 +61,15 @@
       #reticle .h, #reticle .v { position: absolute; background: rgba(10, 10, 10, 0.85); }
       #reticle .h { left: calc(50% - 34vmin); right: calc(50% - 34vmin); top: 50%; height: 1px; }
       #reticle .v { top: calc(50% - 34vmin); bottom: calc(50% - 34vmin); left: 50%; width: 1px; }
+      #overlay { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
       #plan-labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
       #plan-labels span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 3px; background: rgba(7, 8, 12, 0.6); color: var(--muted); }
       #plan-labels span.party { color: var(--ink); }
-      #floors, #plan-hint { display: none; }
-      body.plan #floors { display: flex; }
+      #floors, #plan-hint, #overlays { display: none; }
+      body.plan #floors, body.plan #overlays { display: flex; }
+      #overlays button, #mood button, #mood select { padding: 3px 7px; }
+      .label { color: var(--muted); }
+      #evfilter { padding: 3px 6px; }
       body.plan #plan-hint { display: block; color: var(--muted); }
       #busy { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: none; z-index: 3; }
       #busy.on { display: block; }
@@ -76,6 +82,7 @@
   </head>
   <body>
     <div id="reticle"><div class="h"></div><div class="v"></div></div>
+    <canvas id="overlay" aria-hidden="true"></canvas>
     <div id="plan-labels" aria-hidden="true"></div>
     <div id="tag"></div>
     <div id="busy">simulating…</div>
@@ -87,7 +94,10 @@
       <div class="row" id="speeds"></div>
       <div class="row" id="views"></div>
       <div class="row" id="floors"></div>
+      <div class="row" id="overlays" title="Overlays on the plan; sight, the map and suspicion follow whoever is picked"></div>
       <div class="row" id="plan-hint">scroll to zoom · drag to move · double-click to reset · click a marker to pick</div>
+      <div class="row" id="mood" title="Nudge the mood from now on; the evening's own rules take over after"><span class="label">mood</span></div>
+      <div class="row"><span class="label">log</span><select id="evfilter" aria-label="Which events to show"></select></div>
       <div id="events"></div>
       <div id="stats"></div>
     </div>
@@ -95,7 +105,8 @@
       <div id="detail">
         <div class="name"></div>
         <div class="meta"></div>
-        <div class="row"><button id="follow" title="Keep the scope on this person">follow</button><button id="unsel">close</button></div>
+        <div class="mind"></div>
+        <div class="row"><button id="follow" title="Keep the scope on this person">follow</button><button id="rumour" title="Someone in a conversation hears a juicy rumour about this person">plant a rumour</button><button id="unsel">close</button></div>
         <div id="needs"></div>
       </div>
       <h2>People</h2>

@@ -130,6 +130,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       quirks: [],
       partner: null,
       friends: [],
+      regular: false,
       seat: null,
       supper: null,
       fav: 'champagne',
@@ -162,6 +163,15 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       avoid: new Map(),
       phaseSeen: 0,
       speed: rng.range(1.15, 1.45),
+      gesture: null,
+      gestureUntil: 0,
+      lookX: 0,
+      lookZ: 0,
+      lookUntil: 0,
+      notable: null,
+      notableObj: -1,
+      notableUntil: 0,
+      detour: null,
     };
     people.push(p);
     return p;
@@ -285,5 +295,8 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
     g.fav = rng.weighted(FAV);
     if (rng.chance(0.2)) g.never = rng.weighted(NEVER.filter(([d]) => d !== g.fav));
   }
+  // Regulars, drawn after everything else: about a third of the guests have been here before, and the host's partner lives here.
+  for (const g of guests) g.regular = rng.chance(1 / 3);
+  if (host.partner !== null) people[host.partner]!.regular = true;
   return people;
 }

@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import type { ScopedLighting } from '../../mansion/build/lighting';
-import { DRINKS, type Held, type Person, type Pose } from '../types';
+import { DRINKS, type Gesture, type Held, type Person, type Pose } from '../types';
 
 /** The colour of what's in the glass. */
 const DRINK_COLOR: Partial<Record<Held, string>> = { champagne: '#e9d9a0', red: '#6e1424', white: '#e6dca6', beer: '#c98a2a', whisky: '#9a5a1e', water: '#d8e2e6' };
@@ -45,6 +45,10 @@ export interface FrameState {
   /** Room index for lighting (-1 = outside). */
   room: number;
   visible: boolean;
+  /** A gesture over the pose (asking, pointing, a shrug, leaning in), or null. */
+  gesture?: Gesture | null;
+  /** Head turned from the body for a glance (radians, the same sense as yaw). */
+  headYaw?: number;
 }
 
 function hash(n: number): number {
@@ -211,7 +215,8 @@ export class Crowd {
     const list = p.tipsy > 0.6 && !sit ? Math.min(1, (p.tipsy - 0.6) / 0.4) * 0.07 * Math.sin(t * 1.3) : 0;
     const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4)) * 0.03 : 0);
     const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5), tmpS.set(1, 1, 1));
-    const lean = s.pose === 'play' ? 0.35 : s.pose === 'look' ? 0.05 : 0;
+    const g = s.gesture ?? null;
+    const lean = s.pose === 'play' ? 0.35 : s.pose === 'look' ? 0.05 : g === 'lean' ? 0.14 : 0;
     const local = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
     const stretch = local(0, 0, 0, 0, 0, 0, 1, k, 1);
@@ -251,7 +256,10 @@ export class Crowd {
     const talking = s.pose === 'talk';
     const laugh = talking && p.quirks.includes('big-laugh') && Math.sin(t * 0.7) > 0.93;
     const nod = talking ? Math.sin(t * 2.3) * 0.08 : 0;
-    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, laugh ? -0.45 : nod + (s.pose === 'look' ? -0.12 : 0), talking ? Math.sin(t * 0.9) * 0.3 : 0, 0, k, k, k));
+    // A glance turns the head (no further than the neck allows); otherwise a talker looks round the group.
+    const turn = s.headYaw ? Math.max(-1.3, Math.min(1.3, s.headYaw)) : talking ? Math.sin(t * 0.9) * 0.3 : 0;
+    const tilt = g === 'ask' ? 0 : g === 'shrug' ? 0.12 : 0;
+    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, laugh ? -0.45 : nod + (s.pose === 'look' ? -0.12 : 0) + (g === 'lean' ? 0.15 : 0), turn, tilt, k, k, k));
     set('head', 0, head);
     set('hair', 0, head.clone().multiply(local(0, 0.012, -0.012, -0.25)));
     if (p.quirks.includes('glasses')) set('glasses', 0, head.clone().multiply(local(0, 0.015, 0.1)));
@@ -344,6 +352,17 @@ export class Crowd {
     } else if (idle && p.quirks.includes('hands-in-pockets') && !p.held) {
       rp = lp = -0.15;
       rr = lr = 0.02;
+    }
+    // A gesture over the pose: a hand out palm up to ask, an arm out to point, both hands up for a shrug.
+    if (g === 'ask') {
+      rp = 1.05;
+      rr = 0.35;
+    } else if (g === 'point') {
+      rp = 1.55;
+      rr = 0.05 + (s.headYaw ? Math.max(-0.6, Math.min(0.6, s.headYaw * 0.5)) : 0);
+    } else if (g === 'shrug') {
+      rp = lp = 0.55;
+      rr = lr = 0.55;
     }
     if (p.quirks.includes('cane') && !sit) lp = Math.max(lp, 0.35);
     const right = arm(1, rp, rr);

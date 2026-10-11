@@ -8,7 +8,10 @@
  */
 import * as THREE from 'three';
 import type { ScopedLighting } from '../../mansion/build/lighting';
-import type { Person, Pose } from '../types';
+import { DRINKS, type Held, type Person, type Pose } from '../types';
+
+/** The colour of what's in the glass. */
+const DRINK_COLOR: Partial<Record<Held, string>> = { champagne: '#e9d9a0', red: '#6e1424', white: '#e6dca6', beer: '#c98a2a', whisky: '#9a5a1e', water: '#d8e2e6' };
 
 type PartId = 'thigh' | 'shin' | 'skirt' | 'torso' | 'shirt' | 'head' | 'hair' | 'arm' | 'held' | 'tray' | 'hat' | 'glasses' | 'cane' | 'halo' | 'marker';
 
@@ -108,6 +111,8 @@ export class Crowd {
 
   /** Selection the halo colours were painted for. */
   private painted = -1;
+  /** The drink each glass was last painted for. */
+  private glass: Array<Held | null> = [];
 
   /** Colours from each person's look. */
   private paint(): void {
@@ -166,10 +171,26 @@ export class Crowd {
       P.get('halo')!.mesh.setMatrixAt(i, tmpM);
     }
     if (this.painted !== this.selected) this.paint();
+    this.paintGlasses();
     for (const part of P.values()) {
       part.mesh.instanceMatrix.needsUpdate = true;
       if (part.scope) part.scope.needsUpdate = true;
     }
+  }
+
+  /** A glass shows the colour of its drink; repainted only when what's held changes. */
+  private paintGlasses(): void {
+    const part = this.parts.get('held')!;
+    const c = new THREE.Color();
+    let dirty = false;
+    this.people.forEach((p, i) => {
+      const h = p.held && DRINKS.has(p.held) ? p.held : null;
+      if (h === (this.glass[i] ?? null)) return;
+      this.glass[i] = h;
+      part.mesh.setColorAt(i * part.per, c.set((h && DRINK_COLOR[h]) ?? '#e8e2c8'));
+      dirty = true;
+    });
+    if (dirty && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
   }
 
   private pose(i: number, p: Person, s: FrameState, time: number): void {
@@ -186,6 +207,8 @@ export class Crowd {
     const stride = walking ? Math.sin(gait) : 0;
     const bob = walking ? Math.abs(Math.cos(gait)) * 0.025 * k * (limp && stride > 0 ? 2.2 : 1) : 0;
     const sway = dance ? Math.sin(t * 3.2) : 0;
+    // Past 0.6 tipsiness a slow side-to-side list, more the drunker they are.
+    const list = p.tipsy > 0.6 && !sit ? Math.min(1, (p.tipsy - 0.6) / 0.4) * 0.07 * Math.sin(t * 1.3) : 0;
     const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4)) * 0.03 : 0);
     const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5), tmpS.set(1, 1, 1));
     const lean = s.pose === 'play' ? 0.35 : s.pose === 'look' ? 0.05 : 0;
@@ -199,7 +222,7 @@ export class Crowd {
     const hide = (id: PartId, kk = 0) => set(id, kk, ZERO);
 
     // Upper body frame: hips, leaning forward from the hips.
-    const hips = base.clone().multiply(local(0, hipY, sit ? -0.05 : 0, lean, 0, dance ? sway * 0.08 : 0));
+    const hips = base.clone().multiply(local(0, hipY, sit ? -0.05 : 0, lean, 0, (dance ? sway * 0.08 : 0) + list));
     // Legs: thigh from the hip, shin from the knee. Positive pitch swings a limb back.
     for (const side of [-1, 1] as const) {
       const kk = side < 0 ? 0 : 1;
@@ -297,6 +320,11 @@ export class Crowd {
         lp = 0.9;
         rr = 0.2;
         break;
+      case 'knock':
+        // Knuckles to the door, two quick taps.
+        rp = 1.75 + (cycle(0.5, 0.5) ? 0.15 : 0);
+        rr = 0.12;
+        break;
       case 'look':
         // Hands behind the back.
         rp = lp = -0.45;
@@ -322,7 +350,7 @@ export class Crowd {
     arm(-1, lp, lr);
 
     // What's in the right hand: kept upright whatever the arm does.
-    const drink = p.held === 'champagne' || p.held === 'wine' || p.held === 'beer' || p.held === 'whisky' || p.held === 'water';
+    const drink = p.held !== null && DRINKS.has(p.held);
     if (drink && s.pose !== 'serve') set('held', 0, right.multiply(local(0, -0.62 * k, 0.02, rp)));
     else hide('held');
     if (p.held === 'tray' && !sit) set('tray', 0, hips.clone().multiply(local(0.3, shoulderY + 0.08, 0.42)));

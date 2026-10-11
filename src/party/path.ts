@@ -1,9 +1,50 @@
 /**
  * Walking routes on the mansion's nav grids: A* per storey (8-neighbour, no corner
  * cutting), string-pulled to a few waypoints, with stairs linking storeys.
+ *
+ * Doors gate the grid: a route may cross a door's cells only if the walker can pass it,
+ * a closed door costs a little, and private rooms are never a short cut. Repeat trips
+ * reuse a cached cell path, checked against the doors it crosses before each reuse.
  */
 import type { MansionBlueprint, NavLevel } from '../mansion/core/types';
 import type { Waypoint } from './types';
+
+/** Who is walking, as far as locked doors care. */
+export interface Walker {
+  id: number;
+  ring: 'none' | 'staff' | 'host';
+  lentKey: number;
+  /** The room they stand in: a bolt opens from its own side. */
+  room: number;
+}
+
+/** What the doors ask of a route. world.ts provides it. */
+export interface DoorGate {
+  /** Door id per nav cell of a storey (-1 elsewhere). */
+  doorAt(level: number): Int16Array | undefined;
+  count(): number;
+  /**
+   * Extra cost (in nav cells) of crossing door `d` for this walker, Infinity when they can't.
+   * `a` and `b` are the start and goal rooms, so a private room's door is cheap only when the trip begins or ends there.
+   */
+  cost(d: number, who: Walker | null, a: number, b: number): number;
+  /** Whether the walker may cross the door now (a cached route is checked against this). */
+  passable(d: number, who: Walker | null): boolean;
+  /** Whether two rooms (-2 the terrace) are joined at all for this walker; a quick no saves a hopeless search. */
+  reachable(a: number, b: number, who: Walker | null): boolean;
+  /** Bumped when a door on the way between rooms unlocks, so a cached detour round it is searched again. */
+  readonly unlocks: number;
+}
+
+/** Cached A* cell paths (least recently used is dropped). */
+const CACHE_SIZE = 256;
+
+interface Cached {
+  cells: Int32Array;
+  doors: number[];
+  /** gate.unlocks when it was searched. */
+  unlocks: number;
+}
 
 interface Stair {
   via: string;
@@ -74,6 +115,11 @@ export class Pathfinder {
   private closed = new Map<number, Uint32Array>();
   private run = 0;
   private heap = new Heap();
+  private gate: DoorGate | null = null;
+  private doorCost = new Float64Array(0);
+  private cache = new Map<string, Cached>();
+  /** A* runs and cache hits, for the profile. */
+  readonly stats = { searches: 0, hits: 0 };
 
   constructor(bp: MansionBlueprint) {
     for (const n of bp.nav.levels) {
@@ -96,6 +142,13 @@ export class Pathfinder {
       const top = this.snap(hi.level, hi.x, hi.z, 3);
       if (bottom && top) this.stairs.push({ via: a.via, bottom, top });
     }
+  }
+
+  /** Doors from now on gate every route. */
+  setGate(gate: DoorGate): void {
+    this.gate = gate;
+    this.doorCost = new Float64Array(gate.count());
+    this.cache.clear();
   }
 
   cellOf(level: number, x: number, z: number): number {
@@ -160,8 +213,13 @@ export class Pathfinder {
   }
 
   /** Waypoints from a point to a point, possibly across storeys; null when unreachable. */
-  route(from: Waypoint, to: Waypoint): Waypoint[] | null {
-    if (from.level === to.level) return this.levelRoute(from, to);
+  route(from: Waypoint, to: Waypoint, who: Walker | null = null): Waypoint[] | null {
+    if (this.gate) {
+      const a = this.roomAt(from.level, from.x, from.z);
+      const b = this.roomAt(to.level, to.x, to.z);
+      if (a !== -1 && b !== -1 && !this.gate.reachable(a, b, who)) return null;
+    }
+    if (from.level === to.level) return this.levelRoute(from, to, who);
     // Go one storey at a time toward the target, through the stair that makes the shortest straight-line detour.
     const up = to.level > from.level;
     const options = this.stairs.filter((s) => (up ? s.bottom.level === from.level : s.top.level === from.level) && (up ? s.top.level <= to.level : s.bottom.level >= to.level));
@@ -173,30 +231,32 @@ export class Pathfinder {
       return Math.hypot(enter(s).x - from.x, enter(s).z - from.z) + Math.hypot(exit(s).x - to.x, exit(s).z - to.z);
     }
     for (const s of options.slice(0, 3)) {
-      const a = this.levelRoute(from, enter(s));
+      const a = this.levelRoute(from, enter(s), who);
       if (!a) continue;
-      const b = this.route(exit(s), to);
+      const b = this.route(exit(s), to, who);
       if (!b) continue;
       return [...a, { ...exit(s), climb: true }, ...b.slice(1)];
     }
     return null;
   }
 
-  private levelRoute(from: Waypoint, to: Waypoint): Waypoint[] | null {
+  private levelRoute(from: Waypoint, to: Waypoint, who: Walker | null): Waypoint[] | null {
     const n = this.levels.get(from.level);
     if (!n) return null;
     const s = this.cellOf(from.level, from.x, from.z);
     const t = this.cellOf(to.level, to.x, to.z);
     if (s < 0 || t < 0 || !n.walk[t]) return null;
     if (s === t) return [from, to];
-    const cells = this.astar(n, n.walk[s] ? s : this.cellOf(from.level, ...this.snapXZ(from)), t);
-    if (!cells) return null;
+    const path = this.cellPath(n, n.walk[s] ? s : this.cellOf(from.level, ...this.snapXZ(from)), t, who);
+    if (!path) return null;
+    const { cells, doors } = path;
     const pts: Waypoint[] = [from];
-    // String pulling: keep a waypoint only where the straight line to the next kept one would leave the walkable floor.
+    // String pulling: keep a waypoint only where the straight line to the next kept one would leave the walkable floor
+    // or cut through a doorway the search didn't use.
     let anchor = { x: from.x, z: from.z };
     for (let i = 1; i < cells.length; i++) {
       const p = this.centre(n, cells[i]!);
-      if (!this.clear(n, anchor.x, anchor.z, p.x, p.z)) {
+      if (!this.clear(n, anchor.x, anchor.z, p.x, p.z, doors)) {
         const q = this.centre(n, cells[i - 1]!);
         pts.push({ level: n.level, x: q.x, z: q.z });
         anchor = q;
@@ -217,8 +277,12 @@ export class Pathfinder {
     return { x: n.originX + (c + 0.5) * n.cell, z: n.originZ + (r + 0.5) * n.cell };
   }
 
-  /** True when every cell the straight segment passes through is walkable (grid traversal, Amanatides–Woo). */
-  clear(n: NavLevel, x0: number, z0: number, x1: number, z1: number): boolean {
+  /**
+   * True when every cell the straight segment passes through is walkable (grid traversal, Amanatides–Woo).
+   * With `doors`, the segment may cross only those doorways.
+   */
+  clear(n: NavLevel, x0: number, z0: number, x1: number, z1: number, doors?: readonly number[]): boolean {
+    const at = doors ? this.gate?.doorAt(n.level) : undefined;
     const fx0 = (x0 - n.originX) / n.cell;
     const fz0 = (z0 - n.originZ) / n.cell;
     const fx1 = (x1 - n.originX) / n.cell;
@@ -235,7 +299,13 @@ export class Pathfinder {
     const tdz = dz !== 0 ? Math.abs(1 / dz) : Infinity;
     let tx = dx !== 0 ? (dx > 0 ? c + 1 - fx0 : fx0 - c) * tdx : Infinity;
     let tz = dz !== 0 ? (dz > 0 ? r + 1 - fz0 : fz0 - r) * tdz : Infinity;
-    const ok = (cc: number, rr: number) => cc >= 0 && rr >= 0 && cc < n.cols && rr < n.rows && n.walk[rr * n.cols + cc] === 1;
+    const ok = (cc: number, rr: number) => {
+      if (cc < 0 || rr < 0 || cc >= n.cols || rr >= n.rows) return false;
+      const k = rr * n.cols + cc;
+      if (n.walk[k] !== 1) return false;
+      const d = at ? at[k]! : -1;
+      return d < 0 || doors!.includes(d);
+    };
     if (!ok(c, r)) return false;
     for (let guard = 0; guard < 4096 && (c !== c1 || r !== r1); guard++) {
       if (Math.abs(tx - tz) < 1e-9) {
@@ -258,8 +328,44 @@ export class Pathfinder {
     return true;
   }
 
-  private astar(n: NavLevel, s: number, t: number): number[] | null {
+  /** A* cell path and the doors it crosses, from the cache when those doors still let this walker through. */
+  private cellPath(n: NavLevel, s: number, t: number, who: Walker | null): Cached | null {
     if (s < 0 || !n.walk[s]) return null;
+    const gate = this.gate;
+    const key = `${n.level}:${s}:${t}:${who ? `${who.ring}${who.lentKey}` : '-'}`;
+    const hit = this.cache.get(key);
+    if (hit && (!gate || (hit.unlocks === gate.unlocks && hit.doors.every((d) => gate.passable(d, who))))) {
+      this.cache.delete(key);
+      this.cache.set(key, hit);
+      this.stats.hits++;
+      return hit;
+    }
+    const cells = this.astar(n, s, t, who);
+    if (!cells) return null;
+    const doors: number[] = [];
+    const at = gate?.doorAt(n.level);
+    if (at) for (const k of cells) {
+      const d = at[k]!;
+      if (d >= 0 && doors[doors.length - 1] !== d) doors.push(d);
+    }
+    if (this.cache.size >= CACHE_SIZE) this.cache.delete(this.cache.keys().next().value!);
+    const out = { cells, doors, unlocks: gate?.unlocks ?? 0 };
+    this.cache.set(key, out);
+    return out;
+  }
+
+  private astar(n: NavLevel, s: number, t: number, who: Walker | null): Int32Array | null {
+    if (s < 0 || !n.walk[s]) return null;
+    this.stats.searches++;
+    const gate = this.gate;
+    const at = gate?.doorAt(n.level);
+    if (gate && at) {
+      // Each door's cost once per search: it depends on the walker and on the rooms the trip joins.
+      const a = n.room[s]!;
+      const b = n.room[t]!;
+      for (let d = 0; d < this.doorCost.length; d++) this.doorCost[d] = gate.cost(d, who, a, b);
+    }
+    const doorCost = this.doorCost;
     const g = this.g.get(n.level)!;
     const came = this.came.get(n.level)!;
     const stamp = this.stamp.get(n.level)!;
@@ -289,7 +395,7 @@ export class Pathfinder {
       if (k === t) {
         const out: number[] = [];
         for (let q = t; q >= 0; q = came[q]!) out.push(q);
-        return out.reverse();
+        return Int32Array.from(out.reverse());
       }
       const c = k % cols;
       const r = (k - c) / cols;
@@ -305,7 +411,16 @@ export class Pathfinder {
           if (!walk[nk] || closed[nk] === run) continue;
           // No corner cutting.
           if (dr && dc && (!walk[r * cols + cc] || !walk[rr * cols + c])) continue;
-          const ng = gk + (dr && dc ? SQRT2 : 1);
+          let ng = gk + (dr && dc ? SQRT2 : 1);
+          if (at) {
+            // Stepping into a door's cells from outside them: locked for this walker, or a cost.
+            const d = at[nk]!;
+            if (d >= 0 && d !== at[k]) {
+              const extra = doorCost[d]!;
+              if (extra === Infinity) continue;
+              ng += extra;
+            }
+          }
           if (stamp[nk] === run && g[nk]! <= ng) continue;
           stamp[nk] = run;
           g[nk] = ng;

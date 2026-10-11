@@ -10,17 +10,17 @@
  * The choice is a weighted draw over the best few, not the maximum.
  */
 import type { Rng } from '../mansion/core/rng';
-import type { PhaseId } from './clock';
+import { PARTY_LENGTH, type PhaseId } from './clock';
 import type { Places, RoomCells } from './places';
 import type { Pathfinder } from './path';
-import type { ActionId, ActionState, Group, Held, NeedId, Needs, Person, Pose, Seat, Spot } from './types';
+import { DRINKS, type ActionId, type ActionState, type Group, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from './types';
 
 /** How fitting each action is in each phase (0 = never chosen). */
 export const PHASE_WEIGHTS: Record<PhaseId, Partial<Record<ActionId, number>>> = {
   arrival: { mingle: 1, drink: 0.9, toilet: 1, sit: 0.3, art: 0.6, terrace: 0.5, wander: 0.35 },
   mingle: { mingle: 1.4, drink: 1, toilet: 1, sit: 0.5, art: 0.7, terrace: 0.6, dance: 0.1, games: 0.3, wander: 0.3 },
   champagne: { champagne: 4, mingle: 0.6, toilet: 0.4, sit: 0.15, art: 0.15, terrace: 0.15, wander: 0.05 },
-  toast: { toast: 8, toilet: 0.15 },
+  toast: { toast: 8, champagne: 5, toilet: 0.15 },
   dinner: { dinner: 10, toilet: 0.3 },
   dancing: { dance: 2.4, mingle: 0.9, drink: 1, sit: 0.8, terrace: 0.6, toilet: 1, art: 0.2, wander: 0.15 },
   games: { games: 1.6, mingle: 0.8, drink: 1, sit: 0.7, terrace: 0.6, toilet: 1, dance: 0.3, art: 0.3, wander: 0.15 },
@@ -35,13 +35,13 @@ export function decayRates(p: Person): Needs {
   const t = p.traits;
   const limp = p.quirks.includes('limp') ? 1 : 0;
   const smoker = p.quirks.includes('smoker') ? 1 : 0;
-  const tipsy = Math.min(4, p.drinks);
+  const tipsy = p.tipsy;
   return {
     thirst: 0.01 * (0.6 + 0.8 * t.thirst),
     hunger: 0.004,
-    bladder: 0.003 + 0.0015 * tipsy,
+    bladder: 0.003 + 0.009 * tipsy,
     social: 0.012 * (0.4 + 1.2 * t.social),
-    dance: 0.006 * (0.3 + 1.4 * t.dance) + 0.002 * tipsy,
+    dance: 0.006 * (0.3 + 1.4 * t.dance) + 0.025 * tipsy,
     rest: 0.003 + 0.004 * limp,
     air: 0.003 + 0.01 * smoker,
     curiosity: 0.006 * (0.4 + 1.2 * t.curiosity),
@@ -78,7 +78,10 @@ export interface MindWorld {
   groups: Map<number, Group>;
   taken(key: string): boolean;
   seatTaken(seat: Seat): boolean;
-  bathroomBusy(i: number): boolean;
+  /** Whether this person would try this bathroom, from what they've seen of its door. */
+  worthTrying(p: Person, i: number): boolean;
+  /** How full the glass in their hand is (0 with none). */
+  glassFill(p: Person): number;
   /** Phase the person believes is running, and how far into it. */
   phaseOf(p: Person): { id: PhaseId; progress: number };
 }
@@ -167,18 +170,20 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
       if (s) out.push({ id: 'mingle', target: s, duration: rng.range(240, 600), pose: 'talk', gain: { social: 0.5 }, ref: -1, mod: (s.level === 0 ? 0.7 : 0.4) * (0.6 + p.traits.talk * 0.6) });
     }
   }
-  if (has('drink') && p.held !== 'wine' && p.held !== 'beer' && p.held !== 'whisky') {
+  if (has('drink') && !(p.held && DRINKS.has(p.held) && p.held !== 'champagne')) {
+    // The bar pours what they ask for when their turn comes (body.ts).
     for (const s of nearest(p, places.bars.filter((b) => !w.taken(spotKey(b))), 2, rng)) {
-      const gives: Held = rng.weighted([['wine', 4], ['beer', 2], ['whisky', 1.5], ['water', 1]] as const);
-      out.push({ id: 'drink', target: s, duration: rng.range(90, 200), pose: 'drink', gain: { thirst: 0.8, social: 0.1 }, gives, key: spotKey(s) });
+      out.push({ id: 'drink', target: s, duration: rng.range(90, 200), pose: 'drink', gain: { thirst: 0.8, social: 0.1 }, ref: places.bars.indexOf(s), note: 'bar-go', key: spotKey(s) });
     }
   }
-  if (has('champagne') && p.held !== 'champagne') {
+  // A fresh glass for the toast unless the one in hand will last it.
+  if (has('champagne') && p.never !== 'champagne' && !(p.held === 'champagne' && w.glassFill(p) > 0.5)) {
     out.push({ id: 'champagne', target: null, duration: 20, pose: 'stand', gain: {}, programme: true, gives: 'champagne' });
   }
-  if (has('toilet')) {
+  // In the last 20 minutes only if it can't wait: the bathroom may be two floors up at the far end of the house.
+  if (has('toilet') && !(w.t > PARTY_LENGTH - 20 * 60 && p.needs.bladder > 0.2)) {
     places.bathrooms.forEach((b, i) => {
-      if ((p.avoid.get(`bath:${i}`) ?? -1) > w.t) return;
+      if ((p.avoid.get(`bath:${i}`) ?? -1) > w.t || !w.worthTrying(p, i)) return;
       out.push({ id: 'toilet', target: b.door, duration: rng.range(120, 240), pose: 'wait', gain: { bladder: 1 }, ref: i, note: 'door' });
     });
   }
@@ -215,7 +220,7 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
         if (q.length) s = q[0]!;
       }
       if (w.taken(spotKey(s))) continue;
-      const after = p.quirks.includes('dances-after-drink') && p.drinks > 0 ? 1.6 : 1;
+      const after = p.quirks.includes('dances-after-drink') && p.tipsy > 0.15 ? 1.6 : 1;
       out.push({ id: 'dance', target: s, duration: rng.range(240, 600), pose: 'dance', gain: { dance: 0.8, social: 0.2 }, key: spotKey(s), mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after });
     }
   }
@@ -250,7 +255,9 @@ export function candidates(p: Person, w: MindWorld): Candidate[] {
   }
   if (has('dinner')) {
     const seat = p.seat !== null ? places.diningSeats[p.seat] : undefined;
+    const supper = !seat && p.supper !== null ? places.supperSeats[p.supper] : undefined;
     if (seat) out.push({ id: 'dinner', target: seat.approach, seat, duration: 99999, pose: 'sit', gain: { hunger: 1, social: 0.4 }, programme: true });
+    else if (supper && !w.seatTaken(supper)) out.push({ id: 'dinner', target: supper.approach, seat: supper, duration: 99999, pose: 'sit', gain: { hunger: 1, social: 0.3 }, programme: true, note: 'supper' });
     else {
       const free = places.buffet.filter((b) => !w.taken(spotKey(b)));
       const s = free.length ? rng.pick(free) : cells.random(places.toastRoom.index, rng);
@@ -306,5 +313,5 @@ export function choose(p: Person, w: MindWorld): Candidate | null {
 }
 
 export function toAction(c: Candidate): ActionState {
-  return { id: c.id, target: c.target, seat: c.seat, duration: c.duration, startedAt: null, pose: c.pose, gain: c.gain, ref: c.ref, note: c.note, gives: c.gives };
+  return { id: c.id, target: c.target, seat: c.seat, duration: c.duration, startedAt: null, pose: c.pose, gain: c.gain, ref: c.ref, note: c.note, gives: c.gives, key: c.key };
 }

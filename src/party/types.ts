@@ -7,9 +7,48 @@ import type { Verb } from './memory';
 export type Sex = 'f' | 'm';
 
 /** Roles own tasks they do fluently; staff roles are not guests. */
-export type RoleId = 'host' | 'waiter' | 'bartender' | 'cook' | 'politician' | 'pianist' | 'doctor' | 'dancer' | 'billiards' | 'guest';
+export type RoleId =
+  | 'host'
+  | 'butler'
+  | 'waiter'
+  | 'bartender'
+  | 'cook'
+  | 'kitchenHand'
+  | 'cloakroom'
+  | 'musician'
+  | 'photographer'
+  | 'politician'
+  | 'pianist'
+  | 'doctor'
+  | 'dancer'
+  | 'billiards'
+  | 'guest';
 
-export const STAFF_ROLES: ReadonlySet<RoleId> = new Set(['waiter', 'bartender', 'cook']);
+export const STAFF_ROLES: ReadonlySet<RoleId> = new Set(['butler', 'waiter', 'bartender', 'cook', 'kitchenHand', 'cloakroom', 'musician', 'photographer']);
+
+/**
+ * Guests cast from A Real Party's deck: each a preset of traits, habits, ties and a look hook.
+ * Most guests are ordinary (null).
+ */
+export type Archetype =
+  | 'honoree'
+  | 'old-friend'
+  | 'mother'
+  | 'child'
+  | 'boss'
+  | 'employee'
+  | 'plus-one'
+  | 'young'
+  | 'elderly'
+  | 'life'
+  | 'gossip'
+  | 'bore'
+  | 'flirt'
+  | 'ex';
+
+/** What people do more or less fluently (0 to 1): the owner of a task about 0.95, others 0.2 to 0.5. */
+export type Skill = 'tour' | 'keys' | 'errand' | 'pour' | 'tray' | 'piano' | 'dance' | 'billiards' | 'photo';
+export const SKILLS: readonly Skill[] = ['tour', 'keys', 'errand', 'pour', 'tray', 'piano', 'dance', 'billiards', 'photo'];
 
 /** Silhouette: what tells people apart at 4× along with the colour. */
 export type Outfit = 'tails' | 'suit' | 'dinner-jacket' | 'long-dress' | 'short-dress' | 'waiter' | 'chef';
@@ -62,17 +101,42 @@ export const NEED_IDS: readonly NeedId[] = ['thirst', 'hunger', 'bladder', 'soci
 /** 0 = urgent, 1 = met. */
 export type Needs = Record<NeedId, number>;
 
-export type Pose = 'stand' | 'walk' | 'sit' | 'talk' | 'drink' | 'dance' | 'toast' | 'look' | 'play' | 'serve' | 'smoke' | 'greet' | 'announce' | 'wait' | 'climb' | 'knock';
+export type Pose =
+  | 'stand'
+  | 'walk'
+  | 'sit'
+  | 'talk'
+  | 'drink'
+  | 'dance'
+  | 'toast'
+  | 'look'
+  | 'play'
+  | 'serve'
+  | 'smoke'
+  | 'greet'
+  | 'announce'
+  | 'wait'
+  | 'climb'
+  | 'knock'
+  /** Shaking hands, or a kiss on the cheek. */
+  | 'shake'
+  | 'kiss'
+  /** Holding a camera to the eye. */
+  | 'camera'
+  /** Carrying something in both hands (a bottle, a coat). */
+  | 'carry'
+  /** Standing in a row for the group photo, facing the camera. */
+  | 'line';
 
-/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in to pass something on. */
-export type Gesture = 'ask' | 'point' | 'shrug' | 'lean';
+/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over. */
+export type Gesture = 'ask' | 'point' | 'shrug' | 'lean' | 'wave' | 'frown' | 'beckon';
 
 /** The six drinks of the evening. */
 export type DrinkId = 'champagne' | 'red' | 'white' | 'beer' | 'whisky' | 'water';
 export const ALCOHOL: ReadonlySet<DrinkId> = new Set(['champagne', 'red', 'white', 'beer', 'whisky']);
 
 /** What shows in someone's hands: a drink, a tray, a cue, cards or a cigarette. */
-export type Held = DrinkId | 'tray' | 'cue' | 'cards' | 'cigarette';
+export type Held = DrinkId | 'tray' | 'cue' | 'cards' | 'cigarette' | 'bottle' | 'coat' | 'bag' | 'camera';
 export const DRINKS: ReadonlySet<Held> = new Set<Held>(['champagne', 'red', 'white', 'beer', 'whisky', 'water']);
 
 /** Keys a person carries: none, the staff ring (service rooms) or the host's ring (everything). */
@@ -95,7 +159,15 @@ export type ActionId =
   | 'leave'
   | 'staff'
   /** Asking someone the way (note 'bathroom'), or a friendly test of someone who seems not themselves (note 'test'). */
-  | 'ask';
+  | 'ask'
+  /** Using something in the house an ad offers: the fire, the bookshelves, the globe, the fountain, the kitchen counter (note: the ad). */
+  | 'use'
+  /** Canapés, the buffet outside dinner, the late sweets. */
+  | 'snack'
+  /** Going to say hello to someone just seen (ref: whom). */
+  | 'greet'
+  /** A step of a task (tasks.ts): a tour, an errand, a search, the group photo, saying goodbye (ref: the task, note: the step). */
+  | 'task';
 
 /** A place someone can stand: always on a walkable nav cell. */
 export interface Spot {
@@ -161,6 +233,18 @@ export interface Person {
   quirks: Quirk[];
   partner: number | null;
   friends: number[];
+  /** A preset from the deck of archetypes, or null for an ordinary guest. */
+  archetype: Archetype | null;
+  /** Someone they used to be with (the exes), or -1. */
+  ex: number;
+  /** Who they came with for work (the boss and employee), or -1. */
+  linked: number;
+  /** How fluently they do each kind of task. */
+  fluency: Record<Skill, number>;
+  /** Leave once this share of the guests has gone (from the thank-you toast); skewed low. */
+  leaveAt: number;
+  /** A reason to go early, after dessert (unwell, a babysitter), or null. */
+  early: string | null;
   /** Has been to the house before: knows the party rooms and the nearest bathrooms. */
   regular: boolean;
   /** Index into Places.diningSeats; null when the dining room is full. */
@@ -290,7 +374,23 @@ export type EventKind =
   /** A description put a name to someone, and it bears on a case (actors: who, whom). */
   | 'recognised'
   /** A guest told the host what they'd worked out (actors: the guest, the host). */
-  | 'tell';
+  | 'tell'
+  /** Two people who know each other met for the first time tonight (note 'wave', 'shake' or 'kiss'). */
+  | 'greet'
+  /** Someone waited at the edge of a circle and was let in (note 'open') or not (note 'closed'); actors: the joiner, then the members. */
+  | 'join'
+  /** A circle grew past what one conversation holds and split in two (actors: those who moved off). */
+  | 'split'
+  /** A task began or ended (note: the kind and how it went, e.g. 'tour', 'tour:done'; actors: its owner, then its party). */
+  | 'task'
+  /** Someone broke a practice's norm (note: the norm), and those who saw it frowned (actors: who, then who frowned). */
+  | 'breach'
+  /** A camera flash: a candid shot or the group photo (actors: the photographer, then who was in it). */
+  | 'photo'
+  /** A guest said goodbye to the host (actors: the guest, the host). */
+  | 'goodbye'
+  /** A beat of a practice (note: the beat, e.g. 'tap', 'hush', 'open-dance', 'band-break', 'last-call'). */
+  | 'beat';
 
 export interface PartyEvent {
   t: number;

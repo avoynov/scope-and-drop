@@ -12,46 +12,51 @@
  * Minds that notice (milestone 2): people only plan toward rooms they know; with no bathroom
  * known they ask someone the way. Energy draws them to the dance floor, tension toward friends,
  * and they keep clear of conversations with someone they're wary of.
+ *
+ * Everyday life (milestone 2, PR 3a): what the house offers comes from the advertisement table
+ * (ads.ts), conversations from the circles (groups.ts), and the evening's rituals pull on every
+ * score through their beats (practices.ts).
  */
 import type { Rng } from '../mansion/core/rng';
+import type { Offer } from './ads';
 import { PARTY_LENGTH, type PhaseId } from './clock';
+import type { Groups } from './groups';
 import type { Places, RoomCells } from './places';
 import type { Pathfinder } from './path';
-import { KNOWN, SUSPICIOUS, WARY } from './memory';
-import { DRINKS, type ActionId, type ActionState, type Group, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from './types';
+import { KNOWN } from './memory';
+import { DRINKS, type ActionId, type ActionState, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from './types';
 
 /** How fitting each action is in each phase (0 = never chosen). */
 export const PHASE_WEIGHTS: Record<PhaseId, Partial<Record<ActionId, number>>> = {
-  arrival: { mingle: 1, drink: 0.9, toilet: 1, sit: 0.3, art: 0.6, terrace: 0.5, wander: 0.35 },
-  mingle: { mingle: 1.4, drink: 1, toilet: 1, sit: 0.5, art: 0.7, terrace: 0.6, dance: 0.1, games: 0.3, wander: 0.3 },
-  champagne: { champagne: 4, mingle: 0.6, toilet: 0.4, sit: 0.15, art: 0.15, terrace: 0.15, wander: 0.05 },
+  arrival: { mingle: 1, drink: 0.9, toilet: 1, sit: 0.3, art: 0.6, terrace: 0.5, wander: 0.35, use: 0.45, snack: 0.3 },
+  mingle: { mingle: 1.4, drink: 1, toilet: 1, sit: 0.5, art: 0.7, terrace: 0.6, dance: 0.1, games: 0.3, wander: 0.3, use: 0.6, snack: 0.45 },
+  champagne: { champagne: 4, mingle: 0.6, toilet: 0.4, sit: 0.15, art: 0.15, terrace: 0.15, wander: 0.05, use: 0.1 },
   toast: { toast: 8, champagne: 5, toilet: 0.15 },
   dinner: { dinner: 10, toilet: 0.3 },
-  dancing: { dance: 2.4, mingle: 0.9, drink: 1, sit: 0.8, terrace: 0.6, toilet: 1, art: 0.2, wander: 0.15 },
-  games: { games: 1.6, mingle: 0.8, drink: 1, sit: 0.7, terrace: 0.6, toilet: 1, dance: 0.3, art: 0.3, wander: 0.15 },
-  farewell: { toast: 8, mingle: 0.4, drink: 0.2, toilet: 0.3, leave: 0 },
+  dancing: { dance: 2.4, mingle: 0.9, drink: 1, sit: 0.8, terrace: 0.6, toilet: 1, art: 0.2, wander: 0.15, use: 0.3, snack: 0.25 },
+  games: { games: 1.6, mingle: 0.8, drink: 1, sit: 0.7, terrace: 0.6, toilet: 1, dance: 0.3, art: 0.3, wander: 0.15, use: 0.55, snack: 0.3 },
+  farewell: { toast: 8, mingle: 0.4, drink: 0.2, toilet: 0.3, use: 0.1 },
 };
 
 /** Share of the farewell phase spent on the last toast before people start to leave. */
 export const LAST_TOAST = 0.35;
 
 /** Need decay per in-game minute. */
-export function decayRates(p: Person): Needs {
+/** Run each need down over k in-game minutes, at rates set by traits, habits and drink (in place: it runs for everyone every step). */
+export function decay(p: Person, k: number): void {
   const t = p.traits;
+  const n = p.needs;
+  const tipsy = p.tipsy;
   const limp = p.quirks.includes('limp') ? 1 : 0;
   const smoker = p.quirks.includes('smoker') ? 1 : 0;
-  const tipsy = p.tipsy;
-  return {
-    thirst: 0.01 * (0.6 + 0.8 * t.thirst),
-    hunger: 0.004,
-    bladder: 0.003 + 0.009 * tipsy,
-    social: 0.012 * (0.4 + 1.2 * t.social),
-    dance: 0.006 * (0.3 + 1.4 * t.dance) + 0.025 * tipsy,
-    rest: 0.003 + 0.004 * limp,
-    air: 0.003 + 0.01 * smoker,
-    curiosity: 0.006 * (0.4 + 1.2 * t.curiosity),
-    companion: 0,
-  };
+  n.thirst = Math.max(0, n.thirst - 0.01 * (0.6 + 0.8 * t.thirst) * k);
+  n.hunger = Math.max(0, n.hunger - 0.004 * k);
+  n.bladder = Math.max(0, n.bladder - (0.003 + 0.009 * tipsy) * k);
+  n.social = Math.max(0, n.social - 0.024 * (0.4 + 1.2 * t.social) * k);
+  n.dance = Math.max(0, n.dance - (0.006 * (0.3 + 1.4 * t.dance) + 0.025 * tipsy) * k);
+  n.rest = Math.max(0, n.rest - (0.003 + 0.004 * limp) * k);
+  n.air = Math.max(0, n.air - (0.003 + 0.01 * smoker) * k);
+  n.curiosity = Math.max(0, n.curiosity - 0.006 * (0.4 + 1.2 * t.curiosity) * k);
 }
 
 export interface Candidate {
@@ -80,7 +85,10 @@ export interface MindWorld {
   cells: RoomCells;
   pf: Pathfinder;
   people: Person[];
-  groups: Map<number, Group>;
+  /** What the house offers, resolved from the advertisement table. */
+  offers: readonly Offer[];
+  /** Conversation circles. */
+  circles: Groups;
   taken(key: string): boolean;
   seatTaken(seat: Seat): boolean;
   /** Whether this person would try this bathroom, from what they've seen of its door. */
@@ -98,12 +106,16 @@ export interface MindWorld {
   tension(p: Person): number;
   /** Someone near and known to ask the way, or null. */
   answerer(p: Person): Person | null;
+  /** How the evening's practices pull on an action right now (1 leaves it as it is). */
+  beat(p: Person, a: ActionId): number;
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
 const ANYWHERE: ReadonlySet<ActionId> = new Set(['champagne', 'toast', 'dinner', 'leave', 'wander', 'ask']);
 /** Below this bladder level someone goes looking for any bathroom, known or not. */
 const DESPERATE = 0.1;
+/** Offers kept for full scoring after the quick prefilter (need over distance). */
+const SHORTLIST = 24;
 
 export const spotKey = (s: Spot): string => `${s.level}:${s.x.toFixed(2)},${s.z.toFixed(2)}`;
 
@@ -132,33 +144,6 @@ function nearest<T extends Spot>(p: Person, list: T[], n: number, rng: Rng): T[]
   return out;
 }
 
-/** A conversation slot: the biggest gap round the group's centre, at a radius that grows with its size. */
-export function groupSlot(g: Group, people: Person[], pf: Pathfinder): Spot | null {
-  // Members still walking over count where they are headed.
-  const at = (m: number) => people[m]!.action?.target ?? people[m]!;
-  const angles = g.members.map((m) => Math.atan2(at(m).x - g.x, at(m).z - g.z)).sort((a, b) => a - b);
-  let a = 0;
-  if (angles.length === 1) a = angles[0]! + Math.PI;
-  else if (angles.length > 1) {
-    let best = -1;
-    for (let i = 0; i < angles.length; i++) {
-      const lo = angles[i]!;
-      const hi = i + 1 < angles.length ? angles[i + 1]! : angles[0]! + 2 * Math.PI;
-      if (hi - lo > best) {
-        best = hi - lo;
-        a = (lo + hi) / 2;
-      }
-    }
-  }
-  const r = 0.55 + 0.12 * (g.members.length + 1);
-  for (const da of [0, 0.4, -0.4, 0.8, -0.8]) {
-    const x = g.x + Math.sin(a + da) * r;
-    const z = g.z + Math.cos(a + da) * r;
-    if (pf.walkable(g.level, x, z)) return { level: g.level, x, z, yaw: Math.atan2(g.x - x, g.z - z), room: g.room };
-  }
-  return null;
-}
-
 /** Every action this person could start now, before scoring. */
 export function candidates(p: Person, w: MindWorld): Candidate[] {
   const all = allCandidates(p, w);
@@ -177,38 +162,18 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
   const out: Candidate[] = [];
   const phase = w.phaseOf(p);
   const W = PHASE_WEIGHTS[phase.id];
-  const has = (a: ActionId) => (W[a] ?? 0) > 0 || (a === 'leave' && phase.id === 'farewell');
+  const has = (a: ActionId) => (W[a] ?? 0) > 0;
   const tension = w.tension(p);
 
   if (has('mingle')) {
-    for (const g of w.groups.values()) {
-      if (g.members.length >= 6 || g.members.includes(p.id)) continue;
-      const slot = groupSlot(g, people, w.pf);
-      if (!slot) continue;
-      let mod = 1;
-      let wary = false;
-      let suspect = false;
-      for (const m of g.members) {
-        const o = people[m]!;
-        mod += 0.35 * o.traits.talk;
-        // Uneasy people keep closer to their own.
-        if (o.id === p.partner) mod += 1.2 * (1 + tension);
-        if (p.friends.includes(o.id)) mod += 0.6 * (1 + tension);
-        const s = w.suspects(p.id, m);
-        if (s >= WARY) wary = true;
-        if (s >= SUSPICIOUS) suspect = true;
-      }
-      if (g.members.length >= 5) mod *= 0.6;
-      // Nobody seeks out a quiet word with someone they're wary of.
-      if (wary && g.members.length === 1) mod *= 0.2;
-      else if (suspect) mod *= 0.5;
-      out.push({ id: 'mingle', target: slot, duration: rng.range(240, 720), pose: 'talk', gain: { social: 0.6 }, ref: g.id, mod });
-    }
+    out.push(...w.circles.candidates(p, w, tension));
     for (let i = 0; i < 2; i++) {
       const room = rng.pick(places.mingleRooms.length ? places.mingleRooms : [places.toastRoom.index]);
       // Ground floor rooms draw most people; upstairs and the terrace less.
       const s = cells.random(rng.chance(0.15) && places.terrace.length ? -2 : room, rng, 0.9);
-      if (s) out.push({ id: 'mingle', target: s, duration: rng.range(240, 600), pose: 'talk', gain: { social: 0.5 }, ref: -1, mod: (s.level === 0 ? 0.7 : 0.4) * (0.6 + p.traits.talk * 0.6) });
+      // Not on top of a conversation already going.
+      if (s && w.circles.crowds(s)) continue;
+      if (s) out.push({ id: 'mingle', target: s, duration: 99999, pose: 'talk', gain: { social: 0.5 }, ref: -1, note: 'new', mod: (s.level === 0 ? 0.7 : 0.4) * (0.6 + p.traits.talk * 0.6) });
     }
   }
   if (has('drink') && !(p.held && DRINKS.has(p.held) && p.held !== 'champagne')) {
@@ -234,28 +199,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
       if (q && s) out.push({ id: 'ask', target: s, duration: 4, pose: 'talk', gain: { bladder: 1 }, ref: q.id, note: 'bathroom' });
     }
   }
-  if (has('sit')) {
-    const free = places.seats.filter((s) => !w.seatTaken(s));
-    for (let i = 0; i < Math.min(4, free.length); i++) {
-      const s = rng.pick(free);
-      out.push({ id: 'sit', target: s.approach, seat: s, duration: rng.range(300, 900), pose: 'sit', gain: { rest: 0.7, social: 0.1 }, mod: p.quirks.includes('limp') ? 1.6 : 1 });
-    }
-  }
-  if (has('art') && places.sights.length) {
-    for (let i = 0; i < 3; i++) {
-      const s = rng.pick(places.sights);
-      if (w.taken(spotKey(s))) continue;
-      out.push({ id: 'art', target: s, duration: rng.range(60, 180), pose: 'look', gain: { curiosity: 0.5 }, key: spotKey(s), mod: 0.5 + p.traits.curiosity });
-    }
-  }
-  if (has('terrace') && places.terrace.length) {
-    for (let i = 0; i < 2; i++) {
-      const s = rng.pick(places.terrace);
-      if (w.taken(spotKey(s))) continue;
-      const smoker = p.quirks.includes('smoker');
-      out.push({ id: 'terrace', target: s, duration: rng.range(180, 480), pose: smoker ? 'smoke' : 'stand', gain: { air: 0.8, curiosity: 0.1 }, key: spotKey(s), gives: smoker ? 'cigarette' : undefined, mod: smoker ? 1.8 : 1 });
-    }
-  }
+  out.push(...offerCandidates(p, w, phase.id));
   if (has('dance') && places.danceSpots.length) {
     const partner = p.partner !== null ? people[p.partner] : undefined;
     const partnerDancing = partner?.action?.id === 'dance';
@@ -272,27 +216,6 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
       const energy = 0.6 + 0.8 * w.energy(p);
       out.push({ id: 'dance', target: s, duration: rng.range(240, 600), pose: 'dance', gain: { dance: 0.8, social: 0.2 }, key: spotKey(s), mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after * energy });
     }
-  }
-  if (has('games')) {
-    places.games.forEach((g, gi) => {
-      const free = g.spots.filter((s, i) => !w.taken(spotKey(s)) && (g.kind !== 'piano' || i > 0 || p.role === 'pianist'));
-      if (!free.length) return;
-      const s = g.kind === 'piano' && p.role === 'pianist' && !w.taken(spotKey(g.spots[0]!)) ? g.spots[0]! : rng.pick(free);
-      const plays = g.kind === 'billiards' || g.kind === 'cards' || (g.kind === 'piano' && s === g.spots[0]);
-      const roleMatch = (g.kind === 'billiards' && p.role === 'billiards') || (g.kind === 'piano' && p.role === 'pianist') ? 2.5 : 1;
-      out.push({
-        id: 'games',
-        target: s,
-        duration: rng.range(300, 900),
-        pose: plays ? 'play' : 'look',
-        gain: { curiosity: 0.4, social: 0.3 },
-        key: spotKey(s),
-        ref: gi,
-        note: g.kind,
-        gives: g.kind === 'billiards' ? 'cue' : g.kind === 'cards' ? 'cards' : undefined,
-        mod: (0.5 + 0.5 * p.traits.curiosity) * roleMatch,
-      });
-    });
   }
   if (has('wander')) {
     const s = cells.random(rng.pick(places.mingleRooms.length ? places.mingleRooms : [places.toastRoom.index]), rng);
@@ -313,23 +236,87 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
       if (s) out.push({ id: 'dinner', target: s, duration: 99999, pose: 'stand', gain: { hunger: 1, social: 0.3 }, programme: true, key: spotKey(s) });
     }
   }
-  if (phase.id === 'farewell' && phase.progress > LAST_TOAST) {
-    // Leaving becomes ever more likely through the farewell.
-    const ramp = (phase.progress - LAST_TOAST) / (1 - LAST_TOAST);
-    out.push({ id: 'leave', target: places.entrance, duration: 0, pose: 'walk', gain: {}, programme: true, mod: 0.5 + 12 * ramp * ramp });
+  return out;
+}
+
+/**
+ * What the house offers this person now: every offer in a room they know, fitting the phase, with
+ * a free spot. A quick prefilter (need over distance, with a little chance so people don't always
+ * use the same corner) keeps the best few for full scoring.
+ */
+function offerCandidates(p: Person, w: MindWorld, phase: PhaseId): Candidate[] {
+  const W = PHASE_WEIGHTS[phase];
+  const pre: Array<{ o: Offer; s: Spot; spot: number; v: number }> = [];
+  for (const o of w.offers) {
+    const ad = o.ad;
+    const k = (W[ad.action] ?? 0) * (ad.phases?.[phase] ?? 1);
+    if (k <= 0 || (ad.gate && !ad.gate(p)) || w.familiarity(p, o.room) < KNOWN) continue;
+    let spot = -1;
+    if (o.seat) spot = w.seatTaken(o.seat) ? -1 : 0;
+    else {
+      for (let i = 0; i < o.spots.length && spot < 0; i++) {
+        // The piano stool is the pianist's when they want it.
+        if (ad.note === 'piano' && i === 0 && p.role !== 'pianist') continue;
+        if (!w.taken(spotKey(o.spots[i]!))) spot = i;
+      }
+    }
+    if (spot < 0) continue;
+    const s = o.spots[spot]!;
+    if ((p.avoid.get(spotKey(s)) ?? -1) > w.t) continue;
+    const like = (p.archetype && ad.likes?.[p.archetype]) || 1;
+    pre.push({ o, s, spot, v: (k * like * needTerm(p, ad.gains) * w.rng.range(0.5, 1.5)) / (1 + distance(p, s) / 30) });
+  }
+  pre.sort((a, b) => b.v - a.v);
+  const out: Candidate[] = [];
+  for (const { o, s, spot } of pre.slice(0, SHORTLIST)) {
+    const ad = o.ad;
+    const like = (p.archetype && ad.likes?.[p.archetype]) || 1;
+    // Smokers take a cigarette out to the terrace.
+    const smoke = ad.id === 'terrace' && p.quirks.includes('smoker');
+    const plays = ad.note === 'piano' ? spot === 0 : ad.pose === 'play';
+    out.push({
+      id: ad.action,
+      target: s,
+      seat: o.seat,
+      duration: w.rng.range(ad.duration[0], ad.duration[1]),
+      pose: smoke ? 'smoke' : ad.note === 'piano' ? (plays ? 'play' : 'look') : ad.pose,
+      gain: ad.gains,
+      key: o.seat ? undefined : spotKey(s),
+      ref: o.game,
+      note: ad.note ?? ad.id,
+      gives: smoke ? 'cigarette' : ad.gives,
+      mod: (ad.mod ? ad.mod(p) : 1) * like * (ad.phases?.[phase] ?? 1),
+    });
   }
   return out;
 }
 
-/** A walkable spot a step from someone, on the side toward another person, facing them. */
-export function beside(q: Person, from: { x: number; z: number }, pf: Pathfinder, gap = 0.9): Spot | null {
+/** Turns tried, in order, when the side toward the other person is a wall or a doorway. */
+const AROUND = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2, Math.PI];
+
+/**
+ * A walkable spot a step from someone, on the side toward another person (or the nearest side
+ * free), facing them. With `crowd`, a side where someone else already stands is passed over too.
+ */
+export function beside(q: Person, from: { x: number; z: number }, pf: Pathfinder, gap = 0.9, crowd?: { people: readonly Person[]; self: number }): Spot | null {
   const d = Math.hypot(from.x - q.x, from.z - q.z);
   const ux = d > 1e-3 ? (from.x - q.x) / d : Math.sin(q.yaw);
   const uz = d > 1e-3 ? (from.z - q.z) / d : Math.cos(q.yaw);
-  const s = pf.snap(q.level, q.x + ux * gap, q.z + uz * gap, 0.8);
-  if (!s) return null;
-  const room = pf.roomAt(s.level, s.x, s.z);
-  return room === -1 ? null : { level: s.level, x: s.x, z: s.z, yaw: Math.atan2(q.x - s.x, q.z - s.z), room };
+  let first: Spot | null = null;
+  for (const a of AROUND) {
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    const s = pf.snap(q.level, q.x + (ux * c - uz * sn) * gap, q.z + (ux * sn + uz * c) * gap, 0.8);
+    if (!s) continue;
+    const room = pf.roomAt(s.level, s.x, s.z);
+    if (room === -1) continue;
+    const spot = { level: s.level, x: s.x, z: s.z, yaw: Math.atan2(q.x - s.x, q.z - s.z), room };
+    if (!crowd) return spot;
+    first ??= spot;
+    const taken = crowd.people.some((o) => o.present && o.id !== crowd.self && o !== q && o.level === s.level && Math.hypot(o.x - s.x, o.z - s.z) < 0.6);
+    if (!taken) return spot;
+  }
+  return first;
 }
 
 /** Round the host, facing in: a ring 2–5 m from the toast spot. */
@@ -348,11 +335,11 @@ export function toastSpot(w: MindWorld): Spot | null {
 
 export function score(p: Person, c: Candidate, w: MindWorld): number {
   const phase = w.phaseOf(p);
-  const W = c.id === 'leave' ? 1 : (PHASE_WEIGHTS[phase.id][c.id === 'ask' ? 'toilet' : c.id] ?? 0);
+  const W = PHASE_WEIGHTS[phase.id][c.id === 'ask' ? 'toilet' : c.id] ?? 0;
   if (W <= 0) return 0;
   const needs = c.programme ? 1 : needTerm(p, c.gain);
   const d = distance(p, c.target);
-  return W * needs * (c.mod ?? 1) * (1 / (1 + d / 30)) * w.rng.range(0.85, 1.15);
+  return W * needs * (c.mod ?? 1) * w.beat(p, c.id) * (1 / (1 + d / 30)) * w.rng.range(0.85, 1.15);
 }
 
 /**

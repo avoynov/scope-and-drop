@@ -13,7 +13,22 @@ import { DRINKS, type Gesture, type Held, type Person, type Pose } from '../type
 /** The colour of what's in the glass. */
 const DRINK_COLOR: Partial<Record<Held, string>> = { champagne: '#e9d9a0', red: '#6e1424', white: '#e6dca6', beer: '#c98a2a', whisky: '#9a5a1e', water: '#d8e2e6' };
 
-type PartId = 'thigh' | 'shin' | 'skirt' | 'torso' | 'shirt' | 'head' | 'hair' | 'arm' | 'held' | 'tray' | 'hat' | 'glasses' | 'cane' | 'halo' | 'marker';
+/** Things held that aren't a glass or a tray: size (m) and colour. */
+const ITEMS: Partial<Record<Held, { size: [number, number, number]; color: string }>> = {
+  bottle: { size: [0.075, 0.3, 0.075], color: '#1f3a24' },
+  coat: { size: [0.42, 0.07, 0.55], color: '#2b2724' },
+  bag: { size: [0.2, 0.13, 0.06], color: '#5a2a22' },
+  camera: { size: [0.14, 0.09, 0.08], color: '#141416' },
+  cards: { size: [0.065, 0.012, 0.09], color: '#eae6da' },
+  cue: { size: [0.022, 1.45, 0.022], color: '#c9a36a' },
+  cigarette: { size: [0.009, 0.009, 0.085], color: '#f2efe8' },
+};
+
+/** Camera flashes drawn at once, and how long each lasts (game s). */
+const FLASHES = 8;
+const FLASH_FOR = 0.6;
+
+type PartId = 'thigh' | 'shin' | 'skirt' | 'torso' | 'shirt' | 'head' | 'hair' | 'arm' | 'held' | 'item' | 'tray' | 'hat' | 'glasses' | 'cane' | 'halo' | 'marker';
 
 interface Part {
   mesh: THREE.InstancedMesh;
@@ -51,6 +66,14 @@ export interface FrameState {
   headYaw?: number;
 }
 
+/** A camera flash: where, and how long ago (game s). */
+export interface Flash {
+  x: number;
+  y: number;
+  z: number;
+  age: number;
+}
+
 function hash(n: number): number {
   let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
   x ^= x >>> 13;
@@ -83,6 +106,7 @@ export class Crowd {
     this.add('hair', new THREE.SphereGeometry(0.112, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), std(0.7), 1, n);
     this.add('arm', capsule(0.048, 0.52), std(0.65), 2, n);
     this.add('held', new THREE.CylinderGeometry(0.035, 0.025, 0.14, 8).translate(0, 0.07, 0), std(0.15, 0.1), 1, n);
+    this.add('item', new THREE.BoxGeometry(1, 1, 1), std(0.5), 1, n);
     this.add('tray', new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16), std(0.3, 0.6), 1, n);
     this.add('hat', new THREE.CylinderGeometry(0.1, 0.11, 0.17, 12).translate(0, 0.085, 0), std(0.5), 1, n);
     this.add('glasses', new THREE.BoxGeometry(0.15, 0.03, 0.02), std(0.2, 0.5), 1, n);
@@ -98,7 +122,27 @@ export class Crowd {
       this.parts.set(id, { mesh, per: 1, scope: null });
       this.root.add(mesh);
     }
+    // Flashes: a bright disc that blooms, facing every way.
+    this.flash = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, fog: false, toneMapped: false }), FLASHES);
+    this.flash.frustumCulled = false;
+    (this.flash.material as THREE.MeshBasicMaterial).color.setScalar(8);
+    this.root.add(this.flash);
     this.paint();
+  }
+
+  private readonly flash: THREE.InstancedMesh;
+
+  /** The camera flashes still lit: a pulse that swells and fades. */
+  setFlashes(list: readonly Flash[]): void {
+    let k = 0;
+    for (const f of list) {
+      if (k >= FLASHES || f.age < 0 || f.age > FLASH_FOR) continue;
+      const r = 1 + 3 * (f.age / FLASH_FOR);
+      const fade = 1 - f.age / FLASH_FOR;
+      this.flash.setMatrixAt(k++, tmpM.compose(tmpP.set(f.x, f.y, f.z), tmpQ.identity(), tmpS.setScalar(r * fade)));
+    }
+    for (; k < FLASHES; k++) this.flash.setMatrixAt(k, ZERO);
+    this.flash.instanceMatrix.needsUpdate = true;
   }
 
   private add(id: PartId, geo: THREE.BufferGeometry, mat: THREE.Material, per: number, n: number): void {
@@ -115,8 +159,9 @@ export class Crowd {
 
   /** Selection the halo colours were painted for. */
   private painted = -1;
-  /** The drink each glass was last painted for. */
+  /** The drink each glass was last painted for, and the thing each hand held. */
   private glass: Array<Held | null> = [];
+  private thing: Array<Held | null> = [];
 
   /** Colours from each person's look. */
   private paint(): void {
@@ -143,6 +188,7 @@ export class Crowd {
       set('arm', i, dress ? L.skin : L.color, 0);
       set('arm', i, dress ? L.skin : L.color, 1);
       set('held', i, '#e8e2c8');
+      set('item', i, '#2b2724');
       set('tray', i, '#c8c6c0');
       set('hat', i, '#111114');
       set('glasses', i, '#1a1a1a');
@@ -176,6 +222,7 @@ export class Crowd {
     }
     if (this.painted !== this.selected) this.paint();
     this.paintGlasses();
+    this.paintItems();
     for (const part of P.values()) {
       part.mesh.instanceMatrix.needsUpdate = true;
       if (part.scope) part.scope.needsUpdate = true;
@@ -192,6 +239,21 @@ export class Crowd {
       if (h === (this.glass[i] ?? null)) return;
       this.glass[i] = h;
       part.mesh.setColorAt(i * part.per, c.set((h && DRINK_COLOR[h]) ?? '#e8e2c8'));
+      dirty = true;
+    });
+    if (dirty && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** A bottle, a coat, a camera: each its own colour, repainted only when it changes. */
+  private paintItems(): void {
+    const part = this.parts.get('item')!;
+    const c = new THREE.Color();
+    let dirty = false;
+    this.people.forEach((p, i) => {
+      const h = p.held && ITEMS[p.held] ? p.held : null;
+      if (h === (this.thing[i] ?? null)) return;
+      this.thing[i] = h;
+      if (h) part.mesh.setColorAt(i, c.set(ITEMS[h]!.color));
       dirty = true;
     });
     if (dirty && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
@@ -216,7 +278,7 @@ export class Crowd {
     const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4)) * 0.03 : 0);
     const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5), tmpS.set(1, 1, 1));
     const g = s.gesture ?? null;
-    const lean = s.pose === 'play' ? 0.35 : s.pose === 'look' ? 0.05 : g === 'lean' ? 0.14 : 0;
+    const lean = s.pose === 'play' ? 0.35 : s.pose === 'look' ? 0.05 : s.pose === 'kiss' ? 0.16 : s.pose === 'shake' ? 0.06 : g === 'lean' ? 0.14 : 0;
     const local = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(sx, sy, sz));
     const stretch = local(0, 0, 0, 0, 0, 0, 1, k, 1);
@@ -258,8 +320,10 @@ export class Crowd {
     const nod = talking ? Math.sin(t * 2.3) * 0.08 : 0;
     // A glance turns the head (no further than the neck allows); otherwise a talker looks round the group.
     const turn = s.headYaw ? Math.max(-1.3, Math.min(1.3, s.headYaw)) : talking ? Math.sin(t * 0.9) * 0.3 : 0;
-    const tilt = g === 'ask' ? 0 : g === 'shrug' ? 0.12 : 0;
-    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, laugh ? -0.45 : nod + (s.pose === 'look' ? -0.12 : 0) + (g === 'lean' ? 0.15 : 0), turn, tilt, k, k, k));
+    const tilt = g === 'ask' ? 0 : g === 'shrug' ? 0.12 : s.pose === 'kiss' ? 0.3 : 0;
+    // A frown: chin down, eyes up at whoever did it.
+    const pitchHead = laugh ? -0.45 : nod + (s.pose === 'look' ? -0.12 : 0) + (g === 'lean' ? 0.15 : 0) + (g === 'frown' ? 0.22 : 0) + (s.pose === 'camera' ? 0.1 : 0);
+    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, pitchHead, turn + (s.pose === 'kiss' ? 0.35 : 0), tilt, k, k, k));
     set('head', 0, head);
     set('hair', 0, head.clone().multiply(local(0, 0.012, -0.012, -0.25)));
     if (p.quirks.includes('glasses')) set('glasses', 0, head.clone().multiply(local(0, 0.015, 0.1)));
@@ -338,6 +402,30 @@ export class Crowd {
         rp = lp = -0.45;
         rr = lr = -0.25;
         break;
+      case 'shake':
+        // Right hand out, pumping.
+        rp = 1.15 + Math.sin(t * 9) * 0.08;
+        rr = -0.05;
+        break;
+      case 'kiss':
+        // A light hold on the other's arms.
+        rp = lp = 0.75;
+        rr = lr = 0.05;
+        break;
+      case 'camera':
+        // Both hands up to the face.
+        rp = lp = 2.15;
+        rr = lr = -0.42;
+        break;
+      case 'carry':
+        rp = lp = 1.05;
+        rr = lr = -0.2;
+        break;
+      case 'line':
+        // Hands clasped in front, for the photograph.
+        rp = lp = 0.3;
+        rr = lr = -0.22;
+        break;
       default:
         if (p.held) rp = 0.75;
     }
@@ -363,6 +451,17 @@ export class Crowd {
     } else if (g === 'shrug') {
       rp = lp = 0.55;
       rr = lr = 0.55;
+    } else if (g === 'wave') {
+      rp = 2.75;
+      rr = 0.3 + Math.sin(t * 8) * 0.25;
+    } else if (g === 'beckon') {
+      // Arm out, the hand curling them in.
+      rp = 1.25 + Math.sin(t * 6) * 0.2;
+      rr = 0.1;
+    } else if (g === 'frown') {
+      // Arms folded.
+      rp = lp = 1.25;
+      rr = lr = -0.7;
     }
     if (p.quirks.includes('cane') && !sit) lp = Math.max(lp, 0.35);
     const right = arm(1, rp, rr);
@@ -374,6 +473,20 @@ export class Crowd {
     else hide('held');
     if (p.held === 'tray' && !sit) set('tray', 0, hips.clone().multiply(local(0.3, shoulderY + 0.08, 0.42)));
     else hide('tray');
+    const it = p.held ? ITEMS[p.held] : undefined;
+    if (it) {
+      const [sx, sy, sz] = it.size;
+      // Held to the eye, carried before them in both hands, a coat over the arm, or simply in the hand.
+      const at =
+        p.held === 'camera' && s.pose === 'camera'
+          ? head.clone().multiply(local(0, 0, 0.17))
+          : s.pose === 'carry' || p.held === 'coat'
+            ? hips.clone().multiply(local(0, shoulderY - 0.42 * k, 0.36, p.held === 'coat' ? 0.25 : 0))
+            : p.held === 'cigarette'
+              ? right.clone().multiply(local(0, -0.6 * k, 0.04, rp - 1.2))
+              : right.clone().multiply(local(0, -0.62 * k, 0.03, p.held === 'cue' ? rp - 0.3 : rp));
+      set('item', 0, at.multiply(local(0, 0, 0, 0, 0, 0, sx, sy, sz)));
+    } else hide('item');
     if (p.quirks.includes('cane') && !sit) set('cane', 0, base.clone().multiply(local(-0.32, 0, 0.18)));
     else hide('cane');
   }

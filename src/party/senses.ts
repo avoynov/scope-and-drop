@@ -22,7 +22,7 @@ import type { Sight } from './sight';
 import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from './types';
 import type { World } from './world';
 
-export type SoundKind = 'knock' | 'bolt' | 'clink' | 'laugh' | 'raised-voice' | 'dropped-tray' | 'breaking-glass' | 'slap' | 'door-slam' | 'scream';
+export type SoundKind = 'knock' | 'bolt' | 'clink' | 'laugh' | 'raised-voice' | 'dropped-tray' | 'breaking-glass' | 'slap' | 'door-slam' | 'scream' | 'shutter' | 'call';
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -49,6 +49,10 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   slap: { db: 80, tension: 0.08, fact: 'raised-voices' },
   'door-slam': { db: 80, tension: 0.02 },
   scream: { db: 95, tension: 0.3, fact: 'scream' },
+  /** A camera's shutter and flash; the flash itself is seen, not heard. */
+  shutter: { db: 45, tension: 0 },
+  /** Last orders called at the bar, or the host calling everyone for the photo. */
+  call: { db: 72, tension: 0 },
 };
 
 export interface Sound {
@@ -68,6 +72,8 @@ const BACKGROUND = 45;
 const TALKER = 55;
 const MUSIC = 75;
 const PIANO = 70;
+/** The band playing under the talk before the dancing (dB): noise, not dance music. */
+const BAND_SOFT = 62;
 /** A sound is heard when it beats the room's noise by this much. */
 const MASK = 6;
 /** Loss per metre inside a room, through an open door, a closed one, an arch, and up or down a stair (dB). */
@@ -112,7 +118,7 @@ export interface SensesHost {
   together(a: Person, b: Person): boolean;
 }
 
-const ACTIONS: readonly ActionId[] = ['arrive', 'mingle', 'drink', 'champagne', 'toilet', 'sit', 'art', 'terrace', 'dance', 'dinner', 'toast', 'games', 'wander', 'leave', 'staff', 'ask'];
+const ACTIONS: readonly ActionId[] = ['arrive', 'mingle', 'drink', 'champagne', 'toilet', 'sit', 'art', 'terrace', 'dance', 'dinner', 'toast', 'games', 'wander', 'leave', 'staff', 'ask', 'use', 'snack', 'greet', 'task'];
 export const actionIndex = (a: ActionId | undefined): number => (a ? ACTIONS.indexOf(a) + 1 : 0);
 export const actionAt = (i: number): ActionId | null => (i > 0 ? (ACTIONS[i - 1] ?? null) : null);
 
@@ -134,6 +140,9 @@ export class Senses {
   readonly stats = { looks: 0, sightings: 0, walks: 0, heard: 0 };
   /** What each person saw on their last look (for the lab's sight overlay). */
   readonly seenLast: number[][];
+  /** People standing in each room (index room + 2), rebuilt each step for the looks. */
+  private byRoom: Person[][] | null = null;
+  private lookStep = false;
   /** The last few sounds and who heard each (for the lab's sound overlay). */
   readonly recent: Array<Sound & { t: number; heard: number[] }> = [];
 
@@ -151,7 +160,13 @@ export class Senses {
   /** One step: refresh the noise now and then, a quarter of the people look, and every sound made this step carries. */
   step(stepNo: number): void {
     if (stepNo % 10 === 0) this.refreshNoise();
+    // Who stands in each room, for the crowd test while people look (nobody moves meanwhile).
+    const rooms = (this.byRoom ??= Array.from({ length: this.host.sight.R + 2 }, () => []));
+    for (const r of rooms) r.length = 0;
+    for (const q of this.host.people) if (q.present && q.pose !== 'sit') rooms[q.room + 2]?.push(q);
+    this.lookStep = true;
     for (const p of this.host.people) if (p.present && (p.id + stepNo) % 4 === 0) this.look(p);
+    this.lookStep = false;
     const q = this.queue;
     this.queue = [];
     for (const s of q) this.carry(s);
@@ -218,16 +233,23 @@ export class Senses {
 
   /** Two or more people standing on the line between them hide one from the other. */
   private crowded(a: Person, b: Person, dx: number, dz: number, d: number): boolean {
-    let c = 0;
-    for (const q of this.host.people) {
-      if ((q.room !== a.room && q.room !== b.room) || q === a || q === b || !q.present || q.level !== a.level || q.pose === 'sit') continue;
+    if (!this.lookStep || !this.byRoom) return this.blockers(this.host.people, a, b, dx, dz, d, 0, true) >= 2;
+    const c = this.blockers(this.byRoom[a.room + 2] ?? [], a, b, dx, dz, d, 0, false);
+    return c >= 2 || (b.room !== a.room && this.blockers(this.byRoom[b.room + 2] ?? [], a, b, dx, dz, d, c, false) >= 2);
+  }
+
+  /** Count people (from `c`, stopping at two) standing on the line from a to b. */
+  private blockers(qs: readonly Person[], a: Person, b: Person, dx: number, dz: number, d: number, c: number, all: boolean): number {
+    for (const q of qs) {
+      if (q === a || q === b || q.level !== a.level) continue;
+      if (all && ((q.room !== a.room && q.room !== b.room) || !q.present || q.pose === 'sit')) continue;
       const rx = q.x - a.x;
       const rz = q.z - a.z;
       const along = (rx * dx + rz * dz) / d;
       if (along <= 0.3 || along >= d - 0.3) continue;
-      if (Math.abs(rx * dz - rz * dx) / d < 0.3 && ++c >= 2) return true;
+      if (Math.abs(rx * dz - rz * dx) / d < 0.3 && ++c >= 2) return c;
     }
-    return false;
+    return c;
   }
 
   private look(a: Person): void {
@@ -315,15 +337,17 @@ export class Senses {
       const s = h.people[g.speaker];
       if (s?.present && s.pose === 'talk') talkers[s.room < 0 ? R - 1 : s.room]!++;
     }
+    // The piano, and the band: dance music through the dancing, soft under the talk otherwise.
+    const band = h.phaseId === 'dancing' ? MUSIC : BAND_SOFT;
     for (const p of h.people) {
-      if (!p.present) continue;
+      if (!p.present || p.pose !== 'play') continue;
       const r = p.room < 0 ? R - 1 : p.room;
-      if (p.pose === 'play' && p.action?.note === 'piano') music[r] = Math.max(music[r]!, PIANO);
+      const note = p.action?.note;
+      if (note === 'piano') music[r] = Math.max(music[r]!, PIANO);
+      else if (note === 'band') music[r] = Math.max(music[r]!, band);
     }
-    const dance = h.places.danceRoom;
-    if (dance && h.phaseId === 'dancing') music[dance.index] = Math.max(music[dance.index]!, MUSIC);
     for (let r = 0; r < R; r++) {
-      this.music[r] = music[r] ? 1 : 0;
+      this.music[r] = music[r]! >= PIANO ? 1 : 0;
       let n = BACKGROUND;
       for (let it = 0; it < 4; it++) {
         const voice = TALKER + 0.5 * Math.max(0, n - BACKGROUND);

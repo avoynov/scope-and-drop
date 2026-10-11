@@ -15,9 +15,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { generateMansion, type MansionBlueprint, type MansionOptions } from '../../src/mansion';
 import { buildMansion, type BuiltMansion, type Quality } from '../../src/mansion/build';
 import { createGradePass } from '../../src/mansion/build/grade';
-import { clockLabel, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from '../../src/party';
+import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from '../../src/party';
 import { Crowd, type FrameState } from '../../src/party/render/crowd';
-import { NEED_IDS, type ActionId, type PartyEvent, type Person, type RoleId } from '../../src/party/types';
+import { Fixtures } from '../../src/party/render/fixtures';
+import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from '../../src/party/types';
 import { labelForms } from '../briefing';
 
 type View = 'scope' | 'wide' | 'plan' | 'orbit';
@@ -109,6 +110,7 @@ const NOTE_LABEL: Record<string, string> = {
   cook: 'cooking',
   door: 'at the door',
   queue: 'queueing for the bathroom',
+  supper: 'at supper in the ballroom',
   billiards: 'playing billiards',
   cards: 'playing cards',
   cinema: 'watching a film',
@@ -118,6 +120,8 @@ let bp: MansionBlueprint;
 let built: BuiltMansion | null = null;
 let party: Party;
 let crowd: Crowd | null = null;
+/** Door leaves and the curtains people can draw, moved from the sim each frame. */
+let fixtures: Fixtures | null = null;
 let view: View = (params.get('view') as View) ?? 'scope';
 let aim = { yaw: 0, pitch: 0, fov: Number(params.get('fov') ?? 4) };
 let planLevel = Math.max(0, Math.floor(Number(params.get('level') ?? 0)) || 0);
@@ -153,8 +157,14 @@ function build(): void {
     scene.remove(built.root);
     built.dispose();
   }
-  built = buildMansion(bp, { renderer, quality: (params.get('quality') as Quality) ?? 'high' });
+  built = buildMansion(bp, { renderer, quality: (params.get('quality') as Quality) ?? 'high', dynamicDoors: true, dynamicCurtains: (r) => MOVABLE_CURTAINS.has(r.type) });
   scene.add(built.root);
+  if (fixtures) {
+    scene.remove(fixtures.root);
+    fixtures.dispose();
+  }
+  fixtures = new Fixtures(built.doorLeaves, built.curtains, built.lighting, { materials: built.materials });
+  scene.add(fixtures.root);
   planLevel = Math.min(planLevel, bp.levels.length - 1);
   planPan.x = planPan.z = 0;
   aim = { yaw: 0, pitch: 0, fov: aim.fov };
@@ -376,7 +386,19 @@ function toScreen(x: number, y: number, z: number): { x: number; y: number } | n
   return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
 }
 
+/** Doors swing, curtains draw and rooms go dark as the sim has them. */
+function syncFixtures(): void {
+  if (!fixtures || !built) return;
+  const w = party.world;
+  for (const d of w.doors) fixtures.setDoor(d.opening, d.open);
+  for (const c of w.curtains) if (c.movable) fixtures.setCurtain(c.opening, c.state === 'drawn' ? 1 : 0, c.state === 'sheer');
+  fixtures.update();
+  // A room built dark has no lamps to switch on, so only rooms lit at the start can go dark.
+  for (let r = 0; r < bp.rooms.length; r++) built.lighting.setScopeScale(r, w.lightOn[r] || !w.litAtStart(r) ? 1 : LIGHT_OFF);
+}
+
 function draw(): void {
+  syncFixtures();
   const states = frameStates();
   const sel = party.people[selected];
   const s = sel ? states[selected] : undefined;
@@ -459,12 +481,27 @@ function describe(p: Person): string {
   if (!p.present) return `arrives ${clockLabel(p.arriveAt)}`;
   const a = p.action;
   if (!a) return 'standing about';
-  const note = a.note?.split('|')[0] ?? '';
+  const note = a.note ?? '';
   let s = NOTE_LABEL[note] ?? ACTION_LABEL[a.id];
   if (a.id === 'games' && note === 'piano') s = a.pose === 'play' ? 'playing the piano' : 'listening to the piano';
-  if (a.id === 'toilet' && note === 'door') s = 'to the bathroom';
+  if (a.id === 'toilet') s = note === 'queue' ? (p.pose === 'knock' ? 'knocking on the bathroom door' : 'queueing for the bathroom') : note === 'inside' && a.startedAt !== null ? 'in the bathroom' : 'to the bathroom';
+  if (a.id === 'drink') s = note === 'bar-wait' ? 'waiting at the bar' : note === 'bar' ? 'having a drink at the bar' : 'to the bar';
   if (a.id === 'mingle' && p.pose === 'talk' && party.groups.get(a.ref ?? -1)?.speaker === p.id) s = 'talking';
-  return a.startedAt === null && note !== 'queue' && a.id !== 'leave' ? `→ ${s}` : s;
+  return (p.pose === 'walk' || p.pose === 'climb') && a.id !== 'leave' && !s.startsWith('to ') ? `→ ${s}` : s;
+}
+
+const DRINK_NAME: Partial<Record<Held, string>> = { champagne: 'champagne', red: 'red wine', white: 'white wine', beer: 'beer', whisky: 'whisky', water: 'water' };
+
+/** What's in their hand, how full, and how much they've had. */
+function inHand(p: Person): string {
+  const parts: string[] = [];
+  if (p.held && DRINKS.has(p.held)) {
+    const fill = party.glassFill(p);
+    parts.push(`${DRINK_NAME[p.held]}, ${fill > 0.75 ? 'full' : fill > 0.4 ? 'half full' : 'nearly finished'}`);
+  } else if (p.held) parts.push(`holding ${p.held === 'tray' ? `a tray of ${party.body.trayCount(p)} ${DRINK_NAME[party.body.trayDrink(p) ?? 'champagne']}` : p.held}`);
+  if (p.drinkLog.length) parts.push(`${p.drinkLog.length} drink${p.drinkLog.length > 1 ? 's' : ''} so far`);
+  if (p.tipsy >= 0.05) parts.push(p.tipsy > 0.6 ? 'drunk' : p.tipsy > 0.3 ? 'tipsy' : 'merry');
+  return parts.join(' · ');
 }
 
 function roomName(p: Person): string {
@@ -473,7 +510,7 @@ function roomName(p: Person): string {
   return r ? r.label : 'outside';
 }
 
-const EVENT_KINDS: ReadonlySet<PartyEvent['kind']> = new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-busy']);
+const EVENT_KINDS: ReadonlySet<PartyEvent['kind']> = new Set(['phase', 'arrive', 'leave', 'toast', 'bathroom-taken', 'knock', 'bump']);
 
 function eventText(e: PartyEvent): string {
   const n = (i: number | undefined) => (i !== undefined ? (party.people[i]?.name ?? '?') : '?');
@@ -486,8 +523,12 @@ function eventText(e: PartyEvent): string {
       return `${n(e.actors[0])} leaves`;
     case 'toast':
       return `${n(e.actors[0])} raises a glass`;
-    case 'bathroom-busy':
+    case 'bathroom-taken':
       return `${n(e.actors[0])} finds the bathroom taken`;
+    case 'knock':
+      return `${n(e.actors[0])} knocks on the bathroom door`;
+    case 'bump':
+      return `${n(e.actors[0])} bumps into ${n(e.actors[1])}${e.note === 'slop' ? ', drink slops' : ''}`;
     default:
       return e.kind;
   }
@@ -511,7 +552,8 @@ function refreshPanel(): void {
   const lines: string[] = [];
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
-    if (EVENT_KINDS.has(e.kind)) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    // Bumps are many; only one that slops a drink is worth a line.
+    if (EVENT_KINDS.has(e.kind) && (e.kind !== 'bump' || e.note === 'slop')) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
   $('events').textContent = lines.join('\n');
 
@@ -519,7 +561,8 @@ function refreshPanel(): void {
   const talking = [...party.groups.values()].filter((g) => g.members.length > 1).length;
   $('stats').textContent = [
     `${talking} conversations · ${count((p) => p.pose === 'dance')} dancing · ${count((p) => p.pose === 'sit')} seated · ${count((p) => p.pose === 'walk' || p.pose === 'climb')} walking`,
-    `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m`,
+    `${party.body.stats.taken} found a bathroom taken · ${party.body.stats.knocks} knocks · ${party.body.stats.bumps} bumps`,
+    `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
   ].join('\n');
 
   party.people.forEach((p, i) => {
@@ -541,7 +584,8 @@ function refreshPanel(): void {
     [ROLE_LABEL[p.role] || 'guest', p.look.outfit.replace('-', ' '), `${p.look.height.toFixed(2)} m`].join(' · '),
     p.quirks.length ? p.quirks.join(', ').replace(/-/g, ' ') : 'no habits',
     partner ? `with ${partner}` : 'came alone',
-    `${describe(p)}${p.held ? ` · holding ${p.held}` : ''}${p.drinks ? ` · ${p.drinks} drink${p.drinks > 1 ? 's' : ''}` : ''}`,
+    describe(p),
+    inHand(p),
     p.present ? `${roomName(p)} · ${LEVEL_NAMES[p.level] ?? p.level} floor · ${Math.round(party.visibility(p) * 100)}% in view of the perch` : '',
   ]
     .filter(Boolean)

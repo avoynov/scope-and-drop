@@ -7,14 +7,16 @@
  *
  * Pure data and deterministic: the same blueprint and seed give the same night.
  */
-import type { MansionBlueprint } from '../mansion/core/types';
+import type { MansionBlueprint, RoomType } from '../mansion/core/types';
 import { Rng } from '../mansion/core/rng';
+import { Body, type BodyHost } from './body';
 import { makeProgramme, PARTY_LENGTH, phaseIndexAt, phaseProgress, TIME_SCALE, type Phase, type PhaseId } from './clock';
 import { generateCast, type CastOptions } from './cast';
 import { choose, decayRates, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from './mind';
 import { Pathfinder } from './path';
 import { resolvePlaces, RoomCells, yawTo, type Places } from './places';
-import { NEED_IDS, type ActionState, type Group, type Held, type PartyEvent, type Person, type Seat, type Spot, type Waypoint } from './types';
+import { DRINKS, NEED_IDS, type ActionId, type ActionState, type DrinkId, type Group, type Held, type PartyEvent, type Person, type Seat, type Spot, type Waypoint } from './types';
+import { DRINK_IDS, World } from './world';
 
 export interface PartyOptions extends CastOptions {
   /** Seed for the cast and every choice; defaults to the blueprint's seed. */
@@ -25,16 +27,36 @@ export interface PartyOptions extends CastOptions {
 export const STEP = 0.5;
 /** Metres per real second on a stair. */
 const CLIMB_SPEED = 0.55;
-/** How long a drink lasts in hand (in-game s). */
-const DRINK_LIFE: Partial<Record<Held, number>> = { champagne: 1500, wine: 900, beer: 900, whisky: 700, water: 600, cigarette: 400 };
-const ALCOHOL: ReadonlySet<Held> = new Set(['champagne', 'wine', 'beer', 'whisky']);
+/** How long something other than a glass stays in hand (in-game s); a glass lasts as long as its drink (body.ts). */
+const HOLD_LIFE: Partial<Record<Held, number>> = { cigarette: 400 };
 /** When, within the toast phase, glasses go up. */
 const RAISE = [0.45, 0.62] as const;
+/** Actions that need both hands: a glass is set down first. */
+const HANDS_FREE: ReadonlySet<ActionId> = new Set(['dance', 'games', 'toilet', 'dinner', 'leave']);
+/** What people can be doing when a waiter offers a glass. */
+const OFFER_TO: ReadonlySet<ActionId> = new Set(['arrive', 'mingle', 'sit', 'dinner', 'art', 'wander', 'terrace', 'toast']);
+/** How far ahead (m) a walker looks for a door to open. */
+const DOOR_LOOK = [0, 0.2, 0.4, 0.6] as const;
+/** A door this open lets people through. */
+const DOOR_PASS = 0.9;
+/** Giving way: how far ahead (m) and how wide a lane walkers watch, and the most they shift aside in a step (m). */
+const SIDESTEP_AHEAD = 1.5;
+const SIDESTEP_LANE = 0.5;
+const SIDESTEP_MAX = 0.15;
+/** Rooms staff never step into on their rounds. */
+const PRIVATE: ReadonlySet<RoomType> = new Set(['bathroom', 'bedroom', 'dressing-room', 'study']);
 
-export class Party implements MindWorld {
+/** Which drinks the waiters carry: champagne before the toast, wine at dinner, a mix after. */
+const bandOf = (id: PhaseId): Body['band'] => (id === 'dinner' ? 'dinner' : id === 'dancing' || id === 'games' || id === 'farewell' ? 'after' : 'before');
+
+export class Party implements MindWorld, BodyHost {
   readonly bp: MansionBlueprint;
   readonly pf: Pathfinder;
   readonly cells: RoomCells;
+  /** Doors, curtains, lights and every thing people carry, lock or lose. */
+  readonly world: World;
+  /** Bathrooms, drinks, tipsiness and bumps. */
+  readonly body: Body;
   readonly places: Places;
   readonly programme: Phase[];
   readonly people: Person[];
@@ -46,8 +68,13 @@ export class Party implements MindWorld {
   private nextGroup = 1;
   private reserved = new Map<string, number>();
   private seats = new Map<string, number>();
-  private bathOcc: number[];
   private announceUntil = -1;
+  /** Draws for things (coats, bags), kept apart so they don't shift the minds' choices. */
+  private readonly things: Rng;
+  /** The door each person is standing in (-1 none), to close it behind them. */
+  private readonly doorIn: Int32Array;
+  /** When a waiter last set off toward each person, so two don't converge on the same one. */
+  private readonly offeredAt: Float64Array;
   private stops = new Map<number, number>();
   private floorY: number[] = [];
   private levelY = new Map<number, number>();
@@ -59,10 +86,16 @@ export class Party implements MindWorld {
     this.rng = root.fork('minds');
     this.pf = new Pathfinder(bp);
     this.cells = new RoomCells(this.pf);
-    this.places = resolvePlaces(bp, this.pf, this.cells);
+    this.world = new World(bp, this.pf, root.fork('world'));
+    this.pf.setGate(this.world);
+    this.places = resolvePlaces(bp, this.pf, this.cells, this.world);
     this.programme = makeProgramme(root.fork('programme'));
     this.people = generateCast(root.fork('cast'), this.places, opts);
-    this.bathOcc = this.places.bathrooms.map(() => -1);
+    this.body = new Body(this, root.fork('body'));
+    this.things = root.fork('things');
+    this.doorIn = new Int32Array(this.people.length).fill(-1);
+    this.offeredAt = new Float64Array(this.people.length).fill(-1e9);
+    this.shelveThings();
     for (const r of bp.rooms) this.floorY[r.index] = r.floorY;
     for (const l of bp.levels) this.levelY.set(l.index, l.floorY);
     this.terraceY = bp.site.terrace.y;
@@ -100,8 +133,13 @@ export class Party implements MindWorld {
     return this.seats.has(seat.id);
   }
 
-  bathroomBusy(i: number): boolean {
-    return this.bathOcc[i]! >= 0;
+  worthTrying(p: Person, i: number): boolean {
+    return this.body.worthTrying(p, i);
+  }
+
+  glassFill(p: Person): number {
+    const items = this.world.items;
+    return p.item >= 0 && items.kindOf(p.item) === 'glass' ? items.fill[p.item]! : 0;
   }
 
   /** Advance by `seconds` of in-game time in fixed steps. */
@@ -116,13 +154,25 @@ export class Party implements MindWorld {
     const idx = phaseIndexAt(this.programme, this.t);
     if (idx !== this.phaseIdx) {
       this.phaseIdx = idx;
+      this.body.band = bandOf(this.phase.id);
+      // Champagne is called: every waiter fetches a full tray of flutes.
+      if (this.phase.id === 'champagne') {
+        for (const w of this.people) {
+          if (w.role !== 'waiter' || !w.present) continue;
+          this.end(w, false);
+          this.stops.set(w.id, 99);
+          w.thinkAt = this.t;
+        }
+      }
       this.log('phase', [], undefined, this.phase.label);
       this.announceUntil = this.t + 15;
       this.log('announce', [this.host.id], this.host.room, this.phase.label);
     }
     const ph = this.phase;
-    if (ph.id === 'toast' && Math.abs(phaseProgress(ph, this.t) - RAISE[0]) < dt / (ph.end - ph.start)) this.log('toast', [this.host.id], this.host.room);
+    // Glasses go up once, on the step that crosses the raise.
+    if (ph.id === 'toast' && phaseProgress(ph, this.t - dt) < RAISE[0] && phaseProgress(ph, this.t) >= RAISE[0]) this.log('toast', [this.host.id], this.host.room);
 
+    this.body.beginStep();
     for (const p of this.people) {
       if (p.gone) continue;
       if (!p.present) {
@@ -132,18 +182,21 @@ export class Party implements MindWorld {
       this.updateNeeds(p, dt);
       this.updatePhase(p);
       // Last guests out: everyone heads for the door before the clock runs out.
-      if (!p.staff && p.role !== 'host' && ph.id === 'farewell' && phaseProgress(ph, this.t) > 0.75 && p.action?.id !== 'leave') {
+      if (!p.staff && p.role !== 'host' && ph.id === 'farewell' && phaseProgress(ph, this.t) > 0.55 && p.action?.id !== 'leave') {
         this.end(p, false);
         this.start(p, { id: 'leave', target: this.places.entrance, duration: 0, pose: 'walk', gain: {}, programme: true });
       }
-      if (p.held && this.t >= p.heldUntil && p.held !== 'tray') p.held = null;
+      // A cigarette burns down; a glass is set down when its drink runs out (body.ts).
+      if (p.held && p.item < 0 && this.t >= p.heldUntil) p.held = null;
       if (!p.action) {
         if (this.t >= p.thinkAt) this.think(p);
       }
       if (p.action) this.act(p, dt);
       this.updatePose(p);
     }
-    this.separate();
+    this.separate(dt);
+    this.body.endStep(dt);
+    this.world.step(dt);
     this.updateGroups();
   }
 
@@ -171,6 +224,7 @@ export class Party implements MindWorld {
     p.present = true;
     p.phaseSeen = phaseIndexAt(this.programme, this.t - p.phaseLag);
     this.log('arrive', [p.id], p.room);
+    this.arriveWithThings(p);
     // Greet the host if they are by the door, else step into the hall.
     const host = this.host;
     let target: Spot | null = null;
@@ -193,7 +247,7 @@ export class Party implements MindWorld {
       p.needs.companion = Math.max(0, Math.min(1, p.needs.companion + (near ? 0.03 : -0.01) * k));
     } else p.needs.companion = 1;
     // Sipping a drink in hand keeps thirst at bay.
-    if (p.held && ALCOHOL.has(p.held)) p.needs.thirst = Math.min(1, p.needs.thirst + 0.008 * k);
+    if (p.item >= 0 && p.held && DRINKS.has(p.held)) p.needs.thirst = Math.min(1, p.needs.thirst + 0.008 * k);
   }
 
   /** People act on the phase they believe is running, a little after it starts. */
@@ -205,7 +259,9 @@ export class Party implements MindWorld {
       p.phaseSeen = idx;
       if (!a) return;
       const id = this.programme[idx]!.id;
-      const keep = p.staff ? true : p.role === 'host' ? false : (PHASE_WEIGHTS[id][a.id] ?? 0) >= 0.3 && a.id !== 'toast' && a.id !== 'dinner';
+      // Someone in a bathroom or waiting at its door sees it through; most else gives way to the programme.
+      const committed = a.id === 'toilet' && a.note !== 'door';
+      const keep = p.staff ? true : p.role === 'host' ? false : committed || ((PHASE_WEIGHTS[id][a.id] ?? 0) >= 0.3 && a.id !== 'toast' && a.id !== 'dinner');
       if (!keep && a.id !== 'leave' && a.id !== 'arrive') this.end(p, false);
       return;
     }
@@ -276,18 +332,31 @@ export class Party implements MindWorld {
     }
     if (p.role === 'waiter') {
       const stops = this.stops.get(p.id) ?? 0;
-      if (p.held !== 'tray' || stops >= 4) {
-        const src = pl.bars.length && (!pl.kitchen.length || rng.chance(0.5)) ? rng.pick(pl.bars) : pl.kitchen.length ? rng.pick(pl.kitchen) : null;
+      if (this.body.trayCount(p) === 0 || stops >= 4) {
+        // Reload at the bar or the kitchen; the nearest when a toast is waiting on it.
+        const near = this.phase.id === 'champagne' || this.phase.id === 'toast';
+        const away = (s: Spot) => Math.hypot(s.x - p.x, s.z - p.z) + 15 * Math.abs(s.level - p.level);
+        const src = near
+          ? ([...pl.bars, ...pl.kitchen].sort((a, b) => away(a) - away(b))[0] ?? null)
+          : pl.bars.length && (!pl.kitchen.length || rng.chance(0.5))
+            ? rng.pick(pl.bars)
+            : pl.kitchen.length
+              ? rng.pick(pl.kitchen)
+              : null;
         if (src) {
           this.stops.set(p.id, 0);
-          return void this.start(p, { id: 'staff', target: src, duration: rng.range(25, 45), pose: 'serve', gain: {}, gives: 'tray', note: 'load' });
+          return void this.start(p, { id: 'staff', target: src, duration: rng.range(25, 45), pose: 'serve', gain: {}, note: 'load' });
         }
       }
-      const room = this.phase.id === 'dinner' && pl.dining ? pl.dining.index : rng.pick(pl.mingleRooms.length ? pl.mingleRooms : [pl.toastRoom.index]);
-      const s = this.cells.random(room, rng, 0.5);
+      // Champagne and the toast: hop from one empty-handed guest to the next. Dinner: the dining room.
+      const ph = this.phase.id;
+      const toast = ph === 'champagne' || ph === 'toast';
+      const s =
+        (toast && this.emptyHanded(p)) ||
+        this.cells.random(ph === 'dinner' && pl.dining ? pl.dining.index : ph === 'champagne' || ph === 'toast' ? pl.toastRoom.index : rng.pick(pl.mingleRooms.length ? pl.mingleRooms : [pl.toastRoom.index]), rng, 0.5);
       if (s) {
         this.stops.set(p.id, stops + 1);
-        return void this.start(p, { id: 'staff', target: s, duration: rng.range(35, 70), pose: 'serve', gain: {}, note: 'serve' });
+        return void this.start(p, { id: 'staff', target: s, duration: toast ? rng.range(12, 25) : rng.range(35, 70), pose: 'serve', gain: {}, note: 'serve' });
       }
     }
     p.thinkAt = this.t + 10;
@@ -317,14 +386,16 @@ export class Party implements MindWorld {
     if (c.id === 'mingle' && a.ref !== undefined) this.groups.get(a.ref)?.members.push(p.id);
     if (c.key) this.reserved.set(c.key, p.id);
     if (c.seat) this.seats.set(c.seat.id, p.id);
-    a.note = c.key ? `${a.note ?? ''}|${c.key}` : a.note;
-    if (['dance', 'games', 'toilet', 'dinner', 'leave'].includes(c.id) && p.held && p.held !== 'tray') p.held = null;
+    if (HANDS_FREE.has(c.id) && p.held && p.held !== 'tray') {
+      if (p.item >= 0) this.body.setDown(p);
+      else p.held = null;
+    }
     if (!a.target) {
       p.action = a;
       a.startedAt = this.t;
       return;
     }
-    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, a.target);
+    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, a.target, p);
     p.action = a;
     if (!route) {
       // Can't get there: forget it for a while and choose again.
@@ -337,11 +408,28 @@ export class Party implements MindWorld {
     p.pathIndex = 1;
   }
 
+  /** A spot beside one of the nearest guests with nothing in hand, for a waiter's next stop. */
+  private emptyHanded(w: Person): Spot | null {
+    const away = (q: Person) => Math.hypot(q.x - w.x, q.z - w.z) + 15 * Math.abs(q.level - w.level);
+    const want = this.people
+      .filter((q) => q.present && !q.staff && !q.held && (!q.action || OFFER_TO.has(q.action.id)) && this.offeredAt[q.id]! < this.t - 30)
+      .sort((a, b) => away(a) - away(b));
+    if (!want.length) return null;
+    const q = this.rng.pick(want.slice(0, 3));
+    this.offeredAt[q.id] = this.t;
+    const a = this.rng.range(-Math.PI, Math.PI);
+    const s = this.pf.snap(q.level, q.x + Math.sin(a) * 0.8, q.z + Math.cos(a) * 0.8, 0.8);
+    const room = s ? this.pf.roomAt(s.level, s.x, s.z) : -1;
+    // Never into a bathroom or a bedroom, even when the guest stands by its door.
+    if (!s || room === -1 || (room >= 0 && PRIVATE.has(this.bp.rooms[room]!.type))) return null;
+    return { level: s.level, x: s.x, z: s.z, yaw: yawTo(s.x, s.z, q.x, q.z), room };
+  }
+
   private nearestWaiter(p: Person): Person | null {
     let best: Person | null = null;
     let bd = Infinity;
     for (const q of this.people) {
-      if (q.role !== 'waiter' || !q.present || q.held !== 'tray') continue;
+      if (q.role !== 'waiter' || !q.present || this.body.trayCount(q) === 0) continue;
       const d = Math.hypot(q.x - p.x, q.z - p.z) + 10 * Math.abs(q.level - p.level);
       if (d < bd) {
         bd = d;
@@ -353,14 +441,15 @@ export class Party implements MindWorld {
 
   private act(p: Person, dt: number): void {
     const a = p.action!;
-    if (a.note === 'queue') {
-      // Waiting at a bathroom door.
-      if (this.bathOcc[a.ref!]! < 0) {
-        if (!this.enterBathroom(p, a)) a.startedAt = this.t;
-      } else if (this.t >= a.until!) {
-        p.avoid.set(`bath:${a.ref}`, this.t + this.rng.range(240, 600));
-        this.end(p, false);
-      }
+    if (a.id === 'toilet' && a.note === 'queue') {
+      // Waiting by a bathroom door: body.ts moves the line along, knocks and gives up.
+      this.body.queueStep(p);
+      if (p.action === a && a.startedAt === null) this.walk(p, dt);
+      return;
+    }
+    if (a.id === 'drink' && a.note === 'bar-wait') {
+      // Waiting a turn at the bar; the bartender pours and starts the drink (body.ts).
+      if (this.t >= a.until!) this.end(p, false);
       return;
     }
     if (a.startedAt === null) {
@@ -368,6 +457,11 @@ export class Party implements MindWorld {
       if (!p.action) return;
       this.walk(p, dt);
       return;
+    }
+    // A waiter at a stop keeps offering to whoever comes near, and moves on when the tray is empty.
+    if (a.id === 'staff' && a.note === 'serve') {
+      if ((this.t - a.startedAt) % 4 < dt) this.offer(p);
+      if (!this.body.trayCount(p)) return this.end(p, true);
     }
     // At the target: refill needs over the action's duration.
     const k = Math.min(1, dt / Math.max(1, a.duration));
@@ -381,9 +475,15 @@ export class Party implements MindWorld {
   private followWaiter(p: Person, a: ActionState): void {
     const w = this.people[a.ref!]!;
     const d = Math.hypot(w.x - p.x, w.z - p.z);
-    if (w.level === p.level && d < 1.4 && w.held === 'tray') {
-      this.give(p, 'champagne');
-      this.log('champagne', [p.id, w.id], p.room);
+    if (!this.body.trayCount(w)) {
+      // Their tray ran dry: look for another, or the bar.
+      this.end(p, false);
+      p.thinkAt = this.t + 1;
+      return;
+    }
+    if (w.level === p.level && d < 1.4) {
+      const drink = this.body.takeFrom(p, w);
+      this.log('champagne', [p.id, w.id], p.room, drink ?? undefined);
       this.end(p, true);
       return;
     }
@@ -392,7 +492,7 @@ export class Party implements MindWorld {
     if (p.path[p.pathIndex]?.climb) return;
     if (Math.hypot(w.x - tgt.x, w.z - tgt.z) > 1.5 || p.pathIndex >= p.path.length) {
       const near = this.pf.snap(w.level, w.x - Math.sin(w.yaw) * 0.8, w.z - Math.cos(w.yaw) * 0.8, 1) ?? w;
-      const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, near);
+      const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, near, p);
       if (!route) return this.end(p, false);
       a.target = { level: near.level, x: near.x, z: near.z, yaw: 0, room: w.room };
       p.path = route;
@@ -401,7 +501,9 @@ export class Party implements MindWorld {
   }
 
   private walk(p: Person, dt: number): void {
-    let budget = (p.speed * dt) / TIME_SCALE;
+    // Over 0.6 tipsiness people walk a little slower (and sway, in the renderer).
+    let budget = ((p.speed * dt) / TIME_SCALE) * (p.tipsy > 0.6 ? 0.9 : 1);
+    if (this.doorAhead(p)) return;
     while (budget > 1e-6 && p.pathIndex < p.path.length) {
       const wp = p.path[p.pathIndex]!;
       if (wp.climb) {
@@ -437,12 +539,19 @@ export class Party implements MindWorld {
         budget -= d;
         p.pathIndex++;
       } else {
-        const nx = p.x + (dx / d) * budget;
-        const nz = p.z + (dz / d) * budget;
+        let nx = p.x + (dx / d) * budget;
+        let nz = p.z + (dz / d) * budget;
         if (!this.pf.walkable(p.level, nx, nz)) {
           // Nudged off the line (by someone in the way): find a fresh route from here.
           this.reroute(p);
           return;
+        }
+        // Step round whoever is just ahead, if there's floor to the side; the last stretch to the target goes straight in.
+        const last = p.pathIndex === p.path.length - 1 && d < SIDESTEP_AHEAD;
+        const side = last ? null : this.sidestep(p, dx / d, dz / d);
+        if (side && this.pf.walkable(p.level, nx + side.x, nz + side.z) && this.world.doorAtPoint(p.level, nx + side.x, nz + side.z) === this.world.doorAtPoint(p.level, nx, nz)) {
+          nx += side.x;
+          nz += side.z;
         }
         p.x = nx;
         p.z = nz;
@@ -454,13 +563,84 @@ export class Party implements MindWorld {
       p.room = room;
       p.y = this.floorAt(p.level, room);
     }
+    this.passDoor(p);
     if (p.pathIndex >= p.path.length) this.arrived(p);
+  }
+
+  /**
+   * Walkers give way: the nearest person in a lane ahead (within 1.5 m, half a metre either side)
+   * sends them sideways, more the closer they are. Returns the sideways shift for this step.
+   */
+  private sidestep(p: Person, ux: number, uz: number): { x: number; z: number } | null {
+    let best: Person | null = null;
+    let bestAhead = SIDESTEP_AHEAD;
+    let lat = 0;
+    for (const q of this.people) {
+      if (q === p || !q.present || q.level !== p.level || q.pose === 'sit') continue;
+      const rx = q.x - p.x;
+      const rz = q.z - p.z;
+      const ahead = rx * ux + rz * uz;
+      if (ahead <= 0 || ahead >= bestAhead) continue;
+      const l = rz * ux - rx * uz;
+      if (Math.abs(l) > SIDESTEP_LANE) continue;
+      best = q;
+      bestAhead = ahead;
+      lat = l;
+    }
+    if (!best) return null;
+    // Away from the side they're on; dead ahead, pass on the right.
+    const away = Math.abs(lat) < 0.05 ? -1 : -Math.sign(lat);
+    const k = (1 - bestAhead / SIDESTEP_AHEAD) * SIDESTEP_MAX * away;
+    // `lat` is measured along (-uz, ux); shift along the same axis, away from them.
+    return { x: -uz * k, z: ux * k };
+  }
+
+  /**
+   * A door on the way: open it and wait while it swings, or find another way when it's locked.
+   * True when the person doesn't move this step. A door they're already standing in is never in the way.
+   */
+  private doorAhead(p: Person): boolean {
+    const wp = p.path[p.pathIndex];
+    if (!wp || wp.climb) return false;
+    const w = this.world;
+    const dx = wp.x - p.x;
+    const dz = wp.z - p.z;
+    const d = Math.hypot(dx, dz);
+    const here = w.doorAtPoint(p.level, p.x, p.z);
+    for (const ahead of DOOR_LOOK) {
+      const k = Math.min(ahead, d);
+      const id = d > 1e-6 ? w.doorAtPoint(p.level, p.x + (dx / d) * k, p.z + (dz / d) * k) : here;
+      if (id >= 0 && id !== here) {
+        const door = w.doors[id]!;
+        if (!w.canPass(door, p)) {
+          this.reroute(p);
+          return true;
+        }
+        if (door.open < DOOR_PASS) {
+          w.swing(door, 1);
+          return true;
+        }
+      }
+      if (k >= d) break;
+    }
+    return false;
+  }
+
+  /** Stepping out of a doorway: bedrooms, the study and guest bedrooms swing shut behind. */
+  private passDoor(p: Person): void {
+    const id = this.world.doorAtPoint(p.level, p.x, p.z);
+    const prev = this.doorIn[p.id]!;
+    if (id === prev) return;
+    this.doorIn[p.id] = id;
+    if (prev < 0) return;
+    const d = this.world.doors[prev]!;
+    if (d.closes && !this.doorIn.includes(prev)) this.world.swing(d, 0);
   }
 
   private reroute(p: Person): void {
     const goal = p.path[p.path.length - 1];
     const here = this.pf.walkable(p.level, p.x, p.z) ? { level: p.level, x: p.x, z: p.z } : (this.pf.snap(p.level, p.x, p.z, 1) ?? this.pf.snap(p.level, p.x, p.z, 6));
-    const route = goal && here ? this.pf.route(here, goal) : null;
+    const route = goal && here ? this.pf.route(here, goal, p) : null;
     if (!route) return this.end(p, false);
     if (here) {
       p.x = here.x;
@@ -472,26 +652,23 @@ export class Party implements MindWorld {
 
   private arrived(p: Person): void {
     const a = p.action!;
-    if (a.id === 'toilet' && a.note?.startsWith('door')) {
-      const i = a.ref!;
-      if (this.bathOcc[i]! >= 0) {
-        this.log('bathroom-busy', [p.id, this.bathOcc[i]!], p.room);
-        // Busy: queue at the door when it's urgent, else remember it and come back later.
-        if (p.needs.bladder < 0.35) {
-          a.note = 'queue';
-          a.until = this.t + this.rng.range(120, 240);
-          p.yaw = a.target?.yaw ?? p.yaw;
-          return;
-        }
-        p.avoid.set(`bath:${i}`, this.t + this.rng.range(240, 600));
-        this.end(p, false);
-        p.thinkAt = this.t + 2;
-        return;
-      }
-      if (this.enterBathroom(p, a)) return;
+    if (a.id === 'toilet') {
+      // At the door, inside, or at a place in the line (body.ts).
+      if (a.target) p.yaw = a.target.yaw;
+      if (a.note === 'door') return this.body.atDoor(p);
+      if (a.note === 'inside') return this.body.inside(p);
+      if (a.note === 'queue') return void (a.startedAt = this.t);
+    }
+    if (a.id === 'drink' && a.note === 'bar-go') {
+      if (a.target) p.yaw = a.target.yaw;
+      a.note = 'bar-wait';
+      a.until = this.t + 180;
+      this.body.atBar(p, a.ref!);
+      return;
     }
     if (a.id === 'leave') {
       this.release(p);
+      this.leaveWithThings(p);
       p.action = null;
       p.present = false;
       p.gone = true;
@@ -500,7 +677,8 @@ export class Party implements MindWorld {
     }
     if (a.id === 'champagne' && a.ref === undefined) {
       // Took a glass at the bar.
-      this.give(p, 'champagne');
+      this.body.pour(p, 'champagne');
+      this.log('champagne', [p.id], p.room, 'bar');
       this.end(p, true);
       return;
     }
@@ -515,36 +693,100 @@ export class Party implements MindWorld {
       const g = this.groups.get(a.ref);
       if (g) p.yaw = yawTo(p.x, p.z, g.x, g.z);
     } else if (a.target) p.yaw = a.target.yaw;
+    // A stop on a waiter's round: empties onto the tray (glasses are offered while they stand there).
+    if (a.id === 'staff' && a.note === 'serve') this.body.clearGlasses(p, 3);
     a.startedAt = this.t;
   }
 
-  /** Lock the bathroom and walk in; false when there is no way in (the person uses the door spot). */
-  private enterBathroom(p: Person, a: ActionState): boolean {
-    const i = a.ref!;
-    this.bathOcc[i] = p.id;
-    a.note = 'inside';
-    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, this.places.bathrooms[i]!.inside);
+  /** Walk to a spot as part of the current action (it starts when they get there); false when there is no way. */
+  goTo(p: Person, s: Spot): boolean {
+    const a = p.action;
+    if (!a) return false;
+    a.target = s;
+    a.startedAt = null;
+    const route = this.pf.route({ level: p.level, x: p.x, z: p.z }, s, p);
     if (!route) return false;
     p.path = route;
     p.pathIndex = 1;
     return true;
   }
 
+  /** A waiter offers glasses round: guests close by with empty hands take one, more often when thirsty. */
+  private offer(w: Person): void {
+    const drink = this.body.trayDrink(w);
+    if (!drink) return;
+    // Nobody turns down a glass for the toast, and the waiters reach further through the crowd for it.
+    const toast = drink === 'champagne' && (this.phase.id === 'champagne' || this.phase.id === 'toast');
+    for (const q of this.people) {
+      if (!q.present || q.staff || q.held || q.level !== w.level || Math.hypot(q.x - w.x, q.z - w.z) > (toast ? 3 : 2.5)) continue;
+      if (q.action && !OFFER_TO.has(q.action.id)) continue;
+      if (!this.body.wants(q, drink) || !this.rng.chance(toast ? 0.95 : 0.3 + 0.6 * (1 - q.needs.thirst))) continue;
+      this.body.takeFrom(q, w);
+      if (!this.body.trayCount(w)) break;
+    }
+  }
+
+  /** What the waiters load: champagne before the toast, red or white at dinner, a mix after. */
+  private trayDrink(): DrinkId {
+    const band = this.body.band;
+    if (band === 'before') return 'champagne';
+    if (band === 'dinner') return this.rng.chance(0.5) ? 'red' : 'white';
+    return this.rng.weighted([['champagne', 1], ['red', 1.2], ['white', 1], ['beer', 0.6], ['water', 0.8]] as const);
+  }
+
   private give(p: Person, h: Held): void {
+    if (DRINKS.has(h)) return this.body.pour(p, h as DrinkId);
+    if (p.item >= 0) this.body.setDown(p);
     p.held = h;
-    p.heldUntil = this.t + (DRINK_LIFE[h] ?? 99999);
-    if (ALCOHOL.has(h)) p.drinks++;
+    p.heldUntil = this.t + (HOLD_LIFE[h] ?? 99999);
+  }
+
+  /** The things in the house before anyone arrives: the first-aid kit and the good whisky. */
+  private shelveThings(): void {
+    const items = this.world.items;
+    const pl = this.places;
+    const kit = pl.kitchen[0] ?? pl.bathrooms[0]?.inside;
+    if (kit) items.add('kit', 'shelved', -1, -1, kit, 0);
+    const spirits = pl.chains.spirits.spots[0];
+    if (spirits) {
+      const id = items.add('bottle', 'shelved', this.host.id, -1, spirits, 0);
+      items.drink[id] = DRINK_IDS.indexOf('whisky');
+    }
+  }
+
+  /** At the door: the coat is hung (or laid on a guest bed), some keep a bag, spectacles are worn. */
+  private arriveWithThings(p: Person): void {
+    const items = this.world.items;
+    const spots = this.places.chains.coats.spots;
+    const hook = spots.length ? spots[p.id % spots.length]! : this.places.entrance;
+    p.coat = items.add('coat', 'hung', p.id, -1, hook, this.t);
+    if (this.things.chance(p.look.sex === 'f' ? 0.6 : 0.08)) items.add('bag', 'carried', p.id, p.id, p, this.t);
+    if (p.quirks.includes('glasses')) items.add('spectacles', 'worn', p.id, p.id, p, this.t);
+  }
+
+  /** Out of the door: the coat goes back on, and whatever they carry goes with them. */
+  private leaveWithThings(p: Person): void {
+    const items = this.world.items;
+    if (p.item >= 0) this.body.setDown(p);
+    if (p.coat >= 0) {
+      items.holder[p.coat] = p.id;
+      items.set(p.coat, 'worn', this.t);
+    }
   }
 
   /** Finish or abandon the current action and free what it held. */
-  private end(p: Person, done: boolean): void {
+  end(p: Person, done: boolean): void {
     const a = p.action;
     if (!a) return;
     if (done && a.gives !== undefined && a.id !== 'champagne') {
       if (a.gives) this.give(p, a.gives);
-      else p.held = null;
+      else if (p.item < 0) p.held = null;
     }
-    if (done && a.note === 'load') p.held = 'tray';
+    if (done && a.id === 'staff' && a.note === 'load') {
+      const drink = this.trayDrink();
+      this.body.loadTray(p, drink, drink === 'champagne' && (this.phase.id === 'champagne' || this.phase.id === 'toast'));
+      this.body.clearGlasses(p, 3);
+    }
     this.release(p);
     if (a.seat && a.startedAt !== null) this.place(p, a.seat.approach);
     // Never stop on a stair: finish the flight first.
@@ -560,10 +802,10 @@ export class Party implements MindWorld {
   private release(p: Person): void {
     const a = p.action;
     if (!a) return;
-    const key = a.note?.split('|')[1];
-    if (key && this.reserved.get(key) === p.id) this.reserved.delete(key);
+    if (a.key && this.reserved.get(a.key) === p.id) this.reserved.delete(a.key);
     if (a.seat && this.seats.get(a.seat.id) === p.id) this.seats.delete(a.seat.id);
-    if (a.id === 'toilet' && a.ref !== undefined && this.bathOcc[a.ref] === p.id) this.bathOcc[a.ref] = -1;
+    if (a.id === 'toilet') this.body.release(p);
+    if (a.id === 'drink') this.body.leaveBar(p);
     if (a.id === 'mingle' && a.ref !== undefined) {
       const g = this.groups.get(a.ref);
       if (g) {
@@ -575,7 +817,11 @@ export class Party implements MindWorld {
 
   private updatePose(p: Person): void {
     const a = p.action;
-    if (a?.note === 'queue') {
+    if (a?.id === 'toilet' && a.note === 'queue' && a.startedAt !== null) {
+      p.pose = this.body.knocking(p) ? 'knock' : 'wait';
+      return;
+    }
+    if (a?.id === 'drink' && a.note === 'bar-wait') {
       p.pose = 'wait';
       return;
     }
@@ -595,10 +841,16 @@ export class Party implements MindWorld {
     p.pose = pose;
   }
 
-  /** People don't stand inside each other: push apart anyone closer than 0.42 m. */
-  private separate(): void {
+  /** People don't stand inside each other: push apart anyone closer than 0.42 m (never through a locked door). Bumps are noted. */
+  private separate(dt: number): void {
     const ps = this.people;
     const R = 0.42;
+    const world = this.world;
+    const canStand = (p: Person, x: number, z: number): boolean => {
+      if (!this.pf.walkable(p.level, x, z)) return false;
+      const d = world.doorAtPoint(p.level, x, z);
+      return d < 0 || world.canPass(world.doors[d]!, p);
+    };
     for (let i = 0; i < ps.length; i++) {
       const a = ps[i]!;
       if (!a.present || a.pose === 'sit' || a.pose === 'climb') continue;
@@ -609,14 +861,15 @@ export class Party implements MindWorld {
         const dz = b.z - a.z;
         const d = Math.hypot(dx, dz);
         if (d >= R) continue;
+        this.body.checkBump(a, b, dx, dz, d, dt);
         const ux = d > 1e-4 ? dx / d : 1;
         const uz = d > 1e-4 ? dz / d : 0;
         const push = (R - d) / 2;
-        if (this.pf.walkable(a.level, a.x - ux * push, a.z - uz * push)) {
+        if (canStand(a, a.x - ux * push, a.z - uz * push)) {
           a.x -= ux * push;
           a.z -= uz * push;
         }
-        if (this.pf.walkable(b.level, b.x + ux * push, b.z + uz * push)) {
+        if (canStand(b, b.x + ux * push, b.z + uz * push)) {
           b.x += ux * push;
           b.z += uz * push;
         }
@@ -634,22 +887,23 @@ export class Party implements MindWorld {
     }
   }
 
-  private log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void {
+  log(kind: PartyEvent['kind'], actors: number[], room?: number, note?: string): void {
     this.events.push({ t: this.t, kind, actors, room, note });
   }
 
-  /** A short digest of everyone's state, for determinism checks. */
+  /** A short digest of everyone's state, the doors and the things in hand, for determinism checks. */
   digest(): string {
     let h = 0;
-    for (const p of this.people) {
-      const s = `${p.id}:${p.present ? 1 : 0}${p.gone ? 1 : 0}:${Math.round(p.x * 100)},${Math.round(p.z * 100)},${p.level}:${p.action?.id ?? '-'}`;
+    const mix = (s: string) => {
       for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
-    }
+    };
+    for (const p of this.people) mix(`${p.id}:${p.present ? 1 : 0}${p.gone ? 1 : 0}:${Math.round(p.x * 100)},${Math.round(p.z * 100)},${p.level}:${p.action?.id ?? '-'}:${Math.round(p.tipsy * 100)}:${p.item}`);
+    for (const d of this.world.doors) mix(`${d.id}:${Math.round(d.open * 10)}${d.locked ? 1 : 0}`);
     return `${this.t}:${(h >>> 0).toString(16)}`;
   }
 
-  /** Perch visibility of a person (0..1), from the house's visibility grid. */
+  /** Perch visibility of a person (0..1), from the house's visibility grid with the curtains as they are now. */
   visibility(p: Person): number {
-    return p.present ? this.pf.visAt(p.level, p.x, p.z) : 0;
+    return p.present ? this.world.visAt(p.level, this.pf.cellOf(p.level, p.x, p.z)) : 0;
   }
 }

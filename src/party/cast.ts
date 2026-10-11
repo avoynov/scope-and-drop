@@ -5,7 +5,7 @@
  */
 import type { Rng } from '../mansion/core/rng';
 import type { Places } from './places';
-import { NEED_IDS, STAFF_ROLES, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Traits } from './types';
+import { NEED_IDS, STAFF_ROLES, type DrinkId, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Traits } from './types';
 
 const FIRST: Record<Sex, string[]> = {
   f: ['Adela', 'Beatrice', 'Clara', 'Daria', 'Elena', 'Flora', 'Greta', 'Helena', 'Irina', 'Julia', 'Katya', 'Lena', 'Maren', 'Nadia', 'Olga', 'Petra', 'Rosa', 'Sofia', 'Tamara', 'Vera', 'Yana', 'Zora', 'Agnes', 'Lidia', 'Mila', 'Ines', 'Edith', 'Vanya'],
@@ -53,6 +53,24 @@ const WOMEN: ReadonlyArray<readonly [Outfit, string, string]> = [
 const SKIN = ['#f1d3bd', '#e7bf9f', '#d8a47f', '#b9805a', '#8f5a3b', '#5f3a26'];
 const HAIR = ['#1b1512', '#3b2a1e', '#6a4a2f', '#a07a4a', '#cfb07a', '#8a8a86', '#d8d5cf', '#5a1e14'];
 const QUIRKS: readonly Quirk[] = ['glasses', 'limp', 'cane', 'ear-scratch', 'hands-in-pockets', 'tie-adjust', 'big-laugh', 'smoker', 'watch-check', 'dances-after-drink'];
+
+/** How often each drink is someone's favourite (the evening's mix). */
+const FAV: ReadonlyArray<readonly [DrinkId, number]> = [
+  ['champagne', 3],
+  ['red', 3],
+  ['white', 2.5],
+  ['beer', 1.5],
+  ['whisky', 1.5],
+  ['water', 0.6],
+];
+/** The drink someone never touches: most often red wine or beer (milestone 2 plan), so a refusal proves little. */
+const NEVER: ReadonlyArray<readonly [DrinkId, number]> = [
+  ['red', 3],
+  ['beer', 3],
+  ['whisky', 2],
+  ['white', 1],
+  ['champagne', 0.5],
+];
 
 export interface CastOptions {
   /** Number of guests (excluding host and staff). Default: 20–30 from the seed. */
@@ -113,6 +131,9 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       partner: null,
       friends: [],
       seat: null,
+      supper: null,
+      fav: 'champagne',
+      never: null,
       arriveAt: 0,
       phaseLag: rng.range(20, 150),
       present: false,
@@ -127,6 +148,12 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       held: null,
       heldUntil: 0,
       drinks: 0,
+      drinkLog: [],
+      tipsy: 0,
+      item: -1,
+      coat: -1,
+      ring: role === 'host' ? 'host' : STAFF_ROLES.has(role) ? 'staff' : 'none',
+      lentKey: -1,
       needs: freshNeeds(rng),
       action: null,
       path: [],
@@ -242,7 +269,21 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
         placed.add(g.partner);
       }
     }
-    for (const g of order) if (next < seats) g.seat = next++;
+    // Those the table can't take sit down to supper in the ballroom, couples side by side, then the buffet.
+    let sup = 0;
+    for (const g of order) {
+      if (next < seats) g.seat = next++;
+      else if (sup < places.supperSeats.length) g.supper = sup++;
+    }
+  } else {
+    let sup = 0;
+    for (const g of [host, ...guests]) if (sup < places.supperSeats.length) g.supper = sup++;
+  }
+
+  // Drinks last, so the draws above stay as they were: a favourite for everyone, and one they never touch for about 1 in 5.
+  for (const g of [host, ...guests]) {
+    g.fav = rng.weighted(FAV);
+    if (rng.chance(0.2)) g.never = rng.weighted(NEVER.filter(([d]) => d !== g.fav));
   }
   return people;
 }

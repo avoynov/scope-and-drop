@@ -61,9 +61,18 @@ export const NEED_IDS: readonly NeedId[] = ['thirst', 'hunger', 'bladder', 'soci
 /** 0 = urgent, 1 = met. */
 export type Needs = Record<NeedId, number>;
 
-export type Pose = 'stand' | 'walk' | 'sit' | 'talk' | 'drink' | 'dance' | 'toast' | 'look' | 'play' | 'serve' | 'smoke' | 'greet' | 'announce' | 'wait' | 'climb';
+export type Pose = 'stand' | 'walk' | 'sit' | 'talk' | 'drink' | 'dance' | 'toast' | 'look' | 'play' | 'serve' | 'smoke' | 'greet' | 'announce' | 'wait' | 'climb' | 'knock';
 
-export type Held = 'champagne' | 'wine' | 'beer' | 'whisky' | 'water' | 'tray' | 'cue' | 'cards' | 'cigarette';
+/** The six drinks of the evening. */
+export type DrinkId = 'champagne' | 'red' | 'white' | 'beer' | 'whisky' | 'water';
+export const ALCOHOL: ReadonlySet<DrinkId> = new Set(['champagne', 'red', 'white', 'beer', 'whisky']);
+
+/** What shows in someone's hands: a drink, a tray, a cue, cards or a cigarette. */
+export type Held = DrinkId | 'tray' | 'cue' | 'cards' | 'cigarette';
+export const DRINKS: ReadonlySet<Held> = new Set<Held>(['champagne', 'red', 'white', 'beer', 'whisky', 'water']);
+
+/** Keys a person carries: none, the staff ring (service rooms) or the host's ring (everything). */
+export type Ring = 'none' | 'staff' | 'host';
 
 export type ActionId =
   | 'arrive'
@@ -130,8 +139,10 @@ export interface ActionState {
   note?: string;
   /** Held once the action completes. */
   gives?: Held | null;
-  /** In-game time a wait (a queue at a door) is given up. */
+  /** In-game time a wait (a queue at a door, a turn at the bar) is given up. */
   until?: number;
+  /** Reservation key of the spot it holds (one person per spot). */
+  key?: string;
 }
 
 export interface Person {
@@ -144,8 +155,13 @@ export interface Person {
   quirks: Quirk[];
   partner: number | null;
   friends: number[];
-  /** Index into Places.seats.dining; null eats at the buffet. */
+  /** Index into Places.diningSeats; null when the dining room is full. */
   seat: number | null;
+  /** Index into Places.supperSeats for those the dining room can't seat; null eats at the buffet. */
+  supper: number | null;
+  /** The drink they ask for most, and one they never touch (about 1 in 5 have one). */
+  fav: DrinkId;
+  never: DrinkId | null;
   /** In-game seconds after 19:00. */
   arriveAt: number;
   /** Person-specific delay before they adjust to a new phase (in-game s). */
@@ -166,6 +182,17 @@ export interface Person {
   heldUntil: number;
   /** Alcoholic drinks so far. */
   drinks: number;
+  /** Every drink tonight, oldest first (up to 24). */
+  drinkLog: Array<{ drink: DrinkId; t: number }>;
+  /** 0 sober to 1 very drunk; climbs as drinks are sipped, fades by 0.05 an in-game hour. */
+  tipsy: number;
+  /** Item id in hand (a glass or a tray), or -1. `held` is what it looks like. */
+  item: number;
+  /** Item id of the coat they came in, or -1. */
+  coat: number;
+  ring: Ring;
+  /** Door id of a key lent for an errand, or -1. */
+  lentKey: number;
   needs: Needs;
   action: ActionState | null;
   path: Waypoint[];
@@ -192,7 +219,24 @@ export interface Group {
   speakerUntil: number;
 }
 
-export type EventKind = 'phase' | 'arrive' | 'leave' | 'announce' | 'bathroom-busy' | 'retry' | 'seated' | 'toast' | 'champagne';
+export type EventKind =
+  | 'phase'
+  | 'arrive'
+  | 'leave'
+  | 'announce'
+  /** Someone reached a bathroom door to find it taken, not having known. */
+  | 'bathroom-taken'
+  /** A queuer knocked on a taken bathroom. */
+  | 'knock'
+  | 'seated'
+  | 'toast'
+  | 'champagne'
+  /** A bar poured a drink (note: the drink). */
+  | 'pour'
+  /** Two people walked into each other (note 'slop' when a drink slopped). */
+  | 'bump'
+  /** A room's lights went on or off (note 'on' or 'off'). */
+  | 'light';
 
 export interface PartyEvent {
   t: number;

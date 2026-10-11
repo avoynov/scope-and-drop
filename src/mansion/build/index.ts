@@ -7,8 +7,8 @@
  * pose, materials (for quality toggles) and a dispose().
  */
 import * as THREE from 'three';
-import type { LightSpec, MansionBlueprint } from '../core/types';
-import { buildFacades, buildInteriors, buildReveals, type ArchContext } from './arch';
+import type { LightSpec, MansionBlueprint, Room } from '../core/types';
+import { buildFacades, buildInteriors, buildReveals, type ArchContext, type CurtainSpec, type DoorLeafSpec, type Fittings } from './arch';
 import { buildAtrium, buildDome } from './atrium';
 import { GeometryBuilder } from './geometry';
 import { ScopedLighting } from './lighting';
@@ -31,6 +31,10 @@ export interface BuildOptions {
   /** Opacity of roof glazing seen square-on, 0 (clear) to 1 (solid); default 0.7. The dome and windows are not affected. Also settable later: `materials.get('roof-glass').opacity`. */
   roofGlassOpacity?: number;
   shadows?: boolean;
+  /** Return interior door leaves instead of baking them (they are baked swung open today). */
+  dynamicDoors?: boolean;
+  /** Rooms whose window drapes are returned instead of baked. */
+  dynamicCurtains?: (room: Room) => boolean;
 }
 
 export interface BuiltMansion {
@@ -44,6 +48,10 @@ export interface BuiltMansion {
   /** Perch camera pose. */
   perch: { position: THREE.Vector3; target: THREE.Vector3; fovMin: number; fovMax: number };
   stats: { triangles: number; meshes: number; buildMs: number };
+  /** Interior door leaves left out of the mesh for the caller to draw and swing; [] unless `dynamicDoors`. */
+  doorLeaves: DoorLeafSpec[];
+  /** Window drapes left out of the mesh for the caller to draw and move; [] unless `dynamicCurtains`. */
+  curtains: CurtainSpec[];
   dispose(): void;
 }
 
@@ -64,6 +72,27 @@ function mulberry(seed: number): () => number {
   };
 }
 
+/** The static geometry pass, needing no WebGL: every mesher in order into one builder, plus the fittings left out of it. */
+export function meshMansion(bp: MansionBlueprint, opts: Pick<BuildOptions, 'dynamicDoors' | 'dynamicCurtains'> = {}): { g: GeometryBuilder; doorLeaves: DoorLeafSpec[]; curtains: CurtainSpec[] } {
+  const g = new GeometryBuilder();
+  const rand = mulberry(bp.seed.length * 7919 + bp.attempt);
+  const fittings: Fittings = { doors: opts.dynamicDoors ?? false, drapes: opts.dynamicCurtains ?? null, doorLeaves: [], curtains: [] };
+  const ctx: ArchContext = { bp, g, rooms: new Map(bp.rooms.map((r) => [r.id, r])), style: bp.style, rand, fittings };
+  buildInteriors(ctx);
+  buildAtrium(ctx);
+  buildReveals(ctx);
+  buildFacades(ctx);
+  const roofMark = g.mark();
+  buildRoofs(ctx);
+  buildDome(ctx, roofMark);
+  buildPorticos(ctx);
+  buildStairs(ctx);
+  buildProps(bp, g, rand);
+  buildLanterns(bp.lights, g, (l: LightSpec) => (l.z > 0 ? 0 : Math.PI));
+  buildGardens(ctx);
+  return { g, doorLeaves: fittings.doorLeaves, curtains: fittings.curtains };
+}
+
 export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMansion {
   const t0 = performance.now();
   const q = QUALITY[opts.quality ?? 'medium'];
@@ -80,21 +109,7 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   const materials = new MaterialLibrary(textures, lighting, envMap);
   if (opts.roofGlassOpacity !== undefined) materials.get('roof-glass').opacity = Math.max(0, Math.min(1, opts.roofGlassOpacity));
 
-  const g = new GeometryBuilder();
-  const rand = mulberry(bp.seed.length * 7919 + bp.attempt);
-  const ctx: ArchContext = { bp, g, rooms: new Map(bp.rooms.map((r) => [r.id, r])), style: bp.style, rand };
-  buildInteriors(ctx);
-  buildAtrium(ctx);
-  buildReveals(ctx);
-  buildFacades(ctx);
-  const roofMark = g.mark();
-  buildRoofs(ctx);
-  buildDome(ctx, roofMark);
-  buildPorticos(ctx);
-  buildStairs(ctx);
-  buildProps(bp, g, rand);
-  buildLanterns(bp.lights, g, (l: LightSpec) => (l.z > 0 ? 0 : Math.PI));
-  buildGardens(ctx);
+  const { g, doorLeaves, curtains } = meshMansion(bp, opts);
 
   let triangles = 0;
   let meshes = 0;
@@ -164,6 +179,8 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
       fovMax: bp.site.perch.fovMaxDeg,
     },
     stats: { triangles: Math.round(triangles), meshes, buildMs: Math.round(performance.now() - t0) },
+    doorLeaves,
+    curtains,
     dispose() {
       root.traverse((o) => {
         if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
@@ -177,5 +194,6 @@ export function buildMansion(bp: MansionBlueprint, opts: BuildOptions): BuiltMan
   };
 }
 
+export type { CurtainSpec, DoorLeafSpec } from './arch';
 export { ScopedLighting } from './lighting';
 export { TwilightSky } from './sky';

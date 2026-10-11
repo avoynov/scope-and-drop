@@ -17,6 +17,71 @@ export interface ArchContext {
   style: StyleDef;
   /** Seeded 0..1 for cosmetic choices. */
   rand: () => number;
+  /** Fittings that move at run time, handed back as data instead of baked. Absent: everything is baked. */
+  fittings?: Fittings;
+}
+
+/** What to leave out of the mesh for the caller to draw and move (BuildOptions.dynamicDoors / dynamicCurtains), and where it goes. */
+export interface Fittings {
+  /** Interior door leaves go to `doorLeaves`. */
+  doors: boolean;
+  /** Rooms whose window drapes and sheers go to `curtains` (the pelmet stays baked). */
+  drapes: ((room: Room) => boolean) | null;
+  doorLeaves: DoorLeafSpec[];
+  curtains: CurtainSpec[];
+}
+
+/**
+ * One interior door leaf, hinged on a vertical axis. The leaf is a box `width` long from the
+ * hinge, `thickness` thick centred on it. Headings are rotations about +Y taking +Z to the
+ * direction from the hinge to the free edge (three.js convention): the leaf is closed at
+ * `closedYaw` and open at `closedYaw + swing * π/2`, the pose that used to be baked.
+ */
+export interface DoorLeafSpec {
+  /** Opening.id: the id nav links use as `via`. */
+  opening: string;
+  level: number;
+  /** Lighting scope: the positive-side room, which the leaf opens into. */
+  scope: number;
+  hingeX: number;
+  hingeZ: number;
+  y0: number;
+  height: number;
+  width: number;
+  thickness: number;
+  closedYaw: number;
+  swing: 1 | -1;
+  /** Tint (sRGB hex). */
+  color: string;
+}
+
+/**
+ * Drapes (and a sheer) for one window, hung on the room side of the wall. Wall coordinates as
+ * the meshers use them: `axis` is the wall's run, `t` measured along it, `face` the plane of the
+ * room-side face and `inward` the direction into the room across it.
+ */
+export interface CurtainSpec {
+  /** The window's Opening.id. */
+  opening: string;
+  scope: number;
+  level: number;
+  axis: 'x' | 'z';
+  face: number;
+  inward: 1 | -1;
+  /** The window's span along the wall. */
+  t0: number;
+  t1: number;
+  /** Drapes hang from the pelmet at yTop to just above the floor at yBot. */
+  yBot: number;
+  yTop: number;
+  /** How far each open drape reaches over the glass. */
+  over: number;
+  /** Vertical extent of the sheer. */
+  sheerY0: number;
+  sheerY1: number;
+  /** Room drapery tint (sRGB hex). */
+  color: string;
+  start: 'open' | 'sheer' | 'drawn';
 }
 
 type Hole = { t0: number; t1: number; y0: number; y1: number };
@@ -273,12 +338,34 @@ export function buildReveals(ctx: ArchContext): void {
       if (!w.exterior && (o.kind === 'door' || o.kind === 'double-door') && w.pos) {
         const room = rooms.get(w.pos)!;
         g.scope = room.index;
-        g.setTint(shade(room.finish.trimColor, 0.92));
+        const tint = shade(room.finish.trimColor, 0.92);
+        g.setTint(tint);
         const leaves = o.leaves ?? 1;
         const lw = (h.t1 - h.t0) / leaves;
         const face = line + w.thickness / 2;
         const hingeTs = leaves === 2 ? [h.t0 + 0.02, h.t1 - 0.02] : [h.t0 + 0.02];
         for (const ht of hingeTs) {
+          if (ctx.fittings?.doors) {
+            // Hinged 2 cm proud of the face; closed, the leaf runs along the wall towards the other jamb.
+            const along = ht < (h.t0 + h.t1) / 2 ? 1 : -1;
+            const [dx, dz] = w.axis === 'x' ? [along, 0] : [0, along];
+            const [ox, oz] = w.axis === 'x' ? [0, 1] : [1, 0];
+            ctx.fittings.doorLeaves.push({
+              opening: o.id,
+              level: w.level,
+              scope: room.index,
+              hingeX: w.axis === 'x' ? ht : face + 0.02,
+              hingeZ: w.axis === 'x' ? face + 0.02 : ht,
+              y0: h.y0 + 0.01,
+              height: h.y1 - 0.02 - (h.y0 + 0.01),
+              width: lw * 0.96,
+              thickness: 0.05,
+              closedYaw: Math.atan2(dx, dz),
+              swing: dz * ox - dx * oz > 0 ? 1 : -1,
+              color: `#${tint.getHexString()}`,
+            });
+            continue;
+          }
           const t0 = ht - 0.025;
           const t1 = ht + 0.025;
           wbox(g, 'int-trim', w.axis, face, 1, t0, t1, 0.02, 0.02 + lw * 0.96, h.y0 + 0.01, h.y1 - 0.02);
@@ -715,7 +802,28 @@ function joinery(ctx: ArchContext, w: Wall, o: Opening, line: number, room: Room
   const isg = (-sgn) as 1 | -1;
   const yTop = Math.min(o.y1 + 0.35, room.ceilingY - 0.3);
   const yBot = room.floorY + 0.02;
-  if (o.curtain === 'drawn') {
+  const fit = ctx.fittings;
+  if (fit?.drapes?.(room)) {
+    // Drawn drapes take no random overlap: keep it that way, or every later seeded choice moves.
+    const reach = Math.min(0.32, (t1 - t0) * 0.18);
+    fit.curtains.push({
+      opening: o.id,
+      scope: room.index,
+      level: w.level,
+      axis: w.axis,
+      face: inFace,
+      inward: isg,
+      t0,
+      t1,
+      yBot,
+      yTop,
+      over: o.curtain === 'drawn' ? reach : reach * (0.8 + rand() * 0.4),
+      sheerY0: iy0,
+      sheerY1: yTop - 0.2,
+      color: room.finish.drapery,
+      start: o.curtain ?? 'open',
+    });
+  } else if (o.curtain === 'drawn') {
     pleat(g, w.axis, inFace, isg, t0 - 0.25, t1 + 0.25, yBot, yTop, 0.1, 0.06);
   } else {
     // Drapes overlap the glass so they frame the window from outside.

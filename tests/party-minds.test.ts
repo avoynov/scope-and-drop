@@ -420,40 +420,44 @@ describe('recognising people', () => {
 });
 
 describe('a conversation that goes quiet', () => {
-  it('hushes when someone the members are wary of joins, and only then', () => {
+  it('hushes when someone the members are wary of is let in, and only then', () => {
     const party = new Party(bp, { seed: 'hush' });
-    // Someone on their way to join a conversation already going.
-    let x: Person | undefined;
-    let members: number[] = [];
-    while (!x && party.t < 60 * 60) {
+    const lets: Array<{ x: number; quiet: boolean }> = [];
+    let turnedAway = 0;
+    // People waiting at the edge of a conversation already going: everyone in it has heard
+    // something odd about them. Most such circles close (a friend inside may still let them in);
+    // each that lets one in goes quiet.
+    while ((!lets.length || !turnedAway) && party.t < 2.5 * 3600) {
       party.advance(5);
       for (const p of guestsOf(party)) {
         const a = p.action;
-        if (a?.id !== 'mingle' || a.startedAt !== null || a.ref === undefined) continue;
-        const here = (party.groups.get(a.ref)?.members ?? []).filter((m) => m !== p.id && party.people[m]!.action?.startedAt != null);
-        if (here.filter((m) => !p.friends.includes(m) && p.partner !== m).length >= 1) {
-          x = p;
-          members = here;
-          break;
+        if (a?.id !== 'mingle' || a.note !== 'edge' || a.startedAt === null || a.ref === undefined) continue;
+        const members = (party.groups.get(a.ref)?.members ?? []).filter((m) => m !== p.id && party.people[m]!.action?.startedAt != null);
+        if (!members.length || members.some((m) => p.partner === m)) continue;
+        expect(party.events.filter((e) => e.kind === 'hush').length).toBe(lets.length);
+        for (const m of members) party.memory.plant(m, 'rumour', p.id, 0.9);
+        expect(members.some((m) => party.memory.suspects(m, p.id) >= SUSPICIOUS)).toBe(true);
+        const g = party.groups.get(a.ref)!;
+        for (let i = 0; i < 60 && p.action === a && a.note === 'edge'; i++) party.advance(0.5);
+        // (A circle that broke up meanwhile leaves them starting one of their own: neither answer.)
+        if (p.action === a && a.ref !== g.id) continue;
+        if (p.action === a && (a.note as string) === 'in') lets.push({ x: p.id, quiet: g.speaker === -1 && g.quietUntil > party.t });
+        else {
+          // Turned away at the edge: no hush, a closed answer.
+          turnedAway++;
+          expect(party.events.filter((e) => e.kind === 'hush').length).toBe(lets.length);
+          expect(party.events.some((e) => e.kind === 'join' && e.note === 'closed' && e.actors[0] === p.id) || p.action?.note === 'hover').toBe(true);
         }
+        break;
       }
     }
-    expect(x).toBeDefined();
-    // Everyone there has heard something odd about them.
-    for (const m of members) party.memory.plant(m, 'rumour', x!.id, 0.9);
-    expect(members.some((m) => party.memory.suspects(m, x!.id) >= SUSPICIOUS)).toBe(true);
-    const before = party.events.filter((e) => e.kind === 'hush').length;
-    expect(before).toBe(0);
-    const going = x!.action;
-    for (let i = 0; i < 600 && x!.action === going && going?.startedAt === null; i++) party.advance(1);
-    expect(x!.action).toBe(going);
+    expect(lets.length).toBeGreaterThan(0);
     const hush = party.events.filter((e) => e.kind === 'hush');
-    expect(hush.length).toBe(1);
-    expect(hush[0]!.actors[0]).toBe(x!.id);
-    expect(party.stats.hushes).toBe(1);
-    const g = party.groups.get(x!.action!.ref!)!;
-    expect(g.speaker).toBe(-1);
-    expect(g.quietUntil).toBeGreaterThan(party.t);
+    expect(hush.map((e) => e.actors[0])).toEqual(lets.map((l) => l.x));
+    expect(party.stats.hushes).toBe(lets.length);
+    for (const l of lets) expect(l.quiet).toBe(true);
+    // Being suspected usually shuts the circle first.
+    expect(turnedAway).toBeGreaterThan(0);
   }, 60_000);
 });
 
@@ -470,9 +474,9 @@ describe('evenings that notice', () => {
     for (const seed of EVENINGS) {
       const b = blueprint(seed);
       const probe = new Party(b, { seed });
-      // A juicy rumour about a guest, planted with someone in conversation a few minutes into the second mingling.
+      // A juicy rumour about a guest, planted with someone in conversation in the second mingling, once the group photo is taken.
       const mingle = probe.programme.filter((p) => p.id === 'mingle')[1]!;
-      const at = mingle.start + 3 * 60;
+      const at = mingle.start + 8 * 60;
       const subject = guestsOf(probe)[5]!.id;
       const party = new Party(b, { seed, provoke: [{ t: at, subject }] });
       const run: Run = { party, rumour: { at, subject, reach: [] }, suspicious: 0, doubtedAfterTest: 0 };

@@ -5,7 +5,7 @@
  */
 import type { Rng } from '../mansion/core/rng';
 import type { Places } from './places';
-import { NEED_IDS, STAFF_ROLES, type DrinkId, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Traits } from './types';
+import { NEED_IDS, SKILLS, STAFF_ROLES, type Archetype, type DrinkId, type Look, type Needs, type Outfit, type Person, type Quirk, type RoleId, type Sex, type Skill, type Traits } from './types';
 
 const FIRST: Record<Sex, string[]> = {
   f: ['Adela', 'Beatrice', 'Clara', 'Daria', 'Elena', 'Flora', 'Greta', 'Helena', 'Irina', 'Julia', 'Katya', 'Lena', 'Maren', 'Nadia', 'Olga', 'Petra', 'Rosa', 'Sofia', 'Tamara', 'Vera', 'Yana', 'Zora', 'Agnes', 'Lidia', 'Mila', 'Ines', 'Edith', 'Vanya'],
@@ -77,6 +77,65 @@ export interface CastOptions {
   guests?: number;
 }
 
+/** Staff outfits: the butler in tails, the band in black dinner jackets, the cloakroom in a dark waistcoat. */
+const STAFF_LOOK: Partial<Record<RoleId, Pick<Look, 'outfit' | 'color' | 'accent'>>> = {
+  butler: { outfit: 'tails', color: '#101115', accent: '#f1efe8' },
+  waiter: { outfit: 'waiter', color: '#ece9e1', accent: '#111214' },
+  bartender: { outfit: 'waiter', color: '#1a1b1f', accent: '#ece9e1' },
+  cook: { outfit: 'chef', color: '#f4f2ec', accent: '#f4f2ec' },
+  kitchenHand: { outfit: 'chef', color: '#dcdad2', accent: '#3a3a3a' },
+  cloakroom: { outfit: 'waiter', color: '#3b3542', accent: '#ece9e1' },
+  musician: { outfit: 'dinner-jacket', color: '#131418', accent: '#f1efe8' },
+  photographer: { outfit: 'suit', color: '#2e3036', accent: '#9aa0a8' },
+};
+
+/** Who does what fluently: the owner of a task about 0.95 (milestone 2 plan: Tasks). */
+const FLUENT: Partial<Record<RoleId | Archetype, Partial<Record<Skill, number>>>> = {
+  host: { tour: 0.95, keys: 0.95, errand: 0.6 },
+  butler: { keys: 0.9, errand: 0.95, tour: 0.7, pour: 0.8, tray: 0.9 },
+  waiter: { tray: 0.95, errand: 0.8, pour: 0.6 },
+  bartender: { pour: 0.95, tray: 0.7, errand: 0.6 },
+  cook: { errand: 0.6 },
+  kitchenHand: { errand: 0.85, tray: 0.6 },
+  cloakroom: { errand: 0.9 },
+  musician: { piano: 0.9 },
+  photographer: { photo: 0.95 },
+  pianist: { piano: 0.95 },
+  dancer: { dance: 0.95 },
+  billiards: { billiards: 0.95 },
+  child: { tour: 0.7, keys: 0.8, errand: 0.8 },
+  'old-friend': { tour: 0.5 },
+  young: { dance: 0.7 },
+  life: { dance: 0.75 },
+  employee: { errand: 0.7 },
+};
+
+/**
+ * The deck of archetypes (A Real Party: Who comes): trait floors and ceilings applied on top of the
+ * random draw, so an archetype reads at a glance and still differs from evening to evening.
+ */
+const PRESETS: Record<Archetype, { min?: Partial<Traits>; max?: Partial<Traits>; quirks?: Quirk[] }> = {
+  honoree: { min: { social: 0.7, talk: 0.6 } },
+  'old-friend': { min: { social: 0.6, propriety: 0.85 }, max: { nerves: 0.4 } },
+  mother: { min: { nosy: 0.8, propriety: 0.9 }, max: { dance: 0.15, thirst: 0.4 }, quirks: ['cane'] },
+  child: { min: { social: 0.6, curiosity: 0.5 } },
+  boss: { min: { talk: 0.75, social: 0.75 } },
+  employee: { min: { propriety: 0.85 }, max: { talk: 0.35 } },
+  'plus-one': { min: { curiosity: 0.6, nerves: 0.55 }, max: { social: 0.35, talk: 0.35 } },
+  young: { min: { dance: 0.75, social: 0.6 }, max: { propriety: 0.75 } },
+  elderly: { min: { propriety: 0.9 }, max: { dance: 0.25, thirst: 0.45 } },
+  life: { min: { talk: 0.85, social: 0.9, dance: 0.85, thirst: 0.75 }, max: { propriety: 0.65 }, quirks: ['big-laugh'] },
+  gossip: { min: { talk: 0.9, nosy: 0.85, social: 0.75 } },
+  bore: { min: { talk: 0.9 }, max: { social: 0.45, curiosity: 0.3 } },
+  flirt: { min: { social: 0.8, dance: 0.7 }, max: { propriety: 0.7 } },
+  ex: {},
+};
+
+const LIMIT_TRAITS = (t: Traits, min: Partial<Traits> = {}, max: Partial<Traits> = {}) => {
+  for (const k of Object.keys(min) as Array<keyof Traits>) t[k] = Math.max(t[k], min[k]!);
+  for (const k of Object.keys(max) as Array<keyof Traits>) t[k] = Math.min(t[k], max[k]!);
+};
+
 function traits(rng: Rng): Traits {
   const t = () => Math.max(0, Math.min(1, rng.normal(0.5, 0.2)));
   return { talk: t(), social: t(), curiosity: t(), nerves: t(), clumsy: t(), thirst: t(), dance: t(), nosy: t(), propriety: Math.max(0, Math.min(1, rng.normal(0.8, 0.12))), loyalty: t() };
@@ -85,6 +144,9 @@ function traits(rng: Rng): Traits {
 function freshNeeds(rng: Rng): Needs {
   const n = {} as Needs;
   for (const id of NEED_IDS) n[id] = rng.range(0.55, 0.95);
+  // Nobody arrives at a party tired, or wanting fresh air: they've just come in from outside.
+  n.rest = 0.85 + 0.15 * n.rest;
+  n.air = 0.85 + 0.15 * n.air;
   return n;
 }
 
@@ -107,7 +169,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
   let wi = 0;
   const people: Person[] = [];
   const make = (role: RoleId, sex: Sex, look?: Partial<Look>): Person => {
-    const pal = sex === 'm' ? men[mi++ % men.length]! : women[wi++ % women.length]!;
+    const pal = look?.outfit ? ([look.outfit, look.color ?? '#000000', look.accent ?? '#ffffff'] as const) : sex === 'm' ? men[mi++ % men.length]! : women[wi++ % women.length]!;
     const lk: Look = {
       sex,
       height: Math.round(rng.normal(sex === 'm' ? 1.78 : 1.65, 0.06) * 100) / 100,
@@ -130,6 +192,12 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       quirks: [],
       partner: null,
       friends: [],
+      archetype: null,
+      ex: -1,
+      linked: -1,
+      fluency: Object.fromEntries(SKILLS.map((k) => [k, 0.35])) as Record<Skill, number>,
+      leaveAt: 0,
+      early: null,
       regular: false,
       seat: null,
       supper: null,
@@ -182,10 +250,19 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
   const host = make('host', rng.chance(0.7) ? 'm' : 'f');
   host.traits.talk = Math.max(host.traits.talk, 0.7);
   host.traits.social = Math.max(host.traits.social, 0.8);
-  const nWaiters = rng.int(2, 3);
-  for (let i = 0; i < nWaiters; i++) make('waiter', rng.chance(0.5) ? 'm' : 'f', { outfit: 'waiter', color: '#ece9e1', accent: '#111214' });
-  if (places.bars.length) make('bartender', rng.chance(0.6) ? 'm' : 'f', { outfit: 'waiter', color: '#1a1b1f', accent: '#ece9e1' });
-  if (places.kitchen.length) make('cook', rng.chance(0.6) ? 'm' : 'f', { outfit: 'chef', color: '#f4f2ec', accent: '#f4f2ec' });
+  // About a dozen staff for 20 to 30 guests (A Real Party: The staff's choreography).
+  const staff = (role: RoleId, pm: number) => make(role, rng.chance(pm) ? 'm' : 'f', STAFF_LOOK[role]);
+  staff('butler', 0.85);
+  const nWaiters = rng.int(4, 6);
+  for (let i = 0; i < nWaiters; i++) staff('waiter', 0.5);
+  if (places.bars.length) staff('bartender', 0.6);
+  if (places.kitchen.length) {
+    staff('cook', 0.6);
+    staff('kitchenHand', 0.5);
+  }
+  staff('cloakroom', 0.35);
+  for (let i = 0; i < 3; i++) staff('musician', 0.6);
+  staff('photographer', 0.6);
 
   // Guests: roughly even men and women; special roles once each.
   const guestRoles: RoleId[] = ['politician', 'dancer', 'billiards'];
@@ -299,5 +376,111 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
   // Regulars, drawn after everything else: about a third of the guests have been here before, and the host's partner lives here.
   for (const g of guests) g.regular = rng.chance(1 / 3);
   if (host.partner !== null) people[host.partner]!.regular = true;
+
+  // Archetypes, fluency and when each guest goes: drawn last, so everything above stays as it was.
+  castArchetypes(rng, host, guests, people);
+  for (const p of people) {
+    for (const k of SKILLS) p.fluency[k] = rng.range(0.2, 0.5);
+    for (const src of [FLUENT[p.role], p.archetype ? FLUENT[p.archetype] : undefined]) if (src) for (const k of Object.keys(src) as Skill[]) p.fluency[k] = Math.max(p.fluency[k], src[k]!);
+  }
+  // Departures cascade: each guest leaves once enough others have gone (skewed low, so a few goodbyes tip the rest).
+  for (const g of guests) {
+    const u = rng.next();
+    g.leaveAt = 0.55 * u * u;
+  }
+  for (const g of guests) if (g.partner !== null && people[g.partner]!.role !== 'host') g.leaveAt = Math.min(g.leaveAt, people[g.partner]!.leaveAt);
+  // One or two go after dessert: the elderly couple tire, now and then a babysitter or feeling unwell.
+  const early = guests.filter((g) => g.archetype === 'elderly');
+  for (const g of early) g.early = 'tired';
+  const alone = guests.filter((q) => q.partner === null && q.archetype === null);
+  if (!early.length && alone.length && rng.chance(0.6)) rng.pick(alone).early = rng.chance(0.5) ? 'babysitter' : 'unwell';
   return people;
+}
+
+/** 6 to 12 guests from the deck of archetypes; the rest stay ordinary. Pairs (couples, the exes, boss and employee) are cast together. */
+function castArchetypes(rng: Rng, host: Person, guests: Person[], people: Person[]): void {
+  const free = () => guests.filter((g) => g.archetype === null && g.partner !== host.id);
+  const set = (g: Person, a: Archetype) => {
+    g.archetype = a;
+    const pr = PRESETS[a];
+    LIMIT_TRAITS(g.traits, pr.min, pr.max);
+    for (const q of pr.quirks ?? []) if (!g.quirks.includes(q)) g.quirks.push(q);
+    if (g.quirks.includes('cane') && !g.quirks.includes('limp')) {
+      g.quirks.push('limp');
+      g.speed *= 0.75;
+    }
+  };
+  const one = (a: Archetype, pick: (g: Person) => boolean = () => true): Person | null => {
+    const pool = free().filter(pick);
+    if (!pool.length) return null;
+    const g = rng.pick(pool);
+    set(g, a);
+    return g;
+  };
+  const couple = (a: Archetype) => {
+    const pool = free().filter((q) => q.partner !== null && people[q.partner]!.archetype === null && people[q.partner]!.role !== 'host');
+    if (!pool.length) return;
+    const g = rng.pick(pool);
+    set(g, a);
+    set(people[g.partner!]!, a);
+  };
+  const tie = (a: Person, b: Person) => {
+    if (!a.friends.includes(b.id)) a.friends.push(b.id);
+    if (!b.friends.includes(a.id)) b.friends.push(a.id);
+  };
+  // The guest of honour and an old friend of the house come every time.
+  const honoree = one('honoree', (g) => g.role === 'guest');
+  if (honoree) tie(honoree, host);
+  const old = one('old-friend', (g) => g.role === 'guest');
+  if (old) {
+    old.regular = true;
+    tie(old, host);
+  }
+  if (rng.chance(0.5)) {
+    const m = one('mother', (g) => g.look.sex === 'f' && g.partner === null && g.role === 'guest');
+    if (m) {
+      m.regular = true;
+      m.look.color = '#b9a3cf';
+      tie(m, host);
+    }
+  }
+  if (rng.chance(0.5)) {
+    const c = one('child', (g) => g.partner === null && g.role === 'guest');
+    if (c) {
+      c.regular = true;
+      tie(c, host);
+    }
+  }
+  if (rng.chance(0.5)) {
+    const b = one('boss', (g) => g.partner === null);
+    const e = b ? one('employee', (g) => g.partner === null) : null;
+    if (b && e) {
+      b.linked = e.id;
+      e.linked = b.id;
+      tie(b, e);
+    }
+  }
+  if (rng.chance(0.7)) {
+    const p = one('plus-one', (g) => g.partner !== null);
+    if (p) {
+      // Knows nobody but their partner.
+      for (const f of p.friends) people[f]!.friends = people[f]!.friends.filter((x) => x !== p.id);
+      p.friends = [];
+      p.regular = false;
+    }
+  }
+  if (rng.chance(0.6)) couple('young');
+  if (rng.chance(0.5)) couple('elderly');
+  one('life');
+  one('gossip');
+  one('bore');
+  if (rng.chance(0.6)) one('flirt', (g) => g.partner === null);
+  if (rng.chance(0.4)) {
+    const a = one('ex', (g) => g.partner === null);
+    const b = a ? one('ex', (g) => g.partner === null && g.look.sex !== a.look.sex && !a.friends.includes(g.id)) : null;
+    if (a && b) {
+      a.ex = b.id;
+      b.ex = a.id;
+    } else if (a) a.archetype = null;
+  }
 }

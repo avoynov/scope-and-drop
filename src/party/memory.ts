@@ -40,7 +40,10 @@ export type Verb =
   | 'gone'
   | 'missing'
   | 'blamed'
-  | 'snooping';
+  | 'snooping'
+  | 'hovering'
+  | 'rude'
+  | 'carrying';
 
 export interface VerbSpec {
   kind: FactKind;
@@ -89,6 +92,12 @@ export const VERBS: Record<Verb, VerbSpec> = {
   missing: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN },
   blamed: { kind: 'case', juicy: 0.9, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
   snooping: { kind: 'odd', juicy: 0.7, odd: 0.05, halfLife: 45 * MIN },
+  // Everyday life (PR 3a): hovering at the edge of a circle nobody opened, breaking a practice's
+  // norm (talking through the speech, sitting before the host), and carrying something of the
+  // house's (the object is the thing).
+  hovering: { kind: 'odd', juicy: 0.3, odd: 0.03, halfLife: 45 * MIN },
+  rude: { kind: 'odd', juicy: 0.4, odd: 0.03, halfLife: 45 * MIN },
+  carrying: { kind: 'whereabouts', juicy: 0.3, odd: 0, halfLife: 30 * MIN, thing: true },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

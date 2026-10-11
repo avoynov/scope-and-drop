@@ -348,6 +348,12 @@ export class Body {
 
   /** A full glass in someone's hand. Anything already in it is set down first. */
   pour(p: Person, drink: DrinkId): void {
+    this.carry(p, drink);
+    this.drank(p, drink);
+  }
+
+  /** A full glass in hand to take to someone else (an errand): not theirs to drink. */
+  carry(p: Person, drink: DrinkId): void {
     const { world, t } = this.host;
     if (p.item >= 0) this.setDown(p);
     const id = world.items.add('glass', 'full', p.id, p.id, p, t);
@@ -356,6 +362,28 @@ export class Body {
     p.item = id;
     p.held = drink;
     p.heldUntil = t + DRINK_LIFE[drink];
+  }
+
+  /** The glass someone carried, handed over: now it's the other's drink. */
+  handOver(p: Person, q: Person): void {
+    const { world, t } = this.host;
+    const id = p.item;
+    const drink = p.held;
+    if (id < 0 || !drink || !DRINKS.has(drink)) return;
+    if (q.item >= 0) this.setDown(q);
+    world.items.holder[id] = q.id;
+    world.items.place(id, q);
+    p.item = -1;
+    p.held = null;
+    q.item = id;
+    q.held = drink;
+    q.heldUntil = t + DRINK_LIFE[drink as DrinkId];
+    this.drank(q, drink as DrinkId);
+  }
+
+  /** A drink is someone's: it counts, and its alcohol is taken in as the glass is sipped. */
+  private drank(p: Person, drink: DrinkId): void {
+    const { t } = this.host;
     p.drinkLog.push({ drink, t });
     if (p.drinkLog.length > 24) p.drinkLog.shift();
     if (ALCOHOL.has(drink)) {

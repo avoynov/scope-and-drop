@@ -1,6 +1,6 @@
 # The party
 
-`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus the first two parts of milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, and knowing each other by sight. Everyday life, friendships and rows come in the next parts; the spy, mishaps and the endings after that.
+`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus the first three parts of milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, knowing each other by sight, and the register in which guests connect the dots. Everyday life: what the house offers, conversation circles, the evening's rituals, errands, tours, searches, the photographer and the band, and a staggered goodbye. Friendships and rows come in the next part; the spy, mishaps and the endings after that.
 
 ![party lab, plan view](images/party-plan.jpg)
 
@@ -60,11 +60,11 @@ Rules on top of the scores:
 - Couples dance together and sit together at dinner; the host and their partner head the table. Guests the dining room can't seat sit down to supper on the ballroom's sofas and chairs, couples side by side, and the rest eat standing at the buffet.
 - Champagne for the toast comes from the nearest waiter with a tray, or from the bar. Someone who never drinks champagne raises whatever they have.
 - A trip to the bathroom is seen through a change of phase once the person is inside or in the line; one still on the way gives way to the programme like anything else.
-- In the last 20 minutes only an urgent bathroom trip starts (the bathroom may be two floors up at the far end), and departures are forced from just past the middle of the farewell, so everyone has left by 22:00.
+- In the last 20 minutes only an urgent bathroom trip starts (the bathroom may be two floors up at the far end), and from 8 minutes before the end whoever is still here heads home (see Tasks), so everyone has left by 22:00.
 
 ## Staff and the host
 
-The host greets at the door through the arrival, announces each phase, leads the toasts, heads the table and sees the guests off. Waiters (2–3) load a tray of 6–8 glasses of one drink at the bar or kitchen (champagne before the toast, red or white at dinner, a mix after) and make four stops in the party rooms (the dining room at dinner). At each stop they offer a glass every few seconds to guests within 2.5 m whose hands are empty (more often when they're thirsty, never a drink they don't touch) and take empties onto the tray; an empty tray ends the stop. When champagne is called every waiter fetches a full tray of 10–12 flutes from the nearest bar or kitchen, and through the champagne and the toast they hop from one empty-handed guest to the next. The bartender stays at the bar and the cook in the kitchen.
+About fifteen staff work 20 to 30 guests: the butler, 4–6 waiters, the bartender, the cook and a kitchen hand, a cloakroom attendant, a three-piece band and a photographer. The host greets at the door through the arrival, announces each phase, leads the toasts, heads the table and sees the guests off. Waiters load a tray of 6–8 glasses of one drink at the bar or kitchen (champagne before the toast, red or white at dinner, a mix after) and make four stops in the party rooms (the dining room at dinner). At each stop they offer a glass every few seconds to guests within 2.5 m whose hands are empty (more often when they're thirsty, never a drink they don't touch) and take empties onto the tray; an empty tray ends the stop. When champagne is called every waiter fetches a full tray of 10–12 flutes from the nearest bar or kitchen, and through the champagne and the toast they hop from one empty-handed guest to the next. The bartender stays at the bar and the cook in the kitchen. The butler stands with the host at the door, looks over the table before dinner and has a word in the host's ear, stands at the sideboard through dinner, takes the brandy round after, fetches the good whisky for the bar once, and now and then a drink for someone seated who is thirsty. The kitchen hand washes up, brings clean glasses to the bar three times an evening (first at 30 minutes, then every 45–65) and slips out the back for a cigarette. The cloakroom attendant takes coats at the door through the arrival, fetches one for a guest who feels the cold, and stands by the front door with the coats from the farewell's last toast. The band plays softly through the arrival and the mingling, rests for the toast, eats in the kitchen at dinner, plays the dancing with a break in the kitchen midway, and stops at the last toast. The photographer takes candid shots and the group photo (see Tasks below).
 
 ## Things in the house
 
@@ -205,6 +205,30 @@ Talk: a person with an open case of severity 0.3 or more asks around in their co
 
 Evidence travels, never a bare verdict: a listener weighs what they hear for themselves.
 
+## Everyday life
+
+### What the house offers (`ads.ts`)
+
+Each kind of object, room or place advertises what it does: the needs it refills, for how long, the pose, the phases it suits and who takes to it (the elderly to a fire, the young to the fountain, a smoker to the terrace). The table resolves at the start into this house's offers, one per object with its standing spots, so a new activity is a row, not new code, and a room a house lacks offers nothing. Art, the fireplace, the library shelves, a globe, the atrium rail, the plants, the pool, the fountain, the kitchen (counters, the bustle, a word with the cook), the buffet, sofas and chairs, the terrace, billiards, cards, the piano and the cinema.
+
+### Conversation circles (`groups.ts`)
+
+A circle stands in an F-formation: members on a ring round an empty middle, facing in (radius 0.45 m for a pair, 0.45 + 0.12 m a member above that), a pair face to face. A newcomer walks to the widest gap at the edge (counting others already waiting there), waits 2–6 s, and the circle opens and shifts to make room, or stays closed and they walk off and keep away from it for 10 minutes. The shy may linger a while longer at a closed circle (the party ghost). How open a circle is depends on the members' ties to the newcomer, a friend or partner inside, its size, and any suspicion of them; someone they're wary of is let in only now and then, and the talk stops when they are (a hush). Above four in a quiet room, or three in a loud one, a circle splits at its next turn: those on the far side from the speaker form a new circle a clear step away, wherever round it there's room. A new conversation isn't started on top of one going. Each member stays 5–15 minutes (longer with a partner or friend, shorter with the bore). People who know each other greet when they first see each other tonight: a wave, the approach, a handshake or a kiss.
+
+### Rituals (`practices.ts`)
+
+The evening's beats fire at points in the programme and for a while pull on what people choose (a multiplier on a choice, never an order): a spoon on a glass and the hush before the speech; the procession to table; the host sits first; the table turns to talk the other way; the host couple's opening dance alone for a minute, then the surge onto the floor; the band's break, when the bar fills; last call 20 minutes before the end; the host's thanks. Two norms: whispering through the speech and sitting before the host. Up to four proper people nearby frown, glance over and remember it as rude, once per person and norm.
+
+### Tasks (`tasks.ts`)
+
+Jobs of a few steps (go to, meet, say, wait, unlock and lock, pick up, hand over) for one person or a small party following in single file. Everyone in a task is busy; a task gives way to the toast and dinner.
+
+- **Tours.** The host shows one to three guests who don't know the house (the plus-one first) three to six rooms they don't know, unlocking a key-locked door on the way in and locking it on the way out; at most four an evening, 20 minutes apart.
+- **Errands.** The good whisky to the bar, clean glasses, a coat, a drink for someone. The carrier sometimes tries the wrong room first. A fetched drink is carried as a glass and handed over, so the asker holds it and drinks it.
+- **Searches.** Someone who hasn't seen their partner for 17 minutes (the plus-one after 9) goes to the room they last saw them in and looks round; at most twice an evening, and not while the other is already looking for them. Most find them.
+- **The photographer.** Candid shots from the edge of the busiest room, every 3–5 minutes. After the toast, the group photo: everyone lined up by height before the grand stair, the tallest at the back, the host couple in the middle of the front row; three flashes, then a few crowd round the camera.
+- **Leaving.** Each guest has a hidden threshold, skewed low: from the farewell's last toast they go once that share of the guests has gone, so a few goodbyes tip the rest. The elderly tire and go during the dancing, and now and then someone has a babysitter or feels unwell. A couple goes together: find the host to say goodbye, collect a coat from the attendant at the door, and out. From 8 minutes before the end whoever is left goes at their own moment, and from 5 minutes the rest hurry.
+
 ## Walking
 
 A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corners), and the path is string-pulled to a few waypoints with an exact grid traversal, so a straight leg never crosses a blocked cell. A walker within 0.3 m of a waypoint cuts the corner to the next one when the way is clear, so two people heading for the same doorway don't stall on one point. Stairs join the storeys; a route crosses one storey at a time through the stair with the shortest detour. Doors gate it all (see Things in the house). People push apart to 0.42 m, never into a doorway that is locked against them, and anyone pushed off their line finds a new route from where they stand.
@@ -225,10 +249,10 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 - Speeds: pause, 1× (the evening in an hour), 5×, 20× and 60×; back to 19:00; next phase. Space pauses.
 - Views: scope (from the perch; scroll to zoom, drag to aim), wide, plan (scroll to zoom, drag to pan, one storey at a time) and orbit.
 - The people list shows what everyone is doing. Click a name, or a person in any view, to see their role, habits, partner, what's in their glass and how full, how many drinks and how merry they are, their room, how visible they are from the perch, their energy and tension, how many rooms they know, whom they doubt and suspect, the things they know (with who told them and how sure they are), and their needs. The scope follows them; the plan turns to their floor.
-- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense) and **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room).
+- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense), **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room), **circles** (each conversation's ring, lines to its members, the speaker marked, and who is waiting or hovering at the edge) and **tasks** (lines from each task's owner to its party, with the kind and the step).
 - **Goes missing here** on the card makes something of the host's go missing from the picked person's room; **seen there** has the picked person seen poking round that room. Together they plant a theft for the guests to work out. The card's register block lists the picked person's cases and their candidates.
 - **Plant a rumour** on the card: a guest in a conversation hears something juicy and a little odd about the picked person. The **mood** row sets tension (tense, calm) or scales energy (liven, dampen) for everyone, the picked person's room or just them. Both take effect from the next step and are kept, so going back in time replays them where they were made; a new house clears them.
-- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house.
+- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes. The detail card shows the picked person's task and step.
 
 | URL parameter | Meaning |
 |---|---|
@@ -238,10 +262,10 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 | `speed` | 0, 1, 5, 20 or 60 |
 | `view`, `fov`, `level`, `zoom`, `px`, `pz` | View, scope field of view, plan storey, plan zoom and pan (metres) |
 | `sel`, `follow` | Select a person by index; keep the scope on them |
-| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases` |
+| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases`, `circles`, `tasks` |
 | `gone`, `seen` | Plant a theft: `gone=80:5` (minute, room), `seen=75:11:5` (minute, person, room); first house only |
 | `tension`, `energy` | Set everyone's tension (0–1), or scale their energy (0.5–1.5), at time `t` |
-| `log` | Log filter: `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
+| `log` | Log filter: `everyday life`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
 | `profile` | Time each stage of the step and show the totals under the stats |
 | `shot=1&w=&h=&ui=1` | Headless capture (`ui=1` keeps the panels) |
 
@@ -253,35 +277,43 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 
 | Measure | Result | Test asks |
 |---|---|---|
-| A whole evening, headless (21,600 steps) | 3.5–4.9 s with the register (the same as without it, measured side by side) (Things alone: 1.7–2.4 s on the same machine); about half of it seeing | under 15 s |
-| Guests holding champagne as the glasses go up | 70–95% | ≥ 60% |
-| Guests at the toast, 85% of the way through it | 91–100% | ≥ 70% |
+| A whole evening, headless (21,600 steps) | 3.4–4.2 s, about 45% of it seeing (milestone 2 so far: 3.5–4.9 s) | under 15 s |
+| Guests holding champagne as the glasses go up | 91–95% | ≥ 60% |
+| Guests at the toast, 85% of the way through it | 96–100% | ≥ 70% |
 | Guests at dinner, 60% of the way through it | 100%, and every guest with a chair seated | ≥ 90% |
-| Guests dancing, halfway through the dancing | 50–74% | ≥ 30% |
-| Samples off the walkable floor (a person every 30 s) | 0 of 6,300–7,400 | 0 |
+| Guests dancing, halfway through the dancing | 57–82% | ≥ 30% |
+| Samples off the walkable floor (a person every 30 s) | 0 of 10,100–11,600 | 0 |
 | Guests gone by 22:00 | all | all |
-| Bathrooms found taken at the door | 2–4 (with Things' stand-in for sight: 0; milestone 1: 29–64) | under 25 |
+| Bathrooms found taken at the door | 0–4 (milestone 1: 29–64) | under 25 |
 | Two people in one bathroom; more than two in a line | never | never |
-| Drinks a guest | 3.5–4.6 | |
-| Tipsiness at 22:00, median and highest | 0.25–0.33, 0.58–0.70 | mean 0.05–0.7 |
-| Bumps an evening, with a drink slopped | 102–132, 7–10 | under 400 |
-| A* searches an evening, cache hits | 1,600–2,200, 13–54% | |
-| Things passed on in conversation (listeners), overheard | 68–622, 1–37 | over 50 an evening |
-| A rumour planted 3 minutes into the second mingling: time to reach half the guests, share at 45 minutes (five houses) | 18–30 min, 64–100% | mean 10–35 min, ≥ 30% |
-| Highest suspicion anyone holds at 22:00; of the rumour's subject | 0.01–0.07; 0.06–0.09 | nobody innocent ≥ 0.55 |
-| Wrong turns, first hour and last hour | 0–8 and 1 (6.4× fewer in the last hour over 8 houses) | last hour a third of the first or less |
-| Asked the way, pointed to a bathroom | 21–41, 80–90% | over 5, mostly pointed |
-| Double takes, tests | 2–10, 0–3 | 1–30, no doubt after a test |
-| The register on an evening with nothing gone: entries filed, claims, cases, conflicts | 195–1,043, 36–56, 0, 0 | no case, 3 conflicts at most |
-| A planted theft (one guest seen there at 75 min, something gone at 80): who knows of it, blamed on the one seen, on anyone else | 24–31 people; 0–14; 0 | ≥ 5 people, ≥ 6 blames on the one seen over three houses, more than twice anyone else |
-| Highest suspicion of the one seen, by the end | 0.22–0.39 | |
-| Energy halfway through the dancing, dancers and the rest; halfway through dinner | 0.79–0.83 and 0.50–0.61; 0.41–0.46 | within 0–1 |
+| Drinks a guest | 4.0–5.3 | |
+| Tipsiness at 22:00, median and highest | 0.35–0.57, 0.64–0.75 | mean 0.05–0.7 |
+| Bumps an evening, with a drink slopped | 226–333, 11–18 | under 400 |
+| A* searches an evening, cache hits | 1,850–2,020, 12–13% | |
+| Things passed on in conversation (listeners), overheard | 205–936, 18–229 | over 50 an evening |
+| A rumour planted 8 minutes into the second mingling, after the group photo: time to reach half the guests, share at 45 minutes (five houses) | 11–30 min (mean 21), 52–100% | mean 10–35 min, ≥ 30% |
+| Highest suspicion anyone holds at 22:00; of the rumour's subject | 0.02–0.10; 0.02–0.03 | nobody innocent ≥ 0.55 |
+| Wrong turns, first hour and last hour | 1–8 and 0–5 | last hour a third of the first or less, over five houses |
+| Asked the way, pointed to a bathroom | 19–44, 80–95% | over 5, mostly pointed |
+| Double takes, tests | 9–16, 2–5 | 1–30, no doubt after a test |
+| The register on an evening with nothing gone: entries filed, claims, cases, conflicts | 549–2,044, 53–81, 0, 0 | no case, 3 conflicts at most |
+| A planted theft (one guest seen there at 75 min, something gone at 80): who knows of it, blamed on the one seen, on anyone else | 23–24 people; 0–13; 0 | ≥ 5 people, ≥ 6 blames on the one seen over three houses, more than twice anyone else |
+| Highest suspicion of the one seen, by the end | 0.02–0.41 | |
+| Energy halfway through the dancing, dancers and the rest; halfway through dinner | 0.70–0.84 and 0.53–0.67; 0.42–0.46 | within 0–1 |
+| Tours, errands, partner searches (found) | 2–3, 7–10, 4–15 (4–7); searches 4–15 over six houses | 1–4, 4–12, 3–15 |
+| Circles standing through the middle of the first two minglings (median) | 3–4 | 3–6 |
+| Circle sizes of five or more; median stay | 0–0.2%; 8.0–8.8 min | under 10%; 5–15 min |
+| Let in, turned away, split, hellos, breaches | 79–109, 17–46, 6–18, 126–146, 4–10 | joins over 20, some turned away |
+| Guests leaving in the last 15 minutes | 91–100% | ≥ 80% |
 
 ## Tuning notes
 
 - Bathroom trips: about 1.5–2 a guest an evening, and about half are abandoned on the way when the guest sees the door shut from across a room. In houses whose only bathrooms are two floors up at the far end a trip can take 8 minutes, which is why bathroom trips stop 20 minutes before the end.
 - Bumps are still many, mostly waiters on their rounds and people crossing a crowded ballroom; giving way roughly halved them. The rows that grow out of them (a later part) should start from the slopped ones.
-- Conversation groups stay small and few (0–3 at a time). Mingling will grow when gossip gives guests something to talk about (milestone 2).
+- Conversation circles: social need now runs down twice as fast, so a guest who has been alone a while looks for company; through the middle of the first two minglings there are 3–4 circles at a time, almost all of two to four.
+- Bumps grew with everyday life (busier circles, staff on errands, leaving parties at the door) to 240–320 an evening. Members shuffling within one circle or lining up for the photo don't count; new circles keep 1.6 m clear of others, and a circle that splits steps clear of all of them (two split circles landing on one spot gave 477 on one house).
+- Departures: leaving all at once jammed the stair to the coats, so the attendant now brings the coats to the front door at the last toast, and guests leave one by one from 8 minutes before the end.
+- Partner searches varied 3–18 an evening; searching sooner (17 minutes, 9 for the plus-one), at most twice each and never both at once, gives 4–15 over six houses.
 - Wrong turns came mostly late in the evening at first (guests forgot rooms they had used once). The visit floor, regulars, being pointed to the bathroom itself, the announcements showing the way and the 2-minute grace turned that round; most now happen in the first hour, when guests first look for a bathroom, and the host and staff never take one.
 - How fast a rumour spreads depends on who hears it first. A quiet guest can sit on it: planted in the first mingling with one whose talkativeness is 0.13, it went nowhere for half an hour, until dinner's side talk picked it up.
 - Gossip was tuned to the plan's target (half the party within 30 minutes): first at 0.12 a speaker turn, which was too slow, then 0.25 with side talk at tables and in the toast ring.
@@ -294,7 +326,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 - Routes don't yet avoid rooms a person doesn't know: the plan's knowledge-weighted route search isn't built. What someone knows decides which options they consider, where they can go wrong and when they ask; the route itself is still the true shortest one.
 - Going back in the lab replays the evening from 19:00, now 3–4 s for a whole evening. The plan's snapshots every 15 in-game minutes, due once a replay passes 2 s, aren't built.
 - Nothing yet makes the loud sounds (a tray dropped, glass breaking, a slap, a scream), so nobody goes to see a noise; mishaps and rows bring them.
-- The register: in `gala-night` the planted theft is asked about 27 times but never settled (the lead reaches 0.52); the one seen there is in a busy part of the house, so others seen nearby keep the case open. That's how it should be when the evidence is thin.
+- The register: in `match-42` the planted theft is known to 23 people but never settled; the sighting stays with a witness who rarely talks about it, so no lead forms. Which house settles depends on who sees first (it was `gala-night` that stayed open before everyday life). That's how it should be when the evidence is thin.
 - Departures from the register's design in the technical plan: the prior is 0.5, not 1 (with 1 a single witness never settled anything); a missing thing's severity is 0.6, not 0.3; claims travel in case talk and on joining a conversation, not as a gossip verb; cheating settles at 0.52; two places at once needs the sure stretches to overlap, since plain overlapping windows made 30 false conflicts an evening out of vague gossip; whoever notices something gone tells those nearby at once.
 - Departures from the technical plan, all found while tuning:
   - The knock is 58 dB, not 50, so it carries a couple of metres down a corridor over party noise.
@@ -303,6 +335,13 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
   - A wrong turn weighs the better of the destination and the next room on the way, at most once in 2 minutes a person, and the dancing and games announcements show the way. Without these, guests went wrong more late in the evening than early.
   - A visit keeps 0.45 of a room (the plan had 0.3, which left a room visited once still unknown).
   - Gossip: the plan's per-turn rule gave too little, so a speaker passes something on at 0.25 × (0.4 + talkativeness) a turn, a dull fact only by its juiciness, and people at a table, in the toast ring, on a sofa or on the terrace talk to their neighbours too.
+
+- Departures from the technical plan for everyday life:
+  - The plan's hard stop is a staggered one: from 8 minutes before the end whoever is still here goes at their own moment, in the order of their threshold, and from 5 minutes the rest hurry. A single stop sent everyone to the coats at once.
+  - The cloakroom attendant brings the coats to the front door at the last toast rather than working a queue at the cloakroom.
+  - A partner search goes to the room they were last seen in and looks round; asking around for them and the hurry after 3 minutes aren't built.
+  - A circle's empty middle doesn't push passers-by out, and the flirting pair's closer stance waits for the bonds (the next part).
+  - A split circle forms a clear step away (the two rings plus 0.9 m) rather than at 1.5 m, which put two split circles on one spot.
 
 ## Files
 
@@ -314,7 +353,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | `path.ts` | A* per storey gated by doors, string pulling, stairs between storeys, the route cache |
 | `world.ts` | Doors and locks, keys, curtains and the view through them, light switches, the item table |
 | `body.ts` | Bathrooms and their queues, the bar, drinks, trays and glasses, tipsiness, bumps |
-| `cast.ts` | Names, roles, outfits, habits, couples and friends, regulars, arrival times, dinner seats |
+| `cast.ts` | Names, roles, outfits, habits, couples and friends, regulars, arrival and leaving times, dinner seats, the staff and what each is fluent at |
 | `sight.ts` | The sight grid, the room-to-room sight table, the atrium rail, line-of-sight walks |
 | `senses.ts` | Looking (range, field of view, attention, crowding), bathroom doors in view, room noise, sounds through the room graph |
 | `memory.ts` | Facts and each person's slots, gossip, last seen, suspicion, the mental map |
@@ -322,12 +361,17 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | `ident.ts` | Ties, how each person remembers the others' looks, doubt, double takes and tests |
 | `register.ts` | Sightings, claims and cases; fit and weighing; conflicts; drink noise; asking around, leads, telling the host |
 | `mind.ts` | Need decay, the options and their scores (filtered by what each person knows), the weighted choice |
-| `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the host, groups and gossip, coats, the lab's provocations |
+| `ads.ts` | What the house offers: the table of objects, rooms and places, resolved into this house's offers |
+| `groups.ts` | Conversation circles: rings, the edge, open or closed, splitting, stays, greetings |
+| `practices.ts` | The evening's beats and how they pull on choices; the two norms and their breaches |
+| `tasks.ts` | Tours, errands, searches, candid shots and the group photo, leaving with a goodbye and a coat |
+| `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the butler, kitchen hand, cloakroom, band and photographer, the host, groups and gossip, coats, departures, the lab's provocations |
 | `render/crowd.ts` | The instanced three.js crowd |
 | `render/fixtures.ts` | Door leaves and movable curtains |
 | `tests/party.test.ts` | Programme, cast, determinism and a whole evening |
 | `tests/party-things.test.ts` | Doors and locks, the room graph on 12 houses, curtains, lights, items, chains, bathrooms, drinks, tipsiness, coats, bumps |
 | `tests/party-register.test.ts` | Fit, hindsight and forward order, one vote per witness, settling, exclusions, drink noise, conflicts, broken claims, errands, recognising, asking around, quiet evenings, planted thefts, live and replay |
 | `tests/party-minds.test.ts` | Sight, hearing, memory, the mental map, mood, recognising people, hushes, five whole evenings with a planted rumour, the lab's provocations, golden digests |
+| `tests/party-life.test.ts` | Rings and a split, three whole evenings: task counts, circles and stays, tours, a fetched drink, the beats and breaches, everyone home |
 | `tests/party-perf.test.ts` | A whole evening's cost, stage by stage |
 | `tests/golden/party-digests.json` | Digests of three houses at 19:30, 20:15 and 21:30. Any change to what people do, see or remember changes them; when it's meant, check the lab and the numbers here, then `npx vitest run tests/party-minds.test.ts -u` |

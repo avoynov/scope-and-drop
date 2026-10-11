@@ -1390,6 +1390,24 @@ export class Register {
     else this.check(i, s);
   }
 
+  // ----------------------------------------------------------------- things
+
+  /** The things i is missing: the objects of i's open or settled cases (none for most people). */
+  soughtThings(i: number): number[] {
+    const out: number[] = [];
+    if (!this.openN[i]) return out;
+    const base = i * CASE_SLOTS;
+    for (let c = base; c < base + CASE_SLOTS; c++) if (this.cUsed[c] && this.cState[c] !== 2 && this.cObj[c]! >= 0) out.push(this.cObj[c]!);
+    return out;
+  }
+
+  /** Whether i has heard who took a thing and why (an errand's claim names it). */
+  knowsWhy(i: number, obj: number): boolean {
+    const base = i * E;
+    for (let s = base + SIGHTINGS; s < base + E; s++) if (this.used[s] && this.obj[s] === obj) return true;
+    return false;
+  }
+
   // ---------------------------------------------------------------------- lab
 
   /** i's cases, open first. */

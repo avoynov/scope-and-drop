@@ -105,6 +105,9 @@ class Heap {
 }
 
 const SQRT2 = Math.SQRT2;
+const NO_DOORS: readonly number[] = [];
+/** Weight on the A* estimate. */
+const GREEDY = 1.3;
 
 export class Pathfinder {
   readonly levels = new Map<number, NavLevel>();
@@ -247,6 +250,8 @@ export class Pathfinder {
     const t = this.cellOf(to.level, to.x, to.z);
     if (s < 0 || t < 0 || !n.walk[t]) return null;
     if (s === t) return [from, to];
+    // In plain sight across open floor, through no doorway: straight there, no search.
+    if (n.walk[s] && this.clear(n, from.x, from.z, to.x, to.z, NO_DOORS)) return [from, to];
     const path = this.cellPath(n, n.walk[s] ? s : this.cellOf(from.level, ...this.snapXZ(from)), t, who);
     if (!path) return null;
     const { cells, doors } = path;
@@ -374,6 +379,8 @@ export class Pathfinder {
     const cols = n.cols;
     const tc = t % cols;
     const tr = (t - tc) / cols;
+    // The estimate is weighted a little (at most 30% longer than the best route, never seen once
+    // the corners are pulled straight): it halves the cells searched in a big house.
     const h = (k: number) => {
       const c = k % cols;
       const r = (k - c) / cols;
@@ -425,7 +432,7 @@ export class Pathfinder {
           stamp[nk] = run;
           g[nk] = ng;
           came[nk] = k;
-          heap.push(nk, ng + h(nk));
+          heap.push(nk, ng + GREEDY * h(nk));
         }
       }
     }

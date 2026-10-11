@@ -23,8 +23,10 @@ import type { MoodOverride, RoomMood } from '../../src/party/mood';
 import { DETAIL_FOV, DETAIL_RANGE, FOV } from '../../src/party/senses';
 import { CASES, type CaseKind } from '../../src/party/register';
 import type { Provocation } from '../../src/party/sim';
-import { Crowd, type FrameState } from '../../src/party/render/crowd';
+import { ringRadius } from '../../src/party/groups';
+import { Crowd, type Flash, type FrameState } from '../../src/party/render/crowd';
 import { Fixtures } from '../../src/party/render/fixtures';
+import type { TaskKind } from '../../src/party/tasks';
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from '../../src/party/types';
 import { labelForms } from '../briefing';
 
@@ -83,6 +85,11 @@ const PHASE_COLOR: Record<PhaseId, string> = {
 };
 const ROLE_LABEL: Record<RoleId, string> = {
   host: 'host',
+  butler: 'butler',
+  cloakroom: 'cloakroom',
+  kitchenHand: 'kitchen hand',
+  musician: 'musician',
+  photographer: 'photographer',
   waiter: 'waiter',
   bartender: 'bartender',
   cook: 'cook',
@@ -110,6 +117,10 @@ const ACTION_LABEL: Record<ActionId, string> = {
   wander: 'wandering',
   leave: 'leaving',
   staff: 'working',
+  greet: 'saying hello',
+  snack: 'at the buffet',
+  use: 'about the house',
+  task: 'busy',
 };
 const NOTE_LABEL: Record<string, string> = {
   bar: 'tending the bar',
@@ -122,6 +133,75 @@ const NOTE_LABEL: Record<string, string> = {
   billiards: 'playing billiards',
   cards: 'playing cards',
   cinema: 'watching a film',
+  // Conversations: walking up, waiting to be let in, lingering after a closed answer.
+  edge: 'at the edge of a conversation',
+  hover: 'hovering by a conversation',
+  // Things in the house.
+  fire: 'by the fire',
+  browse: 'browsing the shelves',
+  globe: 'spinning the globe',
+  rail: 'at the gallery rail',
+  plants: 'among the plants',
+  pool: 'by the pool',
+  fountain: 'by the fountain',
+  kitchen: 'in the kitchen',
+  buffet: 'at the buffet',
+  // Staff.
+  coats: 'at the door with the coats',
+  cloakroom: 'in the cloakroom',
+  hang: 'hanging a coat',
+  band: 'playing in the band',
+  'band-rest': 'resting at the bandstand',
+  break: 'on a break',
+  watch: 'keeping an eye on things',
+  sideboard: 'at the sideboard',
+  wash: 'washing up',
+  smoke: 'a cigarette out the back',
+};
+
+/** What each task is, and each step of it. */
+const TASK_LABEL: Record<TaskKind, string> = {
+  tour: 'showing guests round',
+  errand: 'on an errand',
+  search: 'looking for their partner',
+  photo: 'the group photograph',
+  candid: 'taking photographs',
+  leave: 'going home',
+  check: 'checking on something',
+  chore: 'seeing to something',
+};
+const STEP_LABEL: Record<string, string> = {
+  'to-room': 'on the way',
+  show: 'showing a room',
+  'wrong-room': 'in the wrong room',
+  unlock: 'unlocking a door',
+  lock: 'locking up again',
+  'to-door': 'to the door',
+  pick: 'picking it up',
+  bring: 'bringing it over',
+  give: 'handing it over',
+  asked: 'asked to fetch it',
+  fetch: 'fetching it',
+  agree: 'agreeing to',
+  'last-seen': 'where they were last seen',
+  'look-round': 'looking round',
+  found: 'found them',
+  hello: 'together again',
+  'set-up': 'setting up the camera',
+  'line-up': 'lining everyone up',
+  flashes: 'flash, flash',
+  frame: 'framing a shot',
+  shoot: 'taking a picture',
+  'to-host': 'to say goodbye to the host',
+  goodbye: 'saying goodbye',
+  cloakroom: 'for the coats',
+  coat: 'coats on',
+  out: 'out of the door',
+  'to-cabinet': 'to the cabinet',
+  'look-in': 'looking in the cabinet',
+  'to-table': 'to the table',
+  'check-table': 'checking the table',
+  'dinner-ready': 'dinner is ready',
 };
 
 let bp: MansionBlueprint;
@@ -156,8 +236,8 @@ let follow = params.has('follow');
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'cases' | 'map' | 'mood';
-const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'cases', 'map', 'mood'];
+type Overlay = 'sight' | 'sound' | 'gossip' | 'suspicion' | 'cases' | 'circles' | 'tasks' | 'map' | 'mood';
+const OVERLAYS: readonly Overlay[] = ['sight', 'sound', 'gossip', 'suspicion', 'cases', 'circles', 'tasks', 'map', 'mood'];
 const overlays = new Set<Overlay>((params.get('ov') ?? '').split(',').filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
 /** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
@@ -459,6 +539,8 @@ function draw(): void {
   if (crowd) {
     crowd.selected = selected;
     crowd.update(states, animClock);
+    const now = party.t + acc;
+    crowd.setFlashes(party.flashes.map((f): Flash => ({ x: f.x, y: (bp.levels[f.level]?.floorY ?? 0) + 1.65, z: f.z, age: (now - f.t) / TIME_SCALE })));
   }
   drawOverlays(states);
   // Name tag over the selected person.
@@ -687,6 +769,50 @@ function drawOverlays(states: FrameState[]): void {
     }
   }
 
+  // Conversations: each circle's ring, its members, who is speaking, and who waits at its edge.
+  if (overlays.has('circles')) {
+    for (const g of party.groups.values()) {
+      if (g.level !== planLevel) continue;
+      const mid = planPx(g.x, g.z);
+      const r = (ringRadius(g.members.length) + 0.35) * pxPerM;
+      octx.strokeStyle = 'rgba(182, 229, 143, 0.75)';
+      octx.lineWidth = 1.5;
+      octx.beginPath();
+      octx.arc(mid[0], mid[1], r, 0, Math.PI * 2);
+      octx.stroke();
+      for (const m of g.members) {
+        const at = here(m);
+        if (at) line(mid, at, m === g.speaker && t < g.speakerUntil ? 'rgba(182, 229, 143, 0.95)' : 'rgba(182, 229, 143, 0.35)', m === g.speaker ? 2 : 1);
+      }
+      chip(String(g.members.length), mid[0], mid[1] - r - 9, '#b6e58f');
+    }
+    for (const q of party.people) {
+      const a = q.action;
+      if (!q.present || a?.id !== 'mingle' || (a.note !== 'edge' && a.note !== 'hover')) continue;
+      const g = party.groups.get(a.ref ?? -1);
+      const at = here(q.id);
+      if (!g || !at || g.level !== planLevel) continue;
+      line(at, planPx(g.x, g.z), a.note === 'hover' ? 'rgba(229, 143, 143, 0.7)' : 'rgba(182, 229, 143, 0.6)', 1, [3, 3]);
+      chip(a.note === 'hover' ? 'hovering' : 'waiting', at[0], at[1] - 16, a.note === 'hover' ? '#e58f8f' : '#b6e58f');
+    }
+  }
+
+  // Tasks: who leads, who follows, and what step they're on.
+  if (overlays.has('tasks')) {
+    for (const tk of party.tasks.list) {
+      if (tk.outcome !== null) continue;
+      const own = here(tk.owner);
+      for (const m of tk.party) {
+        const at = here(m);
+        if (own && at) line(own, at, 'rgba(143, 199, 229, 0.7)', 1.5, [5, 3]);
+      }
+      if (!own) continue;
+      const step = tk.steps[tk.i];
+      const label = step ? (STEP_LABEL[step.label] ?? step.label.replace(/-/g, ' ')) : '';
+      chip(`${tk.kind}${label ? ` · ${label}` : ''}`, own[0], own[1] - 16, '#8fc7e5');
+    }
+  }
+
   // Suspicion: how much the picked person suspects each other person, or, with nobody picked,
   // how suspected each person is on average by everyone there.
   if (overlays.has('suspicion')) {
@@ -792,7 +918,20 @@ function describe(p: Person): string {
   if (a.id === 'toilet') s = note === 'queue' ? (p.pose === 'knock' ? 'knocking on the bathroom door' : 'queueing for the bathroom') : note === 'inside' && a.startedAt !== null ? 'in the bathroom' : 'to the bathroom';
   if (a.id === 'drink') s = note === 'bar-wait' ? 'waiting at the bar' : note === 'bar' ? 'having a drink at the bar' : 'to the bar';
   if (a.id === 'mingle' && p.pose === 'talk' && party.groups.get(a.ref ?? -1)?.speaker === p.id) s = 'talking';
+  if (a.id === 'greet') s = `saying hello to ${party.people[a.ref ?? -1]?.name ?? 'someone'}`;
+  if (a.id === 'task') {
+    const t = party.tasks.of(p);
+    if (t) s = t.owner === p.id ? `${TASK_LABEL[t.kind]}: ${STEP_LABEL[note] ?? note.replace(/-/g, ' ')}` : `${TASK_LABEL[t.kind]} with ${party.people[t.owner]?.name ?? '?'}`;
+  }
   return (p.pose === 'walk' || p.pose === 'climb') && a.id !== 'leave' && !s.startsWith('to ') ? `→ ${s}` : s;
+}
+
+/** The task someone is part of: its steps so far, and who's along. */
+function taskText(p: Person): string {
+  const t = party.tasks.of(p);
+  if (!t) return '';
+  const others = [t.owner, ...t.party].filter((i) => i !== p.id).map((i) => party.people[i]?.name ?? '?');
+  return `${t.kind} · step ${Math.min(t.i + 1, t.steps.length)} of ${t.steps.length}${others.length ? ` · with ${others.join(', ')}` : ''}`;
 }
 
 const DRINK_NAME: Partial<Record<Held, string>> = { champagne: 'champagne', red: 'red wine', white: 'white wine', beer: 'beer', whisky: 'whisky', water: 'water' };
@@ -894,7 +1033,8 @@ const LOG_FILTERS: Record<string, Kinds> = {
   noticing: new Set(['double-take', 'test', 'hush', 'heard']),
   'finding the way': new Set(['wrong-turn', 'ask']),
   'the house': new Set(['bathroom-taken', 'knock', 'bump', 'light']),
-  programme: new Set(['phase', 'announce', 'arrive', 'leave', 'toast']),
+  programme: new Set(['phase', 'announce', 'arrive', 'leave', 'toast', 'beat']),
+  'everyday life': new Set(['greet', 'join', 'split', 'task', 'photo', 'goodbye', 'breach', 'beat']),
 };
 let logFilter = params.get('log') ?? 'the evening';
 if (!LOG_FILTERS[logFilter]) logFilter = 'the evening';
@@ -956,10 +1096,46 @@ function eventText(e: PartyEvent): string {
       return e.note === 'claim' ? `${n(e.actors[0])} catches ${n(e.actors[1])} out: not where they said` : e.note === 'not-themselves' ? `${n(e.actors[0])}: ${n(e.actors[1])} seen in two places at once?` : `${n(e.actors[0])} hears ${n(e.actors[1])} was somewhere they can't have been`;
     case 'recognised':
       return `${n(e.actors[0])} realises who they saw: ${n(e.actors[1])}`;
+    case 'greet':
+      return `${n(e.actors[0])} ${e.note === 'wave' ? 'waves to' : e.note === 'kiss' ? 'kisses' : 'shakes hands with'} ${n(e.actors[1])}`;
+    case 'join':
+      return e.note === 'open' ? `${n(e.actors[0])} joins ${e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1])}` : `${n(e.actors[0])} isn't let into ${n(e.actors[1])}'s conversation`;
+    case 'split':
+      return `a conversation splits: ${e.actors.map(n).join(', ')} move off`;
+    case 'task': {
+      const [kind, how] = (e.note ?? '').split(':');
+      const what = TASK_LABEL[kind as TaskKind] ?? kind;
+      const with_ = e.actors.length > 1 ? ` with ${e.actors.slice(1).map(n).join(', ')}` : '';
+      return how ? `${n(e.actors[0])}: ${what} ${how === 'done' ? 'done' : how === 'found' ? '(found them)' : '(gave up)'}` : `${n(e.actors[0])} sets off ${what}${with_}`;
+    }
+    case 'photo':
+      return `${n(e.actors[0])} takes a ${e.note === 'group' ? 'group photograph' : 'photograph'}${e.actors.length > 1 ? ` of ${e.actors.length > 3 ? `${e.actors.length - 1} people` : e.actors.slice(1).map(n).join(' and ')}` : ''}`;
+    case 'goodbye':
+      return `${e.actors.slice(0, -1).map(n).join(' and ')} say${e.actors.length > 2 ? '' : 's'} goodbye to ${n(e.actors[e.actors.length - 1])}`;
+    case 'breach':
+      return `${n(e.actors[0])} ${e.note === 'quiet' ? 'talks through the speech' : 'sits before the host'}${e.actors.length > 1 ? `; ${e.actors.slice(1).map(n).join(', ')} frown${e.actors.length > 2 ? '' : 's'}` : ''}`;
+    case 'beat':
+      return `· ${BEAT_LABEL[e.note ?? ''] ?? (e.note ?? '').replace(/-/g, ' ')} ·`;
     default:
       return e.kind;
   }
 }
+
+const BEAT_LABEL: Record<string, string> = {
+  tap: 'a spoon on a glass',
+  hush: 'the room goes quiet',
+  'photo-call': 'everyone out for the group photograph',
+  'dinner-cue': 'dinner is served',
+  procession: 'in to dinner',
+  'host-sits': 'the host sits; everyone sits',
+  'table-turn': 'the table turns',
+  'open-dance': 'the hosts open the dancing',
+  surge: 'the floor fills',
+  'band-break': 'the band takes a break',
+  'band-back': 'the band is back',
+  'last-call': 'last orders at the bar',
+  thanks: 'the host thanks everyone',
+};
 
 let lastPanel = 0;
 
@@ -994,6 +1170,8 @@ function refreshPanel(): void {
     `${st.told} things told · ${st.overheard} overheard · ${st.doubleTakes} double takes · ${st.tests} tests · ${st.hushes} hushes`,
     `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} planted` : ''}`,
     `${st.cases} cases · ${st.askedAround} asked round · ${st.blames} settled on someone · ${st.conflicts} didn't fit · ${st.recognised} faces put a name to · ${st.claims} said where they'd been`,
+    `${st.greetings} hellos · ${st.joins} joined a conversation · ${st.rebuffs} turned away · ${st.splits} splits · ${st.breaches} breaches`,
+    `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? '' : 's'} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile ? `ms ${Object.entries(party.profile).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ')}` : '',
@@ -1021,6 +1199,7 @@ function refreshPanel(): void {
     p.quirks.length ? p.quirks.join(', ').replace(/-/g, ' ') : 'no habits',
     partner ? `with ${partner}` : 'came alone',
     describe(p),
+    taskText(p),
     inHand(p),
     p.present ? `${roomName(p)} · ${LEVEL_NAMES[p.level] ?? p.level} floor · ${Math.round(party.visibility(p) * 100)}% in view of the perch` : '',
   ]

@@ -108,6 +108,12 @@ export interface MindWorld {
   answerer(p: Person): Person | null;
   /** How the evening's practices pull on an action right now (1 leaves it as it is). */
   beat(p: Person, a: ActionId): number;
+  /**
+   * Who on the floor this person wants to dance near (bonds.ts): a friend who drew them, their
+   * partner, whoever they're flirting with; how much more the floor tempts them; and how to stand
+   * (beside, face to face, or club style in front with their back to them).
+   */
+  danceNear(p: Person): { who: number; k: number; mode: "beside" | "face" | "front" } | null;
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
@@ -206,16 +212,29 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
   }
   out.push(...offerCandidates(p, w, phase.id));
   if (has("dance") && places.danceSpots.length) {
-    const partner = p.partner !== null ? people[p.partner] : undefined;
-    const partnerDancing = partner?.action?.id === "dance";
+    // Couples dance together, friends follow friends on, flirts dance close (bonds.ts).
+    const near = w.danceNear(p);
+    const q = near ? people[near.who] : undefined;
+    const at = q?.action?.startedAt != null ? q : q?.action?.target;
     for (let i = 0; i < 3; i++) {
-      let s = rng.pick(places.danceSpots);
-      // Couples dance together: next to the partner's spot.
-      if (partnerDancing && partner?.action?.target && i === 0) {
-        const q = places.danceSpots.filter((d) => Math.hypot(d.x - partner.action!.target!.x, d.z - partner.action!.target!.z) < 1.4 && !w.taken(spotKey(d)));
-        if (q.length) s = q[0]!;
+      let s: Spot | null = rng.pick(places.danceSpots);
+      let key: string | undefined = spotKey(s);
+      let note: string | undefined;
+      if (q && at && i === 0) {
+        const close = near!.mode === "front" && q.action?.startedAt != null ? frontOf(q, w.pf) : near!.mode === "face" && q.action?.startedAt != null ? faceTo(q, w.pf) : null;
+        if (close) {
+          s = close;
+          key = undefined;
+          note = near!.mode;
+        } else {
+          const by = places.danceSpots.filter((d) => Math.hypot(d.x - at.x, d.z - at.z) < 1.4 && !w.taken(spotKey(d)));
+          if (by.length) {
+            s = by[0]!;
+            key = spotKey(s);
+          }
+        }
       }
-      if (w.taken(spotKey(s))) continue;
+      if (key && w.taken(key)) continue;
       const after = p.quirks.includes("dances-after-drink") && p.tipsy > 0.15 ? 1.6 : 1;
       // Lively people take to the floor.
       const energy = 0.6 + 0.8 * w.energy(p);
@@ -225,8 +244,10 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
         duration: rng.range(240, 600),
         pose: "dance",
         gain: { dance: 0.8, social: 0.2 },
-        key: spotKey(s),
-        mod: (0.4 + p.traits.dance) * (partnerDancing ? 1.6 : 1) * after * energy,
+        key,
+        ref: q && i === 0 ? q.id : undefined,
+        note,
+        mod: (0.4 + p.traits.dance) * (q ? near!.k : 1) * after * energy,
       });
     }
   }
@@ -331,6 +352,22 @@ export function beside(q: Person, from: { x: number; z: number }, pf: Pathfinder
     if (!taken) return spot;
   }
   return first;
+}
+
+/** Club style: a step in front of a dancer, facing the way they face (their back to them). */
+function frontOf(q: Person, pf: Pathfinder): Spot | null {
+  const s = pf.snap(q.level, q.x + Math.sin(q.yaw) * 0.5, q.z + Math.cos(q.yaw) * 0.5, 0.15);
+  if (!s) return null;
+  const room = pf.roomAt(s.level, s.x, s.z);
+  return room === q.room ? { level: s.level, x: s.x, z: s.z, yaw: q.yaw, room } : null;
+}
+
+/** Face to face with a dancer, a little closer than the floor's spots. */
+function faceTo(q: Person, pf: Pathfinder): Spot | null {
+  const s = pf.snap(q.level, q.x + Math.sin(q.yaw) * 0.6, q.z + Math.cos(q.yaw) * 0.6, 0.15);
+  if (!s) return null;
+  const room = pf.roomAt(s.level, s.x, s.z);
+  return room === q.room ? { level: s.level, x: s.x, z: s.z, yaw: Math.atan2(q.x - s.x, q.z - s.z), room } : null;
 }
 
 /** Round the host, facing in: a ring 2–5 m from the toast spot. */

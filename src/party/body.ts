@@ -24,6 +24,8 @@ export interface BodyHost {
   end(p: Person, done: boolean): void;
   /** Make a sound at a point (a knock, a bolt drawn). */
   sound(kind: SoundKind, at: { level: number; x: number; z: number; room: number }, source: number, ref?: number): void;
+  /** Someone walked into someone (the bonds weigh a sorry against a grudge). */
+  bumped?(fast: Person, hit: Person, slop: boolean): void;
 }
 
 /** How long a drink lasts in hand (in-game s): sipped from full to empty. */
@@ -589,5 +591,6 @@ export class Body {
     }
     this.stats.bumps++;
     this.host.log("bump", [fast.id, hit.id], hit.room, slop ? "slop" : undefined);
+    this.host.bumped?.(fast, hit, slop);
   }
 }

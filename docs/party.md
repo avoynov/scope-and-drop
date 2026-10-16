@@ -230,12 +230,29 @@ Jobs of a few steps (go to, meet, say, wait, unlock and lock, pick up, hand over
 - **Leaving.** Each guest has a hidden threshold, skewed low: from the farewell's last toast they go once that share of the guests has gone, so a few goodbyes tip the rest. The elderly tire and go during the dancing, and now and then someone has a babysitter or feels unwell. A couple goes together: find the host to say goodbye, collect a coat from the attendant at the door, and out. From 8 minutes before the end whoever is left goes at their own moment, and from 5 minutes the rest hurry.
 
 ## Walking
+## Ties (`bonds.ts`)
+
+Ties form and break through the evening. Everything is n × n typed arrays drawn at the start from their own random stream (`bonds`), so adding them shifted nothing else. Growth runs every four steps over the pairs the mood already finds (within 3 m in the same room), and fading is worked out when a pair next meets. The spy, when milestone 3 casts one as a guest, gets all of it like anyone else.
+
+- **Chemistry and affinity.** Every pair draws a chemistry each way, mostly shared (attraction tends to run both ways or neither): the flirt and the young are drawn more, the mother and the elderly less, and same-sex chemistry only between the 6% so inclined. Affinity is symmetric: like talks to like, dancers to dancers, a shared habit, a friend in common.
+- **The cast's bonds.** Friends start at 1.3–1.5 (close friends 1.5–2), partners at 2, people who know each other at 0.3–0.9. About half the guests come as couples (the cast's couple chance was compounding to nine in ten; it is now 0.25 a still-single guest).
+- **Flirting** grows from chemistry × closeness × what they're doing (dancing most, talk, the bar, a game, sitting side by side) × (1 + tipsiness) × the room's energy, and halves over an hour apart. At 0.15 they notice each other (a glance), at 0.35 they flirt: if either has little chemistry (under 0.2) the cool one steps back and that's the end of it tonight (a rebuff, a small grudge); otherwise they flirt (on the floor they dance close), and during the dancing one may ask the other onto the floor. At 1 they're a couple: everything else either had going stops, and those who see them together get the news.
+- **Who may flirt.** Two single guests, never the host, the household, staff (see below) or exes. A stray (about one couple in ten has a partner who strays, the less loyal of the two) may flirt too, but only out of their partner's sight (not in the same room, not seen for 30 s) and with none of the partner's close friends within 4 m. A stray arrives with an eye on one single guest: they drift away from their partner, seek that one out (a circle with them in it scores 4 more; on the floor they dance near them), and go over for a word when they spot them with the partner away. Their flirting grows 2.2 times faster and is an affair from the flirting line; it never becomes a couple.
+- **Staff** flirt only while serving a guest close by (a tray stop, across the bar), and at the flirting line they're friends for the night: that guest is served first. One evening in three or four.
+- **Friendship** grows from affinity × closeness × what they're doing (talk most, sitting, a game, the bar, dancing) × drink and energy, half again with a friend of both in the same circle. At 0.3 they're acquaintances, at 1 friends (they go into each other's friend lists, and recognise each other as such), at 1.5 close. A friendship short of 1 fades over 90 minutes apart; a friendship never does.
+- **Doubt.** A partner who sees their stray flirting erupts on the spot. Otherwise doubt comes by word: news of cheating from a friend adds 1.15 × how sure the teller was, from someone they know 0.5, from anyone else 0.3 (flirting half that), each teller once; a circle going quiet as they join is a hint (0.1). Only a friend tells a partner; nobody else says it in front of them. Flirting from before a couple got together isn't cheating, to them or to anyone told about it. Doubt halves over an hour. From 0.3 they keep an eye out (they look for their partner sooner and more often); from 0.7 they go and have it out.
+- **Confronting.** Found with the one they're thought to be with: an eruption, scaled by how sure they are, their nerves and drink: a pull by the arm, a jealous scene, or a row with an act in it (a slap, a thrown drink, a shove; between two tipsy men a scuffle one time in five). Found alone: a hissed word or a row. Whoever is in the room hears what it's about, and afterwards someone goes: the partner off to the terrace or home, the other two apart. Never on less than 0.7.
+- **Grudges** come from a slopped bump, a lost game (more for a heavy loss or a gloating winner), a rebuff, jealousy and gossip about oneself overheard (more from a friend), and halve over 30 minutes. Face to face within 2 m, heat = grudge × temper × (1 + tipsiness) × (1 + tension) × 4: from 0.15 a spat, from 0.35 a row, from 0.6 and tipsier than 0.5 a row with an act in it. A pair rows once in 20 minutes at most and keeps apart for 20–40 minutes after; a bad loser at cards cries foul. Witnesses tense up.
+- **Falling out and making up.** A spat costs a friendship 0.15, a row 0.8, an act 1.2; a friendship that drops below 0.6 has ended: both drop each other, mutual friends cool a little toward the one they're less close to, and neither joins a circle the other is in. One that was 1.5 or more may be made up after 30 minutes (a hug).
+- **Onto the floor.** A friend seen taking to the floor may pull someone after them (chance 0.25 × the bond, a partner 2.4 times as likely, once a pair in 10 minutes): the dance scores three times higher for two minutes, and they dance beside them. A dancer waves a close friend standing by over. Partners dance face to face (the slow dance), and a tipsy flirting pair club-style, one in front with their back to the other. Someone very proper leaves a floor where that's going on.
+- **Slipping away.** Every 10 minutes, a couple (or a stray and their lover, out of the partner's sight) close together and both tipsier than 0.4 may slip off to a guest bedroom that one of them knows, with nobody in it and a lock on the inside: they bolt the door and draw the curtains, and come out 20–40 minutes later, a little dishevelled, which whoever sees them come out remembers. Once a night a couple, two couples an evening at most.
+
 
 A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corners), and the path is string-pulled to a few waypoints with an exact grid traversal, so a straight leg never crosses a blocked cell. A walker within 0.3 m of a waypoint cuts the corner to the next one when the way is clear, so two people heading for the same doorway don't stall on one point. Stairs join the storeys; a route crosses one storey at a time through the stair with the shortest detour. Doors gate it all (see Things in the house). People push apart to 0.42 m, never into a doorway that is locked against them, and anyone pushed off their line finds a new route from where they stand.
 
 ## People on screen
 
-`render/crowd.ts` draws everyone as simple jointed figures, one `InstancedMesh` per body part (thighs, shins, skirt, torso, shirt front, head, hair, arms, a glass, a tray, a hat, glasses, a cane). The mansion's scoped room lights reach them through a per-person `aScope`. Poses come from the sim (walk, climb, sit, talk with the group's speaker gesturing, drink, toast, dance, play, serve, smoke, greet, announce, look, knock), and habits show while standing about (scratching an ear, checking a watch, hands in pockets, a big laugh). Gestures go over the pose for a few seconds: a hand out to ask the way, an arm out pointing it, a shrug, leaning in to pass something on; heads turn toward a glance or a sound. A glass shows the colour of its drink, and someone past 0.6 tipsiness lists slowly from side to side.
+`render/crowd.ts` draws everyone as simple jointed figures, one `InstancedMesh` per body part (thighs, shins, skirt, torso, shirt front, head, hair, arms, a glass, a tray, a hat, glasses, a cane). The mansion's scoped room lights reach them through a per-person `aScope`. Poses come from the sim (walk, climb, sit, talk with the group's speaker gesturing, drink, toast, dance, the slow dance, the club-style pair, play, serve, smoke, greet, announce, look, knock, argue, hug), and habits show while standing about (scratching an ear, checking a watch, hands in pockets, a big laugh). Gestures go over the pose for a few seconds: a hand out to ask the way, an arm out pointing it, a shrug, leaning in to pass something on, a slap, a shove, a thrown drink, a pull by the hand; heads turn toward a glance or a sound. A glass shows the colour of its drink, someone past 0.6 tipsiness lists slowly from side to side, and a couple back from slipping away shows hair and shirt awry for ten minutes.
 
 `render/fixtures.ts` draws what moves in the house: door leaves on their hinges (two for a double door) and the drapes and sheers of the windows people can draw, four instanced meshes in all. The mansion builder leaves those out of its baked mesh when asked (`buildMansion(bp, { dynamicDoors: true, dynamicCurtains: (room) => … })`), and with the options off the house is built exactly as before. `ScopedLighting.setScopeScale(room, s)` dims a room's lights for a switch. A plan marker in the outfit's colour shows each person on the storey the plan cuts. Detailed bodies and the full body-language catalogue are milestone 5.
 
@@ -249,10 +266,11 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 - Speeds: pause, 1× (the evening in an hour), 5×, 20× and 60×; back to 19:00; next phase. Space pauses.
 - Views: scope (from the perch; scroll to zoom, drag to aim), wide, plan (scroll to zoom, drag to pan, one storey at a time) and orbit.
 - The people list shows what everyone is doing. Click a name, or a person in any view, to see their role, habits, partner, what's in their glass and how full, how many drinks and how merry they are, their room, how visible they are from the perch, their energy and tension, how many rooms they know, whom they doubt and suspect, the things they know (with who told them and how sure they are), and their needs. The scope follows them; the plan turns to their floor.
-- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense), **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room), **circles** (each conversation's ring, lines to its members, the speaker marked, and who is waiting or hovering at the edge) and **tasks** (lines from each task's owner to its party, with the kind and the step).
+- Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense), **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room), **circles** (each conversation's ring, lines to its members, the speaker marked, and who is waiting or hovering at the edge), **tasks** (lines from each task's owner to its party, with the kind and the step) and **bonds** (couples, flirting with its strength, an affair marked, friends and close friends, those who fell out, grudges as arrows from whoever holds them, and how much anyone doubts their partner; with someone picked, only theirs).
 - **Goes missing here** on the card makes something of the host's go missing from the picked person's room; **seen there** has the picked person seen poking round that room. Together they plant a theft for the guests to work out. The card's register block lists the picked person's cases and their candidates.
+- **Spark** makes the picked person and the one picked before take to each other (both right at the flirting line); **grudge** gives the one picked before a grudge against the picked person; **cheating rumour** starts word going round that the picked person is cheating on their partner. The card's ties lines show their temper, doubt about their partner, a stray's eye or lover, whom they're drawn to, whom they get on with, whom they fell out with, and their grudges and how hot they run.
 - **Plant a rumour** on the card: a guest in a conversation hears something juicy and a little odd about the picked person. The **mood** row sets tension (tense, calm) or scales energy (liven, dampen) for everyone, the picked person's room or just them. Both take effect from the next step and are kept, so going back in time replays them where they were made; a new house clears them.
-- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes. The detail card shows the picked person's task and step.
+- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), romance & rows (noticing, flirting, affairs, couples, friendships, rebuffs, spats and rows, who is sure, confrontations, pulls onto the floor, slipping away, games won), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes; and the ties: couples, friendships, flirtations and rebuffs, affairs, who found out, confrontations, spats, rows, fallings-out and makings-up, pulls onto the floor, staff friendships and slipping away. The detail card shows the picked person's task and step.
 
 | URL parameter | Meaning |
 |---|---|
@@ -262,10 +280,10 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 | `speed` | 0, 1, 5, 20 or 60 |
 | `view`, `fov`, `level`, `zoom`, `px`, `pz` | View, scope field of view, plan storey, plan zoom and pan (metres) |
 | `sel`, `follow` | Select a person by index; keep the scope on them |
-| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases`, `circles`, `tasks` |
+| `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases`, `circles`, `tasks`, `bonds` |
 | `gone`, `seen` | Plant a theft: `gone=80:5` (minute, room), `seen=75:11:5` (minute, person, room); first house only |
 | `tension`, `energy` | Set everyone's tension (0–1), or scale their energy (0.5–1.5), at time `t` |
-| `log` | Log filter: `everyday life`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
+| `log` | Log filter: `everyday life`, `romance & rows`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
 | `profile` | Time each stage of the step and show the totals under the stats |
 | `shot=1&w=&h=&ui=1` | Headless capture (`ui=1` keeps the panels) |
 
@@ -277,7 +295,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 
 | Measure | Result | Test asks |
 |---|---|---|
-| A whole evening, headless (21,600 steps) | 3.4–4.2 s, about 45% of it seeing (milestone 2 so far: 3.5–4.9 s) | under 15 s |
+| A whole evening, headless (21,600 steps) | 4.1–5.4 s on the machine that measured 3.7–4.9 s before ties, about 40% of it seeing; the ties' own stage 0.17 s | under 15 s |
 | Guests holding champagne as the glasses go up | 91–95% | ≥ 60% |
 | Guests at the toast, 85% of the way through it | 96–100% | ≥ 70% |
 | Guests at dinner, 60% of the way through it | 100%, and every guest with a chair seated | ≥ 90% |
@@ -306,6 +324,22 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | Let in, turned away, split, hellos, breaches | 79–109, 17–46, 6–18, 126–146, 4–10 | joins over 20, some turned away |
 | Guests leaving in the last 15 minutes | 91–100% | ≥ 80% |
 
+Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `orangery-1`, `match-42` and ten more); the test runs eight of them:
+
+| Measure | Result | Test asks |
+|---|---|---|
+| Guests who come as couples | about half (0.3–0.7 a house) | 0.3–0.7 on average |
+| Couples formed tonight; in or after the dancing | 0.9 an evening (0–4, in 9 evenings of 16); 13 of 14 | under 2 on average, at most 4; ≥ 70% |
+| Friendships made; close friendships reached | 7.4 (3–12); 13.4 | 3–9 on average |
+| Flirtations; rebuffs | 3.4 (1–11); 0.4 | |
+| Strays; affairs | 0.9 an evening; in 4–5 evenings of 16 | some affairs |
+| Partners sure; confrontations; on less than sure | 3–4; 2–3; never | never |
+| Spats; rows (with a slap, shove or thrown drink) | 3.2 (0–8); 1.6 (0–4), 0.25 | rows 0.75–4 on average, at most 10 |
+| Friendships ended by a row; made up | 0.1–0.2 (0–2); 0 | at most 2 |
+| Dance starts a friend pulled them into | 41% | 25–60% |
+| Evenings with a staff friendship | 6 of 16 | at most half |
+| Couples slipping away | 0.3 (0–2) | at most 2 |
+
 ## Tuning notes
 
 - Bathroom trips: about 1.5–2 a guest an evening, and about half are abandoned on the way when the guest sees the door shut from across a room. In houses whose only bathrooms are two floors up at the far end a trip can take 8 minutes, which is why bathroom trips stop 20 minutes before the end.
@@ -317,6 +351,8 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 - Wrong turns came mostly late in the evening at first (guests forgot rooms they had used once). The visit floor, regulars, being pointed to the bathroom itself, the announcements showing the way and the 2-minute grace turned that round; most now happen in the first hour, when guests first look for a bathroom, and the host and staff never take one.
 - How fast a rumour spreads depends on who hears it first. A quiet guest can sit on it: planted in the first mingling with one whose talkativeness is 0.13, it went nowhere for half an hour, until dinner's side talk picked it up.
 - Gossip was tuned to the plan's target (half the party within 30 minutes): first at 0.12 a speaker turn, which was too slow, then 0.25 with side talk at tables and in the toast ring.
+
+- Ties: with the cast's nine couples in ten hardly anyone could flirt; at half, couples form about one an evening. Strays at first never got their affair going: out of the partner's sight they stood near the one they fancied but in another circle, where flirting barely grows, so a stray now drifts away from their partner, seeks that one's circle out and walks over for a word when they spot them. Partners were being told of "cheating" that was flirting from before they got together; that's now ignored. A friend's word counted 0.8 × how sure the teller was (about 0.6 passed on), which left partners stuck below the line to confront; it's 1.15 now. Rows at first cost a friendship too little to end any (0 in 32 evenings); a row now costs 0.8.
 
 ## Known gaps
 
@@ -340,7 +376,15 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
   - The plan's hard stop is a staggered one: from 8 minutes before the end whoever is still here goes at their own moment, in the order of their threshold, and from 5 minutes the rest hurry. A single stop sent everyone to the coats at once.
   - The cloakroom attendant brings the coats to the front door at the last toast rather than working a queue at the cloakroom.
   - A partner search goes to the room they were last seen in and looks round; asking around for them and the hurry after 3 minutes aren't built.
-  - A circle's empty middle doesn't push passers-by out, and the flirting pair's closer stance waits for the bonds (the next part).
+  - A circle's empty middle doesn't push passers-by out.
+
+- Ties, changed from the first build while tuning:
+  - A stray (one couple in ten, first one in fifteen) has an eye on one single guest from the start, seeks them out and drifts from their partner; left to chance, a stray's affair almost never came about.
+  - A friend's word of cheating counts 1.15 × the teller's confidence (first 0.8); flirting from before a couple got together is never cheating.
+  - Slipping away is checked every 10 minutes at 0.5 (first 15 minutes at 0.35), once a night a couple and two couples an evening at most.
+  - A row costs a friendship 0.8 and an act 1.2 (first 0.5 and 1).
+  - The flirting pair stand closer only on the dance floor (face to face, or club-style); in a circle they keep their place on the ring.
+  - Making up needs a friendship of 1.5 or more and 30 minutes apart; none happened in 16 evenings, since the few that end are rarely that close.
   - A split circle forms a clear step away (the two rings plus 0.9 m) rather than at 1.5 m, which put two split circles on one spot.
 
 ## Files
@@ -363,6 +407,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | `mind.ts` | Need decay, the options and their scores (filtered by what each person knows), the weighted choice |
 | `ads.ts` | What the house offers: the table of objects, rooms and places, resolved into this house's offers |
 | `groups.ts` | Conversation circles: rings, the edge, open or closed, splitting, stays, greetings |
+| `bonds.ts`                        | Chemistry and affinity, flirting, couples, friendships, staff friends, strays and affairs, doubt and confronting, grudges and rows, falling out and making up, pulls onto the floor, slipping away                                                       |
 | `practices.ts` | The evening's beats and how they pull on choices; the two norms and their breaches |
 | `tasks.ts` | Tours, errands, searches, candid shots and the group photo, leaving with a goodbye and a coat |
 | `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the butler, kitchen hand, cloakroom, band and photographer, the host, groups and gossip, coats, departures, the lab's provocations |
@@ -373,5 +418,6 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | `tests/party-register.test.ts` | Fit, hindsight and forward order, one vote per witness, settling, exclusions, drink noise, conflicts, broken claims, errands, recognising, asking around, quiet evenings, planted thefts, live and replay |
 | `tests/party-minds.test.ts` | Sight, hearing, memory, the mental map, mood, recognising people, hushes, five whole evenings with a planted rumour, the lab's provocations, golden digests |
 | `tests/party-life.test.ts` | Rings and a split, three whole evenings: task counts, circles and stays, tours, a fetched drink, the beats and breaches, everyone home |
+| `tests/party-ties.test.ts`        | The cast's couples and strays, who may flirt, a spark, doubt by word and old flirting, grudges and heat, eight whole evenings against the ties' numbers                                                                                                  |
 | `tests/party-perf.test.ts` | A whole evening's cost, stage by stage |
 | `tests/golden/party-digests.json` | Digests of three houses at 19:30, 20:15 and 21:30. Any change to what people do, see or remember changes them; when it's meant, check the lab and the numbers here, then `npx vitest run tests/party-minds.test.ts -u` |

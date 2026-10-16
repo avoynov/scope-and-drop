@@ -51,6 +51,10 @@ export interface GroupsHost {
   end(p: Person, done: boolean): void;
   /** People each person took in on their last look. */
   seenLast(i: number): readonly number[];
+  /** Whether p wants nothing to do with j for now (fallen out, keeping apart after a row). */
+  shuns(p: Person, j: number): boolean;
+  /** How much more p wants to join a circle with j in it for the bonds (noticing, flirting). */
+  joinPull(i: number, j: number): number;
 }
 
 /** Room kept between one conversation's ring and the next one started (m). */
@@ -150,12 +154,14 @@ export class Groups {
       if ((p.avoid.get(`group:${g.id}`) ?? -1) > this.host.t) continue;
       const slot = this.edge(g);
       if (!slot) continue;
+      if (g.members.some((m) => this.host.shuns(p, m))) continue;
       let mod = 1;
       let wary = false;
       let suspect = false;
       let same = 0;
       for (const m of g.members) {
         const o = people[m]!;
+        mod += this.host.joinPull(p.id, m);
         mod += 0.35 * o.traits.talk;
         // Uneasy people keep closer to their own.
         if (o.id === p.partner) mod += (p.archetype === "plus-one" ? 2.5 : 1.2) * (1 + tension);
@@ -251,6 +257,8 @@ export class Groups {
     let susp = 0;
     let ex = 0;
     for (const m of g.members) {
+      // Someone fallen out with the newcomer, or keeping apart from them, keeps the circle shut.
+      if (h.shuns(h.people[m]!, p.id)) return 0.03;
       aff += TIE_WEIGHT[h.ident.tieOf(m, p.id)]!;
       if (h.people[m]!.friends.includes(p.id)) friend = 0.3;
       if (h.people[m]!.partner === p.id || h.people[m]!.linked === p.id) partner = 0.5;

@@ -112,7 +112,9 @@ describe("everyday evenings", () => {
       expect(st.tours, seed).toBeLessThanOrEqual(4);
       expect(st.errands, seed).toBeGreaterThanOrEqual(4);
       expect(st.errands, seed).toBeLessThanOrEqual(12);
-      expect(st.searches, seed).toBeGreaterThanOrEqual(3);
+      // Searches are partners looking for each other: fewer couples, fewer searches.
+      const coupled = party.people.filter((p) => !p.staff && p.partner !== null).length;
+      expect(st.searches, seed).toBeGreaterThanOrEqual(Math.min(3, Math.ceil(coupled / 4)));
       expect(st.searches, seed).toBeLessThanOrEqual(15);
       expect(st.photos, seed).toBe(1);
       expect(party.tasks.stats.stalled, seed).toBeLessThanOrEqual(1);

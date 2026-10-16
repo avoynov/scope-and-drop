@@ -438,7 +438,8 @@ describe("a conversation that goes quiet", () => {
         const a = p.action;
         if (a?.id !== "mingle" || a.note !== "edge" || a.startedAt === null || a.ref === undefined) continue;
         const members = (party.groups.get(a.ref)?.members ?? []).filter((m) => m !== p.id && party.people[m]!.action?.startedAt != null);
-        if (!members.length || members.some((m) => p.partner === m)) continue;
+        // (Friends, made before or tonight, trust them past a rumour: not this test's circle.)
+        if (!members.length || members.some((m) => p.partner === m || party.people[m]!.friends.includes(p.id))) continue;
         expect(party.events.filter((e) => e.kind === "hush").length).toBe(lets.length);
         for (const m of members) party.memory.plant(m, "rumour", p.id, 0.9);
         expect(members.some((m) => party.memory.suspects(m, p.id) >= SUSPICIOUS)).toBe(true);

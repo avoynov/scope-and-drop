@@ -74,7 +74,7 @@ for (const [k, label] of [
 ] as const) {
   const b = document.createElement("button");
   b.textContent = label;
-  b.className = "toggle;
+  b.className = "toggle";
   b.onclick = () => {
     overlays[k] = !overlays[k];
     b.classList.toggle("on", overlays[k]);

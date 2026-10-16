@@ -1056,7 +1056,7 @@ function frame(t: number, dt: number): void {
       const closeBtn = document.createElement("button");
       closeBtn.innerText = "×";
       closeBtn.className = "close-btn";
-      closeBtn.onClick = () => {
+      closeBtn.onclick = () => {
         woundCard.hidden = true;
       };
       $("wound-text").appendChild(closeBtn);

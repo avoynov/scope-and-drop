@@ -43,7 +43,11 @@ export type Verb =
   | "snooping"
   | "hovering"
   | "rude"
-  | "carrying";
+  | "carrying"
+  | "row"
+  | "fell-out"
+  | "made-up"
+  | "slipped-away";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -98,6 +102,11 @@ export const VERBS: Record<Verb, VerbSpec> = {
   hovering: { kind: "odd", juicy: 0.3, odd: 0.03, halfLife: 45 * MIN },
   rude: { kind: "odd", juicy: 0.4, odd: 0.03, halfLife: 45 * MIN },
   carrying: { kind: "whereabouts", juicy: 0.3, odd: 0, halfLife: 30 * MIN, thing: true },
+  // Ties (PR 3b): words between two, a friendship ended or made up, a couple seen coming out of a bedroom.
+  row: { kind: "mishap", juicy: 0.8, odd: 0, halfLife: 60 * MIN },
+  "fell-out": { kind: "mishap", juicy: 0.8, odd: 0, halfLife: 90 * MIN },
+  "made-up": { kind: "mishap", juicy: 0.5, odd: 0, halfLife: 60 * MIN },
+  "slipped-away": { kind: "romance", juicy: 1, odd: 0, halfLife: 90 * MIN, elsewhere: true },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 
@@ -134,6 +143,8 @@ export interface MemoryHost {
   readonly people: Person[];
   /** Each person's tension (0 to 1), from the mood. */
   tensionOf(i: number): number;
+  /** How much more (or, at 0, not at all) a speaker passes a fact on in front of these listeners (bonds.ts: who tells a partner). */
+  gossipWeight?(f: number, speaker: number, listeners: readonly number[]): number;
 }
 
 /** Told about a fact: the register files its own copy (register.ts). */
@@ -435,7 +446,9 @@ export class Memory {
         if (subj >= 0 && (q.partner === subj || q.friends.includes(subj))) concern = 2;
       }
       if (!unknown) continue;
-      const score = this.juicy[f]! * conf * unknown * concern * (0.3 + sp.traits.talk);
+      const rule = this.host.gossipWeight?.(f, speaker, listeners) ?? 1;
+      if (rule <= 0) continue;
+      const score = this.juicy[f]! * conf * unknown * concern * rule * (0.3 + sp.traits.talk);
       top.push([f, score]);
     }
     if (!top.length) return null;

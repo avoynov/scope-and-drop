@@ -387,11 +387,12 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
     if (g.quirks.includes("smoker")) g.traits.thirst = Math.min(1, g.traits.thirst + 0.1);
   }
 
-  // Couples: mostly a man and a woman, about half the guests; the host may bring a partner.
+  // Couples: mostly a man and a woman, about half the guests (each one still single pairs off with
+  // a quarter's chance, since a pairing takes two); the host may bring a partner.
   const single = rng.shuffle(guests.filter((g) => g.role !== "politician" || rng.chance(0.5)));
   for (let i = 0; i < single.length; i++) {
     const a = single[i]!;
-    if (a.partner !== null || !rng.chance(0.55)) continue;
+    if (a.partner !== null || !rng.chance(0.25)) continue;
     const b = single.find((q) => q !== a && q.partner === null && (q.look.sex !== a.look.sex || rng.chance(0.1)));
     if (!b) continue;
     a.partner = b.id;

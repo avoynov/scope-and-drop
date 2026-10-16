@@ -876,7 +876,9 @@ export class Tasks {
   hurryOut(): void {
     for (const t of this.running("leave")) {
       const out = t.steps.length - 1;
-      if (t.i >= out) continue;
+      // Not halfway up a stair (no route starts there): the next step will do.
+      const p = this.host.people[t.owner]!;
+      if (t.i >= out || p.path[p.pathIndex]?.climb) continue;
       t.i = out - 1;
       this.advance(t);
     }

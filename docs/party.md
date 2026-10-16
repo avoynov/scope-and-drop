@@ -310,7 +310,7 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | A* searches an evening, cache hits | 1,850–2,020, 12–13% | |
 | Things passed on in conversation (listeners), overheard | 205–936, 18–229 | over 50 an evening |
 | A rumour planted 8 minutes into the second mingling, after the group photo: time to reach half the guests, share at 45 minutes (five houses) | 11–30 min (mean 21), 52–100% | mean 10–35 min, ≥ 30% |
-| Highest suspicion anyone holds at 22:00; of the rumour's subject | 0.02–0.10; 0.02–0.03 | nobody innocent ≥ 0.55 |
+| Highest suspicion anyone holds at 22:00; of the rumour's subject | 0.02–0.16 (0.16 after a slap seen); 0.02–0.03 | nobody innocent ≥ 0.55; with nothing gone under 0.25 |
 | Wrong turns, first hour and last hour | 1–8 and 0–5 | last hour a third of the first or less, over five houses |
 | Asked the way, pointed to a bathroom | 19–44, 80–95% | over 5, mostly pointed |
 | Double takes, tests | 9–16, 2–5 | 1–30, no doubt after a test |

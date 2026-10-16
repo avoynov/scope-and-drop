@@ -67,18 +67,22 @@ describe("reticles", () => {
   });
 
   it("builds all three patterns with a lit aiming point", () => {
-    for (const r of [psoReticle(), treeReticle(), vssReticle()]) {
+    for (const r of [psoReticle(), treeReticle("pr2"), treeReticle("ebr"), vssReticle()]) {
       expect(r.prims.length).toBeGreaterThan(30);
       expect(r.prims.some((p) => p.lit)).toBe(true);
     }
     // Tree rows widen with drop, like the reference glass.
-    const rowWidth = (y: number) =>
-      Math.max(
-        ...treeReticle()
-          .prims.filter((p) => p.kind === "dot" && p.y === y)
-          .map((p) => (p.kind === "dot" ? Math.abs(p.x) : 0)),
-      );
-    expect(rowWidth(10)).toBeGreaterThan(rowWidth(2));
+    for (const style of ["pr2", "ebr"] as const) {
+      const rowWidth = (y: number) =>
+        Math.max(
+          ...treeReticle(style)
+            .prims.filter((p) => p.kind === "dot" && p.y === y)
+            .map((p) => (p.kind === "dot" ? Math.abs(p.x) : 0)),
+        );
+      expect(rowWidth(10)).toBeGreaterThan(rowWidth(2));
+    }
+    expect(treeReticle("pr2").name).toBe("PR2-MIL");
+    expect(treeReticle("ebr").name).toBe("EBR-7D");
   });
 });
 

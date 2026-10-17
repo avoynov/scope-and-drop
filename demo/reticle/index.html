@@ -117,6 +117,31 @@
         margin: 0;
         accent-color: var(--accent);
       }
+      /* Where the mannequin stands: range and elevation, applied by rebuilding the range. */
+      #target {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 6px;
+        align-items: end;
+        margin-bottom: 10px;
+      }
+      #target label {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2px;
+        margin: 0;
+        font-size: 0.92em;
+      }
+      #target input {
+        font: inherit;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 6px;
+        width: 100%;
+        box-sizing: border-box;
+      }
       dl {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -347,6 +372,11 @@
       <div class="seg" id="aid">
         <button data-aid="manual" title="Range with the reticle, work the elevation out with the Speed Drop card (M)">Manual</button>
         <button data-aid="lrf" title="A laser rangefinder on the scope mount: X ranges, its screen gives the elevation (M)">Pro · LRF</button>
+      </div>
+      <div id="target" title="Where this rifle's mannequin stands: slant range to its chest and elevation from your eye. The ground is raised to suit.">
+        <label>Target m<input id="trange" type="number" min="50" max="1500" step="1" /></label>
+        <label>Elevation °<input id="telev" type="number" min="-30" max="30" step="0.5" /></label>
+        <button id="tmove">Move</button>
       </div>
       <label>Power<input id="mag" type="range" min="4" max="20" step="0.1" /></label>
       <label>Parallax<input id="par" type="range" min="0" max="105" step="0.5" /></label>

@@ -14,7 +14,7 @@ import { createGlass } from "./glass";
 import { DRUM_R_MM, TURN_LIFT_MM, createDrum, drumHome, drumStep } from "./drum";
 import { FLAG_DEG_PER_MS } from "./flags";
 import { buildRifle, createNearPasses } from "./near";
-import { EYE_HEIGHT, NEAR_M, RANGE_M, buildRange, heightAt } from "./scene";
+import { CHEST_M, EYE_HEIGHT, buildRange, configureTargets, heightAt, targetRanges, terrainLift, type TargetSpot } from "./scene";
 import { createShooting, type Aim } from "./shooting";
 import { createWindGL } from "./wind-gl";
 import { woundSvg, woundText } from "./wound-card";
@@ -26,6 +26,16 @@ if (params.get("hud") === "0") document.body.classList.add("nohud");
 const W = Number(params.get("w") ?? 0) || innerWidth;
 const H = Number(params.get("h") ?? 0) || innerHeight;
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
+/**
+ * Where the mannequins stand (`far=<m>,<deg>` for the 412 m one, `near=<m>,<deg>` for the 183 m one): slant range
+ * to the chest and elevation, set from the panel. The terrain is raised to suit, so it is set before anything reads it.
+ */
+const spotParam = (k: string): TargetSpot | null => {
+  const [r, e = 0] = (params.get(k) ?? "").split(",").filter(Boolean).map(Number);
+  return r && Number.isFinite(r) && Number.isFinite(e) ? { rangeM: clampSpot(r, 50, 1500), elevDeg: clampSpot(e, -30, 30) } : null;
+};
+const clampSpot = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+configureTargets([spotParam("far"), spotParam("near")]);
 
 /**
  * The rifle behind each reticle, and the mannequin it is meant for: the SVD and the bolt rifle shoot the one at
@@ -42,7 +52,7 @@ const state = {
   /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a rifle-mounted rangefinder (`aid=manual|lrf`). */
   aid: (params.get("aid") === "lrf" ? "lrf" : "manual") as AimAid,
   mag: num("mag", 8),
-  parallax: num("par", reticleParam === "vss" ? NEAR_M : RANGE_M), // metres; Infinity = ∞
+  parallax: num("par", targetRanges[reticleParam === "vss" ? 1 : 0]!), // metres; Infinity = ∞
   // A good scope, well set up: parallax on the target, eye centred at full eye relief.
   eye: { x: num("ex", 0), y: num("ey", 0), z: num("ez", 0), pupilMm: num("pupil", 3) } as Eye,
   illum: params.has("illum"),
@@ -231,9 +241,10 @@ function drawRet(): void {
 
 /**
  * Ceiling of `heightAt` at horizontal distance r: each fbm is below 1, so the swells stay under 7 + 0.8 m,
- * the hide adds at most 6 m and the far hills at most 0.08 m per metre beyond 1.5 km.
+ * the hide adds at most 6 m, the hills raised for the targets their heights, and the far hills at most 0.08 m
+ * per metre beyond 1.5 km.
  */
-const terrainCeiling = (r: number) => 13.8 + 0.08 * Math.max(0, r - 1500);
+const terrainCeiling = (r: number) => 13.8 + terrainLift() + 0.08 * Math.max(0, r - 1500);
 const toT = new THREE.Vector3();
 const miss = new THREE.Vector3();
 const probe = new THREE.Vector3();
@@ -434,6 +445,7 @@ function syncUi(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]")) b.classList.toggle("on", b.dataset.ret === state.reticle);
   $("treestyle").hidden = state.reticle !== "tree";
   $("aid").hidden = state.reticle !== "tree";
+  syncTarget();
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]")) b.classList.toggle("on", b.dataset.aid === state.aid);
   rifle.showLrf(state.reticle === "tree" && state.aid === "lrf");
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]")) b.classList.toggle("on", b.dataset.tree === state.treeStyle);
@@ -458,6 +470,31 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]"))
     state.treeStyle = b.dataset.tree as TreeStyle;
     syncUi();
   };
+/**
+ * The target inputs: they show and set where the current rifle's mannequin stands. Moving it raises new ground, so
+ * Move reloads the lab with `far=` or `near=` set, keeping the rest of the URL and the rifle.
+ */
+const tRange = $("trange") as HTMLInputElement;
+const tElev = $("telev") as HTMLInputElement;
+function syncTarget(): void {
+  const m = range.targets[HOME[state.reticle]]!;
+  const chest = toT.set(m.foot.x, m.foot.y + CHEST_M, m.foot.z).sub(eyePos);
+  if (document.activeElement !== tRange) tRange.value = String(Math.round(chest.length()));
+  if (document.activeElement !== tElev) tElev.value = ((Math.asin(chest.y / chest.length()) * 180) / Math.PI).toFixed(1);
+}
+function moveTarget(): void {
+  const r = Number(tRange.value);
+  const e = Number(tElev.value);
+  if (!(r > 0) || !Number.isFinite(e)) return;
+  const q = new URLSearchParams(location.search);
+  q.set(HOME[state.reticle] ? "near" : "far", `${Math.round(clampSpot(r, 50, 1500))},${clampSpot(e, -30, 30)}`);
+  q.set("reticle", state.reticle);
+  // The parallax was set for the old range; let it follow the new one.
+  q.delete("par");
+  location.search = q.toString();
+}
+$("tmove").onclick = moveTarget;
+for (const el of [tRange, tElev]) el.addEventListener("keydown", (e) => e.key === "Enter" && moveTarget());
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]"))
   b.onclick = () => {
     state.aid = b.dataset.aid as AimAid;

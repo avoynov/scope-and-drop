@@ -76,13 +76,14 @@ describe("3D bullet flight", () => {
     }
   });
 
-  it("shows the rifleman's rule as real shooters find it: close in, low at long range on steep slopes", () => {
+  it("holds up on steep, long shots with the card's slope rule, where the classic rifleman's rule falls low", () => {
     const rf = RIFLES.bolt;
     const r = ROUNDS.m118lr;
-    /** Where the bullet passes the target (mil above the line of sight) dialled for slant × cos(angle). */
-    const miss = (slant: number, deg: number) => {
+    const elev = (d: number) => holdRad(r, d, BATTLE_ZERO_M, rf.sightM);
+    /** Where the bullet passes the target (mil above the line of sight) dialled `hold` over the zero. */
+    const miss = (slant: number, deg: number, hold: number) => {
       const a = (deg * Math.PI) / 180;
-      const up = a + dialTiltRad(rf, 0) + holdRad(r, slant * Math.cos(a), BATTLE_ZERO_M, rf.sightM);
+      const up = a + dialTiltRad(rf, 0) + hold;
       // The bore leaves square under the line of sight, which runs up or down the slope.
       const p = fly({ round: r, mv: r.mv, origin: [0, -rf.sightM * Math.cos(a), -rf.sightM * Math.sin(a)], dir: [0, Math.sin(up), -Math.cos(up)], floor: 1e4 });
       const ty = slant * Math.sin(a),
@@ -95,15 +96,20 @@ describe("3D bullet flight", () => {
       );
       return (((h.pos[1] - ty) * Math.cos(a) + (h.pos[2] - tz) * Math.sin(a)) / slant) * 1000;
     };
-    for (const deg of [-30, -15, 15, 30]) {
-      // Within a click at 400 m; at 800 m and 30° it leaves the bullet most of a mil low (drag stretches the
-      // flight over the slant range, which the rule ignores).
-      expect(miss(400, deg)).toBeLessThan(0);
-      expect(miss(400, deg)).toBeGreaterThan(-0.1);
-      expect(miss(800, deg)).toBeLessThan(-0.15);
+    const cos = (deg: number) => Math.cos((deg * Math.PI) / 180);
+    for (const slant of [400, 600, 800]) {
+      for (const deg of [-30, -15, 15, 30]) {
+        // The card: the elevation for the slant range × the cosine. Within 0.3 mil everywhere, a touch high.
+        const card = miss(slant, deg, elev(slant) * cos(deg));
+        expect(card).toBeGreaterThan(-0.05);
+        expect(card).toBeLessThan(0.3);
+        // The classic rule, the elevation for slant range × cosine, always falls low.
+        expect(miss(slant, deg, elev(slant * cos(deg)))).toBeLessThan(0);
+      }
     }
-    expect(miss(800, 30)).toBeGreaterThan(-0.9);
-    expect(miss(800, 30)).toBeLessThan(-0.6);
+    // At 800 m and 30° up the classic rule is most of a mil low; the card's rule is within a quarter of the aim.
+    expect(miss(800, 30, elev(800 * cos(30)))).toBeLessThan(-0.6);
+    expect(Math.abs(miss(800, 30, elev(800) * cos(30)))).toBeLessThan(0.25);
   });
 
   it("keeps the SP-5 subsonic all the way, so it leaves no shock and no trace", () => {

@@ -1,6 +1,6 @@
 # Reticle lab: research and plan
 
-`/demo/reticle/` is a stand-alone page that renders what an eye sees through a first-focal-plane (FFP) riflescope, with three rifles and their reticles: an SVD with a PSO-1 pattern and its rangefinder, a bolt rifle with a mil turret, a mil tree, and a Speed Drop card or a laser rangefinder, and the game's rifle, a suppressed VSS with a PSO-1-1 pattern (section 3 says why). The look follows the two reference frames (a camera behind a tactical scope in high desert): a dark, defocused ocular ring, a blown-out world outside it, a slightly vignetted image inside, and a crisp etched reticle.
+`/demo/reticle/` is a stand-alone page that renders what an eye sees through a first-focal-plane (FFP) riflescope, with three rifles and their reticles: an SVD with a PSO-1 pattern and its rangefinder, a bolt rifle with a mil turret, a mil tree, and a Speed Drop card or a handheld laser rangefinder, and the game's rifle, a suppressed VSS with a PSO-1-1 pattern (section 3 says why). The look follows the two reference frames (a camera behind a tactical scope in high desert): a dark, defocused ocular ring, a blown-out world outside it, a slightly vignetted image inside, and a crisp etched reticle.
 
 ![Bolt rifle, PR2-MIL at 16×](images/reticle-tree.jpg)
 
@@ -41,13 +41,20 @@ The short version, for players new to scopes. The numbers behind it are in secti
 5. **Hold the wind** on the tree's rows, from the wind card.
 6. The card gives the mil-to-cm relation only at 100 m (1 mil = 10 cm). It scales with range: 20 cm at 200 m, 50 cm at 500 m.
 
-*Pro (laser rangefinder):*
+*Pro (handheld laser rangefinder, Sig KILO8K-ABS):*
 
-1. **Range it:** with the crosshair on the target, press **X** (the real unit's pressure pad on the stock). Hold steady: the laser goes where the rifle points, sway and all, and a miss returns off the ground behind.
-2. **Read the screen:** with the head up, point at the rangefinder on the right of the scope. It shows the range, the slope and the elevation in mil, already corrected for the slope.
-3. **Dial it or hold it**, and **hold the wind** from the wind card, as above. The rangefinder gives no wind: a real one only does once the shooter types the wind in.
+1. **Bring it up:** press **X**. The head comes off the stock, the right hand takes the rangefinder from the chest and both hands lift it to the eye. You can't fire while it is up. **X** or **F** puts it down again. Drag to point it; it shakes in the hands by about half a mil.
+2. **Wake it and range:** **Space** is its RANGE button. The first press only wakes the screen. A tap ranges once; hold it for more than half a second and it scans four times a second (it stops itself after 20 s).
+3. **Read the screen:** line-of-sight range upper left, slope upper right, the angle-modified range big under the circle, the elevation hold (`^`, mil over the 100 m zero) on the left and the wind hold on the right (the arrow points the way to hold), speed and energy at the target below. Two seconds after the first range the top and bottom status lines go away. A dashed range means no return.
+4. **Pick the right return:** it ranges in LAST mode out of the box, so with a rock behind the man it gives the rock (416.7 m here, the man is at 412). For a man in front of a backstop use FIRST or BEST. Hold **M** (MODE) for a second to open the menu; **M** steps the item, **Space** changes it.
+5. **Give it the wind:** it only knows the wind you type in (5 mph from 3 o'clock out of the box). Hold **Space** and **M** together for three seconds for the wind keys, set the speed in mph and the clock direction, then read the wind hold off the screen.
+6. **Put it down, dial or hold**, and shoot as above.
 
-![Pro: the rangefinder's screen after a press on the 412 m mannequin](images/lrf.jpg)
+![Bringing it up: the hands and the rangefinder pass in front of the eye, out of focus](images/kilo-raise.jpg)
+
+![LAST mode on the 412 m mannequin: it ranges the rock behind him](images/kilo-last.jpg)
+
+![FIRST mode on the same aim: the man, 412.4 m, 2.8 mil up, 0.4 mil right for 5 mph from 3 o'clock](images/kilo-first.jpg)
 
 ## 1. The scope being simulated
 
@@ -151,9 +158,17 @@ Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.
 | True elevation | 0.6 | 1.6 | 2.7 | 4.0 | 5.5 | 7.2 | 9.2 | 11.5 | 14.2 mil |
 | Range ÷ 100 − 1.3 | 0.7 | 1.7 | 2.7 | 3.7 | 4.7 | 5.7 | 6.7 | 7.7 | 8.7 mil |
 
-**Pro: a rifle-mounted laser rangefinder.** Modelled on the Wilcox RAPTAR-S ([spec sheet](https://cdn.shopify.com/s/files/1/1664/1057/files/raptar_s_03_17.pdf), [technical brief](https://devops.wilcoxind.com/backend/wp-content/uploads/2021/01/Wilcox-RAPTAR-S-Technical-Brief.pdf)), the common unit on military bolt rifles: a black box 108 × 81 × 44 mm and about 300 g, with an eye-safe 1550 nm laser that ranges 5–1500 m to ±1 m, sensors for slope, cant and air, and an onboard point-mass solver that gives the elevation about a second after ranging. It rides on the scope mount (here on its side rail at 3 o'clock off the front ring, so it stays below the view over the scope), and the shooter fires it from a pressure pad on a cable. Its hooded 128 × 32 OLED on the back shows the range, the slope and the elevation in mil, angle-corrected. The lab's solver flies the bullet up or down the slope and finds the exact hold (standard air), so on a slope it is a touch lower than the card's cosine rule. It shows no wind: the real unit only gives a wind hold once the shooter types the wind in or pairs a Kestrel. Not verified: which way the real OLED faces and where its lenses sit, so the window and lenses here are placed to read and look right.
+**Pro: a handheld laser rangefinder, the Sig Sauer KILO8K-ABS.** A common shooter's rangefinder with a built-in Applied Ballistics solver. The model follows Sig's operator's manual ([7402064-01 rev 04](https://www.sigsauer.com/media/sigsauer/resources/OPERATORS-MANUAL-KILO8K-ABS-7402064-01-REV-04-LR.pdf)) and [product page](https://www.sigsauer.com/kilo8k-abs-lrf-7x25mm-red-amoled-ble-bdx-x-e-fde-class-3r.html):
 
-**Why not an on-screen ballistic calculator.** A handheld calculator (Kestrel with Applied Ballistics, Strelok) takes range, slope, wind and air and gives the dial and the wind hold in one step: it would do the wind for the player too. The rangefinder does the part a real one does on the rifle, and the wind stays with the shooter. A test fires the come-ups, rounded to a click, and lands within half a click of the aim from 200 to 1000 m.
+- **Body:** an upright FDE monocular, 112 × 76 × 33 mm and 215 g, with rubber side panels, a 25 mm objective over a smaller laser window, an eyecup with a ±3 dioptre ring, a CR2 cap with a coin slot and a lanyard eye. Two buttons on top: RANGE in front, MODE behind it.
+- **The view through:** 7× with a 6.78° field (so it shows a wider piece of the world than the scope at 16×), a 3.6 mm exit pupil and 16 mm eye relief. The image is drawn through the same round eyepiece model as the scope, with the slight blue cast of its coatings and a little edge blur and colour fringing.
+- **The screen:** a red AMOLED, 304 × 256 pixels, laid into the field. The lab draws it pixel for pixel in a 5 × 7 font, added on top of the scene the way a beam splitter adds it (so over bright sky the red looks pale). Brightness AUTO, L1–L3, M1–M3, H1–H3. Reticles: circle (the default), duplex, box, H-grid and grid, all in true mil at 7×. Splash on wake, status lines until two seconds after the first range, screen off after 30 s idle.
+- **The laser:** 905 nm, beam 1.25 × 0.25 mrad (at 412 m that is a patch 52 cm wide and 10 cm tall, wider than the man's chest). The lab casts 21 rays across the beam and keeps the returns the way the target modes do: FIRST the nearest, BEST the strongest, LAST the farthest, XR for long reach (slower in scan), FOG ignores anything under 100 m. A return only comes back if enough of the beam hits it to carry that far: 8000 yd on a reflector, 2500 yd on trees, 2000 yd on a deer-sized target, scaled down with the share of the beam it gets. Range error ±0.5 yd to 500 yd, ±1 yd to 1000 yd. Answer in 0.25 s.
+- **The solution:** range, slope and the shooter's wind go into the lab's own solver for the Sako's M118LR (100 m zero, standard air): the elevation hold, the angle-modified range (the flat range that needs the same hold), the wind hold with spin drift, and the speed and energy at the target. The real unit uses Applied Ballistics Elite with a profile loaded from the phone app; here profile P1 is the Sako.
+
+The way it is held (both hands, elbows tucked, the right thumb on RANGE) follows the reviews ([Ocabj](https://www.ocabj.net/sig-sauer-kilo8k-abs-laser-rangefinder-review/), [GunsAmerica](https://gunsamerica.com/digest/sig-kilo8k-abs-full-review/), [Rifle Shooter on the KILO10K](https://www.rifleshootermag.com/editorial/sigkilo-10kabs-bino/467423)). The half-mil shake comes from measured handheld tremor with the elbows braced ([BirdForum](https://www.birdforum.net/goto/post?id=4134474)). Not verified, so inferred: exactly where each number sits on the screen (Sig's pictures of the screen could not be loaded; the layout follows the manual's text), the hold of the RANGE and MODE buttons taken from the KILO10K, and the dashes for no return.
+
+**Why handheld, not on the rifle.** To range, the shooter takes the head off the scope and brings the rangefinder to the eye, then goes back to the rifle and dials. That costs seconds and the target may move, which is the trade a real shooter makes. Its wind hold is only as good as the wind the shooter types in: the lab's wind is still read off the flags.
 
 **The hand method is gone.** Working the drop out with ½·g·t² from a speed table is not what shooters do, and it misses: even with the zero taken off it read 0.7 mil high at 600 m and 1.1 mil at 800 m. The ammo card, the drum's 0 and `handHoldRad` went with it.
 
@@ -415,15 +430,17 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | R | Change the magazine. Any time; the chamber stays as it was |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |
-| M | Bolt rifle: Manual (Speed Drop card) or Pro (laser rangefinder) |
-| X | Pro: press the rangefinder |
+| M | Bolt rifle: Manual (Speed Drop card) or Pro (laser rangefinder). With the rangefinder up: its MODE button (hold 1 s for the menu, then tap to step) |
+| X | Pro: bring the rangefinder up to the eye, or put it down |
+| Space (rangefinder up) | Its RANGE button: the first press wakes it, a tap ranges, holding scans. In the menu it changes the value. Space and M held 3 s: the wind keys |
+| F (rangefinder up) | Put the rangefinder down |
 | G | Glass in front of the mannequins: off, single, double, laminated, tempered (section 11) |
 | L | Illumination |
 | H | Hide the panel |
 
 The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), Fire, Bolt and Reload buttons, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `tree=pr2|ebr` (the bolt rifle's reticle), `aid=manual|lrf` (its Speed Drop card or rangefinder), `far=<m>,<deg>` and `near=<m>,<deg>` (where the mannequins stand, section 8), `ranged` (press the rangefinder once for a still), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `tree=pr2|ebr` (the bolt rifle's reticle), `aid=manual|lrf` (its Speed Drop card or rangefinder), `far=<m>,<deg>` and `near=<m>,<deg>` (where the mannequins stand, section 8), `kilo=up` (the rangefinder at the eye) or `kiloat=<s>` (that long into bringing it up), `ranged=<s>` (woken and ranged that long before the still, default 3), `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`, `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 

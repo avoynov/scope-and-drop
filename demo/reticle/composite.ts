@@ -60,6 +60,10 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uDist: { value: 0.025 },
       uEdge: { value: 0 },
       uRetCol: { value: new THREE.Vector3(0.02, 0.02, 0.02) },
+      // 1: tRet is a lit display seen over the image (the rangefinder's OLED), its light added, not painted on.
+      uRetAdd: { value: 0 },
+      // The glass's colour cast and light loss (the KILO8K's first generation is dim and a little blue).
+      uTint: { value: new THREE.Vector3(1, 1, 1) },
     },
     vertexShader: "void main(){ gl_Position = vec4(position.xy, 0., 1.); }",
     fragmentShader: /* glsl */ `
@@ -67,8 +71,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur, uMirFlow, uTrA, uTrB, uTrW;
       uniform float uBoil, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
-      uniform vec3 uEye, uEyeSweep, uRetCol;
-      uniform float uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
+      uniform vec3 uEye, uEyeSweep, uRetCol, uTint;
+      uniform float uRetAdd, uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
@@ -138,12 +142,17 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
           img = vec3(texture2D(tScope, uR_ + o).r, texture2D(tScope, uG_ + o).g, texture2D(tScope, uB_ + o).b);
         }
         // Veiling glare: a little light scattered across the field lifts the blacks, as in real glass.
-        img = img*.9 + .035*vec3(.95, .97, 1.);
+        img = (img*.9 + .035*vec3(.95, .97, 1.))*uTint;
         // Reticle sits in the first focal plane: distorted with the image, shifted by parallax, never by mirage.
         vec4 rR = texture2D(tRet, uR_ + uPar), rG = texture2D(tRet, uG_ + uPar), rB = texture2D(tRet, uB_ + uPar);
-        img.r = mix(img.r, rG.r*rG.r*1.6 + uRetCol.r, rR.a);
-        img.g = mix(img.g, rG.g*rG.g*1.6 + uRetCol.g, rG.a);
-        img.b = mix(img.b, rG.b*rG.b*1.6 + uRetCol.b, rB.a);
+        if (uRetAdd > 0.) {
+          // A display in the eyepiece's focal plane: its light adds to the image's (straight alpha in tRet).
+          img += vec3(rR.r*rR.a, rG.g*rG.a, rB.b*rB.a)*uRetAdd;
+        } else {
+          img.r = mix(img.r, rG.r*rG.r*1.6 + uRetCol.r, rR.a);
+          img.g = mix(img.g, rG.g*rG.g*1.6 + uRetCol.g, rG.a);
+          img.b = mix(img.b, rG.b*rG.b*1.6 + uRetCol.b, rB.a);
+        }
 
         // Eyebox: fraction of the eye pupil the bundle for this direction still reaches. The bundle travels
         // against its apparent direction, and edge bundles cross a little nearer the eyepiece (uSaep).

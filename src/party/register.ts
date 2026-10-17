@@ -523,12 +523,18 @@ export class Register {
     }
   }
 
-  /** Whether i notes everyone they see in a room: the private rooms, and any room an open case of theirs is about. */
+  /**
+   * Whether i notes everyone they see in a room: the private rooms, and any room an open case of
+   * theirs is about, for as long after it as the case looks back before it (a crash a minute, a
+   * theft ten: after that no sighting fits its window).
+   */
   watching(i: number, room: number): boolean {
     if (room >= 0 && this.watchedRoom[room]) return true;
     if (!this.openN[i]) return false;
     const base = i * CASE_SLOTS;
-    for (let c = base; c < base + CASE_SLOTS; c++) if (this.cUsed[c] && this.cState[c] === 0 && this.joined(this.cRoom[c]!, room)) return true;
+    const t = this.host.t;
+    for (let c = base; c < base + CASE_SLOTS; c++)
+      if (this.cUsed[c] && this.cState[c] === 0 && t - this.cTo[c]! < Math.min(FIT_GAP, CASES[CASE_KINDS[this.cKind[c]!]!].lookBack) && this.joined(this.cRoom[c]!, room)) return true;
     return false;
   }
 

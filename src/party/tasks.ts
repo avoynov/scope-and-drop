@@ -19,8 +19,9 @@ import type { SoundKind } from "./senses";
 import type { ActionState, DrinkId, Gesture, Needs, PartyEvent, Person, Pose, Spot } from "./types";
 import type { Door, World } from "./world";
 
-export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope";
-export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope"];
+/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which). */
+export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit";
+export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit"];
 
 /** What an errand fetches: the good whisky to the bar, a coat to its owner, clean glasses for the bar, a drink for someone. */
 export type ErrandKind = "whisky" | "coat" | "glasses" | "drink";
@@ -70,6 +71,10 @@ export interface Task {
   gap?: number;
   /** A search meant to have it out with the one it finds (bonds.ts). */
   intent?: "confront";
+  /** Which mishap, drama or habit a dramas.ts task belongs to. */
+  what?: string;
+  /** The drink an errand brings, when not the asker's favourite (water for one who's had too much). */
+  drink?: DrinkId;
 }
 
 export interface TaskHost {
@@ -106,6 +111,8 @@ export interface TaskHost {
   depart(p: Person): void;
   /** A step finished that the party acts on (looking in the cabinet). */
   stepDone(t: Task, p: Person, st: Step): void;
+  /** Put down the glass in hand before picking something up. */
+  setDown?(p: Person): void;
   /** A search with intent found who it looked for. */
   found?(t: Task, p: Person): void;
   /** A task ended, however it went. */
@@ -121,6 +128,8 @@ const GIVE_UP = 480;
 const NEAR = 1.6;
 /** A lock waits this long (in-game s) for the party to come out before it's left undone. */
 const LOCK_WAIT = 20;
+/** Things carried in view once picked up. */
+const CARRIED: ReadonlySet<string> = new Set(["bottle", "coat", "bag", "kit"]);
 /** Rooms worth showing on a tour. */
 const SHOW: ReadonlySet<RoomType> = new Set([
   "library",
@@ -276,7 +285,7 @@ export class Tasks {
   }
 
   /** A spot just outside a door, on the side away from the room. */
-  private outside(d: Door, room: number): Spot | null {
+  outside(d: Door, room: number): Spot | null {
     const h = this.host;
     const other = h.world.otherSide(d, room);
     for (const k of [0.9, 1.3, 0.6]) {
@@ -296,7 +305,7 @@ export class Tasks {
    * Fetch something: walk to whoever asked and agree, go to where it is (now and then trying the
    * wrong room first), pick it up, carry it in view and hand it over.
    */
-  errand(kind: ErrandKind, carrier: Person, asker: Person, item: number, from: Spot | null, to: Person): Task | null {
+  errand(kind: ErrandKind, carrier: Person, asker: Person, item: number, from: Spot | null, to: Person, drink?: DrinkId): Task | null {
     const h = this.host;
     if (!from) return null;
     const steps: Step[] = [];
@@ -315,7 +324,7 @@ export class Tasks {
     else steps.push({ do: "wait", s: kind === "drink" ? 12 : 8, pose: "serve", label: "pick" });
     steps.push({ do: "meet", who: to.id, label: "bring" }, { do: "give", item, who: to.id, label: "give" });
     this.stats.errands++;
-    return this.make("errand", carrier, [], steps, { item, errand: kind, other: asker.id });
+    return this.make("errand", carrier, [], steps, { item, errand: kind, other: asker.id, drink });
   }
 
   /** Go and look for something (the household at the spirits cabinet); the party acts on what's there when the look ends. */
@@ -331,6 +340,16 @@ export class Tasks {
       ],
       { item },
     );
+  }
+
+  /** A mishap's, a drama's or a habit's steps (dramas.ts). */
+  run(kind: "mishap" | "drama" | "habit", what: string, owner: Person, party: Person[], steps: Step[], gap?: number): Task {
+    return this.make(kind, owner, party, steps, { what, gap });
+  }
+
+  /** On to the next step now (a long wait that dramas.ts ends when what it waits for has happened). */
+  next(t: Task): void {
+    if (t.outcome === null) this.advance(t);
   }
 
   /** A short job of the staff's own (the butler looking over the table, then a word with the host). */
@@ -417,11 +436,13 @@ export class Tasks {
    * to line up, three flashes, then a few crowd round the camera. `yaw` faces from the stair
    * toward the camera.
    */
-  groupPhoto(ph: Person, foot: Spot, yaw: number, who: Person[]): Task | null {
+  groupPhoto(ph: Person, foot: Spot, yaw: number, who: Person[], opts: { impromptu?: boolean; back?: ReadonlySet<number> } = {}): Task | null {
     const h = this.host;
     const host = h.host;
     const front = [host, ...(host.partner !== null ? [h.people[host.partner]!] : [])].filter((q) => who.includes(q));
-    const rest = who.filter((q) => !front.includes(q)).sort((a, b) => b.look.height - a.look.height);
+    // The camera-shy stand at the back whatever their height (dramas.ts).
+    const tall = (q: Person) => q.look.height + (opts.back?.has(q.id) ? 1 : 0);
+    const rest = who.filter((q) => !front.includes(q)).sort((a, b) => tall(b) - tall(a));
     const PER = 8;
     const rows: Person[][] = [];
     for (let i = 0; i < rest.length; i += PER) rows.push(rest.slice(i, i + PER));
@@ -446,23 +467,26 @@ export class Tasks {
     });
     const back = 0.6 + 0.7 * nRows + 4.5;
     const cs = h.pf.snap(foot.level, foot.x + fx * back, foot.z + fz * back, 1.5);
-    if (!cs || slots.size < 4) return null;
+    if (!cs || slots.size < (opts.impromptu ? 3 : 4)) return null;
     const cam: Spot = { level: foot.level, x: cs.x, z: cs.z, yaw: yawTo(cs.x, cs.z, foot.x, foot.z), room: h.pf.roomAt(foot.level, cs.x, cs.z) };
-    this.stats.photos++;
+    if (cam.room === -1) return null;
     const party = who.filter((q) => slots.has(q.id));
-    h.log("beat", [host.id], foot.room, "photo-call");
-    h.sound("call", host, host.id);
+    if (!opts.impromptu) {
+      this.stats.photos++;
+      h.log("beat", [host.id], foot.room, "photo-call");
+      h.sound("call", host, host.id);
+    }
     return this.make(
       "photo",
       ph,
       party,
       [
         { do: "goto", to: cam, label: "set-up" },
-        { do: "wait", s: 120, pose: "camera", label: "line-up" },
+        { do: "wait", s: opts.impromptu ? 60 : 120, pose: "camera", label: "line-up" },
         { do: "wait", s: 6, pose: "camera", label: "flashes" },
-        { do: "wait", s: 30, pose: "stand", label: "show" },
+        { do: "wait", s: opts.impromptu ? 12 : 30, pose: "stand", label: "show" },
       ],
-      { slots },
+      { slots, what: opts.impromptu ? "impromptu" : undefined },
     );
   }
 
@@ -535,8 +559,9 @@ export class Tasks {
       items.set(st.item, "carried", h.t);
       items.place(st.item, p);
       const kind = items.kindOf(st.item);
-      if (kind === "bottle" || kind === "coat" || kind === "bag") {
-        p.held = kind;
+      if (CARRIED.has(kind)) {
+        if (p.item >= 0) h.setDown?.(p);
+        p.held = kind as "bottle" | "coat" | "bag" | "kit";
         p.heldUntil = h.t + 99999;
       }
       h.notable(p, "carrying", st.item, 30);
@@ -662,7 +687,7 @@ export class Tasks {
     } else if (st.do === "wait" && st.label === "pick") {
       // A rack of clean glasses, or the drink they went for (on the waiter's tray, or a glass in hand).
       const q = h.people[t.other]!;
-      if (t.errand === "drink" && p.held !== "tray") h.carry(p, q.fav !== q.never ? q.fav : "water");
+      if (t.errand === "drink" && p.held !== "tray") h.carry(p, t.drink ?? (q.fav !== q.never ? q.fav : "water"));
       else if (!p.held) {
         p.held = "tray";
         p.heldUntil = h.t + 600;
@@ -685,16 +710,21 @@ export class Tasks {
     const h = this.host;
     const items = h.world.items;
     if (item >= 0) {
-      if (items.kindOf(item) === "coat") {
+      const kind = items.kindOf(item);
+      if (kind === "coat" || kind === "spectacles" || kind === "earring") {
         items.holder[item] = q.id;
         items.set(item, "worn", h.t);
+      } else if (kind === "bag") {
+        // A lost bag back with its owner.
+        items.holder[item] = q.id;
+        items.set(item, "carried", h.t);
       } else {
         // The bottle stands at the bar from now on.
         items.holder[item] = -1;
         items.set(item, "down", h.t);
         items.place(item, q);
       }
-      if (p.held === "bottle" || p.held === "coat" || p.held === "bag") p.held = null;
+      if (p.held && CARRIED.has(p.held)) p.held = null;
       // "I fetched it for them": a claim that explains anyone seen taking it, to whoever is by, and
       // to whoever asked for it (and the household with them: they know where the whisky goes).
       const src = t.steps.find((s) => s.do === "goto" && s.label === "fetch");
@@ -708,7 +738,7 @@ export class Tasks {
       }
     } else if (t.errand === "drink") {
       if (p.held && p.held !== "tray") h.handGlass(p, q);
-      else h.pour(q, q.fav !== q.never ? q.fav : "water");
+      else h.pour(q, t.drink ?? (q.fav !== q.never ? q.fav : "water"));
     } else if (p.held === "tray" && p.role !== "waiter") p.held = null;
   }
 
@@ -858,7 +888,7 @@ export class Tasks {
       items.holder[t.item] = -1;
       items.set(t.item, "down", h.t);
       items.place(t.item, owner);
-      if (owner.held === "bottle" || owner.held === "coat" || owner.held === "bag") owner.held = null;
+      if (owner.held && CARRIED.has(owner.held)) owner.held = null;
       this.stats.stalled++;
     }
     if (outcome === "found") this.stats.found++;

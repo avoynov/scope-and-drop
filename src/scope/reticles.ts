@@ -9,7 +9,7 @@ import { BATTLE_ZERO_M, RIFLES } from "./shot";
 
 export type Prim =
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; w: number; dash?: number; lit?: boolean }
-  | { kind: "poly"; pts: [number, number][]; w: number; lit?: boolean }
+  | { kind: "poly"; pts: [number, number][]; w: number; lit?: boolean; fill?: boolean }
   | { kind: "dot"; x: number; y: number; r: number; lit?: boolean }
   | { kind: "text"; x: number; y: number; size: number; text: string; align?: "left" | "center" | "right"; lit?: boolean };
 
@@ -176,111 +176,175 @@ export function vssReticle(): Reticle {
 /** The bolt rifle's two reticles. Both are plain MRAD trees: nothing on them is cut for a load. */
 export type TreeStyle = "pr2" | "ebr";
 
+/** Half-width of each tree row 1–10 (mil), read off the reference drawings. Rows widen in pairs. */
+export const PR2_ROWS = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5] as const;
+export const EBR_ROWS = [2, 2, 3, 3, 4, 4, 5, 5, 6, 6] as const;
+
+const isWhole = (v: number) => Math.abs(v - Math.round(v)) < 1e-6;
+const isHalf = (v: number) => !isWhole(v) && isWhole(v * 2);
+const isTenth = (v: number, parity: 0 | 1) => isWhole(v * 10) && Math.abs(Math.round(v * 10)) % 2 === parity;
+
+/** A tick across an axis line (`at` across it) at `v` along it, running from `a` to `b` across; split over the line by `gap`. */
+function tick(p: Prim[], axis: "x" | "y", at: number, v: number, [a, b]: readonly [number, number], w: number, gap = 0, lit?: boolean): void {
+  const seg = (u1: number, u2: number) => p.push(axis === "x" ? { kind: "line", x1: v, y1: at + u1, x2: v, y2: at + u2, w, lit } : { kind: "line", x1: at + u1, y1: v, x2: at + u2, y2: v, w, lit });
+  if (gap > 0 && a < 0 && b > 0) {
+    seg(a, -gap / 2);
+    seg(gap / 2, b);
+  } else seg(a, b);
+}
+
+/** An axis line through sorted `marks` that stops `gap` short of each one, as on the PR2-MIL whose intersections are all open. */
+function openLine(p: Prim[], axis: "x" | "y", at: number, marks: number[], gap: number, w: number, lit?: boolean): void {
+  for (let i = 0; i < marks.length - 1; i++) {
+    const a = marks[i]! + gap / 2;
+    const b = marks[i + 1]! - gap / 2;
+    if (b > a) p.push(axis === "x" ? { kind: "line", x1: a, y1: at, x2: b, y2: at, w, lit } : { kind: "line", x1: at, y1: a, x2: at, y2: b, w, lit });
+  }
+}
+
+/** Steps from `from` to `to` by `step`, rounded so 0.1 mil steps land on exact tenths. */
+const steps = (from: number, to: number, step: number) => {
+  const out: number[] = [];
+  for (let k = Math.round(from / step); k * step <= to + 1e-9; k++) out.push(Math.round(k * step * 1000) / 1000);
+  return out;
+};
+
 /**
- * Leupold PR2-MIL, drawn from its published descriptions (Leupold's drawing was not reachable): every
- * intersection open (marks stand clear of the line), a 0.05 mil floating dot, staggered ticks with half mils
- * on one side only, odd-numbered rows thinned so the view stays clear for trace and splash. A holdover tree of
- * small dots on every whole mil, numbered every 2 mil. Posts from 10 mil.
+ * Leupold PR2-MIL, measured off Leupold's drawing. Every intersection is open (lines stop short of each mark).
+ * Horizontal to ±10 mil: whole mils crossed, half mils above, quarters below, a 0.1 mil ladder from 3 to 4 (even tenths
+ * above, odd below), numbers every 2 below, tapered posts from 10.3 mil out. Above the centre only a short stem to 2 mil
+ * ending in a T. Below, the stem is crossed every half mil with the same 3–4 ladder (even tenths right, odd left), and the
+ * tree alternates: even rows are scales like the horizontal, capped and numbered at both ends; odd rows are dots every
+ * half mil. Rows widen a mil every second row.
  */
 function pr2Reticle(): Reticle {
   const p: Prim[] = [];
-  const fine = 0.035;
-  const post = 0.35;
-  const gap = 0.3;
-  const open = 0.06;
-  const arm = 10;
-  const stem = 20.5;
-  posts(p, post, arm, stem);
-  p.push({ kind: "line", x1: -arm, y1: 0, x2: -gap, y2: 0, w: fine, lit: true });
-  p.push({ kind: "line", x1: gap, y1: 0, x2: arm, y2: 0, w: fine, lit: true });
-  p.push({ kind: "line", x1: 0, y1: -arm, x2: 0, y2: -gap, w: fine, lit: true });
-  p.push({ kind: "line", x1: 0, y1: gap, x2: 0, y2: stem, w: fine, lit: true });
-  p.push({ kind: "dot", x: 0, y: 0, r: 0.025, lit: true });
-  // Ticks stand clear of the line: whole mils both sides, half mils below the horizontal (left of the stem) only.
-  for (let k = 1; k < arm * 2; k++) {
-    const v = k / 2;
-    const whole = k % 2 === 0;
-    const l = whole ? 0.3 : 0.18;
-    for (const sgn of [-1, 1]) {
-      p.push({ kind: "line", x1: sgn * v, y1: open, x2: sgn * v, y2: open + l, w: fine });
-      if (whole) p.push({ kind: "line", x1: sgn * v, y1: -open, x2: sgn * v, y2: -open - l, w: fine });
+  const w = 0.045;
+  const gap = 0.075;
+  const big = 0.25;
+  const small = 0.13;
+  const ladder = (v: number) => v > 3 && v < 4;
+  // Marks along one side of a scale: quarter mils, with tenths in the ladder (the horizontal has one, the rows don't).
+  const marks = (to: number, withLadder: boolean) => (withLadder ? [...steps(0.25, 3, 0.25), ...steps(3.1, 3.9, 0.1), ...steps(4, to, 0.25)] : steps(0.25, to, 0.25)).filter((v) => v <= to);
+  /** Ticks along a horizontal scale at height `y` out to `hw` each side; the even rows and the horizontal share it. */
+  const scale = (y: number, hw: number) => {
+    const m = marks(hw, y === 0);
+    for (const s of [-1, 1])
+      for (const v of m) {
+        const x = s * v;
+        if (isWhole(v)) tick(p, "x", y, x, [-big, big], w, gap);
+        else if (ladder(v)) tick(p, "x", y, x, isTenth(v, 0) ? [-small, 0] : [0, small], w);
+        else if (isHalf(v)) tick(p, "x", y, x, [-small, 0], w);
+        else tick(p, "x", y, x, [0, small], w);
+      }
+    return [...m.map((v) => -v).reverse(), 0, ...m];
+  };
+  // Horizontal, its posts and numbers.
+  scale(0, 10);
+  for (const s of [-1, 1])
+    openLine(
+      p,
+      "x",
+      0,
+      [...marks(10, true), 10.25].map((v) => s * v).sort((a, b) => a - b),
+      gap,
+      w,
+      true,
+    );
+  for (const s of [-1, 1])
+    p.push({
+      kind: "poly",
+      fill: true,
+      w,
+      pts: [
+        [s * 10.3, 0],
+        [s * 12.5, -0.35],
+        [s * EDGE, -0.35],
+        [s * EDGE, 0.35],
+        [s * 12.5, 0.35],
+      ],
+    });
+  for (let v = 2; v <= 10; v += 2) for (const s of [-1, 1]) p.push({ kind: "text", x: s * v, y: 0.55, size: 0.32, text: String(v) });
+  p.push({ kind: "dot", x: 0, y: 0, r: 0.03, lit: true });
+  // The short stem above: an open line from the centre gap to a T at 2 mil.
+  openLine(p, "y", 0, [-2, -1.5, -1, -0.5, -0.25], gap, w, true);
+  for (const v of [0.5, 1, 1.5]) tick(p, "y", 0, -v, [isWhole(v) ? -big : -small, isWhole(v) ? big : small], w, gap);
+  p.push({ kind: "line", x1: -big, y1: -2, x2: big, y2: -2, w });
+  // The stem below: crossed every half mil (the even rows cross it themselves), the 3–4 ladder, plain past 15 mil.
+  const stem = [...steps(0.5, 3, 0.5), ...steps(3.1, 3.9, 0.1), ...steps(4, 15, 0.5)];
+  openLine(p, "y", 0, [0.25, ...stem], gap, w, true);
+  p.push({ kind: "line", x1: 0, y1: 15 + gap / 2, x2: 0, y2: EDGE, w });
+  for (const v of stem) {
+    if (isWhole(v) && v <= 10 && v % 2 === 0) continue;
+    if (ladder(v)) tick(p, "y", 0, v, isTenth(v, 0) ? [0, small] : [-small, 0], w);
+    else tick(p, "y", 0, v, [isWhole(v) ? -big : -small, isWhole(v) ? big : small], w, gap);
+  }
+  // The tree.
+  PR2_ROWS.forEach((hw, i) => {
+    const y = i + 1;
+    if (y % 2) {
+      for (const x of steps(0.5, hw, 0.5)) for (const s of [-1, 1]) p.push({ kind: "dot", x: s * x, y, r: 0.03 });
+      return;
     }
-    p.push({ kind: "line", x1: -open, y1: -v, x2: -open - l, y2: -v, w: fine });
-    if (whole) p.push({ kind: "line", x1: open, y1: -v, x2: open + l, y2: -v, w: fine });
-  }
-  for (const v of [2, 4, 6, 8]) {
-    for (const sgn of [-1, 1]) p.push({ kind: "text", x: sgn * v, y: -0.7, size: 0.36, text: String(v) });
-    p.push({ kind: "text", x: 0.55, y: -v, size: 0.36, text: String(v), align: "left" });
-  }
-  // Tree: rows on every whole mil; even rows dotted every mil out to their width, odd rows only near the stem.
-  for (let y = 1; y <= 20; y++) {
-    const even = y % 2 === 0;
-    const hw = even ? Math.min(10, Math.floor(1 + y * 0.5)) : Math.min(3, Math.floor(1 + y * 0.25));
-    for (let x = -hw; x <= hw; x++) if (x) p.push({ kind: "dot", x, y, r: even ? 0.04 : 0.025 });
-    // Half mils on the stem, clear of it, on the left.
-    p.push({ kind: "line", x1: -open, y1: y - 0.5, x2: -open - 0.18, y2: y - 0.5, w: fine });
-    p.push({ kind: "line", x1: -open - (even ? 0.3 : 0.18), y1: y, x2: -open, y2: y, w: fine });
-    p.push({ kind: "line", x1: open, y1: y, x2: open + (even ? 0.3 : 0.18), y2: y, w: fine });
-    if (even) p.push({ kind: "text", x: -hw - 0.5, y, size: 0.36, text: String(y), align: "right" });
-  }
+    openLine(p, "x", y, scale(y, hw), gap, w);
+    for (const s of [-1, 1]) p.push({ kind: "text", x: s * (hw + 0.45), y, size: 0.34, text: String(y), align: s < 0 ? "right" : "left" });
+  });
   return { id: "tree", name: "PR2-MIL", unitRad: MRAD, unitName: "mrad", prims: p, round: "m118lr", illum: "rgb(255,52,30)" };
 }
 
 /**
- * Vortex EBR-7D, drawn from its published descriptions and manual (the drawing's values were readable, not
- * which feature each belongs to): a 0.03 mil centre dot on a closed crosshair, 0.2 mil hashes along the
- * horizontal and down the stem for fine holds, longer marks on whole mils, numbers every 2 mil, and a tree of
- * holdover dots below the centre on every whole mil, every mil across, widening with drop for wind. Posts
- * from 10.5 mil.
+ * Vortex EBR-7D MRAD, measured off Vortex's drawing. A thin crosshair to the field stop, open at the centre around a
+ * 0.03 mil dot. The lit centre runs to 6 mil left, right and up, and 10 mil down: on the horizontal, 0.2 mil hashes above
+ * and half mils below; up and down the stem, 0.2 mil crosses. From 6 to 10 mil left, right and up, an unlit 0.1 mil
+ * ladder (0.2 mil hashes on each side of the line, offset 0.1). Numbers every 2 mil. The tree's rows are dotted every
+ * 0.2 mil from 0.4 mil off the stem, whole mils bolder, a mil wider every second row, numbered on even rows.
  */
 function ebrReticle(): Reticle {
   const p: Prim[] = [];
-  const fine = 0.04;
-  const thin = 0.025;
-  const post = 0.4;
-  const arm = 10.5;
-  const stem = 16.5;
-  posts(p, post, arm, stem);
-  p.push({ kind: "line", x1: -arm, y1: 0, x2: arm, y2: 0, w: fine, lit: true });
-  p.push({ kind: "line", x1: 0, y1: -arm, x2: 0, y2: stem, w: fine, lit: true });
-  p.push({ kind: "dot", x: 0, y: 0, r: 0.015, lit: true });
-  // 0.2 mil hashes, half mils longer, whole mils longest: across the horizontal, up the stem and down it.
-  const hash = (v: number) => {
-    const k = Math.round(v * 10);
-    return k % 10 === 0 ? 0.3 : k % 5 === 0 ? 0.2 : 0.1;
-  };
-  for (let k = 2; k < arm * 10; k += 2) {
-    const v = k / 10;
-    const l = hash(v);
-    const w = l > 0.25 ? fine : thin;
-    for (const sgn of [-1, 1]) p.push({ kind: "line", x1: sgn * v, y1: -l / 2, x2: sgn * v, y2: l / 2, w });
-    p.push({ kind: "line", x1: -l / 2, y1: -v, x2: l / 2, y2: -v, w });
+  const w = 0.045;
+  const big = 0.18;
+  const half = 0.16;
+  const fine = 0.1;
+  const centre = 0.12;
+  // Crosshair: lit to 6 mil (10 down), thin black beyond; the stem breaks for a moment past its last mark.
+  for (const s of [-1, 1]) {
+    p.push({ kind: "line", x1: s * centre, y1: 0, x2: s * 6, y2: 0, w, lit: true });
+    p.push({ kind: "line", x1: s * 6, y1: 0, x2: s * EDGE, y2: 0, w });
   }
-  for (let k = 1; k < (stem - 0.5) * 10; k++) {
-    if (k % 2 && k % 5) continue;
-    const v = k / 10;
-    const l = hash(v);
-    p.push({ kind: "line", x1: -l / 2, y1: v, x2: l / 2, y2: v, w: l > 0.25 ? fine : thin });
+  p.push({ kind: "line", x1: 0, y1: -centre, x2: 0, y2: -6, w, lit: true });
+  p.push({ kind: "line", x1: 0, y1: -6, x2: 0, y2: -EDGE, w });
+  p.push({ kind: "line", x1: 0, y1: centre, x2: 0, y2: 10, w, lit: true });
+  p.push({ kind: "line", x1: 0, y1: 10.45, x2: 0, y2: EDGE, w });
+  p.push({ kind: "dot", x: 0, y: 0, r: 0.03, lit: true });
+  for (const v of steps(0.1, 10, 0.1)) {
+    const lit = v <= 6;
+    for (const s of [-1, 1]) {
+      const x = s * v;
+      // Horizontal: lit, 0.2 hashes above and half mils below; beyond 6, even tenths above and odd tenths below.
+      if (isWhole(v)) tick(p, "x", 0, x, [-big, big], w, 0, lit);
+      else if (lit && isHalf(v)) tick(p, "x", 0, x, [0, half], w, 0, true);
+      else if (lit && isTenth(v, 0)) tick(p, "x", 0, x, [-fine, 0], w, 0, true);
+      else if (!lit) tick(p, "x", 0, x, isTenth(v, 0) ? [-fine, 0] : [0, isHalf(v) ? half : fine], w);
+    }
+    // Up: lit 0.2 crosses to 6, then the ladder (odd tenths left, even right).
+    if (isWhole(v)) tick(p, "y", 0, -v, [-big, big], w, 0, lit);
+    else if (lit && isTenth(v, 0)) tick(p, "y", 0, -v, [-fine * 0.7, fine * 0.7], w, 0, true);
+    else if (!lit) tick(p, "y", 0, -v, isTenth(v, 0) ? [0, fine] : [isHalf(v) ? -half : -fine, 0], w);
+    // Down: lit 0.2 crosses all the way to 10.
+    if (isWhole(v)) tick(p, "y", 0, v, [-big, big], w, 0, true);
+    else if (isTenth(v, 0)) tick(p, "y", 0, v, [-fine * 0.7, fine * 0.7], w, 0, true);
   }
-  for (const v of [2, 4, 6, 8, 10]) {
-    for (const sgn of [-1, 1]) p.push({ kind: "text", x: sgn * v, y: -0.5, size: 0.34, text: String(v) });
-    p.push({ kind: "text", x: -0.5, y: -v, size: 0.34, text: String(v), align: "right" });
+  for (let v = 2; v <= 10; v += 2) {
+    for (const s of [-1, 1]) p.push({ kind: "text", x: s * v, y: -0.5, size: 0.34, text: String(v) });
+    if (v <= 6) p.push({ kind: "text", x: 0.55, y: -v, size: 0.34, text: String(v), align: "left" });
   }
-  // Tree of holdover dots: every whole mil down, every mil across, widening with drop.
-  for (let y = 1; y <= 16; y++) {
-    const hw = Math.min(8, Math.floor(1 + y * 0.5));
-    for (let x = -hw; x <= hw; x++) if (x) p.push({ kind: "dot", x, y, r: 0.045 });
-    if (y % 2 === 0) p.push({ kind: "text", x: hw + 0.5, y, size: 0.34, text: String(y), align: "left" });
-  }
+  // The tree.
+  EBR_ROWS.forEach((hw, i) => {
+    const y = i + 1;
+    for (const x of steps(0.4, hw, 0.2)) for (const s of [-1, 1]) p.push({ kind: "dot", x: s * x, y, r: isWhole(x) ? 0.04 : 0.028 });
+    if (y % 2 === 0) for (const s of [-1, 1]) p.push({ kind: "text", x: s * (hw + 0.4), y, size: 0.34, text: String(y), align: s < 0 ? "right" : "left" });
+  });
   return { id: "tree", name: "EBR-7D", unitRad: MRAD, unitName: "mrad", prims: p, round: "m118lr", illum: "rgb(255,52,30)" };
-}
-
-/** Heavy posts on three sides from `arm`, and below from `stem`. */
-function posts(p: Prim[], w: number, arm: number, stem: number): void {
-  p.push({ kind: "line", x1: -EDGE, y1: 0, x2: -arm, y2: 0, w });
-  p.push({ kind: "line", x1: arm, y1: 0, x2: EDGE, y2: 0, w });
-  p.push({ kind: "line", x1: 0, y1: -EDGE, x2: 0, y2: -arm, w });
-  p.push({ kind: "line", x1: 0, y1: stem, x2: 0, y2: EDGE, w });
 }
 
 /** The bolt rifle's reticle, PR2-MIL or EBR-7D. */
@@ -315,7 +379,10 @@ export function drawReticle(ctx: CanvasRenderingContext2D, r: Reticle, cx: numbe
         ctx.lineWidth = p.w * k;
         ctx.beginPath();
         p.pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
-        ctx.stroke();
+        if (p.fill) {
+          ctx.closePath();
+          ctx.fill();
+        } else ctx.stroke();
       } else if (p.kind === "dot") {
         ctx.beginPath();
         ctx.arc(X(p.x), Y(p.y), Math.max(p.r * k, 0.35), 0, Math.PI * 2);

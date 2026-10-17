@@ -300,13 +300,17 @@ export function buildRifle(): NearLayer {
   };
 }
 
-/** The ACI's pendulum turns with the slope one for one, to its stops at 60°. */
-const ACI_GEAR = 1;
-const ACI_MAX = (60 * Math.PI) / 180;
+/**
+ * The ACI's pointer is geared 3:1 off its pendulum so the slopes a shot can take here, up to 30° either way, fill
+ * the dial instead of crowding its top; it rests on stops just past 30°.
+ */
+const ACI_GEAR = 3;
+const ACI_SPAN = 30;
+const ACI_MAX = ((ACI_SPAN + 2) * Math.PI) / 180;
 
 /**
- * The ACI's dial: a tick every 5° over the top, ±60°, and the cosine (×100) engraved at every 10°, white on
- * black, the same either side of level. The pointer turns clockwise for uphill.
+ * The ACI's dial: a tick every 5° to ±30°, a triangle at level, and the cosine (×100) engraved every 10°: 98, 94, 87,
+ * white on black, the same either side. The pointer turns clockwise for uphill.
  */
 function paintAci(): HTMLCanvasElement {
   const S = 512;
@@ -322,10 +326,11 @@ function paintAci(): HTMLCanvasElement {
   g.textBaseline = "middle";
   g.font = `600 ${S * 0.085}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
   const R = S * 0.46;
-  for (let d = -60; d <= 60; d += 5) {
+  for (let d = -ACI_SPAN; d <= ACI_SPAN; d += 5) {
     const ten = d % 10 === 0;
     // Canvas y runs down the face's texture (v up), so a positive angle here is clockwise as seen.
     const a = (d * ACI_GEAR * Math.PI) / 180;
+    const cos = Math.cos((d * Math.PI) / 180);
     const sx = Math.sin(a),
       cy = -Math.cos(a);
     const l = ten ? 0.16 : 0.09;
@@ -334,15 +339,18 @@ function paintAci(): HTMLCanvasElement {
     g.moveTo(sx * R, cy * R);
     g.lineTo(sx * R * (1 - l), cy * R * (1 - l));
     g.stroke();
-    if (ten) {
-      g.save();
-      g.translate(sx * R * 0.66, cy * R * 0.66);
-      g.rotate(a);
-      g.font = `600 ${S * (d ? 0.1 : 0.11)}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
-      g.fillText(String(Math.round(Math.cos(a) * 100)), 0, 0);
-      g.restore();
+    // Level needs no number (its factor is 1): a bold triangle marks it. The others stand upright to read at a glance.
+    if (ten && d) {
+      g.font = `600 ${S * 0.13}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
+      g.fillText(String(Math.round(cos * 100)), sx * R * 0.6, cy * R * 0.6);
     }
   }
+  g.beginPath();
+  g.moveTo(0, -R * 0.8);
+  g.lineTo(-S * 0.035, -R * 0.62);
+  g.lineTo(S * 0.035, -R * 0.62);
+  g.closePath();
+  g.fill();
   g.font = `600 ${S * 0.055}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
   g.fillText("COSINE", 0, S * 0.24);
   return c;

@@ -3,7 +3,7 @@ import { SCOPE, THOUSANDTH, circleOverlap, exitPupilMm, eyeboxTransmission, para
 import { ROUNDS, at, holdRad, zeroTiltRad, type Round } from "../src/scope/ballistics";
 import { BATTLE_ZERO_M, RIFLES, dialDetents, dialHome, dialReading, dialTiltRad } from "../src/scope/shot";
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec } from "../src/scope/recoil";
-import { PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, VSS_RANGEFINDER, psoChevronY, psoCurveHeight, psoReticle, treeReticle, vssChevronY, vssReticle } from "../src/scope/reticles";
+import { EBR_ROWS, PR2_ROWS, PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, VSS_RANGEFINDER, psoChevronY, psoCurveHeight, psoReticle, treeReticle, vssChevronY, vssReticle } from "../src/scope/reticles";
 
 const eye = (x = 0, y = 0, z = 0) => ({ x, y, z, pupilMm: 3 });
 
@@ -71,16 +71,13 @@ describe("reticles", () => {
       expect(r.prims.length).toBeGreaterThan(30);
       expect(r.prims.some((p) => p.lit)).toBe(true);
     }
-    // Tree rows widen with drop, like the reference glass.
-    for (const style of ["pr2", "ebr"] as const) {
-      const rowWidth = (y: number) =>
-        Math.max(
-          ...treeReticle(style)
-            .prims.filter((p) => p.kind === "dot" && p.y === y)
-            .map((p) => (p.kind === "dot" ? Math.abs(p.x) : 0)),
-        );
-      expect(rowWidth(10)).toBeGreaterThan(rowWidth(2));
-    }
+    // Tree rows sit on every whole mil and widen in pairs, as measured off the makers' drawings.
+    const rowWidth = (style: "pr2" | "ebr", y: number) =>
+      Math.max(...treeReticle(style).prims.flatMap((p) => (p.kind === "dot" && p.y === y ? [Math.abs(p.x)] : p.kind === "line" && p.y1 === y && p.y2 === y ? [Math.abs(p.x1), Math.abs(p.x2)] : [])));
+    const rows = (style: "pr2" | "ebr") => Array.from({ length: 10 }, (_, i) => Math.round(rowWidth(style, i + 1) * 10) / 10);
+    expect(rows("ebr")).toEqual([...EBR_ROWS]);
+    // PR2-MIL even rows are scales whose lines stop just short of the end caps; the caps stand on the whole mil.
+    expect(rows("pr2").map(Math.round)).toEqual([...PR2_ROWS]);
     expect(treeReticle("pr2").name).toBe("PR2-MIL");
     expect(treeReticle("ebr").name).toBe("EBR-7D");
   });

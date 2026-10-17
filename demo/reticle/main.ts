@@ -556,8 +556,8 @@ function fire(): void {
 }
 $("fire").onclick = () => fire();
 /**
- * B works the action (the bolt, or the charging handle) when there is something for it to do, R changes the
- * magazine (and after the last round chambers from the new one), C flicks the safety.
+ * B works the action (the bolt, or the charging handle), R changes the magazine, C flicks the safety: whenever
+ * asked, needed or not, and only what the real rifle does.
  */
 function work(kind: "cycle" | "reload"): void {
   if (!shooting.work(clock, kind)) return;

@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import { AIR, ROUNDS } from "../../src/scope/ballistics";
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from "../../src/scope/handling";
-import { cycle, loaded, needsCycle, pull, reload, reloadCharges, setSafe, type ActionState } from "../../src/scope/action";
+import { cycle, loaded, pull, reload, setSafe, type ActionState } from "../../src/scope/action";
 import { SCOPE } from "../../src/scope/optics";
 import { assess, type Wound } from "../../src/body/wound";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
@@ -327,7 +327,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   function handle(now: number, kind: "cycle" | "reload"): void {
     const reload = kind === "reload";
     const seed = handlingCount++;
-    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held, charge: reload && reloadCharges(gun), safe: gun.safe });
+    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held, safe: gun.safe });
     handling = {
       kind,
       start: now,
@@ -341,26 +341,26 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   }
 
   /**
-   * B and R: work the action, or change the magazine, whenever the hands are free. Working the action is
-   * refused with a live round chambered and cocked: there is nothing to chamber. A magazine change keeps a live
-   * round in the chamber, and after the last round it goes on to chamber one from the new magazine
-   * (src/scope/action.ts). With the safety on, the action's handle stops short.
+   * B and R: work the action, or change the magazine, whenever the hands are free, needed or not. Working it
+   * with a round chambered throws that round out; a magazine change keeps whatever is in the chamber and
+   * chambers nothing. With the safety on, the action's handle stops short (src/scope/action.ts).
    */
   function work(now: number, kind: "cycle" | "reload"): boolean {
     sound.unlock();
     if (handling) return false;
-    if (kind === "cycle" && !needsCycle(gun)) return false;
     handle(now, kind);
     return true;
   }
 
   /**
    * C: the safety flicked on or off, by feel, with its click. It won't go on with the SVD's carrier held open,
-   * or the bolt rifle's striker down; the hand on the grip can't reach it while the other is working the action.
+   * or the bolt rifle's striker down. It needs the firing hand: free on the grip while the support hand changes
+   * the SVD's or VSS's magazine, busy on the bolt, the charging handle or the bolt rifle's box.
    */
   function safety(): boolean {
     sound.unlock();
-    if (handling || !setSafe(gun, rifle.id, !gun.safe)) return false;
+    const handBusy = handling && (handling.kind === "cycle" || rifle.action === "bolt");
+    if (handBusy || !setSafe(gun, rifle.id, !gun.safe)) return false;
     sound.cue("safety", rifle.id, 0);
     return true;
   }

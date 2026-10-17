@@ -27,7 +27,7 @@ The short version, for players new to scopes. The numbers behind it are in secti
    - **Gusts travel.** A gust is carried downwind at the wind's speed, so you can see it coming across the sage and the near flags before it reaches the line. Fire in a lull, or hold for the gust that will be there.
    - **Easy** puts a wind meter on a mast at your hide, as high as the flags, and adds its m/s under the card's flags. It reads the wind at the hide, not along the way.
    - For scale, at 2.5 m/s straight across: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
-6. **Keep the rifle loaded yourself.** Space only pulls the trigger. **B** works the bolt (or, on the SVD and VSS, the charging handle), **R** changes the magazine and **C** puts the safety on or off. After each shot from the bolt rifle, press B, or the next pull does nothing. B does nothing while a live round is already chambered: there is nothing to chamber. R with a round still in the chamber just swaps the magazine and the rifle is ready. R after the last round swaps it and then chambers the first round of the new one, the way you reload an empty rifle. A pull on an empty chamber gives a click, and after that the trigger is dead until you work the action. The SVD stays open after its last round; the VSS closes on an empty chamber, so you only get a click. On safe the trigger won't move, and the bolt or charging handle stops short, so nothing is chambered until you take it off.
+6. **Keep the rifle loaded yourself.** Space only pulls the trigger. **B** works the bolt (or, on the SVD and VSS, the charging handle), **R** changes the magazine and **C** puts the safety on or off. None does another's job, and nothing is done for you: remember each step as a soldier would. After each shot from the bolt rifle, press B, or the next pull does nothing. A fresh magazine chambers nothing: after the last round, change the magazine and then press B. With a round still in the chamber, a magazine change keeps it and the rifle is ready; pressing B then anyway throws that good round out, as it really would. A pull on an empty chamber gives a click, and after that the trigger is dead until you work the action. The SVD stays open after its last round until you change the magazine and press B. The VSS closes on an empty chamber, so you only get a click. On safe the trigger won't move, and the bolt or charging handle stops short.
 7. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
 
 **Bolt rifle (mil turret, tree, Manual or Pro):** nothing on this scope is made for the round. It works like a real sniper's rifle, the manual way or with a rangefinder. Pick one in the panel (or M; `aid=manual|lrf` in the URL).
@@ -325,20 +325,15 @@ Each rifle is worked the way it really is:
 
 - **Bolt rifle** (M24 class, 5-round detachable box).
   - Working the bolt: the right hand pinches the knob and lifts it 90°, which cocks the striker. It pulls the bolt 100 mm back: the extractor draws out the case (or an unfired round), and the ejector flicks it out of the port to the right, into the dirt. It pushes the bolt forward, and the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber, if there is a round. Then it turns the handle down. About 1.4 s.
-  - Changing the magazine: the index finger presses the paddle catch in front of the trigger guard. The box drops into the hand and goes to the pouch, and the full one is pushed straight up the well until the catch clicks. The bolt isn't touched, unless the old box was fired dry: then the hand goes straight on to the knob and works the bolt, throwing out the last case and chambering the new box's top round. About 2.7 s, or 3.6 s with the bolt.
+  - Changing the magazine: the index finger presses the paddle catch in front of the trigger guard. The box drops into the hand and goes to the pouch, and the full one is pushed straight up the well until the catch clicks. The bolt isn't touched. About 2.7 s.
 - **SVD.**
   - Working the action: the firing hand comes over the top, pulls the charging handle fully back and lets it go. The spring drives the carrier home, and it chambers a round. If it was held open, the pull lowers the bolt stop first. Over an empty magazine, the bolt stop catches the carrier again. About 1.2 s.
-  - Changing the magazine: the support hand thumbs the catch and rocks the magazine forward about its front lug. The new one goes in front lug first and rocks back until the catch snaps over. A carrier held open stays open through the change. If the old magazine was fired dry, the firing hand then pulls the handle to let the carrier off its bolt stop, and it runs home on a round. About 2.9 s, or 3.5 s with the rack.
-- **VSS.** The same, except that it has no bolt stop, so its carrier is always shut, and after a dry magazine the rack is a full pull back and let go.
+  - Changing the magazine: the support hand thumbs the catch and rocks the magazine forward about its front lug. The new one goes in front lug first and rocks back until the catch snaps over. A carrier held open stays open. About 2.9 s.
+- **VSS.** The same, except that it has no bolt stop, so its carrier is always shut.
 
-#### Chambering only when it's needed (`src/scope/action.ts`)
+#### Nothing done for you (`src/scope/action.ts`)
 
-A round is chambered by the action, never by the magazine. So the rule is:
-
-- **A magazine change with a live round in the chamber** (a tactical reload) leaves it there. The rifle is ready with a full magazine plus one; nothing is racked.
-- **A magazine change after the last round** is an empty reload: the change, then the action worked once to chamber from the new magazine. On the SVD the follower has lifted the bolt stop and the carrier is held back, even with the magazine out (manual §23, §33), and the SVD has no bolt release, so the charging handle is pulled and let go. The VSS has no bolt stop, so it has closed on an empty chamber and is racked the same way. The bolt rifle's bolt is run back and forward (Sako TRG manual: "chambered from a loaded magazine by moving the bolt to its rearmost position and then to its closed position"), throwing out the last fired case on the way.
-- **B on its own** is refused while a live round is chambered and cocked: racking then only throws a good round away. It still works the bolt rifle's bolt after every shot, which is how a bolt action gets its next round, and it clears an empty chamber.
-- A bolt-rifle box change mid-string, with a fired case still in, swaps the box and leaves the bolt to B as after any shot.
+Every control does only what the real rifle does when a soldier tries it, and nothing is refused that the rifle would allow. A round is chambered by the action, never by the magazine: none of the three has a bolt release or a hold-open that lets go when a magazine goes in. So after the last round a fresh magazine leaves the chamber empty until B: the SVD's carrier stays on its bolt stop until the charging handle is pulled (manual §33), the VSS has closed on an empty chamber, and the TRG's round is "chambered from a loaded magazine by moving the bolt to its rearmost position and then to its closed position". A magazine change with a round chambered keeps it. Working the action with a live round chambered throws that round out and chambers the next.
 
 #### The safety (C)
 
@@ -350,7 +345,7 @@ No animation; the click, a trigger that won't move and a handle that stops short
 | Blocks | Sear and trigger; the lever's shield covers the handle's slot, so the carrier only comes back a little way | The same | Trigger, striker held cocked, bolt locked shut |
 | Can't go on | With the carrier held open (the handle is where the shield goes; inferred from §18) | Always goes on | With the striker down (after a shot or a click): it springs back off |
 
-A magazine change is never blocked. The chambering after a dry magazine is: on safe, the rifle is left with a full magazine and an empty chamber, and B (safety off) chambers.
+A magazine change is never blocked.
 
 The hands are gloved, with jointed fingers and thumbs that shape for each grip (the bolt knob pinched, the charging handle hooked, the magazine held by its body, the catch pressed) on the way in. Each reach is a minimum-jerk stroke (Flash & Hogan), arcing clear of the rifle, after which the hand rides the part it holds: on the knob it follows it up and back. Arms run to the shoulders, about 20 cm behind the eye with the cheek on the stock, with the elbows out, down and a little back. A reach longer than the arm rolls the shoulder forward, up to 13 cm, as it does for the SVD's charging handle. The pace varies by ±6 % from one handling to the next, and everything is a function of the time since the hands started, so stills are exact.
 
@@ -361,7 +356,6 @@ Tests check that:
 - no wrist bends past 80°, and the arms keep their length;
 - each sound is cued in order as its part moves;
 - the trigger, the action and the magazine each do only their own job, with the click or dead trigger each rifle really gives;
-- a magazine change keeps a live round and chambers only after the last round, ending with the action shut and the new magazine one down;
 - the safety locks the trigger, stops the handle short (nothing thrown out or fed), and goes on only when each rifle allows.
 
 ### What it hits
@@ -434,8 +428,8 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | Q / E | Eye relief closer / further |
 | F / right-click | Scope in / scope out |
 | Space | Pull the trigger, and nothing else. It fires if a round is chambered; otherwise there's a click or a dead trigger, as on the real rifle |
-| B | Work the action: the bolt, or the charging handle. Only when there's something to do: not with a live round chambered and cocked |
-| R | Change the magazine. A live round in the chamber stays; after the last round it also chambers one from the new magazine |
+| B | Work the action: the bolt, or the charging handle. Any time; with a round chambered it throws that round out |
+| R | Change the magazine. Any time; the chamber stays as it was, and a fresh magazine chambers nothing |
 | C | Safety on or off (no visuals: the click, a locked trigger and a handle that stops short tell you) |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |

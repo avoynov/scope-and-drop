@@ -34,6 +34,13 @@
  *    the striker cocked and the bolt closed, so the bolt cannot be opened. It goes ON only with the striker
  *    cocked; with the striker down (after a shot, or a click) it springs back OFF.
  * A magazine change is never blocked by the safety.
+ *
+ * None of the three has a magazine disconnect (none is documented for the SVD or VSS, AK-pattern rifles that
+ * have none; the TRG manual names none), so the trigger works with the magazine out. On the SVD and VSS the
+ * firing hand stays on the grip while the support hand changes the magazine, so a pull then fires a chambered
+ * round: with the old magazine still on its catch it feeds from it, once it is off the carrier slams shut on an
+ * empty chamber, and once the new one is on it feeds from that. On the bolt rifle the firing hand is the one
+ * changing the box, so there is no finger on the trigger until it is back on the grip.
  */
 import { ACTIONS, type Chamber } from "./handling";
 import type { RifleId } from "./shot";
@@ -45,6 +52,8 @@ export interface ActionState {
   held: boolean;
   /** Rounds in the magazine (not counting the chamber). */
   mag: number;
+  /** A magazine on its catch. Off it only partway through a magazine change. */
+  magIn: boolean;
   /** The safety on. */
   safe: boolean;
 }
@@ -57,7 +66,7 @@ const holdsOpen = (rifle: RifleId) => !!ACTIONS[rifle].carrier?.holdOpen;
 
 /** Loaded and ready: a full magazine, one of it chambered, the safety off. */
 export function loaded(rifle: RifleId): ActionState {
-  return { chamber: "live", cocked: true, held: false, mag: ACTIONS[rifle].mag.rounds - 1, safe: false };
+  return { chamber: "live", cocked: true, held: false, mag: ACTIONS[rifle].mag.rounds - 1, magIn: true, safe: false };
 }
 
 /** The trigger pulled. Returns what happened; the state changes for a shot or a click. */
@@ -70,10 +79,12 @@ export function pull(s: ActionState, rifle: RifleId): Pull {
   }
   if (semi(rifle)) {
     // The gas drives the carrier back: out goes the case, in the next round, hammer or striker cocked again.
-    if (s.mag > 0) s.mag--;
+    // With no magazine on the catch there is nothing to feed, and no follower to lift the SVD's bolt stop, so
+    // the carrier slams shut on an empty chamber.
+    if (s.magIn && s.mag > 0) s.mag--;
     else {
       s.chamber = "empty";
-      s.held = holdsOpen(rifle);
+      s.held = holdsOpen(rifle) && s.magIn;
     }
   } else {
     s.chamber = "spent";
@@ -90,20 +101,33 @@ export function pull(s: ActionState, rifle: RifleId): Pull {
 export function cycle(s: ActionState, rifle: RifleId): boolean {
   if (s.safe) return false;
   s.cocked = true;
-  if (s.mag > 0) {
+  if (s.magIn && s.mag > 0) {
     s.mag--;
     s.chamber = "live";
     s.held = false;
   } else {
     s.chamber = "empty";
-    s.held = holdsOpen(rifle);
+    s.held = holdsOpen(rifle) && s.magIn;
   }
   return true;
 }
 
-/** A full magazine in place of the old one. The chamber, and a held carrier, stay as they were. */
-export function reload(s: ActionState, rifle: RifleId): void {
+/** The old magazine off its catch, partway through a change. A held carrier stays held: the bolt keeps the stop up. */
+export function unlatch(s: ActionState): void {
+  s.magIn = false;
+  s.mag = 0;
+}
+
+/** A full magazine onto the catch. */
+export function latch(s: ActionState, rifle: RifleId): void {
+  s.magIn = true;
   s.mag = ACTIONS[rifle].mag.rounds;
+}
+
+/** A full magazine in place of the old one, all at once. The chamber, and a held carrier, stay as they were. */
+export function reload(s: ActionState, rifle: RifleId): void {
+  unlatch(s);
+  latch(s, rifle);
 }
 
 /** Whether the safety can be put on now (it can always come off). */

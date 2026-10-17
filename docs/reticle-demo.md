@@ -335,6 +335,11 @@ Each rifle is worked the way it really is:
 
 Every control does only what the real rifle does when a soldier tries it, and nothing is refused that the rifle would allow. A round is chambered by the action, never by the magazine: none of the three has a bolt release or a hold-open that lets go when a magazine goes in. So after the last round a fresh magazine leaves the chamber empty until B: the SVD's carrier stays on its bolt stop until the charging handle is pulled (manual §33), the VSS has closed on an empty chamber, and the TRG's round is "chambered from a loaded magazine by moving the bolt to its rearmost position and then to its closed position". A magazine change with a round chambered keeps it. Working the action with a live round chambered throws that round out and chambers the next.
 
+None has a magazine disconnect (none is documented for the SVD or VSS, which are AK-pattern; the TRG manual names none), so the trigger still works partway through a magazine change:
+
+- **SVD and VSS:** the firing hand stays on the grip while the support hand changes the magazine, so Space fires a chambered round, head up off the scope, wherever the rifle on its bipod points. Before the catch is pressed it feeds from the old magazine. Once the old one is off its catch the carrier throws out the case and slams shut on an empty chamber (with no follower, the SVD's bolt stop isn't lifted), so the next pull is a click. Once the new one has latched it feeds from that. An SVD already held open after its last round stays held, and its trigger dead.
+- **Bolt rifle:** the firing hand presses the catch and fetches the box, so there is no finger on the trigger until it is back on the grip.
+
 #### The safety (C)
 
 No animation; the click, a trigger that won't move and a handle that stops short are how you know.
@@ -356,6 +361,7 @@ Tests check that:
 - no wrist bends past 80°, and the arms keep their length;
 - each sound is cued in order as its part moves;
 - the trigger, the action and the magazine each do only their own job, with the click or dead trigger each rifle really gives;
+- the trigger during a magazine change feeds from the old magazine, shuts on an empty chamber with none, or feeds from the new one;
 - the safety locks the trigger, stops the handle short (nothing thrown out or fed), and goes on only when each rifle allows.
 
 ### What it hits
@@ -429,7 +435,7 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | F / right-click | Scope in / scope out |
 | Space | Pull the trigger, and nothing else. It fires if a round is chambered; otherwise there's a click or a dead trigger, as on the real rifle |
 | B | Work the action: the bolt, or the charging handle. Any time; with a round chambered it throws that round out |
-| R | Change the magazine. Any time; the chamber stays as it was, and a fresh magazine chambers nothing |
+| R | Change the magazine. Any time; the chamber stays as it was, and a fresh magazine chambers nothing. On the SVD and VSS the trigger still works during it |
 | C | Safety on or off (no visuals: the click, a locked trigger and a handle that stops short tell you) |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |

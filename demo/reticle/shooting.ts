@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import { AIR, ROUNDS } from "../../src/scope/ballistics";
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from "../../src/scope/handling";
-import { cycle, loaded, pull, reload, setSafe, type ActionState } from "../../src/scope/action";
+import { cycle, latch, loaded, pull, setSafe, unlatch, type ActionState } from "../../src/scope/action";
 import { SCOPE } from "../../src/scope/optics";
 import { assess, type Wound } from "../../src/body/wound";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
@@ -85,6 +85,8 @@ interface Handling {
   plan: Plan;
   /** Stops the action's sounds if the handling is cut short. */
   hush: () => void;
+  /** A magazine change: 0 the old magazine still on its catch, 1 off it, 2 the new one on. */
+  stage: 0 | 1 | 2;
 }
 
 export interface Aim {
@@ -337,6 +339,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       seed,
       plan,
       hush: sound.cues(plan.cues, rifle.id),
+      stage: 0,
     };
   }
 
@@ -376,7 +379,10 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
    */
   function press(now: number, eye: THREE.Vector3, aimAt: (t: number) => Aim, wind: Wind): number | null {
     sound.unlock();
-    if (handling) return null;
+    // Mid magazine change the SVD's or VSS's firing hand is still on the grip, and nothing stops the trigger:
+    // the magazine is wherever the support hand has got to. Otherwise the firing hand is off the grip.
+    if (handling && (handling.kind !== "reload" || rifle.action === "bolt")) return null;
+    swapTo(now);
     const r = pull(gun, rifle.id);
     // On safe, the trigger is locked and doesn't move.
     if (r === "safe") return null;
@@ -663,6 +669,21 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
    * pushed off the aim (rad, yaw right and pitch up), and where the hands, the parts, the head and the eyes
    * are (`pose`). `fold` comes once, when the action is done: where it left the rifle, for the aim to keep.
    */
+  /** Moves a magazine change on to `now`: the old magazine off its catch, then the new one on. */
+  function swapTo(now: number): void {
+    const sw = handling?.plan.swap;
+    if (!handling || !sw) return;
+    const t = now - handling.start;
+    if (handling.stage === 0 && t >= sw[0]) {
+      unlatch(gun);
+      handling.stage = 1;
+    }
+    if (handling.stage === 1 && t >= sw[1]) {
+      latch(gun, rifle.id);
+      handling.stage = 2;
+    }
+  }
+
   function act(now: number) {
     let hand: { yaw: number; pitch: number } | null = null;
     let fold: [number, number] | null = null;
@@ -671,7 +692,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const u = (now - handling.start) / handling.dur;
       if (u >= 1) {
         fold = handling.shift;
-        if (handling.kind === "reload") reload(gun, rifle.id);
+        if (handling.kind === "reload") swapTo(handling.start + handling.dur);
         else cycle(gun, rifle.id);
         handling = null;
       } else {

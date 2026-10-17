@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSafe, cycle, loaded, pull, reload, setSafe } from "../src/scope/action";
+import { canSafe, cycle, latch, loaded, pull, reload, setSafe, unlatch } from "../src/scope/action";
 
 describe("the trigger, the action and the magazine, each on its own", () => {
   it("bolt rifle: one shot, then a dead trigger until the bolt is worked", () => {
@@ -115,5 +115,62 @@ describe("the safety", () => {
     expect(setSafe(g, "bolt", true)).toBe(true);
     expect(cycle(g, "bolt")).toBe(false);
     expect(g.mag).toBe(3);
+  });
+});
+
+describe("the trigger during a magazine change (no magazine disconnect on any of them)", () => {
+  it("SVD and VSS: old magazine still on its catch, a shot feeds from it", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.chamber).toBe("live");
+      expect(g.mag).toBe(8);
+    }
+  });
+
+  it("SVD and VSS: magazine off, the chambered round fires and the carrier shuts on an empty chamber, then a click", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      unlatch(g);
+      expect(pull(g, rifle)).toBe("fire");
+      // No follower to lift the SVD's bolt stop: not held open.
+      expect(g.held).toBe(false);
+      expect(g.chamber).toBe("empty");
+      expect(pull(g, rifle)).toBe("click");
+      expect(pull(g, rifle)).toBe("dead");
+      // The new magazine on: still nothing chambered until the action is worked.
+      latch(g, rifle);
+      expect(pull(g, rifle)).toBe("dead");
+      cycle(g, rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.mag).toBe(8);
+    }
+  });
+
+  it("SVD: carrier already held open after the last round, the trigger stays dead with the magazine out", () => {
+    const g = loaded("svd");
+    for (let i = 0; i < 10; i++) pull(g, "svd");
+    unlatch(g);
+    expect(g.held).toBe(true);
+    expect(pull(g, "svd")).toBe("dead");
+  });
+
+  it("SVD and VSS: new magazine on, a shot feeds from it", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      unlatch(g);
+      latch(g, rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.chamber).toBe("live");
+      expect(g.mag).toBe(9);
+    }
+  });
+
+  it("racked with no magazine, the SVD's carrier goes home on an empty chamber", () => {
+    const g = loaded("svd");
+    unlatch(g);
+    cycle(g, "svd");
+    expect(g.held).toBe(false);
+    expect(g.chamber).toBe("empty");
   });
 });

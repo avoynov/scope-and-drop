@@ -404,6 +404,8 @@ export interface Plan {
   ejects: number[];
   /** Bolt rifle: forward strokes that strip a round into the chamber, [start, end]. */
   feeds: [number, number][];
+  /** A magazine change: when the old magazine comes off its catch, and when the new one latches. */
+  swap: [number, number] | null;
   cues: Cue[];
 }
 
@@ -658,7 +660,9 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
 
   function finish(dur: number): Plan {
     cues.sort((a, b) => a.t - b.t);
-    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues };
+    // A magazine change: the old magazine off its catch when it is pressed, the new one on when it is home.
+    const swap: Plan["swap"] = kind === "reload" ? [cues.find((c) => c.ev === "mag-release")!.t, mags[1].events.find((e) => e.mode === "well")!.t] : null;
+    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
   }
 }
 

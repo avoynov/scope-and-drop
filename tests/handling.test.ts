@@ -197,6 +197,21 @@ describe("working the action", () => {
   });
 });
 
+describe("a magazine change's timing", () => {
+  it("takes the old magazine off its catch when the catch is pressed, and latches the new one when it is home", () => {
+    for (const rifle of ["bolt", "svd", "vss"] as const) {
+      const plan = planHandling(rifle, "reload", 3, 1);
+      const [off, on] = plan.swap!;
+      expect(off).toBeGreaterThan(0);
+      expect(on).toBeGreaterThan(off);
+      expect(on).toBeLessThan(plan.dur);
+      expect(poseAt(plan, on + 0.001).mags[1].visible).toBe(true);
+      expect(off).toBe(plan.cues.find((c) => c.ev === "mag-release")!.t);
+    }
+    expect(planHandling("svd", "cycle", 3, 1).swap).toBeNull();
+  });
+});
+
 describe("the safety", () => {
   const RIFLES = ["bolt", "svd", "vss"] as const;
   /** The action worked with the safety on. */

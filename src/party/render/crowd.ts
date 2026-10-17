@@ -64,6 +64,8 @@ export interface FrameState {
   gesture?: Gesture | null;
   /** Head turned from the body for a glance (radians, the same sense as yaw). */
   headYaw?: number;
+  /** Just back from slipping away: hair and shirt awry. */
+  dishevelled?: boolean;
 }
 
 /** A camera flash: where, and how long ago (game s). */
@@ -271,18 +273,40 @@ export class Crowd {
     const dress = L.outfit === "long-dress" || L.outfit === "short-dress";
     const sit = s.pose === "sit";
     const walking = s.pose === "walk" || s.pose === "climb";
-    const dance = s.pose === "dance";
+    // The slow dance, and club style (one in front, back to the other behind): dancing too.
+    const close = s.pose === "slow" || s.pose === "front" || s.pose === "behind";
+    const dance = s.pose === "dance" || close;
+    const tempo = s.pose === "slow" ? 0.4 : 1;
     const limp = p.quirks.includes("limp");
     const gait = t * 7.2 * (p.speed / 1.3);
     const stride = walking ? Math.sin(gait) : 0;
     const bob = walking ? Math.abs(Math.cos(gait)) * 0.025 * k * (limp && stride > 0 ? 2.2 : 1) : 0;
-    const sway = dance ? Math.sin(t * 3.2) : 0;
+    const sway = dance ? Math.sin(t * 3.2 * tempo) * (s.pose === "slow" ? 0.4 : 1) : 0;
     // Past 0.6 tipsiness a slow side-to-side list, more the drunker they are.
     const list = p.tipsy > 0.6 && !sit ? Math.min(1, (p.tipsy - 0.6) / 0.4) * 0.07 * Math.sin(t * 1.3) : 0;
-    const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4)) * 0.03 : 0);
+    const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4 * tempo)) * 0.03 : 0);
     const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5), tmpS.set(1, 1, 1));
     const g = s.gesture ?? null;
-    const lean = s.pose === "play" ? 0.35 : s.pose === "look" ? 0.05 : s.pose === "kiss" ? 0.16 : s.pose === "shake" ? 0.06 : g === "lean" ? 0.14 : 0;
+    const lean =
+      g === "shove"
+        ? 0.18
+        : g === "pull"
+          ? -0.12
+          : s.pose === "play"
+            ? 0.35
+            : s.pose === "look"
+              ? 0.05
+              : s.pose === "kiss" || s.pose === "hug"
+                ? 0.16
+                : s.pose === "argue"
+                  ? 0.1
+                  : s.pose === "behind"
+                    ? 0.08
+                    : s.pose === "shake"
+                      ? 0.06
+                      : g === "lean"
+                        ? 0.14
+                        : 0;
     const local = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, "YXZ")), new THREE.Vector3(sx, sy, sz));
     const stretch = local(0, 0, 0, 0, 0, 0, 1, k, 1);
@@ -303,8 +327,14 @@ export class Crowd {
         continue;
       }
       const ph = stride * side;
-      const swing = sit ? -1.5 : walking ? -ph * 0.45 : dance ? Math.sin(t * 6.4 + side) * 0.2 : 0;
-      const bend = sit ? 1.5 : walking ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0) : dance ? 0.15 + Math.max(0, Math.sin(t * 6.4 + side)) * 0.3 : 0.03;
+      const swing = sit ? -1.5 : walking ? -ph * 0.45 : dance ? Math.sin(t * 6.4 * tempo + side) * (s.pose === "slow" ? 0.1 : 0.2) : 0;
+      const bend = sit
+        ? 1.5
+        : walking
+          ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0)
+          : dance
+            ? 0.15 + Math.max(0, Math.sin(t * 6.4 * tempo + side)) * (s.pose === "slow" ? 0.1 : 0.3)
+            : 0.03;
       const hip = base.clone().multiply(local(side * 0.095 * wide, hipY, sit ? -0.05 : 0, swing));
       set("thigh", kk, hip.clone().multiply(stretch));
       set("shin", kk, hip.multiply(local(0, -0.45 * k, 0, bend)).multiply(stretch));
@@ -315,7 +345,7 @@ export class Crowd {
     } else hide("skirt");
     const torsoLen = 0.5 * k;
     set("torso", 0, hips.clone().multiply(local(0, 0, 0, 0, 0, 0, wide, torsoLen, wide * 0.78)));
-    if (!dress) set("shirt", 0, hips.clone().multiply(local(0, torsoLen * 0.78, 0.13 * wide, -0.08, 0, 0, 1, k, 1)));
+    if (!dress) set("shirt", 0, hips.clone().multiply(local(s.dishevelled ? 0.03 : 0, torsoLen * 0.78, 0.13 * wide, -0.08, 0, s.dishevelled ? 0.35 : 0, 1, k, 1)));
     else hide("shirt");
 
     // Head: nods while talking; thrown back for a big laugh.
@@ -324,15 +354,18 @@ export class Crowd {
     const nod = talking ? Math.sin(t * 2.3) * 0.08 : 0;
     // A glance turns the head (no further than the neck allows); otherwise a talker looks round the group.
     const turn = s.headYaw ? Math.max(-1.3, Math.min(1.3, s.headYaw)) : talking ? Math.sin(t * 0.9) * 0.3 : 0;
-    const tilt = g === "ask" ? 0 : g === "shrug" ? 0.12 : s.pose === "kiss" ? 0.3 : 0;
+    const cheek = s.pose === "kiss" || s.pose === "hug" || s.pose === "slow";
+    const tilt = g === "ask" ? 0 : g === "shrug" ? 0.12 : cheek ? 0.3 : 0;
     // A frown: chin down, eyes up at whoever did it.
-    const pitchHead = laugh ? -0.45 : nod + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
-    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, pitchHead, turn + (s.pose === "kiss" ? 0.35 : 0), tilt, k, k, k));
+    // Arguing: chin out, jabbing with it.
+    const jut = s.pose === "argue" ? -0.12 + Math.sin(t * 4.1) * 0.08 : 0;
+    const pitchHead = laugh ? -0.45 : nod + jut + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
+    const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, pitchHead, turn + (cheek ? 0.35 : 0), tilt, k, k, k));
     set("head", 0, head);
-    set("hair", 0, head.clone().multiply(local(0, 0.012, -0.012, -0.25)));
+    set("hair", 0, head.clone().multiply(local(s.dishevelled ? 0.015 : 0, 0.012, -0.012, -0.25, 0, s.dishevelled ? 0.3 : 0)));
     if (p.quirks.includes("glasses")) set("glasses", 0, head.clone().multiply(local(0, 0.015, 0.1)));
     else hide("glasses");
-    if (L.hat && !sit) set("hat", 0, head.clone().multiply(local(0, 0.07, 0, -0.08)));
+    if (L.hat && !sit && !s.dishevelled) set("hat", 0, head.clone().multiply(local(0, 0.07, 0, -0.08)));
     else hide("hat");
 
     // Arms: pitch forward (positive) from the shoulder, roll out from the body.
@@ -371,6 +404,33 @@ export class Crowd {
         rp = 1.6 + Math.sin(t * 3.2) * 0.6;
         lp = 1.6 - Math.sin(t * 3.2) * 0.6;
         rr = lr = 0.5;
+        break;
+      case "slow":
+        // Arms round the other, swaying.
+        rp = lp = 1.3;
+        rr = lr = -0.4;
+        break;
+      case "front":
+        // Back to the one behind: arms loose and low, hips doing the work.
+        rp = 0.7 + Math.sin(t * 3.2) * 0.4;
+        lp = 0.7 - Math.sin(t * 3.2) * 0.4;
+        rr = lr = 0.25;
+        break;
+      case "behind":
+        // Hands on the dancer in front.
+        rp = lp = 0.95;
+        rr = lr = -0.25;
+        break;
+      case "argue":
+        // Jabbing a finger, the other hand thrown out.
+        rp = 1.2 + Math.sin(t * 5.3) * 0.35;
+        rr = 0.1;
+        lp = 0.5 + Math.abs(Math.sin(t * 3.7)) * 0.6;
+        lr = 0.35;
+        break;
+      case "hug":
+        rp = lp = 1.45;
+        rr = lr = -0.55;
         break;
       case "sit":
         rp = lp = 0.6;
@@ -466,6 +526,22 @@ export class Crowd {
       // Arms folded.
       rp = lp = 1.25;
       rr = lr = -0.7;
+    } else if (g === "slap") {
+      // Open hand swung across.
+      rp = 1.5;
+      rr = 0.5 - 1.1 * Math.min(1, (t % 0.7) / 0.25);
+    } else if (g === "shove") {
+      // Both hands out flat.
+      rp = lp = 1.5;
+      rr = lr = -0.05;
+    } else if (g === "throw") {
+      // The glass flung forward and up.
+      rp = 2.1;
+      rr = 0.05;
+    } else if (g === "pull") {
+      // A hand out holding theirs, leaning back.
+      rp = 1.35;
+      rr = 0.05;
     }
     if (p.quirks.includes("cane") && !sit) lp = Math.max(lp, 0.35);
     const right = arm(1, rp, rr);

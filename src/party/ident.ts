@@ -127,6 +127,14 @@ export class Ident {
     this.stats.met++;
   }
 
+  /** A bond formed tonight (bonds.ts): the tie rises to at least `t` both ways, never falls. */
+  bond(i: number, j: number, t: Tie): void {
+    if (i === j) return;
+    this.meet(i, j);
+    if (this.tie[i * this.n + j]! < t) this.tie[i * this.n + j] = t;
+    if (this.tie[j * this.n + i]! < t) this.tie[j * this.n + i] = t;
+  }
+
   /**
    * How different j looks to i from how i remembers them, weighted as the plan has it. At a
    * distance only height and walk show; explained changes (i knows j has been drinking) barely count.

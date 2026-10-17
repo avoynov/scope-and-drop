@@ -397,7 +397,8 @@ describe("evenings", () => {
       expect(party.register.stats.filed, seed).toBeGreaterThan(100);
       let max = 0;
       for (const p of party.people) for (const q of party.people) max = Math.max(max, party.memory.suspects(p.id, q.id));
-      expect(max, seed).toBeLessThan(0.15);
+      // (A row with a slap in it, seen, now raises a little: the one slapped looks odd.)
+      expect(max, seed).toBeLessThan(0.25);
     }
   }, 120_000);
 

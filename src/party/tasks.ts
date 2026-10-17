@@ -19,8 +19,8 @@ import type { SoundKind } from "./senses";
 import type { ActionState, DrinkId, Gesture, Needs, PartyEvent, Person, Pose, Spot } from "./types";
 import type { Door, World } from "./world";
 
-export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore";
-export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore"];
+export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope";
+export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope"];
 
 /** What an errand fetches: the good whisky to the bar, a coat to its owner, clean glasses for the bar, a drink for someone. */
 export type ErrandKind = "whisky" | "coat" | "glasses" | "drink";
@@ -32,6 +32,8 @@ export type Step =
   | { do: "say"; who: number; s: number; pose: Pose; label: string }
   /** Turn a key in a door into `room`; a lock waits for the party to come out first. */
   | { do: "unlock" | "lock"; door: number; room: number; label: string }
+  /** Draw a door's bolt from inside `room` (and its curtains), once the party is in; or draw it back. */
+  | { do: "bolt" | "unbolt"; door: number; room: number; label: string }
   | { do: "pick"; item: number; label: string }
   | { do: "give"; item: number; who: number; label: string }
   | { do: "wait"; s: number; pose: Pose; label: string };
@@ -64,6 +66,10 @@ export interface Task {
   aimed: Map<number, number>;
   /** The owner's walking speed before a search hurried them. */
   speed: number;
+  /** How close the party follows (m); FOLLOW_GAP when not set. */
+  gap?: number;
+  /** A search meant to have it out with the one it finds (bonds.ts). */
+  intent?: "confront";
 }
 
 export interface TaskHost {
@@ -100,6 +106,10 @@ export interface TaskHost {
   depart(p: Person): void;
   /** A step finished that the party acts on (looking in the cabinet). */
   stepDone(t: Task, p: Person, st: Step): void;
+  /** A search with intent found who it looked for. */
+  found?(t: Task, p: Person): void;
+  /** A task ended, however it went. */
+  finished?(t: Task): void;
 }
 
 /** A follower re-aims at the one ahead when this far behind (m). */
@@ -137,6 +147,8 @@ const stepLength = (st: Step): number => {
   switch (st.do) {
     case "unlock":
     case "lock":
+    case "bolt":
+    case "unbolt":
       return 3;
     case "pick":
     case "give":
@@ -328,8 +340,8 @@ export class Tasks {
 
   // ---------------------------------------------------------------- searches
 
-  /** Looking for a partner not seen for a while: where they were last seen, then asking round. */
-  search(p: Person, q: Person): Task | null {
+  /** Looking for a partner not seen for a while: where they were last seen, then asking round (with `intent`, to have it out). */
+  search(p: Person, q: Person, intent?: "confront"): Task | null {
     const h = this.host;
     const room = h.memory.lastRoom[p.id * h.people.length + q.id]!;
     const s = room !== -1 ? h.cells.random(room, this.rng, 0.8) : null;
@@ -343,7 +355,43 @@ export class Tasks {
         { do: "goto", to: s, label: "last-seen" },
         { do: "wait", s: 4, pose: "look", label: "look-round" },
       ],
-      { other: q.id },
+      { other: q.id, intent },
+    );
+  }
+
+  // ------------------------------------------------------------ ties (bonds.ts)
+
+  /** One leads another off by the arm to somewhere quieter for a word. */
+  lead(owner: Person, follower: Person, to: Spot, secs: number): Task {
+    return this.make(
+      "pull",
+      owner,
+      [follower],
+      [
+        { do: "goto", to, label: "away" },
+        { do: "wait", s: secs, pose: "argue", label: "words" },
+      ],
+      { gap: 0.8, other: follower.id },
+    );
+  }
+
+  /**
+   * A couple slip away: hand in hand to a guest bedroom, the bolt drawn and the curtains closed,
+   * a while alone, then out again.
+   */
+  elope(lead: Person, follow: Person, room: number, door: number, inside: Spot, out: Spot, secs: number): Task {
+    return this.make(
+      "elope",
+      lead,
+      [follow],
+      [
+        { do: "goto", to: inside, label: "to-room" },
+        { do: "bolt", door, room, label: "bolt" },
+        { do: "wait", s: secs, pose: "hug", label: "alone" },
+        { do: "unbolt", door, room, label: "unbolt" },
+        { do: "goto", to: out, label: "out" },
+      ],
+      { gap: 0.6, other: follow.id },
     );
   }
 
@@ -472,9 +520,10 @@ export class Tasks {
   private enter(t: Task, p: Person, st: Step): void {
     const h = this.host;
     const items = h.world.items;
-    if (st.do === "unlock" || st.do === "lock") {
+    if (st.do === "unlock" || st.do === "lock" || st.do === "bolt" || st.do === "unbolt") {
       const d = h.world.doors[st.door]!;
       p.yaw = yawTo(p.x, p.z, d.x, d.z);
+      if (st.do === "bolt" || st.do === "unbolt") return;
       // The wrong key first, now and then.
       if (this.rng.chance(1 - p.fluency.keys)) {
         this.stats.fumbles++;
@@ -546,8 +595,9 @@ export class Tasks {
       return true;
     }
     if (st.do === "goto") return a.startedAt === null;
-    // Timed steps. A lock waits at the door while anyone in the party is still inside.
+    // Timed steps. A lock waits at the door while anyone in the party is still inside; a bolt, until they're all in.
     if (st.do === "lock" && h.t - t.stepAt < LOCK_WAIT && this.inside(t, st.room)) return false;
+    if (st.do === "bolt" && h.t - t.stepAt < LOCK_WAIT && !t.party.every((m) => h.people[m]!.room === st.room)) return false;
     if (st.do === "wait" && (t.kind === "photo" || t.kind === "candid")) this.shoot(t, p, st);
     if (h.t - t.stepAt >= stepLength(st)) {
       this.complete(t, p, st);
@@ -599,6 +649,14 @@ export class Tasks {
       // Left undone when someone is still in there.
       if (!this.inside(t, st.room)) h.world.setLocked(h.world.doors[st.door]!, true, p.id);
       t.unlocked = t.unlocked.filter((x) => x !== st.door);
+    } else if (st.do === "bolt") {
+      if (p.room === st.room && t.party.every((m) => h.people[m]!.room === st.room)) {
+        h.world.setLocked(h.world.doors[st.door]!, true, p.id);
+        for (const c of h.world.curtains) if (c.room === st.room && c.movable) h.world.setCurtain(c, "drawn");
+      }
+    } else if (st.do === "unbolt") {
+      const d = h.world.doors[st.door]!;
+      if (d.lockedBy === p.id) h.world.setLocked(d, false, p.id);
     } else if (st.do === "give") {
       this.handOver(t, p, h.people[st.who]!, st.item);
     } else if (st.do === "wait" && st.label === "pick") {
@@ -669,6 +727,12 @@ export class Tasks {
       return false;
     }
     t.found = true;
+    if (t.intent) {
+      // Not a hello: they go and have it out (bonds.ts).
+      this.finish(t, "found");
+      h.found?.(t, p);
+      return true;
+    }
     t.steps.splice(t.i + 1, t.steps.length, { do: "meet", who: q.id, label: "found" }, { do: "say", who: q.id, s: 3, pose: "kiss", label: "hello" });
     h.gesture(p, "wave", 2);
     this.advance(t);
@@ -728,13 +792,14 @@ export class Tasks {
     }
     const k = t.party.indexOf(p.id);
     const ahead = h.people[k <= 0 ? t.owner : t.party[k - 1]!]!;
+    const gap = t.gap ?? FOLLOW_GAP;
     const d = Math.hypot(ahead.x - p.x, ahead.z - p.z) + 4 * Math.abs(ahead.level - p.level);
     const last = t.aimed.get(p.id) ?? -1e9;
     // Re-aim when they've stopped short, or the one ahead has moved well on from where they were heading.
     const tgt = a.target;
-    const stale = a.startedAt !== null || !tgt || tgt.level !== ahead.level || Math.hypot(ahead.x - tgt.x, ahead.z - tgt.z) > FOLLOW_GAP + 1.5;
-    if (d > FOLLOW_GAP + 0.6 && stale && h.t - last > 2 && !p.path[p.pathIndex]?.climb) {
-      const s = h.beside(ahead, p, FOLLOW_GAP);
+    const stale = a.startedAt !== null || !tgt || tgt.level !== ahead.level || Math.hypot(ahead.x - tgt.x, ahead.z - tgt.z) > gap + 1.5;
+    if (d > gap + 0.6 && stale && h.t - last > 2 && !p.path[p.pathIndex]?.climb) {
+      const s = h.beside(ahead, p, gap);
       if (s && h.goTo(p, s)) t.aimed.set(p.id, h.t);
     }
     if (a.startedAt !== null) {
@@ -750,11 +815,17 @@ export class Tasks {
   poseOf(p: Person): Pose {
     const t = this.of(p);
     if (!t) return "stand";
-    if (p.id !== t.owner) return t.kind === "photo" ? "line" : t.kind === "tour" ? "look" : "stand";
+    if (p.id !== t.owner) {
+      if (t.kind === "elope" || t.kind === "pull") {
+        const st = t.steps[t.i];
+        return st?.do === "wait" ? st.pose : "stand";
+      }
+      return t.kind === "photo" ? "line" : t.kind === "tour" ? "look" : "stand";
+    }
     const st = t.steps[t.i];
     if (!st) return "stand";
     if (st.do === "say" || st.do === "wait") return st.pose;
-    if (st.do === "unlock" || st.do === "lock" || st.do === "pick" || st.do === "give") return "serve";
+    if (st.do === "unlock" || st.do === "lock" || st.do === "bolt" || st.do === "unbolt" || st.do === "pick" || st.do === "give") return "serve";
     return p.held === "bottle" || p.held === "coat" ? "carry" : "stand";
   }
 
@@ -777,6 +848,8 @@ export class Tasks {
       if (!d.rooms.some((r) => h.people.some((q) => q.present && q.room === r && q.ring !== "host"))) h.world.setLocked(d, true, t.owner);
     }
     t.unlocked = [];
+    // A bolt left drawn when they give up is drawn back.
+    for (const st of t.steps) if (st.do === "bolt" && h.world.doors[st.door]!.lockedBy === t.owner) h.world.setLocked(h.world.doors[st.door]!, false, t.owner);
     const owner = h.people[t.owner]!;
     owner.speed = t.speed;
     if (t.item >= 0 && outcome !== "done" && h.world.items.holder[t.item] === owner.id) {
@@ -790,6 +863,7 @@ export class Tasks {
     }
     if (outcome === "found") this.stats.found++;
     h.log("task", [t.owner, ...t.party], owner.room, `${t.kind}:${outcome}`);
+    h.finished?.(t);
     for (const m of [t.owner, ...t.party]) {
       const q = h.people[m]!;
       if (q.action?.id !== "task" || q.action.ref !== t.id) continue;
@@ -802,7 +876,9 @@ export class Tasks {
   hurryOut(): void {
     for (const t of this.running("leave")) {
       const out = t.steps.length - 1;
-      if (t.i >= out) continue;
+      // Not halfway up a stair (no route starts there): the next step will do.
+      const p = this.host.people[t.owner]!;
+      if (t.i >= out || p.path[p.pathIndex]?.climb) continue;
       t.i = out - 1;
       this.advance(t);
     }

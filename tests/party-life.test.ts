@@ -112,11 +112,15 @@ describe("everyday evenings", () => {
       expect(st.tours, seed).toBeLessThanOrEqual(4);
       expect(st.errands, seed).toBeGreaterThanOrEqual(4);
       expect(st.errands, seed).toBeLessThanOrEqual(12);
-      expect(st.searches, seed).toBeGreaterThanOrEqual(3);
+      expect(st.searches, seed).toBeGreaterThanOrEqual(1);
       expect(st.searches, seed).toBeLessThanOrEqual(15);
       expect(st.photos, seed).toBe(1);
       expect(party.tasks.stats.stalled, seed).toBeLessThanOrEqual(1);
     }
+    // Searches are partners looking for each other: about half the guests come as couples, and
+    // there's a search for every three couples or so over the three houses.
+    const couples = runs.reduce((s, { party }) => s + party.people.filter((p) => !p.staff && p.partner !== null).length / 2, 0);
+    expect(runs.reduce((s, { party }) => s + party.stats.searches, 0)).toBeGreaterThanOrEqual(couples / 3);
   });
 
   it("talks in a handful of small circles that people stay in for minutes, not seconds", () => {

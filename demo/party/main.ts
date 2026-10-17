@@ -18,6 +18,7 @@ import { generateMansion, type MansionBlueprint, type MansionOptions } from "../
 import { buildMansion, type BuiltMansion, type Quality } from "../../src/mansion/build";
 import { createGradePass } from "../../src/mansion/build/grade";
 import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from "../../src/party";
+import { ACQUAINTANCE, CLOSE_FRIEND, CONFRONT, COUPLE, FLIRTING, FRIEND, NOTICING } from "../../src/party/bonds";
 import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from "../../src/party/memory";
 import type { MoodOverride, RoomMood } from "../../src/party/mood";
 import { DETAIL_FOV, DETAIL_RANGE, FOV } from "../../src/party/senses";
@@ -121,6 +122,7 @@ const ACTION_LABEL: Record<ActionId, string> = {
   snack: "at the buffet",
   use: "about the house",
   task: "busy",
+  row: "having words",
 };
 const NOTE_LABEL: Record<string, string> = {
   bar: "tending the bar",
@@ -157,6 +159,23 @@ const NOTE_LABEL: Record<string, string> = {
   sideboard: "at the sideboard",
   wash: "washing up",
   smoke: "a cigarette out the back",
+  // Ties: words, a scene, making up, dancing close.
+  spat: "a spat",
+  row: "having a row",
+  hiss: "a hissed word",
+  jealous: "a jealous scene",
+  pull: "pulling them aside",
+  scuffle: "a scuffle",
+  "act:slap": "a row: a slap",
+  "act:shove": "a row: a shove",
+  "act:throw": "a row: a drink thrown",
+  "scuffle:shove": "a scuffle",
+  eye: "a quiet word",
+  answer: "having it out",
+  part: "breaking it up",
+  hug: "making up",
+  face: "dancing close",
+  front: "dancing close",
 };
 
 /** What each task is, and each step of it. */
@@ -169,6 +188,8 @@ const TASK_LABEL: Record<TaskKind, string> = {
   leave: "going home",
   check: "checking on something",
   chore: "seeing to something",
+  pull: "taking someone aside",
+  elope: "slipping away",
 };
 const STEP_LABEL: Record<string, string> = {
   "to-room": "on the way",
@@ -202,6 +223,11 @@ const STEP_LABEL: Record<string, string> = {
   "to-table": "to the table",
   "check-table": "checking the table",
   "dinner-ready": "dinner is ready",
+  away: "somewhere quieter",
+  words: "having words",
+  bolt: "bolting the door",
+  alone: "alone together",
+  unbolt: "drawing the bolt back",
 };
 
 let bp: MansionBlueprint;
@@ -232,12 +258,14 @@ let acc = 0;
 const SPEEDS = [0, 1, 5, 20, 60];
 let speed = Number(params.get("speed") ?? (shot ? 0 : 1));
 let selected = params.has("sel") ? Number(params.get("sel")) : -1;
+/** Whoever was picked before: the other person in a spark or a grudge. */
+let picked = -1;
 let follow = params.has("follow");
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "map" | "mood";
-const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "map", "mood"];
+type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "bonds" | "map" | "mood";
+const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "bonds", "map", "mood"];
 const overlays = new Set<Overlay>((params.get("ov") ?? "").split(",").filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
 /** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
@@ -511,6 +539,7 @@ function frameStates(): FrameState[] {
       gesture: party.t < p.gestureUntil ? p.gesture : null,
       // A glance, or the way someone is pointing.
       headYaw: party.t < p.lookUntil || (p.gesture === "point" && party.t < p.gestureUntil) ? angleLerp(0, Math.atan2(p.lookX - p.x, p.lookZ - p.z) - p.yaw, 1) : 0,
+      dishevelled: p.notable === "slipped-away" && party.t < p.notableUntil,
     };
   });
 }
@@ -827,6 +856,65 @@ function drawOverlays(states: FrameState[]): void {
     }
   }
 
+  // Ties: couples, flirting, friends, those who fell out, and grudges (an arrow from the one who holds it).
+  // With someone picked, only theirs.
+  if (overlays.has("bonds")) {
+    const b = party.bonds;
+    const ps = party.people;
+    const mine = (i: number, j: number) => !sel || i === sel.id || j === sel.id;
+    for (let i = 0; i < ps.length; i++) {
+      const a = here(i);
+      if (!a) continue;
+      for (let j = i + 1; j < ps.length; j++) {
+        if (!mine(i, j)) continue;
+        const c = here(j);
+        if (!c) continue;
+        const mid: [number, number] = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+        if (ps[i]!.partner === j) {
+          line(a, c, b.lover[i] >= 0 || b.lover[j] >= 0 ? "rgba(229, 143, 176, 0.5)" : "rgba(229, 143, 176, 0.9)", 2);
+          continue;
+        }
+        if (b.outWith(i, j)) {
+          line(a, c, "rgba(212, 82, 74, 0.85)", 1.5, [4, 3]);
+          chip("fell out", mid[0], mid[1], "#e98a80");
+          continue;
+        }
+        const f = b.flirtOf(i, j);
+        if (f >= NOTICING) {
+          line(a, c, `rgba(229, 143, 176, ${0.35 + 0.5 * Math.min(1, f / COUPLE)})`, 1 + 2 * Math.min(1, f / COUPLE), [6, 3]);
+          if (b.lover[i] === j || b.lover[j] === i) chip("affair", mid[0], mid[1], "#e58fb0");
+          else if (f >= FLIRTING) chip(`flirting ${pct(f)}`, mid[0], mid[1], "#e58fb0");
+          continue;
+        }
+        const fr = b.friendOf(i, j);
+        if (fr >= FRIEND) line(a, c, fr >= CLOSE_FRIEND ? "rgba(182, 229, 143, 0.7)" : "rgba(182, 229, 143, 0.35)", fr >= CLOSE_FRIEND ? 1.5 : 1);
+      }
+    }
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = 0; j < ps.length; j++) {
+        if (i === j || !mine(i, j)) continue;
+        const g = b.grudgeOf(i, j);
+        if (g < 0.15) continue;
+        const a = here(i);
+        const c = here(j);
+        if (!a || !c) continue;
+        const col = `rgba(224, 160, 90, ${0.4 + 0.6 * Math.min(1, g)})`;
+        line(a, c, col, 1 + 2 * Math.min(1, g));
+        // Arrowhead at the one it's held against.
+        const ang = Math.atan2(c[1] - a[1], c[0] - a[0]);
+        const tip: [number, number] = [c[0] - Math.cos(ang) * 9, c[1] - Math.sin(ang) * 9];
+        line(tip, [tip[0] - Math.cos(ang - 0.5) * 7, tip[1] - Math.sin(ang - 0.5) * 7], col, 1.5);
+        line(tip, [tip[0] - Math.cos(ang + 0.5) * 7, tip[1] - Math.sin(ang + 0.5) * 7], col, 1.5);
+      }
+    }
+    // Who doubts their partner, and how much.
+    for (const q of ps) {
+      const d = b.doubt(q.id);
+      const at = here(q.id);
+      if (d >= 0.1 && at && (!sel || q === sel || q.partner === sel.id)) chip(`doubt ${pct(d)}`, at[0], at[1] + 18, d >= CONFRONT ? "#e98a80" : "#e0b56a");
+    }
+  }
+
   // Suspicion: how much the picked person suspects each other person, or, with nobody picked,
   // how suspected each person is on average by everyone there.
   if (overlays.has("suspicion")) {
@@ -907,6 +995,7 @@ function buildPeople(): void {
 
 /** Pick someone: the scope follows them, and the plan turns to their floor. */
 function select(id: number): void {
+  if (selected >= 0 && id >= 0 && id !== selected) picked = selected;
   selected = id;
   follow = id >= 0;
   const p = party.people[id];
@@ -1008,6 +1097,24 @@ function mindText(p: Person): string {
   if (doubts.length) lines.push(`not sure it's really ${doubts.map(([i, v]) => `${name(i)} ${pct(v)}`).join(", ")}`);
   const sus = top((q) => party.suspects(p.id, q.id), 0.005, 5);
   lines.push(sus.length ? `suspects ${sus.map(([i, v]) => `${name(i)} ${pct(v)}`).join(", ")}` : "suspects nobody");
+  // Ties: temper, doubt about the partner, the strongest bonds and grudges tonight.
+  {
+    const b = party.bonds;
+    const temper = b.temper[p.id]!;
+    const doubt = b.doubt(p.id);
+    const head = [`temper ${temper < 0.25 ? "easy" : temper < 0.55 ? "even" : "short"} (${pct(temper)})`];
+    if (p.partner !== null) head.push(doubt >= 0.05 ? `doubts ${name(p.partner)} ${pct(doubt)}` : `trusts ${name(p.partner)}`);
+    if (b.stray[p.id]) head.push(b.lover[p.id] >= 0 ? `seeing ${name(b.lover[p.id]!)} on the quiet` : b.eye[p.id]! >= 0 ? `has an eye on ${name(b.eye[p.id]!)}` : "restless");
+    lines.push(head.join(" · "));
+    const flirts = top((q) => b.flirtOf(p.id, q.id), NOTICING, 3);
+    if (flirts.length) lines.push(`drawn to ${flirts.map(([i, v]) => `${name(i)} ${pct(v)}`).join(", ")}`);
+    const friends = top((q) => (b.outWith(p.id, q.id) || q.id === p.partner ? 0 : b.friendOf(p.id, q.id)), ACQUAINTANCE, 4);
+    if (friends.length) lines.push(`gets on with ${friends.map(([i, v]) => `${name(i)} ${v >= CLOSE_FRIEND ? "close" : v >= FRIEND ? "friend" : "acquaintance"}`).join(", ")}`);
+    const out = party.people.filter((q) => q !== p && b.outWith(p.id, q.id));
+    if (out.length) lines.push(`fell out with ${out.map((q) => q.name).join(", ")}`);
+    const grudges = top((q) => b.grudgeOf(p.id, q.id), 0.05, 3);
+    if (grudges.length) lines.push(`grudge against ${grudges.map(([i, v]) => `${name(i)} ${pct(v)} (heat ${pct(b.heatOf(p, party.people[i]!))})`).join(", ")}`);
+  }
   const facts: Array<{ f: number; c: number; from: number }> = [];
   for (let sl = p.id * SLOTS; sl < p.id * SLOTS + m.held[p.id]!; sl++) {
     const c = m.confAt(p.id, sl);
@@ -1061,6 +1168,8 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "blame",
     "tell",
     "conflict",
+    "confront",
+    "slip-away",
   ]),
   gossip: new Set(["gossip"]),
   "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
@@ -1069,6 +1178,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
   "the house": new Set(["bathroom-taken", "knock", "bump", "light"]),
   programme: new Set(["phase", "announce", "arrive", "leave", "toast", "beat"]),
   "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
+  "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
 };
 let logFilter = params.get("log") ?? "the evening";
 if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
@@ -1156,8 +1266,58 @@ function eventText(e: PartyEvent): string {
       return `${n(e.actors[0])} ${e.note === "quiet" ? "talks through the speech" : "sits before the host"}${e.actors.length > 1 ? `; ${e.actors.slice(1).map(n).join(", ")} frown${e.actors.length > 2 ? "" : "s"}` : ""}`;
     case "beat":
       return `· ${BEAT_LABEL[e.note ?? ""] ?? (e.note ?? "").replace(/-/g, " ")} ·`;
+    case "bond":
+      return bondText(e, n);
+    case "rebuff":
+      return `${n(e.actors[0])} cools things with ${n(e.actors[1])}`;
+    case "row": {
+      const [kind, act] = (e.note ?? "").split(":");
+      const what = kind === "spat" ? "has words with" : kind === "hiss" ? "hisses a word at" : "has a row with";
+      return `${n(e.actors[0])} ${what} ${n(e.actors[1])}${act ? `: ${ROW_ACT[act] ?? act}` : ""}${roomOf(e)}`;
+    }
+    case "confront": {
+      const how = { pull: "pulls them aside", jealous: "makes a scene", scuffle: "goes for them", row: "a row", hiss: "a hissed word" }[e.note ?? ""] ?? ROW_ACT[e.note ?? ""] ?? e.note;
+      const about = (e.actors[2] ?? -1) >= 0 ? n(e.actors[2]) : "the talk";
+      return `${n(e.actors[0])} confronts ${n(e.actors[1])} about ${about}: ${how}${roomOf(e)}`;
+    }
+    case "doubt":
+      return e.note === "watchful"
+        ? `${n(e.actors[0])} starts keeping an eye on ${n(e.actors[1])}`
+        : `${n(e.actors[0])} is sure ${n(e.actors[1])} is cheating (${e.note === "seen" ? "saw it" : "was told"})`;
+    case "pull":
+      return `${n(e.actors[0])} pulls ${n(e.actors[1])} onto the floor`;
+    case "slip-away":
+      return e.note === "in" ? `${n(e.actors[0])} and ${n(e.actors[1])} slip away and lock the door${roomOf(e)}` : `${n(e.actors[0])} and ${n(e.actors[1])} come back down, a little dishevelled`;
+    case "won":
+      return `${n(e.actors[0])} beats ${n(e.actors[1])} at ${e.note}`;
     default:
       return e.kind;
+  }
+}
+
+const ROW_ACT: Record<string, string> = { slap: "a slap", shove: "a shove", throw: "a drink thrown" };
+
+function bondText(e: PartyEvent, n: (i: number | undefined) => string): string {
+  const [a, b] = [n(e.actors[0]), n(e.actors[1])];
+  switch (e.note) {
+    case "noticing":
+      return `${a} and ${b} notice each other`;
+    case "flirting":
+      return `${a} and ${b} are flirting`;
+    case "affair":
+      return `${a} is flirting with ${b} behind ${n(e.actors[2])}'s back`;
+    case "couple":
+      return `${a} and ${b} are together now`;
+    case "friend":
+      return `${a} and ${b} become friends`;
+    case "staff-friend":
+      return `${a} and ${b} hit it off over the drinks`;
+    case "fell-out":
+      return `${a} and ${b} fall out`;
+    case "made-up":
+      return `${a} makes it up with ${b}`;
+    default:
+      return `${a} and ${b}: ${e.note}`;
   }
 }
 
@@ -1211,6 +1371,8 @@ function refreshPanel(): void {
     `${st.wrongTurns} wrong turns · ${st.asks} asked the way · ${st.heard} went to see a noise${planted.length ? ` · ${planted.length} planted` : ""}`,
     `${st.cases} cases · ${st.askedAround} asked round · ${st.blames} settled on someone · ${st.conflicts} didn't fit · ${st.recognised} faces put a name to · ${st.claims} said where they'd been`,
     `${st.greetings} hellos · ${st.joins} joined a conversation · ${st.rebuffs} turned away · ${st.splits} splits · ${st.breaches} breaches`,
+    `${st.couples} couples · ${st.friendships} friendships · ${st.flirtations} flirtations (${st.rebuffed} cooled) · ${st.affairs} affairs · ${st.foundOut} found out · ${st.confrontations} confrontations`,
+    `${st.spats} spats · ${st.rows} rows · ${st.fellOut} fell out · ${st.madeUp} made up · ${st.pulled} pulled onto the floor · ${st.staffFriends} staff friendships · ${st.slipAways} slipped away`,
     `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
@@ -1339,6 +1501,16 @@ $("gone").onclick = () => {
   if (!p?.present || p.room === -1) return;
   goneRoom = p.room;
   provoke({ t: party.t, kind: "gone", subject: -1, witness: p.id, room: p.room });
+};
+$("spark").onclick = () => {
+  if (party.people[selected] && party.people[picked]) provoke({ t: party.t, kind: "spark", subject: selected, witness: picked });
+};
+$("grudge").onclick = () => {
+  if (party.people[selected] && party.people[picked]) provoke({ t: party.t, kind: "grudge", subject: selected, witness: picked });
+};
+$("cheat").onclick = () => {
+  const p = party.people[selected];
+  if (p?.partner !== null && p) provoke({ t: party.t, verb: "cheating", subject: p.id, odd: 0 });
 };
 $("seen").onclick = () => {
   const p = party.people[selected];

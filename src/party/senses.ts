@@ -116,6 +116,8 @@ export interface SensesHost {
   goLook(p: Person, s: Sound): void;
   /** Whether two people are in the same conversation or dancing together. */
   together(a: Person, b: Person): boolean;
+  /** What a bond makes of a sighting (bonds.ts), after its own notes. */
+  saw?(a: Person, b: Person, d: number): void;
 }
 
 const ACTIONS: readonly ActionId[] = [
@@ -139,6 +141,7 @@ const ACTIONS: readonly ActionId[] = [
   "snack",
   "greet",
   "task",
+  "row",
 ];
 export const actionIndex = (a: ActionId | undefined): number => (a ? ACTIONS.indexOf(a) + 1 : 0);
 export const actionAt = (i: number): ActionId | null => (i > 0 ? (ACTIONS[i - 1] ?? null) : null);
@@ -324,6 +327,7 @@ export class Senses {
     }
     // Wary of them: a glance when they're close.
     if (d < 5 && memory.suspects(a.id, b.id) >= WARY && a.pose !== "walk" && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
+    h.saw?.(a, b, d);
   }
 
   /** Bathroom doors in view tell whether each is taken (milestone 2 replaces PR 1's stand-in with this). */

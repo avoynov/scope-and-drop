@@ -101,10 +101,19 @@ export type Pose =
   /** Carrying something in both hands (a bottle, a coat). */
   | "carry"
   /** Standing in a row for the group photo, facing the camera. */
-  | "line";
+  | "line"
+  /** Having words: leaning in, both hands going. */
+  | "argue"
+  /** Arms round each other: making up, or a couple alone. */
+  | "hug"
+  /** Dancing close with a partner, face to face. */
+  | "slow"
+  /** Club style: in front of a partner, back to them, and the one behind. */
+  | "front"
+  | "behind";
 
-/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over. */
-export type Gesture = "ask" | "point" | "shrug" | "lean" | "wave" | "frown" | "beckon";
+/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over; and at the height of a row a slap, a shove, a drink thrown, a pull by the arm. */
+export type Gesture = "ask" | "point" | "shrug" | "lean" | "wave" | "frown" | "beckon" | "slap" | "shove" | "throw" | "pull";
 
 /** The six drinks of the evening. */
 export type DrinkId = "champagne" | "red" | "white" | "beer" | "whisky" | "water";
@@ -141,6 +150,8 @@ export type ActionId =
   | "snack"
   /** Going to say hello to someone just seen (ref: whom). */
   | "greet"
+  /** Having words with someone, or a hug to make up (bonds.ts; ref: the other, note: the kind, 'answer' for the one it's put to). */
+  | "row"
   /** A step of a task (tasks.ts): a tour, an errand, a search, the group photo, saying goodbye (ref: the task, note: the step). */
   | "task";
 
@@ -365,7 +376,23 @@ export type EventKind =
   /** A guest said goodbye to the host (actors: the guest, the host). */
   | "goodbye"
   /** A beat of a practice (note: the beat, e.g. 'tap', 'hush', 'open-dance', 'band-break', 'last-call'). */
-  | "beat";
+  | "beat"
+  /** A bond reached a stage (note: 'noticing', 'flirting', 'couple', 'friend', 'staff-friend', 'affair', 'fell-out', 'made-up'; actors: the pair, for an affair then the partner). */
+  | "bond"
+  /** One side wasn't that way inclined and stepped back (actors: the cool one, the keen one). */
+  | "rebuff"
+  /** Words between two (note: 'spat', 'row', 'hiss', or 'act:slap' and the like; actors: who started it, at whom). */
+  | "row"
+  /** A partner had it out over an affair (note: 'pull', 'jealous', 'scuffle', or the act; actors: the partner, the one caught, the one they were with). */
+  | "confront"
+  /** Someone's doubt about their partner passed a line (note: 'watchful', or 'seen' or 'told' for confronting; actors: who, their partner). */
+  | "doubt"
+  /** A friend on the floor drew someone into dancing (actors: the dancer, who followed). */
+  | "pull"
+  /** A couple slipped away to a bedroom and locked the door (note 'in', 'out'; actors: the pair). */
+  | "slip-away"
+  /** A frame or a hand was won (note: the game; actors: winner, loser). */
+  | "won";
 
 export interface PartyEvent {
   t: number;

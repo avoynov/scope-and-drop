@@ -69,8 +69,32 @@ export function heightAt(x: number, z: number): number {
   h += Math.max(0, d - 1500) * 0.08 * fbm(x / 900 + 3, z / 900, 3);
   // The shooter's hide: a low rise that looks down onto the flats.
   h += 6 * Math.exp(-((d / 70) ** 2));
+  for (const m of mounds) h += moundAt(m, x, z);
   return h;
 }
+
+/**
+ * Hills raised to put a target where the lab is asked for it (`configureTargets`): one under a target that has to
+ * stand higher than the ground there, and one under the hide when a target has to sit lower than the ground lets.
+ * Each falls away as e^(−r/s) from a top a few metres across, so the line of sight up or down its flank stays clear;
+ * the hide's sits just behind the shooter, so he lies at the brow looking down.
+ */
+interface Mound {
+  x: number;
+  z: number;
+  h: number;
+  s: number;
+}
+const mounds: Mound[] = [];
+/** How far the rounding of a hill's top reaches (m): enough for a mannequin to stand level, no more. */
+const MOUND_TOP_M = 3;
+const moundAt = (m: Mound, x: number, z: number) => {
+  if (m.h <= 0) return 0;
+  const r = Math.hypot(x - m.x, z - m.z);
+  return m.h * Math.exp(-(Math.sqrt(r * r + MOUND_TOP_M * MOUND_TOP_M) - MOUND_TOP_M) / m.s);
+};
+/** How much the hills raised for the targets add to the terrain at most (m). */
+export const terrainLift = () => mounds.reduce((a, m) => a + Math.max(0, m.h), 0);
 
 export const RANGE_M = 412;
 /** Target lies down-range on -Z, a touch right of the camera's start bearing. */
@@ -79,6 +103,55 @@ export const TARGET = new THREE.Vector3(18, 0, -RANGE_M);
 export const NEAR_M = 183;
 export const NEAR_TARGET = new THREE.Vector3(-3, 0, -NEAR_M);
 export const EYE_HEIGHT = 1.1;
+/** A mannequin's chest, the aim point, above its foot (m). */
+export const CHEST_M = 1.15;
+
+/** Where the lab is asked to put a mannequin: the slant range from the eye to its chest (m) and its elevation (°). */
+export interface TargetSpot {
+  rangeM: number;
+  elevDeg: number;
+}
+/** The ranges the mannequins are quoted at: the asked-for slant range, or the nominal one. */
+export const targetRanges = [RANGE_M, NEAR_M];
+
+/**
+ * Moves the mannequins (0: the 412 m one, 1: the 183 m one) to the asked-for range and elevation along their own
+ * bearings, raising a hill under a target that must stand higher than the ground, or under the hide when one must
+ * sit lower. Call before anything reads the terrain. The boulder and the clear patch behind the far target move
+ * with it.
+ */
+export function configureTargets(spots: (TargetSpot | null)[]): void {
+  const pins = [TARGET, NEAR_TARGET].map((v, i) => ({ v, i, spot: spots[i] ?? null, bearing: Math.atan2(v.x, -v.z), hill: { x: 0, z: 0, h: 0, s: 1 } as Mound })).filter((p) => p.spot);
+  if (!pins.length) return;
+  const lift: Mound = { x: 0, z: 5, h: 0, s: 1 };
+  mounds.length = 0;
+  mounds.push(lift, ...pins.map((p) => p.hill));
+  for (const p of pins) {
+    const sp = p.spot!;
+    const horiz = sp.rangeM * Math.cos((sp.elevDeg * Math.PI) / 180);
+    p.v.set(Math.sin(p.bearing) * horiz, 0, -Math.cos(p.bearing) * horiz);
+    Object.assign(p.hill, { x: p.v.x, z: p.v.z, s: horiz / 3 });
+    targetRanges[p.i] = sp.rangeM;
+  }
+  const downhill = pins.filter((p) => p.spot!.elevDeg < 0);
+  lift.s = Math.max(30, Math.min(...downhill.map((p) => Math.hypot(p.v.x, p.v.z) / 3), 1e9));
+  // Raise the hills until each chest sits where it is asked to; a target below the ground lifts the hide instead.
+  for (let it = 0; it < 60; it++) {
+    const eye = heightAt(0, 0) + EYE_HEIGHT;
+    let worst = 0;
+    let need = 0;
+    for (const p of pins) {
+      const want = eye + p.spot!.rangeM * Math.sin((p.spot!.elevDeg * Math.PI) / 180) - CHEST_M;
+      const diff = want - heightAt(p.v.x, p.v.z);
+      worst = Math.max(worst, Math.abs(diff));
+      const h = p.hill.h + diff;
+      p.hill.h = Math.max(0, h);
+      if (h < 0) need = Math.max(need, -h);
+    }
+    lift.h += need;
+    if (worst < 0.005 && need === 0) break;
+  }
+}
 
 /** Shared GLSL value noise. */
 const NOISE = /* glsl */ `
@@ -505,7 +578,7 @@ export function buildRange(wind?: WindGL): Range {
     scene.add(tgt);
     return { group: tgt, head: new THREE.Vector3(at.x, at.y + 1.7, at.z), foot: at.clone(), range };
   };
-  const targets = [mannequin(TARGET, RANGE_M), mannequin(NEAR_TARGET, NEAR_M)];
+  const targets = [mannequin(TARGET, targetRanges[0]!), mannequin(NEAR_TARGET, targetRanges[1]!)];
 
   // Wire fence on a slant across the range, steel T-posts every 5 m with the odd wooden post.
   const postGeo = new THREE.BoxGeometry(0.05, 1.25, 0.05);
@@ -538,7 +611,7 @@ export function buildRange(wind?: WindGL): Range {
   // One shadow box, on whichever mannequin is being watched: 44 m across at 412 m, and the same angle at 183 m,
   // so the shadows are as fine in the glass on either. Tiles that reach into it keep the full bush, so each
   // bush always matches its own shadow.
-  const SHADOW_HALF = [22, 10];
+  const SHADOW_HALF = [22 * (targetRanges[0]! / RANGE_M), 10 * (targetRanges[1]! / NEAR_M)];
   let shadowAt = -1;
   const shadowOn = (i: number): boolean => {
     if (i === shadowAt) return false;

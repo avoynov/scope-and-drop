@@ -4,6 +4,7 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
 import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
+import { LRF_MAX_M, LRF_MIN_M, solveElevationMil, speedDrop, type AimAid } from "../../src/scope/aids";
 import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
@@ -38,6 +39,8 @@ const state = {
   reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
   /** The bolt rifle's reticle: Leupold PR2-MIL or Vortex EBR-7D (`tree=pr2|ebr`). */
   treeStyle: (params.get("tree") === "ebr" ? "ebr" : "pr2") as TreeStyle,
+  /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a rifle-mounted rangefinder (`aid=manual|lrf`). */
+  aid: (params.get("aid") === "lrf" ? "lrf" : "manual") as AimAid,
   mag: num("mag", 8),
   parallax: num("par", reticleParam === "vss" ? NEAR_M : RANGE_M), // metres; Infinity = ∞
   // A good scope, well set up: parallax on the target, eye centred at full eye relief.
@@ -244,6 +247,10 @@ function aimDistance(dir: THREE.Vector3): number {
     if (along > 0 && Math.abs(miss.x) < 3 && miss.y > -2 && miss.y < 1) board = Math.min(board, along);
   }
   if (board < Infinity) return board;
+  return groundDistance(dir);
+}
+/** Distance along `dir` from the eye to the ground, or Infinity. */
+function groundDistance(dir: THREE.Vector3): number {
   let d = 5;
   while (d < 9000) {
     const p = probe.copy(eyePos).addScaledVector(dir, d);
@@ -252,6 +259,34 @@ function aimDistance(dir: THREE.Vector3): number {
     d += Math.max(1, d * 0.01);
   }
   return Infinity;
+}
+
+/**
+ * The rangefinder's press: its laser goes out along the bore line, sway and all (it is boresighted with the scope),
+ * and returns off the first thing it meets: a mannequin, the boulder or the ground. Its solver then takes that
+ * range and the slope off its inclinometer and gives the elevation for standard air and no wind. Nothing within
+ * 5 m or past 1500 m returns.
+ */
+const lrfRay = new THREE.Raycaster();
+lrfRay.layers.enableAll();
+const lrfDir = new THREE.Vector3();
+function rangeLrf(): void {
+  if (state.reticle !== "tree" || state.aid !== "lrf" || shooting.busy()) return;
+  const aim = aimAt(clock);
+  lrfDir.set(0, 0, -1).applyEuler(new THREE.Euler(aim.pitch, aim.yaw, 0, "YXZ"));
+  lrfRay.set(eyePos, lrfDir);
+  lrfRay.far = LRF_MAX_M;
+  const solids = [range.boulder, ...range.targets.map((m) => m.group)];
+  for (const o of solids) o.updateWorldMatrix(true, true);
+  const hits = lrfRay.intersectObjects(solids, true).filter((h) => h.object.name !== "hole");
+  const solidM = hits.length ? hits[0]!.distance : Infinity;
+  const d = Math.min(solidM, groundDistance(lrfDir));
+  if (!(d >= LRF_MIN_M && d <= LRF_MAX_M)) {
+    rifle.setLrfReadout("no-return");
+    return;
+  }
+  const slope = Math.asin(Math.max(-1, Math.min(1, lrfDir.y)));
+  rifle.setLrfReadout({ rangeM: d, slopeDeg: (slope * 180) / Math.PI, elevMil: Math.max(0, solveElevationMil(RIFLES.bolt, d, slope)) });
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -267,37 +302,30 @@ const parToSlider = (m: number) => (Number.isFinite(m) ? (Math.log(m / 50) / Mat
 const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 100));
 
 /**
- * DOPE card for the bolt rifle, as a sniper writes one from a ballistic calculator: elevation in mils over the
- * 100 m zero every 100 m, for level ground and standard air. Its scope and reticle carry nothing cut for the
- * load, so this is what the shooter dials (×10 clicks) or holds on the tree. Below it what a real card keeps in
- * the margin: the mil-to-cm relation at 100 m (the shooter scales it to range), the click value, and the slope
- * rule. The rule multiplies the solution, not the range: the elevation for the slant range × the cosine read off
- * the ACI, which holds up on steep, long shots where the classic rifleman's rule (range × cosine) falls low.
- * Wind is on the wind card.
+ * The bolt rifle's elevation card, for the manual way (the rangefinder needs none). Speed Drop: elevation in mil
+ * over the 100 m zero = range in hundreds − the factor, worked out once from the load's come-ups (aids.ts), true to
+ * 0.2 mil inside its band. Past the band the shooter goes back to his come-ups, so the card carries those rows, as
+ * real cards do. In the margin what a real card keeps: the mil-to-cm relation at 100 m (the shooter scales it to
+ * range), the click value, and the slope rule. The rule multiplies the solution, not the range: the elevation for
+ * the slant range × the cosine read off the ACI, which holds up on steep, long shots where the classic rifleman's
+ * rule (range × cosine) falls low. Wind is on the wind card.
  */
-const DOPE_RANGES = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+const SPEED_DROP = speedDrop(RIFLES.bolt);
 const dope = $("dope");
 function syncDope(): void {
-  const show = state.reticle === "tree";
+  const show = state.reticle === "tree" && state.aid === "manual";
   dope.hidden = !show;
   if (!show || dope.innerHTML) return;
   const rf = RIFLES.bolt;
   const r = ROUNDS[rf.round];
-  const half = DOPE_RANGES.length / 2;
+  const sd = SPEED_DROP;
+  const far = [500, 600, 700, 800, 900, 1000].filter((d) => d > sd.maxM);
   const elev = (d: number) => (holdRad(r, d, BATTLE_ZERO_M, rf.sightM) * 1000).toFixed(1);
-  const cols = (from: number) => DOPE_RANGES.slice(from, from + half);
+
   dope.innerHTML =
-    `<div class="dope-head"><b>DOPE</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · elevation, mil</span></div>` +
-    `<table>${[0, half]
-      .map(
-        (f) =>
-          `<tr><th>m</th>${cols(f)
-            .map((d) => `<td>${d}</td>`)
-            .join("")}</tr><tr><th>mil</th>${cols(f)
-            .map((d) => `<td>${elev(d)}</td>`)
-            .join("")}</tr>`,
-      )
-      .join("")}</table>` +
+    `<div class="dope-head"><b>SPEED DROP</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
+    `<div class="sd"><span class="sd-n">${sd.factor.toFixed(1)}</span><span>elevation = range in hundreds − ${sd.factor.toFixed(1)}<br>good ${Math.ceil(sd.minM / 10) * 10}–${Math.floor(sd.maxM / 10) * 10} m, within ${sd.tolMil} mil</span></div>` +
+    `<table><tr><th>past</th>${far.map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${far.map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
     `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
 }
 
@@ -405,6 +433,9 @@ function syncUi(): void {
   panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]")) b.classList.toggle("on", b.dataset.ret === state.reticle);
   $("treestyle").hidden = state.reticle !== "tree";
+  $("aid").hidden = state.reticle !== "tree";
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]")) b.classList.toggle("on", b.dataset.aid === state.aid);
+  rifle.showLrf(state.reticle === "tree" && state.aid === "lrf");
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]")) b.classList.toggle("on", b.dataset.tree === state.treeStyle);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]")) b.classList.toggle("on", state[b.dataset.flag as "illum"] as boolean);
   syncWindCard();
@@ -425,6 +456,11 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]"))
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]"))
   b.onclick = () => {
     state.treeStyle = b.dataset.tree as TreeStyle;
+    syncUi();
+  };
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]"))
+  b.onclick = () => {
+    state.aid = b.dataset.aid as AimAid;
     syncUi();
   };
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]"))
@@ -590,6 +626,14 @@ function pickAci(e: { clientX: number; clientY: number }): boolean {
   picker.setFromCamera(ndc, rifle.camera);
   return picker.intersectObject(rifle.aci, true).some((h) => h.object.name === "aci");
 }
+/** Whether the pointer is on the rangefinder, with the head up: the eye then looks, and focuses, on its screen. */
+function pickLrf(e: { clientX: number; clientY: number }): boolean {
+  if (adsIn || shooting.busy() || !rifle.lrf.visible) return false;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  picker.setFromCamera(ndc, rifle.camera);
+  return picker.intersectObject(rifle.lrf, true).some((h) => h.object.name === "lrf");
+}
 /**
  * Where the eye looks, and so focuses. The rifle stays blurred, as the eye is on the range, until the shooter
  * looks at the drum: the pointer on it, or a click of `[` or `]`. The eye stays on it while the pointer does and
@@ -600,7 +644,7 @@ const LOOK_HOLD = 1.5;
 let focusInv = 0;
 let drumLook = false;
 /** What the eye looks at with the head up: the drum or the angle indicator. */
-let lookAt: "drum" | "aci" = "drum";
+let lookAt: "drum" | "aci" | "lrf" = "drum";
 let lookUntil = -Infinity;
 const focusPinned = params.has("focus") ? num("focus", 0.29) : 0;
 const lookAway = () => {
@@ -658,9 +702,10 @@ canvas.addEventListener("pointermove", (e) => {
   if (!pointers.size && e.pointerType === "mouse") {
     const d = pickDrum(e);
     const a = !d && pickAci(e);
-    if (d || a) {
+    const l = !d && !a && pickLrf(e);
+    if (d || a || l) {
       drumLook = true;
-      lookAt = d ? "drum" : "aci";
+      lookAt = d ? "drum" : a ? "aci" : "lrf";
     } else lookAway();
     canvas.style.cursor = d ? "ew-resize" : "";
   }
@@ -719,6 +764,11 @@ addEventListener("keydown", (e) => {
     state.illum = !state.illum;
     syncUi();
   }
+  if (e.code === "KeyM" && state.reticle === "tree") {
+    state.aid = state.aid === "manual" ? "lrf" : "manual";
+    syncUi();
+  }
+  if (e.code === "KeyX" && !e.repeat) rangeLrf();
   if (e.code === "KeyV" && state.reticle === "tree") {
     state.treeStyle = state.treeStyle === "pr2" ? "ebr" : "pr2";
     syncUi();
@@ -937,7 +987,8 @@ function frame(t: number, dt: number): void {
   // while it works them (the plan's gaze carries its own focus), on the drum while the shooter looks at it with
   // the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
-  const drumDist = lookAt === "aci" ? Math.hypot(eye.x - rifle.aciMm.x, eye.y - rifle.aciMm.y, eye.z - rifle.aciMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
+  const lookMm = lookAt === "aci" ? rifle.aciMm : lookAt === "lrf" ? rifle.lrfMm : null;
+  const drumDist = lookMm ? Math.hypot(eye.x - lookMm.x, eye.y - lookMm.y, eye.z - lookMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
   const looking = drumLook || t < lookUntil;
   const working = acted.busy;
   const wantFocus = focusPinned ? 1 / focusPinned : working ? hp.invF : adsIn || !looking ? 0 : 1 / drumDist;
@@ -1127,6 +1178,8 @@ if (shot) {
       stepAdapt(imageShare(e, { x: 0, y: 0 }), 1 / 240);
     }
   }
+  // Stills: `ranged` presses the rangefinder once the range is built.
+  if (params.has("ranged")) rangeLrf();
   frame(t, 0);
   frame(t, 0);
   (window as unknown as { __ready: boolean }).__ready = true;

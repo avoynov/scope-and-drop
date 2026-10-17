@@ -27,7 +27,7 @@ The short version, for players new to scopes. The numbers behind it are in secti
    - **Gusts travel.** A gust is carried downwind at the wind's speed, so you can see it coming across the sage and the near flags before it reaches the line. Fire in a lull, or hold for the gust that will be there.
    - **Easy** puts a wind meter on a mast at your hide, as high as the flags, and adds its m/s under the card's flags. It reads the wind at the hide, not along the way.
    - For scale, at 2.5 m/s straight across: about 0.3 thousandth on the VSS at 183 m (6 cm), 0.7 on the SVD at 412 m (30 cm), 1.6 on the SVD at 800 m (1.4 m).
-6. **Keep the rifle loaded yourself.** Space only pulls the trigger. **B** works the bolt (or, on the SVD and VSS, the charging handle) and **R** changes the magazine. Neither does the other's job. After each shot from the bolt rifle, press B, or the next pull does nothing. A fresh magazine needs B to chamber a round. A pull on an empty chamber gives a click, and after that the trigger is dead until you work the action. The SVD stays open after its last round until you change the magazine and press B. The VSS closes on an empty chamber, so you only get a click.
+6. **Keep the rifle loaded yourself.** Space only pulls the trigger. **B** works the bolt (or, on the SVD and VSS, the charging handle), **R** changes the magazine and **C** puts the safety on or off. None does another's job, and nothing is done for you: remember each step as a soldier would. After each shot from the bolt rifle, press B, or the next pull does nothing. A fresh magazine chambers nothing: after the last round, change the magazine and then press B. With a round still in the chamber, a magazine change keeps it and the rifle is ready; pressing B then anyway throws that good round out, as it really would. A pull on an empty chamber gives a click, and after that the trigger is dead until you work the action. The SVD stays open after its last round until you change the magazine and press B. The VSS closes on an empty chamber, so you only get a click. On safe the trigger won't move, and the bolt or charging handle stops short.
 7. **Watch the hit and correct.** Stay on the scope after the shot. The VSS's light kick keeps the target in view, and its bullet takes 0.7 s to get there. If it lands low, hold that much higher next time. If it lands left, hold right.
 
 **Bolt rifle (mil turret, tree, Manual or Pro):** nothing on this scope is made for the round. It works like a real sniper's rifle, the manual way or with a rangefinder. Pick one in the panel (or M; `aid=manual|lrf` in the URL).
@@ -331,6 +331,22 @@ Each rifle is worked the way it really is:
   - Changing the magazine: the support hand thumbs the catch and rocks the magazine forward about its front lug. The new one goes in front lug first and rocks back until the catch snaps over. A carrier held open stays open. About 2.9 s.
 - **VSS.** The same, except that it has no bolt stop, so its carrier is always shut.
 
+#### Nothing done for you (`src/scope/action.ts`)
+
+Every control does only what the real rifle does when a soldier tries it, and nothing is refused that the rifle would allow. A round is chambered by the action, never by the magazine: none of the three has a bolt release or a hold-open that lets go when a magazine goes in. So after the last round a fresh magazine leaves the chamber empty until B: the SVD's carrier stays on its bolt stop until the charging handle is pulled (manual §33), the VSS has closed on an empty chamber, and the TRG's round is "chambered from a loaded magazine by moving the bolt to its rearmost position and then to its closed position". A magazine change with a round chambered keeps it. Working the action with a live round chambered throws that round out and chambers the next.
+
+#### The safety (C)
+
+No animation; the click, a trigger that won't move and a handle that stops short are how you know.
+
+| | SVD | VSS | Bolt rifle (Sako TRG) |
+| --- | --- | --- | --- |
+| Lever | Right side of the receiver, up for safe (manual §18) | The same AK-type lever (the cross-bolt behind the trigger is the fire selector; the automatic mode is left out) | Inside the trigger guard, pulled back for ON (TRG manual) |
+| Blocks | Sear and trigger; the lever's shield covers the handle's slot, so the carrier only comes back a little way | The same | Trigger, striker held cocked, bolt locked shut |
+| Can't go on | With the carrier held open (the handle is where the shield goes; inferred from §18) | Always goes on | With the striker down (after a shot or a click): it springs back off |
+
+A magazine change is never blocked.
+
 The hands are gloved, with jointed fingers and thumbs that shape for each grip (the bolt knob pinched, the charging handle hooked, the magazine held by its body, the catch pressed) on the way in. Each reach is a minimum-jerk stroke (Flash & Hogan), arcing clear of the rifle, after which the hand rides the part it holds: on the knob it follows it up and back. Arms run to the shoulders, about 20 cm behind the eye with the cheek on the stock, with the elbows out, down and a little back. A reach longer than the arm rolls the shoulder forward, up to 13 cm, as it does for the SVD's charging handle. The pace varies by ±6 % from one handling to the next, and everything is a function of the time since the hands started, so stills are exact.
 
 Tests check that:
@@ -339,7 +355,8 @@ Tests check that:
 - the hand stays on the knob and the charging handle while they move;
 - no wrist bends past 80°, and the arms keep their length;
 - each sound is cued in order as its part moves;
-- the trigger, the action and the magazine each do only their own job, with the click or dead trigger each rifle really gives.
+- the trigger, the action and the magazine each do only their own job, with the click or dead trigger each rifle really gives;
+- the safety locks the trigger, stops the handle short (nothing thrown out or fed), and goes on only when each rifle allows.
 
 ### What it hits
 
@@ -412,7 +429,8 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | F / right-click | Scope in / scope out |
 | Space | Pull the trigger, and nothing else. It fires if a round is chambered; otherwise there's a click or a dead trigger, as on the real rifle |
 | B | Work the action: the bolt, or the charging handle. Any time; with a round chambered it throws that round out |
-| R | Change the magazine. Any time; the chamber stays as it was |
+| R | Change the magazine. Any time; the chamber stays as it was, and a fresh magazine chambers nothing |
+| C | Safety on or off (no visuals: the click, a locked trigger and a handle that stops short tell you) |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
 | V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |
 | M | Bolt rifle: Manual (Speed Drop card) or Pro (laser rangefinder) |

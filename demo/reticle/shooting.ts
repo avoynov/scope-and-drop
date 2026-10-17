@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import { AIR, ROUNDS } from "../../src/scope/ballistics";
 import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from "../../src/scope/handling";
-import { cycle, loaded, pull, reload, type ActionState } from "../../src/scope/action";
+import { cycle, loaded, pull, reload, setSafe, type ActionState } from "../../src/scope/action";
 import { SCOPE } from "../../src/scope/optics";
 import { assess, type Wound } from "../../src/body/wound";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
@@ -327,7 +327,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   function handle(now: number, kind: "cycle" | "reload"): void {
     const reload = kind === "reload";
     const seed = handlingCount++;
-    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held });
+    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held, safe: gun.safe });
     handling = {
       kind,
       start: now,
@@ -342,7 +342,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
 
   /**
    * B and R: work the action, or change the magazine, whenever the hands are free, needed or not. Working it
-   * with a round chambered throws that round out; a magazine change keeps whatever is in the chamber.
+   * with a round chambered throws that round out; a magazine change keeps whatever is in the chamber and
+   * chambers nothing. With the safety on, the action's handle stops short (src/scope/action.ts).
    */
   function work(now: number, kind: "cycle" | "reload"): boolean {
     sound.unlock();
@@ -352,11 +353,24 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   }
 
   /**
+   * C: the safety flicked on or off, by feel, with its click. It won't go on with the SVD's carrier held open,
+   * or the bolt rifle's striker down. It needs the firing hand: free on the grip while the support hand changes
+   * the SVD's or VSS's magazine, busy on the bolt, the charging handle or the bolt rifle's box.
+   */
+  function safety(): boolean {
+    sound.unlock();
+    const handBusy = handling && (handling.kind === "cycle" || rifle.action === "bolt");
+    if (handBusy || !setSafe(gun, rifle.id, !gun.safe)) return false;
+    sound.cue("safety", rifle.id, 0);
+    return true;
+  }
+
+  /**
    * Space / the Fire button: the trigger, and only the trigger. It fires if a round is chambered and the hammer
    * or striker is cocked. Otherwise it does what the real rifle does: a cocked hammer or striker falls on an
    * empty chamber with a click (and stays down until the action is worked); a fired bolt rifle whose bolt was
    * not worked, a hammer or striker already down, or the SVD's carrier held open (its auto sear holds the
-   * hammer until the carrier is home) give a dead trigger. `aimAt(t)` is where
+   * hammer until the carrier is home) give a dead trigger. On safe the trigger is locked and won't move. `aimAt(t)` is where
    * the bore points at time t (sway and any recoil still running included); the bullet leaves after the lock
    * time and barrel time, wherever the rifle points then. Returns the moment it left, or null.
    */
@@ -364,6 +378,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     sound.unlock();
     if (handling) return null;
     const r = pull(gun, rifle.id);
+    // On safe, the trigger is locked and doesn't move.
+    if (r === "safe") return null;
     if (r !== "fire") {
       sound.cue(r === "click" ? "dry-fire" : "trigger", rifle.id, r === "click" ? rifle.lockS * 0.5 : 0);
       return null;
@@ -753,6 +769,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     setTilt: (rad: number) => (tiltRad = rad),
     press,
     work,
+    safety,
     /** For stills: a bullet that left the muzzle at `exit`. */
     fireAt: (exit: number, eye: THREE.Vector3, aim: Aim, wind: Wind) => {
       pull(gun, rifle.id);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycle, loaded, pull, reload } from "../src/scope/action";
+import { canSafe, cycle, loaded, pull, reload, setSafe } from "../src/scope/action";
 
 describe("the trigger, the action and the magazine, each on its own", () => {
   it("bolt rifle: one shot, then a dead trigger until the bolt is worked", () => {
@@ -68,5 +68,52 @@ describe("the trigger, the action and the magazine, each on its own", () => {
     reload(g, "vss");
     expect(g.chamber).toBe("live");
     expect(g.mag).toBe(10);
+  });
+});
+
+describe("the safety", () => {
+  it("locks the trigger on every rifle, and comes off again", () => {
+    for (const rifle of ["bolt", "svd", "vss"] as const) {
+      const g = loaded(rifle);
+      expect(setSafe(g, rifle, true)).toBe(true);
+      expect(pull(g, rifle)).toBe("safe");
+      expect(g.chamber).toBe("live");
+      expect(setSafe(g, rifle, false)).toBe(true);
+      expect(pull(g, rifle)).toBe("fire");
+    }
+  });
+
+  it("stops the action being worked, but not a magazine change", () => {
+    const g = loaded("vss");
+    for (let i = 0; i < 10; i++) pull(g, "vss");
+    setSafe(g, "vss", true);
+    expect(cycle(g, "vss")).toBe(false);
+    expect(g.chamber).toBe("empty");
+    reload(g, "vss");
+    expect(g.mag).toBe(10);
+    expect(g.chamber).toBe("empty");
+    // Off safe, the handle goes all the way and chambers.
+    setSafe(g, "vss", false);
+    expect(cycle(g, "vss")).toBe(true);
+    expect(pull(g, "vss")).toBe("fire");
+  });
+
+  it("SVD: won't go up with the carrier held open", () => {
+    const g = loaded("svd");
+    for (let i = 0; i < 10; i++) pull(g, "svd");
+    expect(canSafe(g, "svd")).toBe(false);
+    expect(setSafe(g, "svd", true)).toBe(false);
+    expect(g.safe).toBe(false);
+  });
+
+  it("bolt rifle: goes on only with the striker cocked, and then locks the bolt", () => {
+    const g = loaded("bolt");
+    pull(g, "bolt");
+    // Fired: the striker is down, and the safety springs back off.
+    expect(setSafe(g, "bolt", true)).toBe(false);
+    cycle(g, "bolt");
+    expect(setSafe(g, "bolt", true)).toBe(true);
+    expect(cycle(g, "bolt")).toBe(false);
+    expect(g.mag).toBe(3);
   });
 });

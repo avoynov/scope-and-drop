@@ -2,7 +2,7 @@
 
 `/demo/reticle/` is a stand-alone page that renders what an eye sees through a first-focal-plane (FFP) riflescope, with three rifles and their reticles: an SVD with a PSO-1 pattern and its rangefinder, a bolt rifle with a mil turret, a mil tree and a DOPE card, and the game's rifle, a suppressed VSS with a PSO-1-1 pattern (section 3 says why). The look follows the two reference frames (a camera behind a tactical scope in high desert): a dark, defocused ocular ring, a blown-out world outside it, a slightly vignetted image inside, and a crisp etched reticle.
 
-![Mil tree at 16×](images/reticle-tree.jpg)
+![Bolt rifle, PR2-MIL at 16×](images/reticle-tree.jpg)
 
 | PSO at 9× | Eyebox shadow (20×, eye 1.6 mm right, 14 mm too far back) |
 | --- | --- |
@@ -33,8 +33,8 @@ The short version, for players new to scopes. The numbers behind it are in secti
 **Bolt rifle (mil turret, tree, DOPE card):** nothing on this scope is made for the round. It works like a real sniper's rifle:
 
 1. **Range the target** with the tree: `range (m) = size (m) × 1000 ÷ size (mil)`. The mannequin is 1.7 m tall.
-2. **Correct for slope** (rifleman's rule). With the head up, point at the angle dial on the left of the scope and read the slope in degrees. Multiply the range by its cosine (on the card). The lab's range is nearly flat, so it reads close to 0.
-3. **Read the elevation** for that range off the DOPE card (top right), in mil over the 100 m zero. Between two rows, interpolate.
+2. **Note the slope.** With the head up, point at the angle cosine indicator (ACI) on the left of the scope: its pointer reads the cosine of the slope straight off the dial (×100, so 87 means 0.87 at 30°). The lab's range is nearly flat, so it rests on the level triangle (factor 1).
+3. **Read the elevation** for the range off the DOPE card (top right), in mil over the 100 m zero. Between two rows, interpolate. On a slope, multiply that elevation by the ACI's cosine (the card's rule: multiply the solution, not the range).
 4. **Dial it or hold it.** Turn the turret up that many mil (10 clicks a mil; Shift with `[` or `]` turns a whole mil), or leave it on 0 and hold that many mil low on the tree. The turret makes 10 mil a turn: a white line shows under it on the second turn and two on the third, and the row of numbers that matches is the one to read (0–9, 10–19, 20–29).
 5. **Hold the wind** on the tree's rows, from the wind card.
 6. The card gives the mil-to-cm relation only at 100 m (1 mil = 10 cm). It scales with range: 20 cm at 200 m, 50 cm at 500 m.
@@ -81,13 +81,14 @@ All three reticles are lists of resolution-free primitives (lines, polylines, do
 
 VSS at 8×, drum on 1, held for the mannequin at 183 m: the point 5.1 thousandths down, a third of the way from the 200 m chevron up to the 150 m one, is on the chest.
 
-### Mil tree (unit: mrad), after the Leupold PR2-MIL and Vortex EBR-7D
+### Bolt rifle reticles (unit: mrad): Leupold PR2-MIL or Vortex EBR-7D
 
-The user asked for these two reticles combined. It is drawn from their published descriptions, not traced from the makers' drawings (those were not reachable), so subtensions are close but not exact.
+The bolt rifle carries either, picked in the panel (or V; `tree=pr2|ebr` in the URL). Both are drawn from published descriptions, not traced from the makers' drawings (those were not reachable), so subtensions are close but not exact. Nothing on either is cut for a load.
 
-- From the **PR2-MIL**: every intersection open, a 0.05 mil floating centre dot, half-mil ticks on one side of the line only, odd-numbered tree rows thinned so the view stays clear for trace and splash.
-- From the **EBR-7D**: 0.2 mil hashes inside 2 mil on the horizontal line and the stem below for fine holds, and a tree of holdover dots on every whole mil below the centre, one dot per mil across, widening with drop (±1 to ±10 mil) for wind holds.
-- Heavy 0.4 mil posts from 10.5 mil (20.5 mil below, past the tree). Numbers every 2 mil on the lines and on the even rows.
+![EBR-7D at 16×](images/reticle-ebr.jpg)
+
+- **PR2-MIL** (measured off Leupold's drawing): every intersection open (each line stops just short of the marks on it) round a small floating centre dot. The horizontal runs to ±10 mil: whole mils crossed, half mils above, quarters below, a 0.1 mil ladder from 3 to 4 mil (even tenths above, odd below), numbers every 2 below, and tapered posts from 10.3 mil out. Above the centre there is only a short stem to 2 mil ending in a T. Below, the stem is crossed every half mil with the same 3–4 ladder. The tree alternates: even rows are scales like the horizontal, capped and numbered at both ends; odd rows are dots every half mil. Rows widen a mil every second row (±1, 1, 2, 2 … 5 mil).
+- **EBR-7D** (measured off Vortex's drawing): a thin crosshair to the field stop, open at the centre round a 0.03 mil dot. The illuminated part runs 6 mil left, right and up, and 10 mil down: on the horizontal, 0.2 mil hashes above and half mils below; up and down the stem, 0.2 mil crosses. From 6 to 10 mil left, right and up, an unlit 0.1 mil ladder (0.2 mil hashes either side of the line, offset 0.1). Numbers every 2 mil. The tree's rows are dotted every 0.2 mil from 0.4 mil off the stem, whole mils bolder, a mil wider every second row (±2, 2, 3, 3 … 6 mil), numbered on even rows.
 - **Illumination** lights the centre dot and the fine crosshair.
 - Nothing is cut for a load. Like a real FFP mil reticle, it works with any round.
 
@@ -123,7 +124,7 @@ As on the real PSO-1, the drum starts at 1 ([Wikipedia](https://en.wikipedia.org
 
 ![Head up: mil turret on its second turn at 12.4 mil, angle indicator on the left](images/turret-aci.jpg)
 
-**The angle indicator.** Real snipers read the slope off an angle cosine indicator (ACI) on the scope or its mount ([Badger/Sniper Tools Design](https://www.brownells.co.uk/ANGLE-COSINE-INDICATOR-MOUNT-GEN-II-Angle-Cosine-Indicator-w-Gen-II-Rail-Mount-BADGER-ORDNANCE-093000094), [ERA-TAC](https://www.optics-trade.eu/hr/era-tac-angle-cosine-indicator-aci-mil-spec-bubble-level.html)). The lab's sits on the left of the rear ring with a pendulum-driven needle: degrees of slope, a tick every degree to 20 and every 5 to 60, numbers every 10, the needle turning 2.5° per degree. A real ACI's dial faces left; this one is turned back toward the eye so it can be read with the head up without leaning. Point at it with the head up and the eye focuses on it, as on the drum. No number floats on the screen.
+**The angle cosine indicator.** Real snipers read the slope off an ACI on the scope or its mount. The lab's follows Sniper Tools Design's ([ACI](https://www.snipertools.com/aci-and-mounts/angle-cosine-indicator.html), [Mil Spec](https://www.milehighshooting.com/sniper-tools-acimil-a2-angle-cosine-indicator-mil-spec/)): a flat-black anodised cylinder about an inch across under a lens, purely mechanical, with the cosine of the slope engraved round the dial in 5° steps and a pendulum pointer that hangs true. Here the dial covers only the slopes a shot can take, up to 30° up or down, with a tick every 5°, a triangle at level and the cosine (×100) at every 10°: 98, 94, 87. The pointer is geared 3:1 so those 30° fill the dial instead of crowding its top (a game choice; a real pendulum turns one for one). It sits on an arm off the left of the rear ring. A real ACI's lens faces left; this one is turned back toward the eye so it can be read with the head up without leaning. Point at it with the head up and the eye focuses on it, as on the drum. No number floats on the screen.
 
 Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.ru/rubric/article.php?art=nsd05012024) (100 m, drum on 3, control point 14 cm above the aim), [PSO instruction manual](https://sheldy.ru/userfiles/files/PCO(1).pdf) (zeroing at 100 m with the drum on 1, 5 cm per click at 100 m), [Wikipedia: PSO-1](https://en.wikipedia.org/wiki/PSO-1).
 
@@ -131,19 +132,19 @@ Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.
 
 **VSS: the reticle does the work, and the range is everything.** The SP-5 leaves at 280 m/s and is still doing 260 m/s at 183 m, so it drops 2.2 m on the way and takes 0.68 s. Range the target with the curve and hold the matching point between the chevrons: 5.1 thousandths at 183 m with the drum on 1, a third of the way from the 200 m chevron up to the 150 m one. A 10 m range error puts the bullet 13 cm high or low, so the 50 m chevrons and the rangefinder carry the shot. Wind matters less than the flight time suggests: the heavy bullet barely slows, so a full 3 m/s crosswind moves it only 7.5 cm (0.4 thousandth) at 183 m.
 
-**Bolt rifle: the shooter does the work, as a real sniper does.** The tree and turret are generic, so the shooter carries a DOPE card (data on previous engagements), shown in the top right when the rifle is selected. It is what a sniper writes from a ballistic calculator and checks on the range: elevation in mil over the 100 m zero every 100 m, for level ground and standard air, computed by the same solver the bullets fly with. In its margin, as on a real card: `1 mil = 10 cm at 100 m · 1 click = 0.1 mil`, the rifleman's rule, and the cosines from 5° to 45°.
+**Bolt rifle: the shooter does the work, as a real sniper does.** The tree and turret are generic, so the shooter carries a DOPE card (data on previous engagements), shown in the top right when the rifle is selected. It is what a sniper writes from a ballistic calculator and checks on the range: elevation in mil over the 100 m zero every 100 m, for level ground and standard air, computed by the same solver the bullets fly with. In its margin, as on a real card: `1 mil = 10 cm at 100 m · 1 click = 0.1 mil` and the slope rule (elevation for the slant range × the ACI's cosine).
 
 | Range | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 1000 m |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Elevation | 0.0 | 0.6 | 1.6 | 2.7 | 4.0 | 5.5 | 7.2 | 9.2 | 11.5 | 14.2 mil |
 
-**Why a DOPE card and not an on-screen ballistic calculator.** A real calculator (Kestrel with Applied Ballistics, Strelok) takes range, slope, wind and air and gives the dial and the wind hold in one step: it would do the slope and the wind for the player. Snipers still carry the card as their primary data or backup ([FM 23-10](https://archive.org/download/MManuals/Fm23-10SniperTraining.pdf)), and with it the player still ranges, reads the slope, applies the rifleman's rule, reads the wind and picks dial or hold. A test fires the card's elevations, rounded to a click, and lands within half a click of the aim from 200 to 1000 m.
+**Why a DOPE card and not an on-screen ballistic calculator.** A real calculator (Kestrel with Applied Ballistics, Strelok) takes range, slope, wind and air and gives the dial and the wind hold in one step: it would do the slope and the wind for the player. Snipers still carry the card as their primary data or backup ([FM 23-10](https://archive.org/download/MManuals/Fm23-10SniperTraining.pdf)), and with it the player still ranges, reads the slope and applies it, reads the wind and picks dial or hold. A test fires the card's elevations, rounded to a click, and lands within half a click of the aim from 200 to 1000 m.
 
 **The hand method is gone.** Working the drop out with ½·g·t² from a speed table is not what shooters do, and it misses: even with the zero taken off it read 0.7 mil high at 600 m and 1.1 mil at 800 m. The ammo card, the drum's 0 and `handHoldRad` went with it.
 
 **Head and tail wind are left off the card.** A 10 m/s head or tail wind changes the M118LR's speed by 1–5 m/s and the elevation by 0.01 mil at 300 m, 0.08 mil at 600 m and 0.2 mil at 800 m, less than a click inside 700 m. Real shooters ignore it there ([Sierra: wind effects](https://www.sierrabullets.com/?p=17388), [head/tail wind at 1000 yd](https://researchpress.uk/marksmanship/bpcr/headwind-tailwind/)). The bullets in the lab still fly through it.
 
-**The rifleman's rule** (dial for slant range × cos(angle)) is what real snipers use with an ACI ([Sniper Central](https://snipercentral.com/angle.htm)). Fired in the lab, it is good close in and leaves the bullet low further out on steep slopes, because drag stretches the flight over the slant range, which the rule ignores (a test pins this):
+**Slope: multiply the solution, not the range.** The classic rifleman's rule (dial for slant range × cos(angle)) is what many shooters use with an ACI ([Sniper Central](https://snipercentral.com/angle.htm)). Fired in the lab, it is good close in and leaves the bullet low further out on steep slopes, because drag stretches the flight over the slant range, which the rule ignores:
 
 | Slant range | 15° up | 30° up | 15° down | 30° down |
 | --- | --- | --- | --- | --- |
@@ -151,7 +152,7 @@ Sources: [snakeproject: bringing the SVD to normal battle](https://snakeproject.
 | 600 m | 0.11 low | 0.33 low | 0.08 low | 0.28 low |
 | 800 m | 0.26 low | 0.79 low (63 cm) | 0.18 low | 0.64 low |
 
-Multiplying the card's elevation for the slant range by the cosine instead (the "improved" rule) is within 0.25 mil at all of these, slightly high. The card shows the classic rule, as asked.
+So the card uses the improved rule the user picked: the elevation for the full slant range, multiplied by the cosine. At every range and slope above it lands within 0.25 mil, a touch high. At 800 m and 30° up that is 0.11 mil high instead of 0.79 low. A test pins both rules.
 
 ### Which rifle the game needs
 
@@ -366,7 +367,7 @@ The rifle's own sounds are the report and every part of working the action: the 
 
 **What the eye sees, in order, going in:**
 
-1. **The rifle, out of focus.** The scope and rifle are modelled to scale: a 47 mm ocular bell with 41 mm of glass recessed 2.5 mm, a ribbed power ring with its throw lever, a 30 mm tube, an elevation drum engraved with its range marks (or, on the bolt rifle, a mil turret with its turn lines) and a white index line on the saddle, an angle indicator on the left of the rear ring, a windage turret, a 50 mm objective bell and rings. Under them is whichever rifle is chosen: the bolt rifle's rail, receiver with its ejection port, fluted bolt and handle, fibreglass stock, barrel and brake; the SVD's side mount, receiver and cover, charging handle, wooden handguard and skeleton stock; or the VSS with its suppressor; their magazines; and the gloved hands that work them. They are rendered from the eye and defocused as a 3 mm pupil focused on the target sees them: a point d metres away spreads over pupil/d radians. That is 30–40 px at the eyepiece and a few px at the muzzle. When the eye looks at the elevation drum it focuses there instead, at f = 0.29 m (or on the hands and the action while they work it), and the disc becomes pupil·|1/d − 1/f|: the drum sharp, the eyepiece and muzzle soft, the range blurred by pupil/f. The blur is a depth-aware scatter-as-gather (each point spreads over its own disc, with energy conserved), plus a smear along the eyepiece's sweep across the view during the 1/60 s exposure.
+1. **The rifle, out of focus.** The scope and rifle are modelled to scale: a 47 mm ocular bell with 41 mm of glass recessed 2.5 mm, a ribbed power ring with its throw lever, a 30 mm tube, an elevation drum engraved with its range marks (or, on the bolt rifle, a mil turret with its turn lines) and a white index line on the saddle, an angle cosine indicator on the left of the rear ring, a windage turret, a 50 mm objective bell and rings. Under them is whichever rifle is chosen: the bolt rifle's rail, receiver with its ejection port, fluted bolt and handle, fibreglass stock, barrel and brake; the SVD's side mount, receiver and cover, charging handle, wooden handguard and skeleton stock; or the VSS with its suppressor; their magazines; and the gloved hands that work them. They are rendered from the eye and defocused as a 3 mm pupil focused on the target sees them: a point d metres away spreads over pupil/d radians. That is 30–40 px at the eyepiece and a few px at the muzzle. When the eye looks at the elevation drum it focuses there instead, at f = 0.29 m (or on the hands and the action while they work it), and the disc becomes pupil·|1/d − 1/f|: the drum sharp, the eyepiece and muzzle soft, the range blurred by pupil/f. The blur is a depth-aware scatter-as-gather (each point spreads over its own disc, with energy conserved), plus a smear along the eyepiece's sweep across the view during the 1/60 s exposure.
 2. **Dark glass.** Until the eye is close to the axis, the eyepiece shows only a faint green-magenta coating sheen of the sky.
 3. **A crescent at the bottom.** The light comes through the exit pupil. Coming in from above and behind, the first light appears in the lower part of the eyepiece, then grows as the eye drops. The image pops in over the last few millimetres, which is what real glass does.
 4. **The tunnel opens.** The primary stroke stops slightly back, so the field is a disc inside a black ring that fills as the corrective stroke closes the eye relief.
@@ -393,13 +394,14 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | B | Work the action: the bolt, or the charging handle. Any time; with a round chambered it throws that round out |
 | R | Change the magazine. Any time; the chamber stays as it was |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
+| V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |
 | G | Glass in front of the mannequins: off, single, double, laminated, tempered (section 11) |
 | L | Illumination |
 | H | Hide the panel |
 
 The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), Fire, Bolt and Reload buttons, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `tree=pr2|ebr` (the bolt rifle's reticle), `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 

@@ -225,9 +225,10 @@ export function buildRifle(): NearLayer {
     tube(18.6, 18.6, h - 11, h + 11, steel);
     add(new THREE.BoxGeometry(mm(28), mm(18), mm(22)), steel, 0, -mm(24), -mm(h));
   }
-  // Angle indicator on the left of the rear ring, its dial turned back toward the shooter's eye with the head
-  // up (a real ACI's dial faces left; this one is turned so it can be read without leaning). A pendulum drives
-  // the needle through 2.5 : 1 gearing: degrees of slope, 0 at the top, to 60 either way.
+  // Angle cosine indicator (after Sniper Tools Design's ACI): a black anodised cylinder an inch across under a
+  // lens, on an arm off the left of the rear ring. A pendulum pointer hangs true; the bezel round it is engraved
+  // with the cosine of the slope (×100) in 5° steps, so the shooter reads the factor straight off it. A real
+  // ACI's lens faces left; this one is turned back toward the eye so it can be read with the head up.
   const aciMm = new THREE.Vector3(-31, 16, -212);
   const aci = new THREE.Group();
   aci.position.set(mm(aciMm.x), mm(aciMm.y), mm(aciMm.z));
@@ -237,11 +238,14 @@ export function buildRifle(): NearLayer {
   aciTex.colorSpace = THREE.SRGBColorSpace;
   aciTex.anisotropy = 8;
   {
-    const housing = new THREE.CylinderGeometry(mm(12), mm(12), mm(8), 48);
+    const housing = new THREE.CylinderGeometry(mm(12.7), mm(12.7), mm(15), 48);
     housing.rotateX(Math.PI / 2);
-    const h = add(housing, anod, 0, 0, -mm(4.2));
-    const face = add(new THREE.CircleGeometry(mm(10.5), 64), mat(0xffffff, 4, 0.05, 0, aciTex), 0, 0, mm(0.05));
-    for (const o of [h, face]) {
+    const h = add(housing, anod, 0, 0, -mm(7.6));
+    // A raised bezel ring round the lens.
+    const bezel = new THREE.RingGeometry(mm(10.6), mm(12.7), 48);
+    const b = add(bezel, anod, 0, 0, mm(0.9));
+    const face = add(new THREE.CircleGeometry(mm(10.6), 64), mat(0xffffff, 4, 0.05, 0, aciTex), 0, 0, mm(0.1));
+    for (const o of [h, b, face]) {
       o.name = "aci";
       aci.add(o);
     }
@@ -249,14 +253,16 @@ export function buildRifle(): NearLayer {
     add(new THREE.BoxGeometry(mm(8), mm(14), mm(10)), steel, -mm(23), mm(6), -mm(208));
   }
   const needle = new THREE.Group();
-  needle.position.z = mm(0.4);
+  needle.position.z = mm(0.45);
   aci.add(needle);
   {
-    const blade = add(new THREE.BoxGeometry(mm(0.6), mm(8.5), mm(0.2)), mat(0xf0552a, 4, 0.05), 0, mm(3.6), 0);
-    const hub = add(new THREE.CylinderGeometry(mm(1.1), mm(1.1), mm(0.4), 24).rotateX(Math.PI / 2), anod, 0, 0, 0);
-    needle.add(blade, hub);
+    // Pointer up from the pivot, its counterweight below.
+    const blade = add(new THREE.BoxGeometry(mm(0.7), mm(8.6), mm(0.2)), mat(0xf0552a, 4, 0.05), 0, mm(4.1), 0);
+    const weight = add(new THREE.CylinderGeometry(mm(2.4), mm(2.4), mm(0.6), 24, 1, false, -Math.PI / 2 - 0.9, 1.8).rotateX(Math.PI / 2), mat(0x2a2a2a, 20, 0.2), 0, 0, 0);
+    const hub = add(new THREE.CylinderGeometry(mm(0.9), mm(0.9), mm(0.4), 24).rotateX(Math.PI / 2), mat(0xd8d8d0, 4, 0.05), 0, 0, mm(0.1));
+    needle.add(blade, weight, hub);
   }
-  // A crystal over the dial would only add glare at this distance: left out.
+  // The lens over the dial would only add glare at this distance: left out.
 
   // The rifle under the scope, its moving parts and the hands, in millimetres.
   const below = new THREE.Group();
@@ -294,13 +300,17 @@ export function buildRifle(): NearLayer {
   };
 }
 
-/** The angle indicator's gearing (needle turn per radian of slope) and its stops. */
-const ACI_GEAR = 2.5;
-const ACI_MAX = (60 * Math.PI) / 180;
+/**
+ * The ACI's pointer is geared 3:1 off its pendulum so the slopes a shot can take here, up to 30° either way, fill
+ * the dial instead of crowding its top; it rests on stops just past 30°.
+ */
+const ACI_GEAR = 3;
+const ACI_SPAN = 30;
+const ACI_MAX = ((ACI_SPAN + 2) * Math.PI) / 180;
 
 /**
- * The angle indicator's dial: a tick every degree to 20, every 5 beyond, numbers every 10, white on black.
- * The needle turns 2.5° per degree of slope, clockwise for uphill.
+ * The ACI's dial: a tick every 5° to ±30°, a triangle at level, and the cosine (×100) engraved every 10°: 98, 94, 87,
+ * white on black, the same either side. The pointer turns clockwise for uphill.
  */
 function paintAci(): HTMLCanvasElement {
   const S = 512;
@@ -315,25 +325,34 @@ function paintAci(): HTMLCanvasElement {
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.font = `600 ${S * 0.085}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
-  const R = S * 0.47;
-  for (let d = -60; d <= 60; d++) {
+  const R = S * 0.46;
+  for (let d = -ACI_SPAN; d <= ACI_SPAN; d += 5) {
     const ten = d % 10 === 0;
-    const five = d % 5 === 0;
-    if (!five && Math.abs(d) > 20) continue;
     // Canvas y runs down the face's texture (v up), so a positive angle here is clockwise as seen.
     const a = (d * ACI_GEAR * Math.PI) / 180;
+    const cos = Math.cos((d * Math.PI) / 180);
     const sx = Math.sin(a),
       cy = -Math.cos(a);
-    const l = ten ? 0.17 : five ? 0.11 : 0.065;
-    g.lineWidth = ten ? S * 0.012 : S * 0.007;
+    const l = ten ? 0.16 : 0.09;
+    g.lineWidth = ten ? S * 0.014 : S * 0.009;
     g.beginPath();
     g.moveTo(sx * R, cy * R);
     g.lineTo(sx * R * (1 - l), cy * R * (1 - l));
     g.stroke();
-    if (ten && d !== 0) g.fillText(String(Math.abs(d)), sx * R * 0.68, cy * R * 0.68);
+    // Level needs no number (its factor is 1): a bold triangle marks it. The others stand upright to read at a glance.
+    if (ten && d) {
+      g.font = `600 ${S * 0.13}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
+      g.fillText(String(Math.round(cos * 100)), sx * R * 0.6, cy * R * 0.6);
+    }
   }
-  g.font = `600 ${S * 0.06}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
-  g.fillText("DEG", 0, S * 0.2);
+  g.beginPath();
+  g.moveTo(0, -R * 0.8);
+  g.lineTo(-S * 0.035, -R * 0.62);
+  g.lineTo(S * 0.035, -R * 0.62);
+  g.closePath();
+  g.fill();
+  g.font = `600 ${S * 0.055}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
+  g.fillText("COSINE", 0, S * 0.24);
   return c;
 }
 

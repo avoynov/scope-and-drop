@@ -3,7 +3,7 @@ import { ROUNDS, holdRad } from "../../src/scope/ballistics";
 import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
-import { RETICLES, drawReticle, type Reticle } from "../../src/scope/reticles";
+import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
 import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
@@ -36,6 +36,8 @@ const reticleParam = params.get("reticle");
 
 const state = {
   reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
+  /** The bolt rifle's reticle: Leupold PR2-MIL or Vortex EBR-7D (`tree=pr2|ebr`). */
+  treeStyle: (params.get("tree") === "ebr" ? "ebr" : "pr2") as TreeStyle,
   mag: num("mag", 8),
   parallax: num("par", reticleParam === "vss" ? NEAR_M : RANGE_M), // metres; Infinity = ∞
   // A good scope, well set up: parallax on the target, eye centred at full eye relief.
@@ -79,6 +81,9 @@ const state = {
   pitch: 0,
 };
 
+/** The reticle in the scope now. */
+const currentReticle = (): Reticle => (state.reticle === "tree" ? treeReticle(state.treeStyle) : RETICLES[state.reticle]());
+
 const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: shot });
 const dpr = shot ? 1 : Math.min(devicePixelRatio, 2);
 renderer.setPixelRatio(dpr);
@@ -119,7 +124,7 @@ wideCam.position.copy(eyePos);
   state.pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
   // hold=<units>: aim that many reticle units high (and hold=<up>,<right> for wind), so a chevron sits on the chest.
   const [up = 0, right = 0] = (params.get("hold") ?? "").split(",").filter(Boolean).map(Number);
-  const unit = RETICLES[state.reticle]().unitRad;
+  const unit = currentReticle().unitRad;
   state.pitch += up * unit;
   state.yaw -= right * unit;
 }
@@ -209,10 +214,10 @@ const wideDrawnQ = new THREE.Quaternion();
 const pxPerRad = (cam: THREE.PerspectiveCamera, px: number) => px / 2 / Math.tan(((cam.fov / 2) * Math.PI) / 180);
 
 function drawRet(): void {
-  const key = `${state.reticle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
+  const key = `${state.reticle}|${state.treeStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
   if (key === retKey) return;
   retKey = key;
-  const r = RETICLES[state.reticle]();
+  const r = currentReticle();
   const S = retCanvas.width;
   retCtx.clearRect(0, 0, S, S);
   // FFP: units → canvas px grows with magnification. Canvas half-width ↔ tan(half apparent field).
@@ -265,11 +270,12 @@ const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 1
  * DOPE card for the bolt rifle, as a sniper writes one from a ballistic calculator: elevation in mils over the
  * 100 m zero every 100 m, for level ground and standard air. Its scope and reticle carry nothing cut for the
  * load, so this is what the shooter dials (×10 clicks) or holds on the tree. Below it what a real card keeps in
- * the margin: the mil-to-cm relation at 100 m (the shooter scales it to range), the click value, and the
- * rifleman's rule with the cosines for slopes read off the angle indicator. Wind is on the wind card.
+ * the margin: the mil-to-cm relation at 100 m (the shooter scales it to range), the click value, and the slope
+ * rule. The rule multiplies the solution, not the range: the elevation for the slant range × the cosine read off
+ * the ACI, which holds up on steep, long shots where the classic rifleman's rule (range × cosine) falls low.
+ * Wind is on the wind card.
  */
 const DOPE_RANGES = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
-const COS_DEG = [5, 10, 15, 20, 25, 30, 35, 40, 45];
 const dope = $("dope");
 function syncDope(): void {
   const show = state.reticle === "tree";
@@ -292,13 +298,7 @@ function syncDope(): void {
             .join("")}</tr>`,
       )
       .join("")}</table>` +
-    `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: dial for range × cos(angle)</div>` +
-    `<table class="cos"><tr><th>°</th>${COS_DEG.map((a) => `<td>${a}</td>`).join("")}</tr><tr><th>cos</th>${COS_DEG.map(
-      (a) =>
-        `<td>${Math.cos((a * Math.PI) / 180)
-          .toFixed(2)
-          .replace(/^0/, "")}</td>`,
-    ).join("")}</tr></table>`;
+    `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
 }
 
 /**
@@ -330,7 +330,7 @@ function syncWindCard(): void {
   const key = `${state.reticle}|${state.easy}`;
   if (key === windCardFor) return;
   windCardFor = key;
-  const ret = RETICLES[state.reticle]();
+  const ret = currentReticle();
   const ranges = CARD_RANGES[state.reticle];
   const drift = crossDriftPerMs(ROUNDS[ret.round], ranges);
   const unit = ret.id === "tree" ? "mil" : "thousandths";
@@ -404,6 +404,8 @@ function syncUi(): void {
   ezIn.value = String(state.eye.z);
   panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]")) b.classList.toggle("on", b.dataset.ret === state.reticle);
+  $("treestyle").hidden = state.reticle !== "tree";
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]")) b.classList.toggle("on", b.dataset.tree === state.treeStyle);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]")) b.classList.toggle("on", state[b.dataset.flag as "illum"] as boolean);
   syncWindCard();
   $("scope").textContent = shooting.busy() ? "Hands on the action" : adsIn ? "Scope out · F" : "Scope in · F";
@@ -418,6 +420,11 @@ panIn.oninput = () => (state.pan = Number(panIn.value));
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]"))
   b.onclick = () => {
     state.reticle = b.dataset.ret as Reticle["id"];
+    syncUi();
+  };
+for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]"))
+  b.onclick = () => {
+    state.treeStyle = b.dataset.tree as TreeStyle;
     syncUi();
   };
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]"))
@@ -712,6 +719,10 @@ addEventListener("keydown", (e) => {
     state.illum = !state.illum;
     syncUi();
   }
+  if (e.code === "KeyV" && state.reticle === "tree") {
+    state.treeStyle = state.treeStyle === "pr2" ? "ebr" : "pr2";
+    syncUi();
+  }
   if (e.code === "KeyG") {
     state.glass = GLASS_NEXT[state.glass];
     glaze();
@@ -757,6 +768,8 @@ const readout = $("readout");
 let lastReadout = 0;
 const woundCard = $("wound");
 let woundDrawn = -1;
+/** The hit whose wound card the shooter closed. */
+let woundClosed = -1;
 
 const dir = new THREE.Vector3();
 const sunView = new THREE.Vector3();
@@ -1021,7 +1034,7 @@ function frame(t: number, dt: number): void {
 
   if (t - lastReadout > 0.15 || shot) {
     lastReadout = t;
-    const ret = RETICLES[state.reticle]();
+    const ret = currentReticle();
     const tf = trueFovRad(SCOPE, state.mag);
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
     const fig = 1.7 / range.targets[watched]!.range / ret.unitRad;
@@ -1050,13 +1063,15 @@ function frame(t: number, dt: number): void {
       .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`)
       .join("");
     const w = status.wound;
-    woundCard.hidden = !w;
+    woundCard.hidden = !w || w.n === woundClosed;
     if (w) {
       $("wound-text").innerHTML = woundText(w.wound, w.speed, w.since, w.glass);
       const closeBtn = document.createElement("button");
       closeBtn.innerText = "×";
       closeBtn.className = "close-btn";
-      closeBtn.onClick = () => {
+      closeBtn.onclick = () => {
+        // Stays closed until the next hit.
+        woundClosed = w.n;
         woundCard.hidden = true;
       };
       $("wound-text").appendChild(closeBtn);

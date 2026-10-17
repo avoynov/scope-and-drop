@@ -74,7 +74,7 @@ for (const [k, label] of [
 ] as const) {
   const b = document.createElement("button");
   b.textContent = label;
-  b.className = "toggle;
+  b.className = "toggle";
   b.onclick = () => {
     overlays[k] = !overlays[k];
     b.classList.toggle("on", overlays[k]);
@@ -124,7 +124,19 @@ seedInput.addEventListener("keydown", (e) => e.key === "Enter" && survey());
 
 const STYLE_NAMES: Record<string, string> = { palladian: "Palladian", georgian: "Georgian", beauxarts: "Beaux-Arts" };
 const PLAN_NAMES: Record<string, string> = { block: "Block", "u-garden": "U, garden court", "u-entrance": "U, entrance court", h: "H-plan" };
-const POI_NAMES: Partial<Record<PoiType, string>> = { bar: "Bar", statue: "Statues", painting: "Paintings", bookshelf: "Bookshelves", piano: "Piano", fireplace: "Fireplaces", ledger: "Guest ledger", clock: "Clocks", safe: "Safe", globe: "Globe", window: "Window spots" };
+const POI_NAMES: Partial<Record<PoiType, string>> = {
+  bar: "Bar",
+  statue: "Statues",
+  painting: "Paintings",
+  bookshelf: "Bookshelves",
+  piano: "Piano",
+  fireplace: "Fireplaces",
+  ledger: "Guest ledger",
+  clock: "Clocks",
+  safe: "Safe",
+  globe: "Globe",
+  window: "Window spots",
+};
 
 function renderDossier(genMs: number): void {
   if (!bp || !built) return;
@@ -139,7 +151,15 @@ function renderDossier(genMs: number): void {
     ["Rooms", `${bp.rooms.length} (${party.length} for the party)`],
     ["Perch", `${bp.site.perch.distance.toFixed(0)} m, bearing ${bp.site.perch.azimuthDeg > 0 ? "+" : ""}${bp.site.perch.azimuthDeg.toFixed(0)}°`],
     ["Party in view", `${Math.round(bp.sightlines.partyVisible * 100)}%`],
-    ["Blind spots", blind.length ? blind.map((r) => r.label).slice(0, 3).join(", ") + (blind.length > 3 ? ` +${blind.length - 3}` : "") : "none"],
+    [
+      "Blind spots",
+      blind.length
+        ? blind
+            .map((r) => r.label)
+            .slice(0, 3)
+            .join(", ") + (blind.length > 3 ? ` +${blind.length - 3}` : "")
+        : "none",
+    ],
     ["Built in", `${Math.round(genMs)} ms + ${built.stats.buildMs} ms`],
   ];
   const facts = $("facts");
@@ -183,16 +203,18 @@ function survey(): void {
   $("veil-title").textContent = "Surveying the grounds";
   $("veil-sub").textContent = `seed ${seedInput.value || "gala-night"}`;
   // Let the veil paint before the (synchronous) generation and build.
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    try {
-      buildNow();
-      $("error").hidden = true;
-    } catch (e) {
-      $("error").hidden = false;
-      $("error").textContent = `Could not build this estate: ${(e as Error).message}`;
-    }
-    veil.classList.add("gone");
-  }));
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      try {
+        buildNow();
+        $("error").hidden = true;
+      } catch (e) {
+        $("error").hidden = false;
+        $("error").textContent = `Could not build this estate: ${(e as Error).message}`;
+      }
+      veil.classList.add("gone");
+    }),
+  );
 }
 
 function buildNow(): void {
@@ -246,17 +268,29 @@ function buildOverlays(): void {
   plane.renderOrder = 5;
   plane.name = "sight";
   overlayGroup.add(plane);
-  const colors: Partial<Record<PoiType, string>> = { statue: "#f2efe8", bar: "#ff7a45", bookshelf: "#c99a5b", painting: "#e3c15a", piano: '#a38bff', fireplace: '#ff5040', ledger: '#55c8ff', clock: '#6fe08e', window: '#9edcff', safe: '#bbbbbb', globe: '#5ab8b0' };
+  const colors: Partial<Record<PoiType, string>> = {
+    statue: "#f2efe8",
+    bar: "#ff7a45",
+    bookshelf: "#c99a5b",
+    painting: "#e3c15a",
+    piano: "#a38bff",
+    fireplace: "#ff5040",
+    ledger: "#55c8ff",
+    clock: "#6fe08e",
+    window: "#9edcff",
+    safe: "#bbbbbb",
+    globe: "#5ab8b0",
+  };
   const g = new THREE.SphereGeometry(0.32, 12, 8);
   for (const p of bp.pois) {
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colors[p.type] ?? '#ffffff', fog: false, toneMapped: false, depthTest: false }));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colors[p.type] ?? "#ffffff", fog: false, toneMapped: false, depthTest: false }));
     m.position.set(p.stand.x, (bp.levels[p.level]?.floorY ?? 0) + 1.7, p.stand.z);
     m.name = "poi";
     m.renderOrder = 6;
     overlayGroup.add(m);
   }
   const e = bp.site.perch.eye;
-  const sniper = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.4, 16), new THREE.MeshBasicMaterial({ color: '#ff4848', fog: false, toneMapped: false }));
+  const sniper = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.4, 16), new THREE.MeshBasicMaterial({ color: "#ff4848", fog: false, toneMapped: false }));
   sniper.position.set(e.x, e.y + 2.2, e.z);
   sniper.rotation.x = Math.PI;
   sniper.name = "sniper";
@@ -316,7 +350,11 @@ function setView(v: View): void {
       ortho.up.set(0, 0, -1);
       ortho.lookAt(cx, 0, cz);
     } else {
-      const dir = built.perch.position.clone().sub(new THREE.Vector3(cx, 0, cz)).setY(0).normalize();
+      const dir = built.perch.position
+        .clone()
+        .sub(new THREE.Vector3(cx, 0, cz))
+        .setY(0)
+        .normalize();
       ortho.position.set(cx + dir.x * 300, 300 * Math.tan((35 * Math.PI) / 180), cz + dir.z * 300);
       ortho.up.set(0, 1, 0);
       ortho.lookAt(cx, 4, cz);
@@ -405,4 +443,3 @@ function loop(): void {
 setView("scope");
 survey();
 loop();
-

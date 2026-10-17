@@ -383,7 +383,10 @@ export type SoundEvent =
   | "charge-release"
   // The trigger pulled with nothing to fire: the hammer or striker falling on an empty chamber, or a dead trigger.
   | "dry-fire"
-  | "trigger";
+  | "trigger"
+  // The safety lever flicked on or off, and a handle stopped short by it.
+  | "safety"
+  | "safety-stop";
 export interface Cue {
   t: number;
   ev: SoundEvent;
@@ -446,12 +449,17 @@ export interface HandlingState {
   chamber?: Chamber;
   /** The SVD's carrier held open by its bolt stop. Default: on a magazine change with the magazine empty. */
   held?: boolean;
+  /** A magazine change that ends with the action worked to chamber a round: the old magazine was fired dry. */
+  charge?: boolean;
+  /** Working the action with the safety on: the handle stops short (SVD, VSS) or will not lift (bolt rifle). */
+  safe?: boolean;
 }
 
 /**
  * The plan for working the action of `rifle` ('cycle': the bolt, or the charging handle) or changing its
  * magazine ('reload'). `rounds` is what is left in the magazine in the rifle; `seed` varies the timing a little
- * from one to the next.
+ * from one to the next. A magazine change with `state.charge` goes on, without the hand returning to the grip,
+ * into working the action, which chambers the new magazine's top round.
  */
 export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number, seed = 0, state: HandlingState = {}): Plan {
   const g = ACTIONS[rifle];
@@ -534,17 +542,35 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       mv("boltLift", t + 0.2, 0.08, 0, "push");
       cue(t + 0.2, "bolt-down");
     };
+    /** The whole bolt cycle from `t`, feeding from magazine `mag` holding `n`. Returns when the hand leaves the knob. */
+    const work = (t: number, mag: 0 | 1, n: number) => {
+      headTo(t + 0.1, 0.4, [38 + 8 * r(1), 30, 28]);
+      gaze(t + 0.12, knobView);
+      open(t);
+      close(t + 0.66, mag, n);
+      return t + 0.96;
+    };
     // Gripping the protruding box from the right, palm on its side, fingers round its front.
     mags[0].grasp = mags[1].grasp = at([0, -64, 46], [0, 0.35, -0.94], [-1, 0, 0]);
-    if (kind === "cycle") {
+    if (kind === "cycle" && state.safe) {
+      // Safety ON locks the bolt closed: the handle gives a hair and stops dead.
       headTo(0.1, 0.4, [38 + 8 * r(1), 30, 28]);
       gaze(0.12, knobView);
-      open(0);
-      close(0.66, 0, rounds);
-      hand("R", 0.96, 0.32, grip, "grip", [10, 15, 0]);
-      gaze(0.98, null);
-      headTo(1.0, 0.4, [0, 0, 0]);
-      return finish(1.42);
+      hand("R", 0, 0.3, knob, "pinch", [18, 22, 0]);
+      mv("boltLift", 0.3, 0.04, 0.03, "push");
+      cue(0.34, "safety-stop");
+      mv("boltLift", 0.4, 0.06, 0);
+      hand("R", 0.5, 0.32, grip, "grip", [10, 15, 0]);
+      gaze(0.52, null);
+      headTo(0.54, 0.4, [0, 0, 0]);
+      return finish(0.96);
+    }
+    if (kind === "cycle") {
+      const t = work(0, 0, rounds);
+      hand("R", t, 0.32, grip, "grip", [10, 15, 0]);
+      gaze(t + 0.02, null);
+      headTo(t + 0.04, 0.4, [0, 0, 0]);
+      return finish(t + 0.46);
     }
     // The magazine catch: a paddle in front of the trigger guard, pressed with the index finger. The head comes
     // over to the right to see under the stock.
@@ -563,6 +589,14 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     hand("R", 2.03, 0.15, onMag(1, 0, 0), "mag");
     cue(2.03, "mag-in");
     magEvent(1, 2.18, "well");
+    if (state.charge) {
+      // Straight from the box to the knob: back to throw out the fired case, forward to chamber the top round.
+      const t = work(2.22, 1, m.rounds);
+      hand("R", t, 0.32, grip, "grip", [10, 15, 0]);
+      gaze(t + 0.02, null);
+      headTo(t + 0.04, 0.4, [0, 0, 0]);
+      return finish(t + 0.46);
+    }
     hand("R", 2.22, 0.32, grip, "grip", [10, 15, 0]);
     gaze(2.24, null);
     headTo(2.27, 0.45, [0, 0, 0]);
@@ -577,31 +611,45 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   // Fingers hooked in front of the knob from the right, palm toward the receiver.
   const knobFrame: Anchor = (cc) => at([c.knob[0], c.knob[1], c.knob[2] + c.stroke * cc("carrier")], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
   const knobView: V3 = [c.knob[0] + 5, c.knob[1] - 10, c.knob[2] + 50];
-  const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
-  if (kind === "cycle") {
-    // The firing hand comes off the grip, hooks the knob and pulls it fully back against the spring.
-    headTo(0.05, 0.4, [55, 25, 20]);
-    gaze(0.1, knobView);
-    hand("R", 0.05, 0.34, knobFrame, "hook", [30, 25, 0]);
-    mv("carrier", 0.42, 0.16, 1);
-    if (!held) cue(0.42, "charge-back");
-    // Whatever was chambered comes out of the port and lands in the dirt to the right.
-    if (state.chamber === "live") cue(0.58 + 0.4 + 0.06 * r(3), "case-land");
-    if (c.holdOpen && rounds === 0) {
-      // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
-      if (!held) cue(0.62, "mag-release");
+  /** The hand opening off the knob, `back` of the stroke behind where it rests. */
+  const off = (back: number) => at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke * back + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
+  /**
+   * The firing hand comes off the grip at `t`, hooks the knob and pulls it fully back against the spring, feeding
+   * from magazine `mag` holding `n`; or, with the safety on, as far as the lever's shield lets it. Returns when
+   * the hand is back on the grip.
+   */
+  const rack = (t: number, mag: 0 | 1, n: number, wasHeld: boolean) => {
+    headTo(t + 0.05, 0.4, [55, 25, 20]);
+    gaze(t + 0.1, knobView);
+    hand("R", t + 0.05, 0.34, knobFrame, "hook", [30, 25, 0]);
+    if (state.safe) {
+      // The handle meets the shield a little way back, and the spring takes it home again.
+      mv("carrier", t + 0.42, 0.05, 0.1, "push");
+      cue(t + 0.47, "safety-stop");
+      mv("carrier", t + 0.56, 0.05, 0, "spring");
     } else {
-      // Let go at the back: the spring drives the carrier home, stripping the top round into the chamber.
-      mv("carrier", 0.6, 0.045, 0, "spring");
-      cue(0.6, "charge-release");
-      if (rounds > 0) magRounds(0, 0.64, rounds - 1);
+      mv("carrier", t + 0.42, 0.16, 1);
+      if (!wasHeld) cue(t + 0.42, "charge-back");
+      // Whatever was chambered comes out of the port and lands in the dirt to the right.
+      if (state.chamber === "live") cue(t + 0.58 + 0.4 + 0.06 * r(3), "case-land");
+      if (c.holdOpen && n === 0) {
+        // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
+        if (!wasHeld) cue(t + 0.62, "mag-release");
+      } else {
+        // Let go at the back: the spring drives the carrier home, stripping the top round into the chamber.
+        mv("carrier", t + 0.6, 0.045, 0, "spring");
+        cue(t + 0.6, "charge-release");
+        if (n > 0) magRounds(mag, t + 0.64, n - 1);
+      }
     }
-    hand("R", 0.6, 0.12, () => off, "open");
-    hand("R", 0.74, 0.34, grip, "grip", [10, 15, 0]);
-    gaze(0.76, null);
-    headTo(0.79, 0.45, [0, 0, 0]);
-    return finish(1.26);
-  }
+    const o = off(state.safe ? 0.1 : 1);
+    hand("R", t + 0.6, 0.12, () => o, "open");
+    hand("R", t + 0.74, 0.34, grip, "grip", [10, 15, 0]);
+    gaze(t + 0.76, null);
+    headTo(t + 0.79, 0.45, [0, 0, 0]);
+    return t + 1.26;
+  };
+  if (kind === "cycle") return finish(rack(0, 0, rounds, held));
   mags[0].grasp = mags[1].grasp = at([0, -72, m.size[2] / 2], [0.1, 0.3, -0.95], [1, 0, 0]);
   const magView: V3 = [14, -150, m.pivot[2] + m.size[2] / 2];
   // Rolled a little onto the left side, the head comes over to the right to see under the receiver.
@@ -627,6 +675,8 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   hand("L", 2.19, 0.13, onMag(1, 0, 0), "mag");
   magEvent(1, 2.32, "well");
   hand("L", 2.36, 0.5, () => REST_L, "relaxed", [-20, -40, 0]);
+  // Fired dry: the firing hand racks the new magazine's top round in (on the SVD letting the carrier off its stop).
+  if (state.charge) return finish(rack(2.26, 1, m.rounds, held));
   gaze(2.36, null);
   headTo(2.4, 0.45, [0, 0, 0]);
   return finish(2.9);

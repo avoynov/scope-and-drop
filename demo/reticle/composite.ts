@@ -62,6 +62,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uRetCol: { value: new THREE.Vector3(0.02, 0.02, 0.02) },
       // 1: tRet is a lit display seen over the image (the rangefinder's OLED), its light added, not painted on.
       uRetAdd: { value: 0 },
+      // The glass's colour cast and light loss (the KILO8K's first generation is dim and a little blue).
+      uTint: { value: new THREE.Vector3(1, 1, 1) },
     },
     vertexShader: "void main(){ gl_Position = vec4(position.xy, 0., 1.); }",
     fragmentShader: /* glsl */ `
@@ -69,7 +71,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur, uMirFlow, uTrA, uTrB, uTrW;
       uniform float uBoil, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
-      uniform vec3 uEye, uEyeSweep, uRetCol;
+      uniform vec3 uEye, uEyeSweep, uRetCol, uTint;
       uniform float uRetAdd, uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
@@ -140,7 +142,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
           img = vec3(texture2D(tScope, uR_ + o).r, texture2D(tScope, uG_ + o).g, texture2D(tScope, uB_ + o).b);
         }
         // Veiling glare: a little light scattered across the field lifts the blacks, as in real glass.
-        img = img*.9 + .035*vec3(.95, .97, 1.);
+        img = (img*.9 + .035*vec3(.95, .97, 1.))*uTint;
         // Reticle sits in the first focal plane: distorted with the image, shifted by parallax, never by mirage.
         vec4 rR = texture2D(tRet, uR_ + uPar), rG = texture2D(tRet, uG_ + uPar), rB = texture2D(tRet, uB_ + uPar);
         if (uRetAdd > 0.) {

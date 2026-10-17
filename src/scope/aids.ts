@@ -2,8 +2,8 @@
  * The bolt rifle's two ways to an elevation, the player's choice:
  *  - Manual: the Speed Drop method. Elevation (mil) = range in hundreds − a factor worked out once for the load,
  *    good inside a band of ranges; the shooter ranges with the reticle and does the sum in his head.
- *  - Pro: a rifle-mounted laser rangefinder with a ballistic solver (after the Wilcox RAPTAR-S). It ranges what the
- *    crosshair is on, reads the slope off its inclinometer, and shows the elevation to dial or hold.
+ *  - Pro: a handheld laser rangefinder with a ballistic solver (the Sig KILO8K-ABS, src/scope/kilo.ts). The shooter
+ *    puts the rifle's sight down, ranges with it at the eye and reads the elevation and wind holds off its display.
  */
 import { ROUNDS, holdRad } from "./ballistics";
 import { BATTLE_ZERO_M, dialTiltRad, firstHit, fly, type Rifle, type Vec3 } from "./shot";
@@ -77,7 +77,3 @@ export function solveElevationMil(rf: Rifle, slantM: number, slopeRad: number): 
   }
   return h1 * 1000;
 }
-
-/** How far the RAPTAR-S ranges (m) and how its readout rounds. */
-export const LRF_MAX_M = 1500;
-export const LRF_MIN_M = 5;

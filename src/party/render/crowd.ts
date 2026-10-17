@@ -8,7 +8,7 @@
  */
 import * as THREE from "three";
 import type { ScopedLighting } from "../../mansion/build/lighting";
-import { DRINKS, type Gesture, type Held, type Person, type Pose } from "../types";
+import { DRINKS, type DrinkId, type Gesture, type Held, type Person, type Pose } from "../types";
 
 /** The colour of what's in the glass. */
 const DRINK_COLOR: Partial<Record<Held, string>> = { champagne: "#e9d9a0", red: "#6e1424", white: "#e6dca6", beer: "#c98a2a", whisky: "#9a5a1e", water: "#d8e2e6" };
@@ -22,13 +22,39 @@ const ITEMS: Partial<Record<Held, { size: [number, number, number]; color: strin
   cards: { size: [0.065, 0.012, 0.09], color: "#eae6da" },
   cue: { size: [0.022, 1.45, 0.022], color: "#c9a36a" },
   cigarette: { size: [0.009, 0.009, 0.085], color: "#f2efe8" },
+  kit: { size: [0.26, 0.17, 0.09], color: "#b3241e" },
 };
+
+/** A spilt drink on a shirt or a dress: a darker patch the drink's colour. */
+const STAIN_COLOR: Record<DrinkId, string> = { champagne: "#a8945a", red: "#4e0d1a", white: "#a99c6c", beer: "#6e4a1c", whisky: "#4e2c10", water: "#3c4048" };
+
+/** Things on the floor (broken glass, a vase in pieces, wine on the carpet, a lost bag): size (m) and colour. */
+export type LitterKind = "glass" | "shards" | "stain" | "bag" | "spectacles" | "earring";
+const LITTER: Record<LitterKind, { size: [number, number, number]; color: string }> = {
+  glass: { size: [0.26, 0.012, 0.2], color: "#cfe1e6" },
+  shards: { size: [0.26, 0.03, 0.2], color: "#e9e3d6" },
+  stain: { size: [0.9, 0.004, 0.65], color: "#3e0a14" },
+  bag: { size: [0.2, 0.13, 0.06], color: "#5a2a22" },
+  spectacles: { size: [0.15, 0.03, 0.05], color: "#1a1a1a" },
+  earring: { size: [0.035, 0.035, 0.035], color: "#e6c45a" },
+};
+const LITTER_MAX = 48;
+
+/** A thing on the floor this frame. */
+export interface Litter {
+  kind: LitterKind;
+  x: number;
+  y: number;
+  z: number;
+  /** Turned about the vertical (radians). */
+  yaw: number;
+}
 
 /** Camera flashes drawn at once, and how long each lasts (game s). */
 const FLASHES = 8;
 const FLASH_FOR = 0.6;
 
-type PartId = "thigh" | "shin" | "skirt" | "torso" | "shirt" | "head" | "hair" | "arm" | "held" | "item" | "tray" | "hat" | "glasses" | "cane" | "halo" | "marker";
+type PartId = "thigh" | "shin" | "skirt" | "torso" | "shirt" | "stain" | "head" | "hair" | "arm" | "held" | "item" | "tray" | "hat" | "glasses" | "cane" | "bandage" | "halo" | "marker";
 
 interface Part {
   mesh: THREE.InstancedMesh;
@@ -113,6 +139,8 @@ export class Crowd {
     this.add("hat", new THREE.CylinderGeometry(0.1, 0.11, 0.17, 12).translate(0, 0.085, 0), std(0.5), 1, n);
     this.add("glasses", new THREE.BoxGeometry(0.15, 0.03, 0.02), std(0.2, 0.5), 1, n);
     this.add("cane", new THREE.CylinderGeometry(0.012, 0.012, 0.9, 6).translate(0, 0.45, 0), std(0.4), 1, n);
+    this.add("stain", new THREE.SphereGeometry(0.5, 10, 6).scale(1, 1, 0.05), std(0.35), 1, n);
+    this.add("bandage", new THREE.CylinderGeometry(0.05, 0.05, 0.09, 10), std(0.9), 1, n);
     // Plan markers: the outfit colour on a pale halo, so dark suits show on dark floors. Drawn over everything.
     for (const [id, r, order] of [
       ["halo", 0.48, 10],
@@ -133,7 +161,42 @@ export class Crowd {
     this.flash.frustumCulled = false;
     (this.flash.material as THREE.MeshBasicMaterial).color.setScalar(8);
     this.root.add(this.flash);
+    // An uneven seven-sided slab: a puddle, a scatter of pieces, a bag on its side.
+    this.litter = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 7).translate(0, 0.5, 0), std(0.4), LITTER_MAX);
+    this.litter.frustumCulled = false;
+    this.litter.name = "crowd-litter";
+    this.litterScope = new THREE.InstancedBufferAttribute(new Float32Array(LITTER_MAX), 1);
+    this.litter.geometry.setAttribute("aScope", this.litterScope);
+    for (let k = 0; k < LITTER_MAX; k++) this.litter.setMatrixAt(k, ZERO);
+    this.root.add(this.litter);
     this.paint();
+  }
+
+  private readonly litter: THREE.InstancedMesh;
+  private readonly litterScope: THREE.InstancedBufferAttribute;
+  private litterKinds: Array<LitterKind | null> = [];
+
+  /** What lies on the floor: glass and a vase broken, wine on the carpet, things lost. `room` lights each (-1 outside). */
+  setLitter(list: ReadonlyArray<Litter & { room: number }>): void {
+    const c = new THREE.Color();
+    let dirty = false;
+    let k = 0;
+    for (const l of list) {
+      if (k >= LITTER_MAX) break;
+      const [sx, sy, sz] = LITTER[l.kind].size;
+      this.litter.setMatrixAt(k, tmpM.compose(tmpP.set(l.x, l.y + 0.003, l.z), tmpQ.setFromAxisAngle(UP, l.yaw), tmpS.set(sx, sy, sz)));
+      this.litterScope.setX(k, l.room >= 0 ? l.room : -1);
+      if (this.litterKinds[k] !== l.kind) {
+        this.litterKinds[k] = l.kind;
+        this.litter.setColorAt(k, c.set(LITTER[l.kind].color));
+        dirty = true;
+      }
+      k++;
+    }
+    for (; k < LITTER_MAX; k++) this.litter.setMatrixAt(k, ZERO);
+    this.litter.instanceMatrix.needsUpdate = true;
+    this.litterScope.needsUpdate = true;
+    if (dirty && this.litter.instanceColor) this.litter.instanceColor.needsUpdate = true;
   }
 
   private readonly flash: THREE.InstancedMesh;
@@ -169,6 +232,10 @@ export class Crowd {
   private glass: Array<Held | null> = [];
   private thing: Array<Held | null> = [];
 
+  /** The outfit colour each person was painted in (a jacket borrowed after a spill repaints them), and the drink stain on each. */
+  private outfit: string[] = [];
+  private stained: Array<DrinkId | null> = [];
+
   /** Colours from each person's look. */
   private paint(): void {
     this.painted = this.selected;
@@ -201,6 +268,10 @@ export class Crowd {
       set("cane", i, "#2a1a10");
       set("marker", i, L.color);
       set("halo", i, i === this.selected ? "#e0b56a" : "#f4efe4");
+      set("bandage", i, "#f2f0ea");
+      set("stain", i, p.stain ? STAIN_COLOR[p.stain] : "#000000");
+      this.outfit[i] = L.color;
+      this.stained[i] = p.stain;
     });
     for (const part of this.parts.values()) if (part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
   }
@@ -226,7 +297,7 @@ export class Crowd {
       P.get("marker")!.mesh.setMatrixAt(i, tmpM);
       P.get("halo")!.mesh.setMatrixAt(i, tmpM);
     }
-    if (this.painted !== this.selected) this.paint();
+    if (this.painted !== this.selected || this.people.some((p, i) => p.look.color !== this.outfit[i] || p.stain !== this.stained[i])) this.paint();
     this.paintGlasses();
     this.paintItems();
     for (const part of P.values()) {
@@ -272,6 +343,8 @@ export class Crowd {
     const t = time + hash(i) * 10;
     const dress = L.outfit === "long-dress" || L.outfit === "short-dress";
     const sit = s.pose === "sit";
+    // Down on the heels: looking under a table for something lost, sweeping up glass.
+    const crouch = s.pose === "crouch";
     const walking = s.pose === "walk" || s.pose === "climb";
     // The slow dance, and club style (one in front, back to the other behind): dancing too.
     const close = s.pose === "slow" || s.pose === "front" || s.pose === "behind";
@@ -284,29 +357,37 @@ export class Crowd {
     const sway = dance ? Math.sin(t * 3.2 * tempo) * (s.pose === "slow" ? 0.4 : 1) : 0;
     // Past 0.6 tipsiness a slow side-to-side list, more the drunker they are.
     const list = p.tipsy > 0.6 && !sit ? Math.min(1, (p.tipsy - 0.6) / 0.4) * 0.07 * Math.sin(t * 1.3) : 0;
-    const hipY = (sit ? 0.47 : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4 * tempo)) * 0.03 : 0);
-    const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5), tmpS.set(1, 1, 1));
+    // Singing, they sway on their feet.
+    const sing = s.pose === "sing" ? Math.sin(t * 1.9) * 0.6 : 0;
+    const hipY = (sit ? 0.47 : crouch ? 0.52 * k : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4 * tempo)) * 0.03 : 0);
+    const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5 + sing * 0.15), tmpS.set(1, 1, 1));
     const g = s.gesture ?? null;
     const lean =
-      g === "shove"
-        ? 0.18
-        : g === "pull"
-          ? -0.12
-          : s.pose === "play"
-            ? 0.35
-            : s.pose === "look"
-              ? 0.05
-              : s.pose === "kiss" || s.pose === "hug"
-                ? 0.16
-                : s.pose === "argue"
-                  ? 0.1
-                  : s.pose === "behind"
-                    ? 0.08
-                    : s.pose === "shake"
-                      ? 0.06
-                      : g === "lean"
-                        ? 0.14
-                        : 0;
+      g === "startle"
+        ? -0.14
+        : crouch
+          ? 0.42
+          : s.pose === "rattle" || s.pose === "dab"
+            ? 0.1
+            : g === "shove"
+              ? 0.18
+              : g === "pull"
+                ? -0.12
+                : s.pose === "play"
+                  ? 0.35
+                  : s.pose === "look"
+                    ? 0.05
+                    : s.pose === "kiss" || s.pose === "hug"
+                      ? 0.16
+                      : s.pose === "argue"
+                        ? 0.1
+                        : s.pose === "behind"
+                          ? 0.08
+                          : s.pose === "shake"
+                            ? 0.06
+                            : g === "lean"
+                              ? 0.14
+                              : 0;
     const local = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, "YXZ")), new THREE.Vector3(sx, sy, sz));
     const stretch = local(0, 0, 0, 0, 0, 0, 1, k, 1);
@@ -317,7 +398,7 @@ export class Crowd {
     const hide = (id: PartId, kk = 0) => set(id, kk, ZERO);
 
     // Upper body frame: hips, leaning forward from the hips.
-    const hips = base.clone().multiply(local(0, hipY, sit ? -0.05 : 0, lean, 0, (dance ? sway * 0.08 : 0) + list));
+    const hips = base.clone().multiply(local(0, hipY, sit ? -0.05 : 0, lean, 0, (dance ? sway * 0.08 : 0) + list + sing * 0.06));
     // Legs: thigh from the hip, shin from the knee. Positive pitch swings a limb back.
     for (const side of [-1, 1] as const) {
       const kk = side < 0 ? 0 : 1;
@@ -327,26 +408,31 @@ export class Crowd {
         continue;
       }
       const ph = stride * side;
-      const swing = sit ? -1.5 : walking ? -ph * 0.45 : dance ? Math.sin(t * 6.4 * tempo + side) * (s.pose === "slow" ? 0.1 : 0.2) : 0;
+      const swing = sit ? -1.5 : crouch ? -1.35 : walking ? -ph * 0.45 : dance ? Math.sin(t * 6.4 * tempo + side) * (s.pose === "slow" ? 0.1 : 0.2) : 0;
       const bend = sit
         ? 1.5
-        : walking
-          ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0)
-          : dance
-            ? 0.15 + Math.max(0, Math.sin(t * 6.4 * tempo + side)) * (s.pose === "slow" ? 0.1 : 0.3)
-            : 0.03;
+        : crouch
+          ? 2.35
+          : walking
+            ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0)
+            : dance
+              ? 0.15 + Math.max(0, Math.sin(t * 6.4 * tempo + side)) * (s.pose === "slow" ? 0.1 : 0.3)
+              : 0.03;
       const hip = base.clone().multiply(local(side * 0.095 * wide, hipY, sit ? -0.05 : 0, swing));
       set("thigh", kk, hip.clone().multiply(stretch));
       set("shin", kk, hip.multiply(local(0, -0.45 * k, 0, bend)).multiply(stretch));
     }
     if (dress) {
-      const len = L.outfit === "long-dress" ? (sit ? 0.5 : hipY - 0.02) : 0.4 * k;
+      const len = L.outfit === "long-dress" ? (sit ? 0.5 : crouch ? 0.48 : hipY - 0.02) : 0.4 * k;
       set("skirt", 0, base.clone().multiply(local(0, hipY + 0.02, sit ? 0.05 : 0, sit ? -0.5 : 0, 0, 0, wide, len, wide)));
     } else hide("skirt");
     const torsoLen = 0.5 * k;
     set("torso", 0, hips.clone().multiply(local(0, 0, 0, 0, 0, 0, wide, torsoLen, wide * 0.78)));
     if (!dress) set("shirt", 0, hips.clone().multiply(local(s.dishevelled ? 0.03 : 0, torsoLen * 0.78, 0.13 * wide, -0.08, 0, s.dishevelled ? 0.35 : 0, 1, k, 1)));
     else hide("shirt");
+    // A spilt drink down the front.
+    if (p.stain) set("stain", 0, hips.clone().multiply(local(0.035 * wide, torsoLen * 0.58, 0.148 * wide, -0.1, 0, 0.25, 0.13 * wide, 0.21 * k, 1)));
+    else hide("stain");
 
     // Head: nods while talking; thrown back for a big laugh.
     const talking = s.pose === "talk";
@@ -359,7 +445,9 @@ export class Crowd {
     // A frown: chin down, eyes up at whoever did it.
     // Arguing: chin out, jabbing with it.
     const jut = s.pose === "argue" ? -0.12 + Math.sin(t * 4.1) * 0.08 : 0;
-    const pitchHead = laugh ? -0.45 : nod + jut + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
+    // Eyes down at the floor, the stain, the watch or the phone; head back to sing.
+    const down = crouch ? 0.3 : s.pose === "dab" ? 0.4 : g === "watch" || s.pose === "phone" ? 0.3 : s.pose === "sing" ? -0.3 : 0;
+    const pitchHead = laugh ? -0.45 : nod + jut + down + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
     const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, pitchHead, turn + (cheek ? 0.35 : 0), tilt, k, k, k));
     set("head", 0, head);
     set("hair", 0, head.clone().multiply(local(s.dishevelled ? 0.015 : 0, 0.012, -0.012, -0.25, 0, s.dishevelled ? 0.3 : 0)));
@@ -490,6 +578,41 @@ export class Crowd {
         rp = lp = 0.3;
         rr = lr = -0.22;
         break;
+      case "fan":
+        // A hand flapping air at someone's face.
+        rp = 1.55 + Math.sin(t * 11) * 0.3;
+        rr = 0.15;
+        break;
+      case "crouch":
+        // Hands down feeling the floor.
+        rp = 0.95 + Math.sin(t * 2.1) * 0.15;
+        lp = 0.85;
+        rr = lr = 0.12;
+        break;
+      case "dab":
+        // A napkin dabbing at the front.
+        rp = 1.95 + Math.sin(t * 7) * 0.12;
+        rr = -0.62;
+        lp = 0.4;
+        break;
+      case "sing":
+        // An arm flung out, the other conducting.
+        rp = 2.1 + Math.sin(t * 1.9) * 0.3;
+        rr = 0.65;
+        lp = 1.3 + Math.sin(t * 2.4) * 0.3;
+        lr = 0.4;
+        break;
+      case "phone":
+        // Reading a message, the phone held up before the face.
+        rp = 1.95;
+        rr = -0.45;
+        lp = 0.2;
+        break;
+      case "rattle":
+        // A hand on the handle, shaking it.
+        rp = 1.2 + Math.sin(t * 15) * 0.1;
+        rr = 0.06;
+        break;
       default:
         if (p.held) rp = 0.75;
     }
@@ -542,10 +665,26 @@ export class Crowd {
       // A hand out holding theirs, leaning back.
       rp = 1.35;
       rr = 0.05;
+    } else if (g === "startle") {
+      // A jerk: both hands up and in.
+      rp = lp = 1.15;
+      rr = lr = -0.3;
+    } else if (g === "grope") {
+      // In the dark: arms out, feeling the way.
+      rp = 1.45 + Math.sin(t * 2.6) * 0.15;
+      lp = 1.45 - Math.sin(t * 2.6) * 0.15;
+      rr = lr = 0.2;
+    } else if (g === "watch") {
+      // A look at the watch.
+      lp = 1.3;
+      lr = -0.45;
     }
     if (p.quirks.includes("cane") && !sit) lp = Math.max(lp, 0.35);
     const right = arm(1, rp, rr);
     arm(-1, lp, lr);
+    // A cut hand, bandaged for the night.
+    if (p.bandage) set("bandage", 0, right.clone().multiply(local(0, -0.56 * k, 0)));
+    else hide("bandage");
 
     // What's in the right hand: kept upright whatever the arm does.
     const drink = p.held !== null && DRINKS.has(p.held);

@@ -385,13 +385,19 @@ describe("evenings", () => {
     return { party: new Party(b, { seed, provoke }), x, room };
   }
 
-  it("with nothing gone, the register stays quiet: no cases, nothing out of place, suspicion as low as before", () => {
+  it("with nothing taken, the register stays quiet: only crashes, dark rooms and lost bags, nothing out of place, suspicion as low as before", () => {
     for (const seed of HOUSES) {
       const party = new Party(blueprint(seed), { seed });
       party.advance(PARTY_LENGTH);
       const st = party.stats;
-      expect(st.cases, seed).toBe(0);
-      expect(st.blames, seed).toBe(0);
+      const items = party.world.items;
+      // The evening's own trouble (dramas.ts): who broke that, who put the lights out, a bag nobody can find.
+      for (const p of party.people)
+        for (const c of party.register.casesOf(p.id)) {
+          const ok = c.kind === "noise" || c.kind === "dark" || (c.kind === "gone" && c.object >= 0 && items.kindOf(c.object) === "bag");
+          expect(ok, `${seed} ${c.kind}`).toBe(true);
+        }
+      for (const e of party.events) if (e.kind === "blame") expect(["noise", "dark"], seed).toContain(e.note);
       expect(st.conflicts, seed).toBeLessThanOrEqual(3);
       expect(st.claims, seed).toBeGreaterThan(5);
       expect(party.register.stats.filed, seed).toBeGreaterThan(100);

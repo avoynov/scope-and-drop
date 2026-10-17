@@ -95,10 +95,10 @@ export class Mood {
     this.tension[i] = Math.min(1, this.tension[i]! + amount * (0.5 + p.traits.nerves));
   }
 
-  /** Lab overrides due by now, applied once each. */
+  /** Lab overrides from the step after their time (as a live nudge lands), applied once each. */
   applyOverrides(t: number): void {
     this.overrides.forEach((o, i) => {
-      if (this.applied.has(i) || o.t > t) return;
+      if (this.applied.has(i) || o.t >= t) return;
       this.applied.add(i);
       for (const p of this.people) {
         if (!p.present && o.target !== "all") continue;

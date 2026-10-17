@@ -19,13 +19,14 @@ import { buildMansion, type BuiltMansion, type Quality } from "../../src/mansion
 import { createGradePass } from "../../src/mansion/build/grade";
 import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from "../../src/party";
 import { ACQUAINTANCE, CLOSE_FRIEND, CONFRONT, COUPLE, FLIRTING, FRIEND, NOTICING } from "../../src/party/bonds";
+import { CARD_IDS, MISHAP_IDS, type CardId, type Habit, type MishapId } from "../../src/party/dramas";
 import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from "../../src/party/memory";
 import type { MoodOverride, RoomMood } from "../../src/party/mood";
 import { DETAIL_FOV, DETAIL_RANGE, FOV } from "../../src/party/senses";
 import { CASES, type CaseKind } from "../../src/party/register";
 import type { Provocation } from "../../src/party/sim";
 import { ringRadius } from "../../src/party/groups";
-import { Crowd, type Flash, type FrameState } from "../../src/party/render/crowd";
+import { Crowd, type Flash, type FrameState, type Litter, type LitterKind } from "../../src/party/render/crowd";
 import { Fixtures } from "../../src/party/render/fixtures";
 import type { TaskKind } from "../../src/party/tasks";
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
@@ -190,6 +191,46 @@ const TASK_LABEL: Record<TaskKind, string> = {
   chore: "seeing to something",
   pull: "taking someone aside",
   elope: "slipping away",
+  mishap: "after a mishap",
+  drama: "caught up in a drama",
+  habit: "up to something",
+};
+/** What a mishap, a drama or an oddball's outing is, for the people list and the log. */
+const DRAMA_LABEL: Record<MishapId | CardId | Habit, string> = {
+  spill: "after a spill",
+  cut: "a cut hand",
+  lost: "looking for something lost",
+  ankle: "a twisted ankle",
+  faint: "feeling faint",
+  switch: "lights out",
+  tray: "a dropped tray",
+  quarrel: "after a quarrel",
+  drunk: "one too many",
+  tears: "tears in the bathroom",
+  speech: "the long speech",
+  earring: "the lost earring",
+  wine: "red wine on the carpet",
+  bore: "the bore",
+  early: "leaving early",
+  stranger: "the stranger",
+  piano: "round the piano",
+  photo: "an impromptu photo",
+  vase: "the broken vase",
+  fuse: "the fuse",
+  creep: "hovering",
+  wanderer: "exploring",
+  nervous: "jumpy",
+  latecomer: "arriving late",
+  snoop: "poking about",
+  "camera-shy": "dodging the camera",
+};
+const HABIT_LABEL: Record<Habit, string> = {
+  creep: "the creep",
+  wanderer: "the wanderer",
+  nervous: "the nervous one",
+  latecomer: "the latecomer",
+  snoop: "the snoop",
+  "camera-shy": "the camera-shy one",
 };
 const STEP_LABEL: Record<string, string> = {
   "to-room": "on the way",
@@ -228,6 +269,62 @@ const STEP_LABEL: Record<string, string> = {
   bolt: "bolting the door",
   alone: "alone together",
   unbolt: "drawing the bolt back",
+  // Mishaps, dramas and oddballs.
+  borrow: "borrowing something to wear",
+  "to-change": "upstairs to change",
+  change: "changing",
+  "to-bar": "to the bar",
+  dab: "dabbing at the stain",
+  "await-kit": "waiting for the first-aid kit",
+  "to-kit": "for the first-aid kit",
+  "to-bathroom": "to the bathroom door",
+  await: "waiting at the bathroom door",
+  "to-patient": "back with the kit",
+  dress: "dressing the cut",
+  "to-look": "looking for it",
+  look: "looking under things",
+  "to-item": "spotted something",
+  spot: "picking something up",
+  "to-owner": "taking it back",
+  ankle: "resting the ankle",
+  faint: "sitting until it passes",
+  "to-friend": "going to help",
+  fan: "fanning them",
+  dismay: "staring at the mess",
+  sweep: "sweeping up",
+  "to-mess": "to the mess",
+  scrub: "scrubbing the carpet",
+  fuss: "fussing over the carpet",
+  "to-behind": "drifting closer",
+  arrive: "there",
+  linger: "standing too close",
+  "linger-door": "lingering by a bedroom door",
+  try: "trying a door",
+  "peek-in": "peeking in",
+  peek: "looking round a bedroom",
+  "peek-out": "slipping out again",
+  "to-drawers": "to a desk",
+  rummage: "going through the drawers",
+  "to-stranger": "to greet a stranger",
+  stiff: "a stiff hello",
+  shots: "two quick whiskies",
+  sing: "singing",
+  "to-drunk": "to the one who's had too many",
+  steer: "steering them to a seat",
+  settle: "settling them",
+  knock: "knocking",
+  "wait-door": "waiting at the door",
+  comfort: "a hug",
+  "to-floor": "down to look",
+  help: "helping look",
+  "to-culprit": "to the one who broke it",
+  upset: "upset",
+  "to-place": "to the empty place",
+  "clear-place": "clearing the place",
+  call: "on the phone",
+  "to-piano": "to the piano",
+  piano: "at the piano",
+  after: "going after them",
 };
 
 let bp: MansionBlueprint;
@@ -286,7 +383,9 @@ function urlNudges(): MoodOverride[] {
 
 /**
  * The URL's provocations: `gone=80:5` (something of the house's goes missing from room 5 at
- * 80 min), `seen=75:16:5` (person 16 seen poking round room 5 at 75 min). Several are joined by commas.
+ * 80 min), `seen=75:16:5` (person 16 seen poking round room 5 at 75 min), `mishap=80:16:spill` (a
+ * spill on person 16 at 80 min), `drama=125:quarrel` (a card played at 125 min; `drama=125:quarrel:16`
+ * with person 16 in it). Several are joined by commas.
  */
 function urlProvocations(): Provocation[] {
   const out: Provocation[] = [];
@@ -297,6 +396,16 @@ function urlProvocations(): Provocation[] {
   for (const g of (params.get("seen") ?? "").split(",").filter(Boolean)) {
     const [t, who, room] = g.split(":").map(Number);
     if (Number.isFinite(t) && Number.isFinite(who) && Number.isFinite(room)) out.push({ t: t! * 60, kind: "seen", subject: who!, room });
+  }
+  for (const g of (params.get("mishap") ?? "").split(",").filter(Boolean)) {
+    const [t, who, what] = g.split(":");
+    if (Number.isFinite(Number(t)) && Number.isFinite(Number(who)) && (MISHAP_IDS as readonly string[]).includes(what ?? ""))
+      out.push({ t: Number(t) * 60, kind: "mishap", subject: Number(who), what: what as MishapId });
+  }
+  for (const g of (params.get("drama") ?? "").split(",").filter(Boolean)) {
+    const [t, what, who] = g.split(":");
+    if (Number.isFinite(Number(t)) && (CARD_IDS as readonly string[]).includes(what ?? ""))
+      out.push({ t: Number(t) * 60, kind: "drama", subject: who !== undefined ? Number(who) : -1, what: what as CardId });
   }
   return out.sort((a, b) => a.t - b.t);
 }
@@ -544,6 +653,32 @@ function frameStates(): FrameState[] {
   });
 }
 
+/** What lies on the floor: broken glass and a vase in pieces until swept up, wine on the carpet until scrubbed, things lost until found. */
+function litter(): Array<Litter & { room: number }> {
+  const items = party.world.items;
+  const out: Array<Litter & { room: number }> = [];
+  for (let i = 0; i < items.n; i++) {
+    if (items.holder[i] !== -1) continue;
+    const kind = items.kindOf(i);
+    const state = items.stateOf(i);
+    const k: LitterKind | null =
+      state === "broken"
+        ? kind === "shards"
+          ? "shards"
+          : "glass"
+        : kind === "stain" && state === "down"
+          ? "stain"
+          : state === "lost" && (kind === "bag" || kind === "spectacles" || kind === "earring")
+            ? kind
+            : null;
+    if (!k) continue;
+    const room = items.room[i]!;
+    const y = room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[items.level[i]!]?.floorY ?? 0);
+    out.push({ kind: k, x: items.x[i]!, y, z: items.z[i]!, yaw: (i * 2.39996) % (Math.PI * 2), room });
+  }
+  return out;
+}
+
 const activeCamera = (): THREE.Camera => (view === "plan" ? ortho : camera);
 
 /** Screen position of a world point in the current view, or null behind the camera. */
@@ -576,6 +711,7 @@ function draw(): void {
     crowd.update(states, animClock);
     const now = party.t + acc;
     crowd.setFlashes(party.flashes.map((f): Flash => ({ x: f.x, y: (bp.levels[f.level]?.floorY ?? 0) + 1.65, z: f.z, age: (now - f.t) / TIME_SCALE })));
+    crowd.setLitter(litter());
   }
   drawOverlays(states);
   // Name tag over the selected person.
@@ -851,7 +987,7 @@ function drawOverlays(states: FrameState[]): void {
       }
       if (!own) continue;
       const step = tk.steps[tk.i];
-      const label = step ? (STEP_LABEL[step.label] ?? step.label.replace(/-/g, " ")) : "";
+      const label = step ? (STEP_LABEL[step.label.split(":")[0]!] ?? step.label.replace(/-/g, " ")) : "";
       chip(`${tk.kind}${label ? ` · ${label}` : ""}`, own[0], own[1] - 16, "#8fc7e5");
     }
   }
@@ -1025,7 +1161,8 @@ function describe(p: Person): string {
   if (a.id === "greet") s = `saying hello to ${party.people[a.ref ?? -1]?.name ?? "someone"}`;
   if (a.id === "task") {
     const t = party.tasks.of(p);
-    if (t) s = t.owner === p.id ? `${TASK_LABEL[t.kind]}: ${STEP_LABEL[note] ?? note.replace(/-/g, " ")}` : `${TASK_LABEL[t.kind]} with ${party.people[t.owner]?.name ?? "?"}`;
+    const what = t?.what && (t.kind === "mishap" || t.kind === "drama" || t.kind === "habit") ? (DRAMA_LABEL[t.what as MishapId] ?? TASK_LABEL[t.kind]) : t ? TASK_LABEL[t.kind] : "";
+    if (t) s = t.owner === p.id ? `${what}: ${STEP_LABEL[note.split(":")[0]!] ?? note.replace(/-/g, " ")}` : `${what} with ${party.people[t.owner]?.name ?? "?"}`;
   }
   return (p.pose === "walk" || p.pose === "climb") && a.id !== "leave" && !s.startsWith("to ") ? `→ ${s}` : s;
 }
@@ -1039,6 +1176,21 @@ function taskText(p: Person): string {
 }
 
 const DRINK_NAME: Partial<Record<Held, string>> = { champagne: "champagne", red: "red wine", white: "white wine", beer: "beer", whisky: "whisky", water: "water" };
+
+/** A stain, a bandage, a borrowed jacket; an oddball's habit; the mishap or drama they're caught up in. */
+function marks(p: Person): string {
+  const d = party.dramas;
+  const parts: string[] = [];
+  if (p.stain) parts.push(`${DRINK_NAME[p.stain]} down the front`);
+  if (p.bandage) parts.push("a bandaged hand");
+  if (d.changed(p)) parts.push(`in the host's ${p.look.sex === "m" ? "jacket" : "shawl"}`);
+  const h = d.habit[p.id];
+  if (h) parts.push(`${HABIT_LABEL[h]} (seen at it ${d.habitSeen[p.id]}×)`);
+  if (p.id === d.stranger) parts.push("nobody here knows them");
+  const e = d.episodeOf(p);
+  if (e && !e.done && e.kind !== "habit") parts.push(`${DRAMA_LABEL[e.what]}${e.seen ? "" : ", unseen so far"}`);
+  return parts.join(" · ");
+}
 
 /** What's in their hand, how full, and how much they've had. */
 function inHand(p: Person): string {
@@ -1170,6 +1322,9 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "conflict",
     "confront",
     "slip-away",
+    "mishap",
+    "drama",
+    "habit",
   ]),
   gossip: new Set(["gossip"]),
   "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
@@ -1179,6 +1334,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
   programme: new Set(["phase", "announce", "arrive", "leave", "toast", "beat"]),
   "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
   "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
+  "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
 };
 let logFilter = params.get("log") ?? "the evening";
 if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
@@ -1290,9 +1446,71 @@ function eventText(e: PartyEvent): string {
       return e.note === "in" ? `${n(e.actors[0])} and ${n(e.actors[1])} slip away and lock the door${roomOf(e)}` : `${n(e.actors[0])} and ${n(e.actors[1])} come back down, a little dishevelled`;
     case "won":
       return `${n(e.actors[0])} beats ${n(e.actors[1])} at ${e.note}`;
+    case "mishap":
+    case "drama":
+    case "habit":
+      return troubleText(e, n);
     default:
       return e.kind;
   }
+}
+
+/** A mishap, a drama or an oddball at it, for the log. */
+function troubleText(e: PartyEvent, n: (i: number | undefined) => string): string {
+  const [a, b] = [n(e.actors[0]), n(e.actors[1])];
+  const at = roomOf(e);
+  const lines: Record<string, string> = {
+    spill: e.actors.length > 1 ? `${b} spills a drink down ${a}${at}` : `${a} spills a drink down themselves${at}`,
+    "spill:changed": `${a} comes back down in something of the host's`,
+    cut: `a glass breaks in ${a}'s hand${at}`,
+    "cut:dressed": `${b} bandages ${a}'s hand`,
+    "lost:spectacles": `${a} puts their glasses down somewhere${at}`,
+    "lost:bag": `${a} puts their bag down somewhere${at}`,
+    "lost:search": `${a} can't find something and starts looking`,
+    "lost:found": e.actors.length > 1 ? `${b} finds what ${a} lost and hands it back` : `${a} finds what they lost`,
+    "lost:given-up": `${a} gives up looking`,
+    ankle: `${a} turns an ankle${at}`,
+    faint: `${a} feels faint and has to sit${at}`,
+    switch: `${a} leans on the light switch${at}`,
+    tray: `${a} drops a tray of glasses${at}`,
+    quarrel: `${a} and ${b} quarrel${at}`,
+    "quarrel:bathroom": `${a} shuts themselves in the bathroom`,
+    "quarrel:storms-off": `${a} storms off`,
+    "quarrel:made-up": `${a} and ${b} make up`,
+    "quarrel:home": `${a} goes home after the quarrel`,
+    "quarrel:cool": `${a} and ${b} keep their distance`,
+    drunk: `${a} has had one too many${at}`,
+    "drunk:steered": `${a} steers ${b} to a seat`,
+    "drunk:home": `${a} is sent home`,
+    tears: `${a} is in tears in the bathroom`,
+    speech: `${a} stands to make a speech`,
+    "speech:end": `${a}'s speech ends at last`,
+    earring: `${a} has lost an earring${at}`,
+    "earring:found": `${b} finds ${a}'s earring`,
+    "earring:given-up": `${a} gives up on the earring`,
+    wine: `${a} spills red wine on the carpet${at}`,
+    bore: `${a} holds the floor${at}`,
+    "bore:escape": `${a} gets away from ${b}`,
+    "bore:alone": `${a} is left talking to nobody`,
+    "bore:moved-on": `${a} moves on`,
+    early: `${a} takes a call`,
+    "early:leaves": `${a} is called away and leaves early`,
+    stranger: `nobody seems to know ${a}`,
+    piano: `${a} plays and ${e.actors.length - 1} gather round to sing${at}`,
+    photo: `${a} lines up ${e.actors.length - 1} friends for a photo on the terrace`,
+    vase: `${a} knocks over a vase${at}`,
+    fuse: `the fuse blows: the dance floor goes dark`,
+    "fuse:on": `the lights come back on`,
+    latecomer: `${a} arrives, late`,
+    creep: `${a} stands too close behind ${b}${at}`,
+    "creep:door": `${a} lingers by a bedroom door`,
+    "creep:noticed": `${b} turns round on ${a}`,
+    "creep:slapped": `${b} slaps ${a}`,
+    "wanderer:rattle": `${a} tries a locked door`,
+    "wanderer:peek": `${a} looks into a room they've no business in${at}`,
+    snoop: `${a} goes through the drawers${at}`,
+  };
+  return lines[e.note ?? ""] ?? `${a}: ${(e.note ?? e.kind).replace(/[-:]/g, " ")}`;
 }
 
 const ROW_ACT: Record<string, string> = { slap: "a slap", shove: "a shove", throw: "a drink thrown" };
@@ -1339,6 +1557,20 @@ const BEAT_LABEL: Record<string, string> = {
 
 let lastPanel = 0;
 
+/** The evening's trouble so far: mishaps by kind, the deck, and the oddballs. */
+function troubleStats(): string {
+  const d = party.dramas;
+  const s = d.stats;
+  const by = MISHAP_IDS.filter((m) => s.byMishap[m]).map((m) => `${s.byMishap[m]} ${m}`);
+  const played = d.slots.filter((x) => x.state === "played").map((x) => x.card);
+  const odd = d.oddballs.map((o) => `${HABIT_LABEL[o.habit]} ${d.habitSeen[o.who]}×`);
+  return [
+    `${s.mishaps} mishaps${by.length ? ` (${by.join(", ")})` : ""}`,
+    `${s.dramas} dramas${played.length ? `: ${played.join(", ")}` : ""}${d.unseen ? ` (${d.unseen} unseen)` : ""}`,
+    odd.length ? `oddballs: ${odd.join(", ")}` : "no oddballs",
+  ].join(" · ");
+}
+
 function refreshPanel(): void {
   const t = party.t + acc;
   $("time").textContent = clockLabel(t);
@@ -1374,6 +1606,7 @@ function refreshPanel(): void {
     `${st.couples} couples · ${st.friendships} friendships · ${st.flirtations} flirtations (${st.rebuffed} cooled) · ${st.affairs} affairs · ${st.foundOut} found out · ${st.confrontations} confrontations`,
     `${st.spats} spats · ${st.rows} rows · ${st.fellOut} fell out · ${st.madeUp} made up · ${st.pulled} pulled onto the floor · ${st.staffFriends} staff friendships · ${st.slipAways} slipped away`,
     `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
+    troubleStats(),
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile
@@ -1407,6 +1640,7 @@ function refreshPanel(): void {
     describe(p),
     taskText(p),
     inHand(p),
+    marks(p),
     p.present ? `${roomName(p)} · ${LEVEL_NAMES[p.level] ?? p.level} floor · ${Math.round(party.visibility(p) * 100)}% in view of the perch` : "",
   ]
     .filter(Boolean)
@@ -1517,6 +1751,18 @@ $("seen").onclick = () => {
   if (!p?.present) return;
   provoke({ t: party.t, kind: "seen", subject: p.id, room: goneRoom !== -1 ? goneRoom : p.room });
 };
+// Mishaps on the picked person, and a card from the deck played now (with them in it if it fits, else whoever it picks).
+for (const m of ["spill", "cut", "faint", "lost"] as const) {
+  $(`m-${m}`).onclick = () => {
+    const p = party.people[selected];
+    if (p?.present) provoke({ t: party.t, kind: "mishap", subject: p.id, what: m });
+  };
+}
+{
+  const cards = $("card") as HTMLSelectElement;
+  for (const c of CARD_IDS) if (c !== "stranger") cards.add(new Option(DRAMA_LABEL[c], c));
+  $("play").onclick = () => provoke({ t: party.t, kind: "drama", subject: party.people[selected]?.present ? selected : -1, what: cards.value as CardId });
+}
 {
   const who = document.createElement("select");
   who.title = "Whose mood: everyone, whoever is in the picked person's room, or just them";

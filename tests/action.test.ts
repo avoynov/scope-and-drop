@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycle, loaded, pull, reload } from "../src/scope/action";
+import { canSafe, cycle, latch, loaded, pull, reload, setSafe, unlatch } from "../src/scope/action";
 
 describe("the trigger, the action and the magazine, each on its own", () => {
   it("bolt rifle: one shot, then a dead trigger until the bolt is worked", () => {
@@ -68,5 +68,109 @@ describe("the trigger, the action and the magazine, each on its own", () => {
     reload(g, "vss");
     expect(g.chamber).toBe("live");
     expect(g.mag).toBe(10);
+  });
+});
+
+describe("the safety", () => {
+  it("locks the trigger on every rifle, and comes off again", () => {
+    for (const rifle of ["bolt", "svd", "vss"] as const) {
+      const g = loaded(rifle);
+      expect(setSafe(g, rifle, true)).toBe(true);
+      expect(pull(g, rifle)).toBe("safe");
+      expect(g.chamber).toBe("live");
+      expect(setSafe(g, rifle, false)).toBe(true);
+      expect(pull(g, rifle)).toBe("fire");
+    }
+  });
+
+  it("stops the action being worked, but not a magazine change", () => {
+    const g = loaded("vss");
+    for (let i = 0; i < 10; i++) pull(g, "vss");
+    setSafe(g, "vss", true);
+    expect(cycle(g, "vss")).toBe(false);
+    expect(g.chamber).toBe("empty");
+    reload(g, "vss");
+    expect(g.mag).toBe(10);
+    expect(g.chamber).toBe("empty");
+    // Off safe, the handle goes all the way and chambers.
+    setSafe(g, "vss", false);
+    expect(cycle(g, "vss")).toBe(true);
+    expect(pull(g, "vss")).toBe("fire");
+  });
+
+  it("SVD: won't go up with the carrier held open", () => {
+    const g = loaded("svd");
+    for (let i = 0; i < 10; i++) pull(g, "svd");
+    expect(canSafe(g, "svd")).toBe(false);
+    expect(setSafe(g, "svd", true)).toBe(false);
+    expect(g.safe).toBe(false);
+  });
+
+  it("bolt rifle: goes on only with the striker cocked, and then locks the bolt", () => {
+    const g = loaded("bolt");
+    pull(g, "bolt");
+    // Fired: the striker is down, and the safety springs back off.
+    expect(setSafe(g, "bolt", true)).toBe(false);
+    cycle(g, "bolt");
+    expect(setSafe(g, "bolt", true)).toBe(true);
+    expect(cycle(g, "bolt")).toBe(false);
+    expect(g.mag).toBe(3);
+  });
+});
+
+describe("the trigger during a magazine change (no magazine disconnect on any of them)", () => {
+  it("SVD and VSS: old magazine still on its catch, a shot feeds from it", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.chamber).toBe("live");
+      expect(g.mag).toBe(8);
+    }
+  });
+
+  it("SVD and VSS: magazine off, the chambered round fires and the carrier shuts on an empty chamber, then a click", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      unlatch(g);
+      expect(pull(g, rifle)).toBe("fire");
+      // No follower to lift the SVD's bolt stop: not held open.
+      expect(g.held).toBe(false);
+      expect(g.chamber).toBe("empty");
+      expect(pull(g, rifle)).toBe("click");
+      expect(pull(g, rifle)).toBe("dead");
+      // The new magazine on: still nothing chambered until the action is worked.
+      latch(g, rifle);
+      expect(pull(g, rifle)).toBe("dead");
+      cycle(g, rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.mag).toBe(8);
+    }
+  });
+
+  it("SVD: carrier already held open after the last round, the trigger stays dead with the magazine out", () => {
+    const g = loaded("svd");
+    for (let i = 0; i < 10; i++) pull(g, "svd");
+    unlatch(g);
+    expect(g.held).toBe(true);
+    expect(pull(g, "svd")).toBe("dead");
+  });
+
+  it("SVD and VSS: new magazine on, a shot feeds from it", () => {
+    for (const rifle of ["svd", "vss"] as const) {
+      const g = loaded(rifle);
+      unlatch(g);
+      latch(g, rifle);
+      expect(pull(g, rifle)).toBe("fire");
+      expect(g.chamber).toBe("live");
+      expect(g.mag).toBe(9);
+    }
+  });
+
+  it("racked with no magazine, the SVD's carrier goes home on an empty chamber", () => {
+    const g = loaded("svd");
+    unlatch(g);
+    cycle(g, "svd");
+    expect(g.held).toBe(false);
+    expect(g.chamber).toBe("empty");
   });
 });

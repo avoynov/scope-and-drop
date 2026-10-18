@@ -383,7 +383,10 @@ export type SoundEvent =
   | "charge-release"
   // The trigger pulled with nothing to fire: the hammer or striker falling on an empty chamber, or a dead trigger.
   | "dry-fire"
-  | "trigger";
+  | "trigger"
+  // The safety lever flicked on or off, and a handle stopped short by it.
+  | "safety"
+  | "safety-stop";
 export interface Cue {
   t: number;
   ev: SoundEvent;
@@ -401,6 +404,8 @@ export interface Plan {
   ejects: number[];
   /** Bolt rifle: forward strokes that strip a round into the chamber, [start, end]. */
   feeds: [number, number][];
+  /** A magazine change: when the old magazine comes off its catch, and when the new one latches. */
+  swap: [number, number] | null;
   cues: Cue[];
 }
 
@@ -446,6 +451,8 @@ export interface HandlingState {
   chamber?: Chamber;
   /** The SVD's carrier held open by its bolt stop. Default: on a magazine change with the magazine empty. */
   held?: boolean;
+  /** Working the action with the safety on: the handle stops short (SVD, VSS) or will not lift (bolt rifle). */
+  safe?: boolean;
 }
 
 /**
@@ -536,6 +543,19 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     };
     // Gripping the protruding box from the right, palm on its side, fingers round its front.
     mags[0].grasp = mags[1].grasp = at([0, -64, 46], [0, 0.35, -0.94], [-1, 0, 0]);
+    if (kind === "cycle" && state.safe) {
+      // Safety ON locks the bolt closed: the handle gives a hair and stops dead.
+      headTo(0.1, 0.4, [38 + 8 * r(1), 30, 28]);
+      gaze(0.12, knobView);
+      hand("R", 0, 0.3, knob, "pinch", [18, 22, 0]);
+      mv("boltLift", 0.3, 0.04, 0.03, "push");
+      cue(0.34, "safety-stop");
+      mv("boltLift", 0.4, 0.06, 0);
+      hand("R", 0.5, 0.32, grip, "grip", [10, 15, 0]);
+      gaze(0.52, null);
+      headTo(0.54, 0.4, [0, 0, 0]);
+      return finish(0.96);
+    }
     if (kind === "cycle") {
       headTo(0.1, 0.4, [38 + 8 * r(1), 30, 28]);
       gaze(0.12, knobView);
@@ -577,25 +597,32 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   // Fingers hooked in front of the knob from the right, palm toward the receiver.
   const knobFrame: Anchor = (cc) => at([c.knob[0], c.knob[1], c.knob[2] + c.stroke * cc("carrier")], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
   const knobView: V3 = [c.knob[0] + 5, c.knob[1] - 10, c.knob[2] + 50];
-  const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
   if (kind === "cycle") {
     // The firing hand comes off the grip, hooks the knob and pulls it fully back against the spring.
     headTo(0.05, 0.4, [55, 25, 20]);
     gaze(0.1, knobView);
     hand("R", 0.05, 0.34, knobFrame, "hook", [30, 25, 0]);
-    mv("carrier", 0.42, 0.16, 1);
-    if (!held) cue(0.42, "charge-back");
-    // Whatever was chambered comes out of the port and lands in the dirt to the right.
-    if (state.chamber === "live") cue(0.58 + 0.4 + 0.06 * r(3), "case-land");
-    if (c.holdOpen && rounds === 0) {
-      // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
-      if (!held) cue(0.62, "mag-release");
+    if (state.safe) {
+      // On safe the lever's shield is in the handle's slot: it comes back a little way, and the spring takes it home.
+      mv("carrier", 0.42, 0.05, 0.1, "push");
+      cue(0.47, "safety-stop");
+      mv("carrier", 0.56, 0.05, 0, "spring");
     } else {
-      // Let go at the back: the spring drives the carrier home, stripping the top round into the chamber.
-      mv("carrier", 0.6, 0.045, 0, "spring");
-      cue(0.6, "charge-release");
-      if (rounds > 0) magRounds(0, 0.64, rounds - 1);
+      mv("carrier", 0.42, 0.16, 1);
+      if (!held) cue(0.42, "charge-back");
+      // Whatever was chambered comes out of the port and lands in the dirt to the right.
+      if (state.chamber === "live") cue(0.58 + 0.4 + 0.06 * r(3), "case-land");
+      if (c.holdOpen && rounds === 0) {
+        // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
+        if (!held) cue(0.62, "mag-release");
+      } else {
+        // Let go at the back: the spring drives the carrier home, stripping the top round into the chamber.
+        mv("carrier", 0.6, 0.045, 0, "spring");
+        cue(0.6, "charge-release");
+        if (rounds > 0) magRounds(0, 0.64, rounds - 1);
+      }
     }
+    const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke * (state.safe ? 0.1 : 1) + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
     hand("R", 0.6, 0.12, () => off, "open");
     hand("R", 0.74, 0.34, grip, "grip", [10, 15, 0]);
     gaze(0.76, null);
@@ -633,7 +660,9 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
 
   function finish(dur: number): Plan {
     cues.sort((a, b) => a.t - b.t);
-    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues };
+    // A magazine change: the old magazine off its catch when it is pressed, the new one on when it is home.
+    const swap: Plan["swap"] = kind === "reload" ? [cues.find((c) => c.ev === "mag-release")!.t, mags[1].events.find((e) => e.mode === "well")!.t] : null;
+    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
   }
 }
 

@@ -29,8 +29,10 @@ Each file is one sound, trimmed so it starts at its first transient (within 5 ms
 | `charge-release` | The charging handle let go: the carrier slams home and chambers a round | | ✓ | ✓ |
 | `dry-fire` | The trigger pulled on an empty chamber: the striker (bolt rifle, VSS) or hammer (SVD) snapping forward | ✓ | ✓ | ✓ |
 | `trigger` | A dead trigger: pulled with the striker or hammer already down, or the SVD's carrier held open | ✓ | ✓ | ✓ |
+| `safety` | The safety put on or off: the AK-type lever's clack on the SVD and VSS, the trigger-guard lever's tick on the bolt rifle | ✓ | ✓ | ✓ |
+| `safety-stop` | The action worked on safe: the charging handle meeting the lever's shield, or the bolt handle stopped dead | ✓ | ✓ | ✓ |
 
-That is 29 files for every sound on every rifle. Any subset works; the rest stay synthesised.
+That is 35 files for every sound on every rifle. Any subset works; the rest stay synthesised.
 
 A recording of a whole sequence (a full bolt cycle, a whole magazine change) is useful too: put it in this folder with any name and it can be cut into the pieces above.
 

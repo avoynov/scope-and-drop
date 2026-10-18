@@ -99,8 +99,9 @@ export const LIGHT_OFF = 0.08;
 
 // ------------------------------------------------------------------- items
 
-export type ItemKind = "glass" | "tray" | "bottle" | "kit" | "bandage" | "bag" | "coat" | "spectacles" | "camera";
-export const ITEM_KINDS: readonly ItemKind[] = ["glass", "tray", "bottle", "kit", "bandage", "bag", "coat", "spectacles", "camera"];
+/** An earring lost on the floor, the shards of a vase, red wine on the carpet: the small dramas' things. */
+export type ItemKind = "glass" | "tray" | "bottle" | "kit" | "bandage" | "bag" | "coat" | "spectacles" | "camera" | "earring" | "shards" | "stain";
+export const ITEM_KINDS: readonly ItemKind[] = ["glass", "tray", "bottle", "kit", "bandage", "bag", "coat", "spectacles", "camera", "earring", "shards", "stain"];
 
 /**
  * full: a glass with drink in it. empty: drunk. down: set down somewhere, drink and all.

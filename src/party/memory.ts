@@ -47,7 +47,14 @@ export type Verb =
   | "row"
   | "fell-out"
   | "made-up"
-  | "slipped-away";
+  | "slipped-away"
+  | "twisted-ankle"
+  | "fainted"
+  | "lost-thing"
+  | "crying"
+  | "drunk"
+  | "broke"
+  | "camera-shy";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -107,6 +114,15 @@ export const VERBS: Record<Verb, VerbSpec> = {
   "fell-out": { kind: "mishap", juicy: 0.8, odd: 0, halfLife: 90 * MIN },
   "made-up": { kind: "mishap", juicy: 0.5, odd: 0, halfLife: 60 * MIN },
   "slipped-away": { kind: "romance", juicy: 1, odd: 0, halfLife: 90 * MIN, elsewhere: true },
+  // Mishaps and small dramas (dramas.ts): innocent, and worth telling.
+  "twisted-ankle": { kind: "mishap", juicy: 0.5, odd: 0, halfLife: 60 * MIN },
+  fainted: { kind: "mishap", juicy: 0.7, odd: 0, halfLife: 60 * MIN },
+  "lost-thing": { kind: "mishap", juicy: 0.4, odd: 0, halfLife: 45 * MIN, thing: true },
+  crying: { kind: "mishap", juicy: 0.9, odd: 0, halfLife: 60 * MIN },
+  drunk: { kind: "mishap", juicy: 0.8, odd: 0, halfLife: 60 * MIN },
+  broke: { kind: "mishap", juicy: 0.7, odd: 0, halfLife: 60 * MIN },
+  /** Turned away from a camera, or slipped out of a photograph: the baseline for keeping out of the picture. */
+  "camera-shy": { kind: "odd", juicy: 0.3, odd: 0.04, halfLife: 45 * MIN },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

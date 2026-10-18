@@ -52,6 +52,8 @@ export class Ident {
   private readonly voice: Float32Array;
   /** A test i wants to put to j, or -1. */
   readonly wantTest: Int16Array;
+  /** Limping on an ankle turned tonight (dramas.ts): someone hurt, not someone else, so the limp is no part of how they look. */
+  readonly hurt: Uint8Array;
   readonly stats = { doubleTakes: 0, tests: 0, passed: 0, compared: 0, sure: 0, met: 0 };
 
   constructor(people: Person[], rng: Rng) {
@@ -65,6 +67,7 @@ export class Ident {
     this.stage = new Uint8Array(n * n);
     this.voice = new Float32Array(n);
     this.wantTest = new Int16Array(n).fill(-1);
+    this.hurt = new Uint8Array(n);
     for (const p of people) this.voice[p.id] = (p.look.sex === "f" ? 0.65 : 0.35) + rng.range(-0.1, 0.1);
     for (const p of people) this.refresh(p);
 
@@ -99,16 +102,18 @@ export class Ident {
     const L = p.look;
     const sway = Math.max(0, Math.min(1, (p.tipsy - 0.6) / 0.4));
     let bits = 0;
+    const limp = p.quirks.includes("limp") && !this.hurt[p.id];
     QUIRK_BITS.forEach((q, i) => {
-      if (p.quirks.includes(q)) bits |= 1 << i;
+      if (p.quirks.includes(q) && (q !== "limp" || limp)) bits |= 1 << i;
     });
     this.look[o + F_HEIGHT] = L.height * 100;
     this.look[o + F_BUILD] = L.build;
-    this.look[o + F_GAIT] = (p.quirks.includes("limp") ? 1 : 0) + 0.5 * sway;
+    this.look[o + F_GAIT] = (limp ? 1 : 0) + 0.5 * sway;
     this.look[o + F_VOICE] = this.voice[p.id]! + 0.6 * Math.max(0, p.tipsy - 0.3);
     this.look[o + F_QUIRKS] = bits;
     this.look[o + F_HUE] = hue(L.color);
-    this.look[o + F_STATE] = 0;
+    // A stain down the front, a bandaged hand.
+    this.look[o + F_STATE] = (p.stain ? 0.5 : 0) + (p.bandage ? 0.5 : 0);
   }
 
   /** i takes a fresh mental picture of j. */
@@ -137,21 +142,23 @@ export class Ident {
 
   /**
    * How different j looks to i from how i remembers them, weighted as the plan has it. At a
-   * distance only height and walk show; explained changes (i knows j has been drinking) barely count.
+   * distance only height and walk show; explained changes (i knows j has been drinking, or of
+   * the spill that sent them off to change) barely count.
    */
-  mismatch(i: number, j: number, salience: number, explained: boolean): number {
+  mismatch(i: number, j: number, salience: number, explained: boolean, dressed = false): number {
     const a = j * FEATURES;
     const m = (i * this.n + j) * FEATURES;
     const L = this.look;
     const M = this.memLook;
     const why = explained ? 0.2 : 1;
+    const worn = dressed ? 0.2 : 1;
     let s = Math.abs(L[a + F_HEIGHT]! - M[m + F_HEIGHT]!) / 15;
     s += Math.min(1, Math.abs(L[a + F_GAIT]! - M[m + F_GAIT]!)) * 0.5 * why;
     if (salience < 0.4) return s;
     s += Math.min(1, Math.abs(L[a + F_VOICE]! - M[m + F_VOICE]!)) * 0.5 * why;
     s += popcount((L[a + F_QUIRKS]! ^ M[m + F_QUIRKS]!) >>> 0) * 0.4;
-    s += Math.min(1, 2 * Math.abs(L[a + F_HUE]! - M[m + F_HUE]!)) * 0.2;
-    s += Math.min(1, Math.abs(L[a + F_STATE]! - M[m + F_STATE]!)) * 0.2;
+    s += Math.min(1, 2 * Math.abs(L[a + F_HUE]! - M[m + F_HUE]!)) * 0.2 * worn;
+    s += Math.min(1, Math.abs(L[a + F_STATE]! - M[m + F_STATE]!)) * 0.2 * worn;
     s += Math.abs(L[a + F_BUILD]! - M[m + F_BUILD]!) * 0.3;
     return s;
   }
@@ -173,7 +180,7 @@ export class Ident {
    * i sees j, whom they know. Salience is 1 face to face, 0.4 within 4 m, 0.15 within 10 m,
    * times the light and a clear head. Returns what the sighting brings about.
    */
-  check(i: number, j: number, t: number, dt: number, d: number, faceToFace: boolean, light: number, tipsy: number, explained: boolean): IdentEvent {
+  check(i: number, j: number, t: number, dt: number, d: number, faceToFace: boolean, light: number, tipsy: number, explained: boolean, dressed = false): IdentEvent {
     const k = i * this.n + j;
     const tie = this.tie[k]!;
     if (!tie) return null;
@@ -186,7 +193,13 @@ export class Ident {
       const f = 1 - 0.5 ** (dt / USED_TO);
       for (const x of [F_GAIT, F_VOICE]) this.memLook[m + x]! += (this.look[a + x]! - this.memLook[m + x]!) * f;
     }
-    const mis = this.mismatch(i, j, sal, explained);
+    if (dressed) {
+      const a = j * FEATURES;
+      const m = k * FEATURES;
+      const f = 1 - 0.5 ** (dt / USED_TO);
+      for (const x of [F_HUE, F_STATE]) this.memLook[m + x]! += (this.look[a + x]! - this.memLook[m + x]!) * f;
+    }
+    const mis = this.mismatch(i, j, sal, explained, dressed);
     let v = this.doubtOf(i, j, t);
     // Once someone has passed a test, they're themselves for the rest of the evening.
     const trust = this.stage[k] === 2 ? 0.2 : 1;

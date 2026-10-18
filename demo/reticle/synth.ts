@@ -171,6 +171,8 @@ const LENGTH: Record<Synth, number> = {
   "charge-release": 0.4,
   "dry-fire": 0.2,
   trigger: 0.06,
+  safety: 0.12,
+  "safety-stop": 0.12,
 };
 
 /** One take of a sound, `seed` choosing the variant, at `sr` samples per second. */
@@ -509,6 +511,51 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
         );
         b.thump(0, 0.12, 260, 0.015);
       }
+      break;
+    case "safety":
+      if (rifle === "bolt") {
+        // A small lever inside the trigger guard snapping into its detent: a short, quiet tick.
+        b.scrape(0, 0.008, 0.08, 3000, 4500, 0.6);
+        b.modes(
+          0.008,
+          0.35,
+          [
+            [4800, 0.005, 1],
+            [7600, 0.003, 0.5],
+          ],
+          p,
+        );
+      } else {
+        // The long stamped lever dragged over the receiver and snapping into its notch: the AK's loud clack,
+        // the thin sheet of the receiver ringing with it.
+        b.scrape(0, 0.018, 0.14, 1800, 3200, 0.8);
+        b.modes(
+          0.018,
+          0.7,
+          [
+            [1900, 0.03, 1],
+            [3100, 0.02, 0.7],
+            [4700, 0.012, 0.45],
+            [7300, 0.006, 0.25],
+          ],
+          p,
+        );
+        b.thump(0.018, 0.08, 300, 0.012);
+      }
+      break;
+    case "safety-stop":
+      // A handle driven into the locked safety: a dull knock, stopped short with nothing let go.
+      b.modes(
+        0,
+        0.45 * heavy,
+        [
+          [1100, 0.018, 1],
+          [2300, 0.01, 0.5],
+          [3900, 0.005, 0.25],
+        ],
+        p,
+      );
+      b.thump(0, 0.2, 180, 0.02);
       break;
     case "trigger":
       // A dead trigger: the blade comes back against its stop with nothing to let go.

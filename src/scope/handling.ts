@@ -232,7 +232,7 @@ export const GRASP: Record<HandPose, V3> = {
   press: [-32, -22, -188],
   open: [0, -30, -80],
 };
-function blendPose(a: FingerPose, b: FingerPose, t: number): FingerPose {
+export function blendPose(a: FingerPose, b: FingerPose, t: number): FingerPose {
   return { f: a.f.map((v, i) => v + (b.f[i]! - v) * t), t: a.t.map((v, i) => v + (b.t[i]! - v) * t) };
 }
 
@@ -409,7 +409,7 @@ export interface Plan {
   cues: Cue[];
 }
 
-const minJerk = (s: number) => s * s * s * (10 - 15 * s + 6 * s * s);
+export const minJerk = (s: number) => s * s * s * (10 - 15 * s + 6 * s * s);
 const EASE: Record<Ease, (s: number) => number> = {
   mj: minJerk,
   // Driven by the hand into a stop: speeding up to the end.
@@ -690,7 +690,7 @@ const POLE: Record<Side, V3> = { R: [1, -0.9, 0.4], L: [-1, -0.9, 0.4] };
  * Two-bone arm: the elbow sits where both bones reach from the wrist and the shoulder, bent toward the pole. A
  * hand reaching further than the arm is long brings the shoulder forward after it.
  */
-function armOf(wrist: Frame, s: Side): HandState["arm"] {
+export function armOf(wrist: Frame, s: Side): HandState["arm"] {
   const w = add(wrist.p, qRot(wrist.q, [0, 0, 48]));
   const reach = UPPER_ARM + FOREARM - 1;
   const S0 = SHOULDER[s];

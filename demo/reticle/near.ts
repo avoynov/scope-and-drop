@@ -20,6 +20,7 @@ import { SCOPE } from "../../src/scope/optics";
 import type { Dial, RifleId } from "../../src/scope/shot";
 import { buildActions } from "./actions";
 import { DRUM_R_MM, paintDrum } from "./drum";
+import { buildKilo, type KiloModel } from "./kilo";
 
 const mm = (v: number) => v / 1000;
 const EYEPIECE = 1;
@@ -45,7 +46,7 @@ const NEAR_FS = /* glsl */ `
   in vec3 vP;
   in vec2 vUv;
   uniform vec3 uBase, uSun, uSunCol, uSky, uGround;
-  uniform float uGloss, uSpec, uLens, uMapped, uGlow;
+  uniform float uGloss, uSpec, uLens, uMapped;
   uniform sampler2D tMap;
   vec3 hemi(float y){ return mix(uGround, uSky, .5 + .5*y); }
   void main(){
@@ -74,15 +75,10 @@ const NEAR_FS = /* glsl */ `
       // The drum's engraving (paint-filled numbers and marks, knurling) comes from its texture.
       vec3 base = uMapped > .5 ? texture(tMap, vUv).rgb : uBase;
       col = (base*(uSunCol*ndl + hemi(n.y)*.8) + uSpec*(F*.6 + .4)*(env*.35 + uSunCol*spec*ndl))*(1. - .8*head);
-      // A lit display under its window (the rangefinder's OLED): its own light over the window's dark sheen.
-      if (uGlow > 0.) col += texture(tMap, vUv).rgb*uGlow;
     }
     oCol = vec4(col, 1.);
     oAux = vec4(uLens, dist, 0., 1.);
   }`;
-
-/** What the rangefinder's screen shows after a press: a range and its solution, or no return. */
-export type LrfReadout = { rangeM: number; slopeDeg: number; elevMil: number } | "no-return";
 
 export interface NearLayer {
   scene: THREE.Scene;
@@ -100,11 +96,8 @@ export interface NearLayer {
   /** The angle indicator, for picking it, and its centre in the scope frame (mm). */
   aci: THREE.Object3D;
   aciMm: THREE.Vector3;
-  /** The rifle-mounted laser rangefinder: shown or not, its readout, and for picking it, its meshes and rear face (mm). */
-  showLrf(on: boolean): void;
-  setLrfReadout(r: LrfReadout | null): void;
-  lrf: THREE.Object3D;
-  lrfMm: THREE.Vector3;
+  /** The handheld rangefinder, posed in the scope's frame. */
+  kilo: KiloModel;
   /** Which rifle is under the scope. */
   setRifle(id: RifleId): void;
   /** Where its moving parts and the hands are. */
@@ -114,7 +107,7 @@ export interface NearLayer {
 export function buildRifle(): NearLayer {
   const scene = new THREE.Scene();
   const mats: THREE.ShaderMaterial[] = [];
-  const mat = (base: number, gloss: number, spec: number, lens = 0, map: THREE.Texture | null = null, glow = 0) => {
+  const mat = (base: number, gloss: number, spec: number, lens = 0, map: THREE.Texture | null = null) => {
     const m = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       side: THREE.DoubleSide,
@@ -125,8 +118,7 @@ export function buildRifle(): NearLayer {
         uGloss: { value: gloss },
         uSpec: { value: spec },
         uLens: { value: lens },
-        uMapped: { value: map && !glow ? 1 : 0 },
-        uGlow: { value: glow },
+        uMapped: { value: map ? 1 : 0 },
         tMap: { value: map },
         uSun: { value: new THREE.Vector3(0, 1, 0) },
         uSunCol: { value: new THREE.Color(0xfff2de).multiplyScalar(1.9) },
@@ -275,52 +267,10 @@ export function buildRifle(): NearLayer {
   }
   // The lens over the dial would only add glare at this distance: left out.
 
-  // Laser rangefinder with a ballistic solver, after the Wilcox RAPTAR-S: a black box 108 × 81 × 44 mm, about
-  // 300 g, on the mount's side rail at 3 o'clock off the front ring, clear of the view over the scope with the head
-  // up. Its 1550 nm laser is invisible. Front: the small transmit lens and the larger receive lens. Top: the
-  // five-button pad (the shooter ranges from a pressure pad on the stock, on a cable, here a key). Rear: a hooded
-  // 128 × 32 OLED that shows the range, the slope its inclinometer reads, and the elevation to dial or hold.
-  // Centre of the box (mm): beside the front ring, its top level with the tube's, so it stays below the view.
-  const [cx, cy, cz] = [66, -10, -362];
-  const lrfMm = new THREE.Vector3(cx + 14, cy + 4, cz + 54);
-  const lrf = new THREE.Group();
-  scene.add(lrf);
-  const oledTex = new THREE.CanvasTexture(paintOled(null));
-  oledTex.colorSpace = THREE.SRGBColorSpace;
-  oledTex.anisotropy = 8;
-  {
-    const part = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
-      const o = add(g, m, mm(cx + x), mm(cy + y), mm(cz + z));
-      o.name = "lrf";
-      lrf.add(o);
-      return o;
-    };
-    part(new THREE.BoxGeometry(mm(81), mm(44), mm(108)), polymer, 0, 0, 0);
-    // Mount: a clamp off the ring's side rail.
-    part(new THREE.BoxGeometry(mm(12), mm(16), mm(30)), steel, -44, 10, 0);
-    // Front lenses.
-    const lens = (r: number, x: number, y: number) => part(new THREE.CircleGeometry(mm(r), 32).rotateY(Math.PI), glass, x, y, -54.1);
-    lens(6, -22, 10);
-    lens(14, 10, -2);
-    // Button pad on top.
-    for (const [x, z] of [
-      [0, 12],
-      [-12, 12],
-      [12, 12],
-      [0, 24],
-      [0, 0],
-    ])
-      part(new THREE.CylinderGeometry(mm(3.6), mm(3.6), mm(2), 20), mat(0x26262a, 6, 0.08), x, 23, z);
-    // Rear: the OLED window under a shallow hood, on the outboard side where the windage knob does not hide it.
-    part(new THREE.PlaneGeometry(mm(40), mm(10)), mat(0x030303, 80, 0.5, 0, oledTex, 1.25), 14, 4, 54.1);
-    for (const [w, h, x, y] of [
-      [50, 1.5, 14, 10.5],
-      [1.5, 13, -11.5, 4],
-      [1.5, 13, 39.5, 4],
-    ])
-      part(new THREE.BoxGeometry(mm(w), mm(h), mm(4)), polymer, x, y, 56);
-  }
-  lrf.visible = false;
+  // The handheld rangefinder (kilo.ts): close to the eye whenever it is seen, so drawn and blurred with the eyepiece.
+  const kilo = buildKilo(mat, (o) => o.layers.set(EYEPIECE));
+  kilo.group.visible = false;
+  scene.add(kilo.group);
 
   // The rifle under the scope, its moving parts and the hands, in millimetres.
   const below = new THREE.Group();
@@ -353,15 +303,7 @@ export function buildRifle(): NearLayer {
     },
     aci,
     aciMm,
-    showLrf(on) {
-      lrf.visible = on;
-    },
-    setLrfReadout(r) {
-      oledTex.image = paintOled(r);
-      oledTex.needsUpdate = true;
-    },
-    lrf,
-    lrfMm,
+    kilo,
     setRifle: (id) => actions.setRifle(id),
     pose: (p) => actions.apply(p),
   };
@@ -420,33 +362,6 @@ function paintAci(): HTMLCanvasElement {
   g.fill();
   g.font = `600 ${S * 0.055}px "DIN Alternate", "Arial Narrow", Arial, sans-serif`;
   g.fillText("COSINE", 0, S * 0.24);
-  return c;
-}
-
-/** The rangefinder's 128 × 32 OLED, drawn at twice its pixels: blank, "no return", or range, slope and elevation. */
-function paintOled(r: LrfReadout | null): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 64;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#000";
-  g.fillRect(0, 0, 256, 64);
-  if (!r) return c;
-  g.fillStyle = "#ff4a2a";
-  g.textBaseline = "middle";
-  g.font = `700 26px "DejaVu Sans Mono", "Menlo", monospace`;
-  if (r === "no-return") {
-    g.textAlign = "center";
-    g.fillText("- - - -", 128, 32);
-    return c;
-  }
-  const slope = Math.round(r.slopeDeg);
-  g.textAlign = "left";
-  g.fillText(`${Math.round(r.rangeM)} m`, 8, 17);
-  g.fillText(`ELV ${r.elevMil.toFixed(1)}`, 8, 47);
-  g.textAlign = "right";
-  g.fillText(`${slope > 0 ? "+" : ""}${slope}°`, 248, 17);
-  g.fillText("MIL", 248, 47);
   return c;
 }
 

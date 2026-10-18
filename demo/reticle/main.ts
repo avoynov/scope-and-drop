@@ -4,8 +4,10 @@ import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeO
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
 import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
-import { LRF_MAX_M, LRF_MIN_M, solveElevationMil, speedDrop, type AimAid } from "../../src/scope/aids";
-import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
+import { speedDrop, type AimAid } from "../../src/scope/aids";
+import { BEAM_RAYS, KILO8K, Kilo, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
+import { compose, invert, qRot } from "../../src/scope/handling";
+import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
 import { createComposite } from "./composite";
@@ -14,6 +16,7 @@ import { createGlass } from "./glass";
 import { DRUM_R_MM, TURN_LIFT_MM, createDrum, drumHome, drumStep } from "./drum";
 import { FLAG_DEG_PER_MS } from "./flags";
 import { buildRifle, createNearPasses } from "./near";
+import { KILO_DOWN_S, KILO_UP_S, kiloRig, paintOled, rasterOled, toQuat, type KiloRig } from "./kilo";
 import { CHEST_M, EYE_HEIGHT, buildRange, configureTargets, heightAt, targetRanges, terrainLift, type TargetSpot } from "./scene";
 import { createShooting, type Aim } from "./shooting";
 import { createWindGL } from "./wind-gl";
@@ -49,7 +52,7 @@ const state = {
   reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
   /** The bolt rifle's reticle: Leupold PR2-MIL or Vortex EBR-7D (`tree=pr2|ebr`). */
   treeStyle: (params.get("tree") === "ebr" ? "ebr" : "pr2") as TreeStyle,
-  /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a rifle-mounted rangefinder (`aid=manual|lrf`). */
+  /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a handheld rangefinder (`aid=manual|lrf`). */
   aid: (params.get("aid") === "lrf" ? "lrf" : "manual") as AimAid,
   mag: num("mag", 8),
   parallax: num("par", targetRanges[reticleParam === "vss" ? 1 : 0]!), // metres; Infinity = ∞
@@ -226,10 +229,22 @@ const wideDrawnQ = new THREE.Quaternion();
 /** Pixels per radian at the centre of a perspective view `px` pixels tall. */
 const pxPerRad = (cam: THREE.PerspectiveCamera, px: number) => px / 2 / Math.tan(((cam.fov / 2) * Math.PI) / 180);
 
+let kiloKey = "";
+/** The rangefinder's OLED into the eyepiece overlay, whenever what it shows changes. */
+function drawKilo(t: number): void {
+  const ops = kilo.screen(t);
+  const key = `${JSON.stringify(ops)}|${retCanvas.width}`;
+  if (key === kiloKey) return;
+  kiloKey = key;
+  retKey = "";
+  paintOled(retCtx, retCanvas.width, rasterOled(ops));
+  retTex.needsUpdate = true;
+}
 function drawRet(): void {
   const key = `${state.reticle}|${state.treeStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
   if (key === retKey) return;
   retKey = key;
+  kiloKey = "";
   const r = currentReticle();
   const S = retCanvas.width;
   retCtx.clearRect(0, 0, S, S);
@@ -273,31 +288,75 @@ function groundDistance(dir: THREE.Vector3): number {
 }
 
 /**
- * The rangefinder's press: its laser goes out along the bore line, sway and all (it is boresighted with the scope),
- * and returns off the first thing it meets: a mannequin, the boulder or the ground. Its solver then takes that
- * range and the slope off its inclinometer and gives the elevation for standard air and no wind. Nothing within
- * 5 m or past 1500 m returns.
+ * The Pro way: the shooter's handheld Sig KILO8K-ABS (src/scope/kilo.ts for the device, demo/reticle/kilo.ts for
+ * its body, hands and screen). X brings it up from beside the rifle to the eye and puts it back. While it is up
+ * the rifle cannot fire or be worked, Space is its RANGE button and M its MODE button, and the pointer turns it.
+ * Its laser leaves along its own axis, hand shake and all, as a beam 1.25 × 0.25 mrad sampled by 21 rays; its
+ * inclinometer reads that axis's slope. The device keeps its settings and its last reading while it is put down.
  */
-const lrfRay = new THREE.Raycaster();
-lrfRay.layers.enableAll();
-const lrfDir = new THREE.Vector3();
-function rangeLrf(): void {
-  if (state.reticle !== "tree" || state.aid !== "lrf" || shooting.busy()) return;
-  const aim = aimAt(clock);
-  lrfDir.set(0, 0, -1).applyEuler(new THREE.Euler(aim.pitch, aim.yaw, 0, "YXZ"));
-  lrfRay.set(eyePos, lrfDir);
-  lrfRay.far = LRF_MAX_M;
+type KiloPhase = "down" | "raising" | "up" | "lowering";
+const kiloState = { phase: "down" as KiloPhase, since: -Infinity, yaw: 0, pitch: 0 };
+const kiloRay = new THREE.Raycaster();
+kiloRay.layers.enableAll();
+const kiloDir = new THREE.Vector3();
+const kiloEuler = new THREE.Euler(0, 0, 0, "YXZ");
+let kiloShots = 0;
+/** The device's orientation in the world at `t`: where it is turned, and the hand's shake. */
+function kiloAimQ(t: number, out: THREE.Quaternion): THREE.Quaternion {
+  const [sx, sy] = state.sway ? handShakeMrad(t) : [0, 0];
+  return out.setFromEuler(kiloEuler.set(kiloState.pitch + sy / 1000, kiloState.yaw - sx / 1000, 0));
+}
+const kiloMeasQ = new THREE.Quaternion();
+const kilo = new Kilo(RIFLES.bolt, () => {
+  kiloAimQ(clock, kiloMeasQ);
   const solids = [range.boulder, ...range.targets.map((m) => m.group)];
   for (const o of solids) o.updateWorldMatrix(true, true);
-  const hits = lrfRay.intersectObjects(solids, true).filter((h) => h.object.name !== "hole");
-  const solidM = hits.length ? hits[0]!.distance : Infinity;
-  const d = Math.min(solidM, groundDistance(lrfDir));
-  if (!(d >= LRF_MIN_M && d <= LRF_MAX_M)) {
-    rifle.setLrfReadout("no-return");
-    return;
+  const rock = (o: THREE.Object3D | null): boolean => !!o && (o === range.boulder || rock(o.parent));
+  const hits: RayHit[] = BEAM_RAYS.map(([mx, my]) => {
+    kiloDir
+      .set(mx / 1000, my / 1000, -1)
+      .normalize()
+      .applyQuaternion(kiloMeasQ);
+    kiloRay.set(eyePos, kiloDir);
+    kiloRay.far = KILO8K.reachM.reflective;
+    const h = kiloRay.intersectObjects(solids, true).find((x) => x.object.name !== "hole");
+    const g = groundDistance(kiloDir);
+    if (h && h.distance < g) return { m: h.distance, kind: rock(h.object) ? "rock" : "person" };
+    return Number.isFinite(g) ? { m: g, kind: "ground" } : { m: Infinity, kind: "none" };
+  });
+  const m = pickReturn(hits, kilo.settings.target);
+  kiloDir.set(0, 0, -1).applyQuaternion(kiloMeasQ);
+  const slopeRad = Math.asin(Math.max(-1, Math.min(1, kiloDir.y)));
+  return { losM: m === null ? null : m + rangeSigmaM(m) * shotRandom(1000 + kiloShots++)(), slopeRad };
+});
+/** Its settings from the URL, for stills: `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`. */
+{
+  const tm = params.get("kilomode")?.toUpperCase();
+  if (tm && ["FIRST", "BEST", "LAST", "XR", "FOG"].includes(tm)) kilo.settings.target = tm as TargetMode;
+  const kr = params.get("kiloret")?.toUpperCase();
+  if (kr && ["CIRCLE", "DUPLEX", "BOX", "H-GRID", "GRID"].includes(kr)) kilo.settings.reticle = kr as KiloReticle;
+  const [mph, clk] = (params.get("kilowind") ?? "").split(",").filter(Boolean).map(Number);
+  if (mph !== undefined && Number.isFinite(mph)) kilo.settings.wind.mph = Math.max(0, Math.min(30, Math.round(mph)));
+  if (clk !== undefined && Number.isFinite(clk)) kilo.settings.wind.clock = ((Math.round(clk) + 11) % 12) + 1;
+}
+const kiloReady = () => state.reticle === "tree" && state.aid === "lrf";
+/** X: up from the ground to the eye, or back down. The head comes up off the scope first. */
+function toggleKilo(): void {
+  if (kiloState.phase === "down") {
+    if (!kiloReady() || shooting.busy()) return;
+    if (adsIn) toggleScope();
+    // It comes up looking where the head does.
+    kiloState.yaw = state.yaw;
+    kiloState.pitch = state.pitch;
+    kiloState.phase = "raising";
+    kiloState.since = clock;
+  } else if (kiloState.phase === "up") {
+    kilo.release("range", clock);
+    kilo.release("mode", clock);
+    kiloState.phase = "lowering";
+    kiloState.since = clock;
   }
-  const slope = Math.asin(Math.max(-1, Math.min(1, lrfDir.y)));
-  rifle.setLrfReadout({ rangeM: d, slopeDeg: (slope * 180) / Math.PI, elevMil: Math.max(0, solveElevationMil(RIFLES.bolt, d, slope)) });
+  syncUi();
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -447,7 +506,8 @@ function syncUi(): void {
   $("aid").hidden = state.reticle !== "tree";
   syncTarget();
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]")) b.classList.toggle("on", b.dataset.aid === state.aid);
-  rifle.showLrf(state.reticle === "tree" && state.aid === "lrf");
+  // Off the bolt rifle or back to the manual way, the rangefinder goes back down at once.
+  if (kiloState.phase !== "down" && !kiloReady()) kiloState.phase = "down";
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]")) b.classList.toggle("on", b.dataset.tree === state.treeStyle);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]")) b.classList.toggle("on", state[b.dataset.flag as "illum"] as boolean);
   syncWindCard();
@@ -547,6 +607,7 @@ function aimAt(t: number): Aim {
   return { yaw: state.yaw + sy - rc.yaw - (hand?.yaw ?? 0), pitch: state.pitch + sp + rc.pitch + (hand?.pitch ?? 0) };
 }
 function fire(): void {
+  if (kiloState.phase !== "down") return;
   const exit = shooting.press(clock, eyePos, aimAt, state.wind);
   syncUi();
   if (exit === null) return;
@@ -560,14 +621,18 @@ $("fire").onclick = () => fire();
  * asked, needed or not, and only what the real rifle does.
  */
 function work(kind: "cycle" | "reload"): void {
-  if (!shooting.work(clock, kind)) return;
+  if (kiloState.phase !== "down" || !shooting.work(clock, kind)) return;
   // The hands leave the grip, and the head comes up off the scope with them.
   if (adsIn) toggleScope();
   syncUi();
 }
 $("bolt").onclick = () => work("cycle");
 $("reload").onclick = () => work("reload");
-$("safety").onclick = () => shooting.safety();
+/** The safety needs a hand on the rifle: not while both hands hold the rangefinder. */
+function safety(): void {
+  if (kiloState.phase === "down") shooting.safety();
+}
+$("safety").onclick = () => safety();
 
 /**
  * Scope-in and scope-out (see src/scope/ads.ts). The rifle stays on its bipod and the head moves: down onto
@@ -584,8 +649,8 @@ function headAt(t: number): Vec3 {
   return ads ? adsEye(ads, t) : headRest;
 }
 function toggleScope(): void {
-  // No settling back onto the scope while the hands are on the action.
-  if (!adsIn && shooting.busy()) return;
+  // No settling back onto the scope while the hands are on the action or the rangefinder.
+  if (!adsIn && (shooting.busy() || kiloState.phase !== "down")) return;
   const from = headAt(clock);
   const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
   adsIn = !adsIn;
@@ -667,14 +732,6 @@ function pickAci(e: { clientX: number; clientY: number }): boolean {
   picker.setFromCamera(ndc, rifle.camera);
   return picker.intersectObject(rifle.aci, true).some((h) => h.object.name === "aci");
 }
-/** Whether the pointer is on the rangefinder, with the head up: the eye then looks, and focuses, on its screen. */
-function pickLrf(e: { clientX: number; clientY: number }): boolean {
-  if (adsIn || shooting.busy() || !rifle.lrf.visible) return false;
-  const r = canvas.getBoundingClientRect();
-  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  picker.setFromCamera(ndc, rifle.camera);
-  return picker.intersectObject(rifle.lrf, true).some((h) => h.object.name === "lrf");
-}
 /**
  * Where the eye looks, and so focuses. The rifle stays blurred, as the eye is on the range, until the shooter
  * looks at the drum: the pointer on it, or a click of `[` or `]`. The eye stays on it while the pointer does and
@@ -685,7 +742,7 @@ const LOOK_HOLD = 1.5;
 let focusInv = 0;
 let drumLook = false;
 /** What the eye looks at with the head up: the drum or the angle indicator. */
-let lookAt: "drum" | "aci" | "lrf" = "drum";
+let lookAt: "drum" | "aci" = "drum";
 let lookUntil = -Infinity;
 const focusPinned = params.has("focus") ? num("focus", 0.29) : 0;
 const lookAway = () => {
@@ -743,10 +800,9 @@ canvas.addEventListener("pointermove", (e) => {
   if (!pointers.size && e.pointerType === "mouse") {
     const d = pickDrum(e);
     const a = !d && pickAci(e);
-    const l = !d && !a && pickLrf(e);
-    if (d || a || l) {
+    if (d || a) {
       drumLook = true;
-      lookAt = d ? "drum" : a ? "aci" : "lrf";
+      lookAt = d ? "drum" : "aci";
     } else lookAway();
     canvas.style.cursor = d ? "ew-resize" : "";
   }
@@ -756,8 +812,15 @@ canvas.addEventListener("pointermove", (e) => {
     // One screen px of drag moves the view one apparent px: locked to the glass on the weld, to the
     // naked-eye view with the head up.
     const k = tanHalfApparent(SCOPE) / (1 + (state.mag - 1) * adapt) / (R / dpr);
-    state.yaw += (e.clientX - prev.x) * k;
-    state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + (e.clientY - prev.y) * k));
+    if (kiloState.phase === "up") {
+      // Turning the rangefinder: one px moves its view one px (its field fills the same circle on screen).
+      const kk = Math.tan((KILO8K.fovDeg * Math.PI) / 360) / (R / dpr);
+      kiloState.yaw += (e.clientX - prev.x) * kk;
+      kiloState.pitch = Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk));
+    } else {
+      state.yaw += (e.clientX - prev.x) * k;
+      state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + (e.clientY - prev.y) * k));
+    }
   }
   prev.x = e.clientX;
   prev.y = e.clientY;
@@ -801,16 +864,19 @@ addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyB" && !e.repeat) work("cycle");
   if (e.code === "KeyR" && !e.repeat) work("reload");
-  if (e.code === "KeyC" && !e.repeat) shooting.safety();
+  if (e.code === "KeyC" && !e.repeat) safety();
   if (e.code === "KeyL") {
     state.illum = !state.illum;
     syncUi();
   }
-  if (e.code === "KeyM" && state.reticle === "tree") {
+  if (e.code === "KeyM" && kiloState.phase === "up") {
+    // At the eye, M is the rangefinder's MODE button.
+    if (!e.repeat) kilo.press("mode", clock);
+  } else if (e.code === "KeyM" && state.reticle === "tree") {
     state.aid = state.aid === "manual" ? "lrf" : "manual";
     syncUi();
   }
-  if (e.code === "KeyX" && !e.repeat) rangeLrf();
+  if (e.code === "KeyX" && !e.repeat) toggleKilo();
   if (e.code === "KeyV" && state.reticle === "tree") {
     state.treeStyle = state.treeStyle === "pr2" ? "ebr" : "pr2";
     syncUi();
@@ -821,7 +887,10 @@ addEventListener("keydown", (e) => {
     syncUi();
   }
   if (e.code === "KeyH") document.body.classList.toggle("nohud");
-  if (e.code === "KeyF" && !e.repeat) toggleScope();
+  if (e.code === "KeyF" && !e.repeat) {
+    if (kiloState.phase === "up") toggleKilo();
+    else if (kiloState.phase === "down") toggleScope();
+  }
   if ((e.code === "BracketLeft" || e.code === "BracketRight") && !shooting.busy()) {
     // Shift: a whole mil of clicks on the mil turret, turned in one go.
     const n = e.shiftKey && drumRifle().dial.kind === "mil" ? 10 : 1;
@@ -831,11 +900,14 @@ addEventListener("keydown", (e) => {
   }
   if (e.code === "Space") {
     e.preventDefault();
-    if (!e.repeat) fire();
+    // At the eye, Space is the rangefinder's RANGE button (held, it scans).
+    if (!e.repeat) kiloState.phase === "up" ? kilo.press("range", clock) : fire();
   }
 });
 addEventListener("keyup", (e) => {
   keys.delete(e.code);
+  if (e.code === "Space") kilo.release("range", clock);
+  if (e.code === "KeyM") kilo.release("mode", clock);
   // Space must not also click whichever panel button has focus.
   if (e.code === "Space") e.preventDefault();
 });
@@ -891,6 +963,10 @@ function watch(dir: THREE.Vector3): void {
 }
 const sunLocal = new THREE.Vector3();
 const rifleFrame = new THREE.Quaternion();
+/** The rifle's orientation this frame, the rangefinder's in the world and in the rifle's frame. */
+const rifleQ = new THREE.Quaternion();
+const kiloQ = new THREE.Quaternion();
+const kiloRel = new THREE.Quaternion();
 const headQ = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, "YXZ");
 function frame(t: number, dt: number): void {
@@ -920,7 +996,7 @@ function frame(t: number, dt: number): void {
   // where the hands leave it.
   const acted = shooting.act(t);
   hand = acted.hand;
-  const hp = acted.pose;
+  let hp = acted.pose;
   if (acted.fold) {
     state.yaw -= acted.fold[0];
     state.pitch += acted.fold[1];
@@ -976,7 +1052,7 @@ function frame(t: number, dt: number): void {
   eye.x += head.x + hp.head[0];
   eye.y += head.y + hp.head[1];
   eye.z += head.z + hp.head[2];
-  if (!shot) stepAdapt(imageShare(eye, { x: Math.tan(tiltYaw), y: Math.tan(tiltPitch) }), dt);
+  const scopeShare = imageShare(eye, { x: Math.tan(tiltYaw), y: Math.tan(tiltPitch) });
 
   // Wobble: breathing and heartbeat, and the hands on the action.
   const [swYaw, swPitch] = swayAt(t);
@@ -988,31 +1064,66 @@ function frame(t: number, dt: number): void {
   // The head's view relative to the scope, which the rifle is drawn from too, so the two line up exactly.
   headQ.setFromEuler(euler.set(-tiltPitch, tiltYaw, 0));
   wideCam.quaternion.multiplyQuaternions(scopeCam.quaternion, headQ);
-  scopeCam.fov = (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
+  rifleQ.copy(scopeCam.quaternion);
+  // The rangefinder: where it and the hands are, and the eye going to it. At the eye the head looks down its axis,
+  // and the magnified image is its own.
+  if (kiloState.phase === "raising" && t - kiloState.since >= KILO_UP_S) kiloState.phase = "up";
+  if (kiloState.phase === "lowering" && t - kiloState.since >= KILO_DOWN_S) kiloState.phase = "down";
+  let kr: KiloRig | null = null;
+  if (kiloState.phase !== "down") {
+    kiloAimQ(t, kiloQ);
+    kiloRel.copy(rifleQ).invert().multiply(kiloQ);
+    const lowering = kiloState.phase === "lowering";
+    kr = kiloRig(lowering ? t - kiloState.since : Math.min(KILO_UP_S, t - kiloState.since), lowering ? "down" : "up", { p: [eye.x, eye.y, eye.z], q: toQuat(kiloRel) }, hp.hands);
+    hp = { ...hp, hands: kr.hands };
+    headQ.slerp(kiloRel, kr.at);
+    wideCam.quaternion.multiplyQuaternions(rifleQ, headQ);
+    scopeCam.quaternion.copy(kiloQ);
+  }
+  rifle.kilo.group.visible = !!kr;
+  // The eye in the rangefinder's frame (mm from its eye point), and the share of the view its image fills.
+  const kiloEye = { x: 0, y: 0, z: 0, pupilMm: eye.pupilMm } as Eye;
+  if (kr) {
+    rifle.kilo.setPose(kr.device);
+    const local = compose(invert(kr.device), { p: [eye.x, eye.y, eye.z], q: [0, 0, 0, 1] }).p;
+    [kiloEye.x, kiloEye.y, kiloEye.z] = local;
+  }
+  kilo.update(t);
+  if (!shot) stepAdapt(kr ? Math.max(0, Math.min(1, (kr.at - 0.85) / 0.15)) : scopeShare, dt);
+  scopeCam.fov = kr ? KILO8K.fovDeg : (trueFovRad(SCOPE, state.mag) * 180) / Math.PI;
   scopeCam.updateProjectionMatrix();
   scopeCam.getWorldDirection(dir);
   watch(dir);
 
   const D = aimDistance(dir);
-  const ep = exitPupilMm(SCOPE, state.mag);
+  const ep = kr ? KILO8K.objectiveMm / KILO8K.mag : exitPupilMm(SCOPE, state.mag);
   const th = tanHalfApparent(SCOPE);
+  // The rangefinder's whole field is drawn in the same circle as the scope's: its 6.78° true field over the
+  // circle's radius, so the screen shows it as this magnification.
+  const optMag = kr ? th / Math.tan((KILO8K.fovDeg * Math.PI) / 360) : state.mag;
   const u = comp.uniforms;
   u.uTanHalf!.value = th;
-  u.uMag!.value = state.mag;
+  u.uMag!.value = optMag;
   u.uExitR!.value = ep / 2;
-  u.uEye!.value.set(eye.x, eye.y, eye.z);
+  u.uEye!.value.set(kr ? kiloEye.x : eye.x, kr ? kiloEye.y : eye.y, kr ? kiloEye.z : eye.z);
   u.uEyePupilR!.value = eye.pupilMm / 2;
-  u.uSaep!.value = SCOPE.pupilAberrationMm;
+  u.uSaep!.value = kr ? 1 : SCOPE.pupilAberrationMm;
   // Partial auto-exposure: a pupil-starved image is darker, but the eye/camera adapts some of it back.
   const centre = Math.min(ep / 2, eye.pupilMm / 2) ** 2 / (eye.pupilMm / 2) ** 2;
   u.uTnorm!.value = Math.sqrt(centre);
   const Dr = Number.isFinite(D) ? D : 1e9;
   // Reticle shift in canvas uv: object radians → apparent tan (×mag) → field-stop units (/th) → uv (×½).
-  const toUv = (state.mag / th) * 0.5;
-  u.uPar!.value.set(parallaxShiftRad(SCOPE, state.mag, eye.x, Dr, state.parallax) * toUv, parallaxShiftRad(SCOPE, state.mag, eye.y, Dr, state.parallax) * toUv);
-  // Focus: parallax knob is also focus. Blur circle = aperture · |1/D − 1/P|.
-  const invP = Number.isFinite(state.parallax) ? 1 / state.parallax : 0;
-  u.uFocus!.value = (SCOPE.objectiveMm / 1000) * Math.abs(1 / Dr - invP) * 0.5 * toUv;
+  const toUv = (optMag / th) * 0.5;
+  if (kr) {
+    // The OLED sits in the eyepiece's focal plane: no parallax. Its objective is fixed-focus (taken at 250 m).
+    u.uPar!.value.set(0, 0);
+    u.uFocus!.value = (KILO8K.objectiveMm / 1000) * Math.abs(1 / Dr - 1 / 250) * 0.5 * toUv;
+  } else {
+    u.uPar!.value.set(parallaxShiftRad(SCOPE, state.mag, eye.x, Dr, state.parallax) * toUv, parallaxShiftRad(SCOPE, state.mag, eye.y, Dr, state.parallax) * toUv);
+    // Focus: parallax knob is also focus. Blur circle = aperture · |1/D − 1/P|.
+    const invP = Number.isFinite(state.parallax) ? 1 / state.parallax : 0;
+    u.uFocus!.value = (SCOPE.objectiveMm / 1000) * Math.abs(1 / Dr - invP) * 0.5 * toUv;
+  }
   // ~1.5 px of rim softness, whatever the screen size.
   u.uEdge!.value = 1.5 / (R * 2);
   u.uTime!.value = t;
@@ -1023,13 +1134,26 @@ function frame(t: number, dt: number): void {
   u.uSweep!.value.set(Math.tan(rcB.tiltYaw) - Math.tan(rcA.tiltYaw), Math.tan(rcB.tiltPitch) - Math.tan(rcA.tiltPitch));
   u.uBlur!.value.set((rcB.yaw - rcA.yaw) * toUv, (rcB.pitch - rcA.pitch) * toUv);
   u.uEyeSweep!.value.set(rcB.eye.x - rcA.eye.x + adsB.x - adsA.x, rcB.eye.y - rcA.eye.y + adsB.y - adsA.y, rcB.eye.z - rcA.eye.z + adsB.z - adsA.z);
+  if (kr) {
+    // The rangefinder's axis as the head sees it; no recoil on it.
+    const ax = qRot(compose(invert({ p: [0, 0, 0], q: toQuat(headQ) }), kr.device).q, [0, 0, -1]);
+    u.uTilt!.value.set(ax[0] / -ax[2], ax[1] / -ax[2]);
+    u.uSweep!.value.set(0, 0);
+    u.uBlur!.value.set(0, 0);
+    u.uEyeSweep!.value.set(0, 0, 0);
+  }
+  // Its OLED's light over the image, and its glass: a touch dim and blue (first generation), less pincushion.
+  u.uRetAdd!.value = kr ? kilo.level() * 1.5 : 0;
+  u.uTint!.value.set(...((kr ? [0.84, 0.9, 1.0] : [1, 1, 1]) as [number, number, number]));
+  u.uDist!.value = kr ? 0.012 : 0.025;
+  u.uCA!.value = kr ? 0.009 : 0.006;
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
   // The eye focuses where it looks (accommodation takes a few tenths of a second): on the hands and the action
   // while it works them (the plan's gaze carries its own focus), on the drum while the shooter looks at it with
   // the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
-  const lookMm = lookAt === "aci" ? rifle.aciMm : lookAt === "lrf" ? rifle.lrfMm : null;
+  const lookMm = lookAt === "aci" ? rifle.aciMm : null;
   const drumDist = lookMm ? Math.hypot(eye.x - lookMm.x, eye.y - lookMm.y, eye.z - lookMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
   const looking = drumLook || t < lookUntil;
   const working = acted.busy;
@@ -1076,7 +1200,7 @@ function frame(t: number, dt: number): void {
   cam.quaternion.copy(headQ);
   cam.updateMatrixWorld();
   rifle.pose(hp);
-  rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(scopeCam.quaternion).invert()));
+  rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(rifleQ).invert()));
   drum.step(shot ? 1 : dt);
   {
     const dial = drumRifle().dial;
@@ -1095,13 +1219,14 @@ function frame(t: number, dt: number): void {
   };
   const [ax, ay] = ocular(adsA, rcA);
   const [bx, by] = ocular(adsB, rcB);
-  nearVel.set(((bx! - ax!) / th) * (R / 2), ((by! - ay!) / th) * (R / 2));
+  nearVel.set(kr ? 0 : ((bx! - ax!) / th) * (R / 2), kr ? 0 : ((by! - ay!) / th) * (R / 2));
   near.render(kNear, nearVel, shot ? 0 : (t * 60) % 97, focusInv);
 
-  drawRet();
+  if (kr) drawKilo(t);
+  else drawRet();
   // The magnified image only reaches the screen through the eyebox. When no direction in the field can send
   // light into the eye pupil, the composite multiplies the image by exactly zero, so skip rendering it.
-  if (!eyeboxDark(eye, u.uEyeSweep!.value, ep / 2, eye.pupilMm / 2, th)) {
+  if (!eyeboxDark(kr ? kiloEye : eye, u.uEyeSweep!.value, ep / 2, eye.pupilMm / 2, th)) {
     // Far bushes swap to their low-detail version once the difference is under half a pixel.
     range.bushLod(scopeCam, pxPerRad(scopeCam, scopeRT.height), 0.5);
     renderer.setRenderTarget(scopeRT);
@@ -1134,7 +1259,24 @@ function frame(t: number, dt: number): void {
     const unit = ret.id === "tree" ? "mil" : "th";
     const status = shooting.status(t);
     readout.innerHTML = [
-      ["Head", acted.busy ? "up · hands on the action" : ads ? (ads.dir === "in" ? "going down" : "coming up") : adsIn ? "on the weld" : "up"],
+      [
+        "Head",
+        kiloState.phase === "up"
+          ? "up · rangefinder at the eye"
+          : kiloState.phase === "raising"
+            ? "up · bringing the rangefinder up"
+            : kiloState.phase === "lowering"
+              ? "up · putting the rangefinder down"
+              : acted.busy
+                ? "up · hands on the action"
+                : ads
+                  ? ads.dir === "in"
+                    ? "going down"
+                    : "coming up"
+                  : adsIn
+                    ? "on the weld"
+                    : "up",
+      ],
       ["Magnification", `${state.mag.toFixed(1)}×`],
       ["True field", `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],
       ["Exit pupil", `${ep.toFixed(1)} mm`],
@@ -1221,7 +1363,24 @@ if (shot) {
     }
   }
   // Stills: `ranged` presses the rangefinder once the range is built.
-  if (params.has("ranged")) rangeLrf();
+  // kilo=up: the rangefinder at the eye; kiloat=<s>: that long into bringing it up. ranged=<s>: woken, then ranged
+  // that long before the still (default 3 s, after the status lines have gone).
+  if (params.has("kilo") || params.has("kiloat")) {
+    adsIn = false;
+    headRest = { ...HEAD_UP };
+    adapt = params.has("kiloat") ? 0 : 1;
+    kiloState.yaw = state.yaw;
+    kiloState.pitch = state.pitch;
+    kiloState.phase = "raising";
+    kiloState.since = t - (params.has("kiloat") ? num("kiloat", 0.6) : 5);
+  }
+  if (params.has("ranged")) {
+    const r = t - num("ranged", 3) - KILO8K.responseS;
+    kilo.press("range", r - 2.5);
+    kilo.release("range", r - 2.4);
+    kilo.press("range", r);
+    kilo.release("range", r + 0.1);
+  }
   frame(t, 0);
   frame(t, 0);
   (window as unknown as { __ready: boolean }).__ready = true;

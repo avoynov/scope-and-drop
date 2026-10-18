@@ -522,7 +522,7 @@ function roomSpots(pf: Pathfinder, r: Room, n = 4): Spot[] {
 }
 
 /** Standing in front of a prop, facing it. */
-function frontOf(pf: Pathfinder, p: Prop): Spot | null {
+export function frontOf(pf: Pathfinder, p: Prop): Spot | null {
   const f = facing(p.yaw);
   const reach = p.d / 2 + 0.55;
   const x = p.x + f.x * reach;

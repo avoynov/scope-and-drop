@@ -328,6 +328,8 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       notableRoom: -1,
       notableUntil: 0,
       detour: null,
+      stain: null,
+      bandage: false,
     };
     people.push(p);
     return p;

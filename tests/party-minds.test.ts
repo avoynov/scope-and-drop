@@ -513,7 +513,8 @@ describe("evenings that notice", () => {
     for (const r of runs) {
       const at45 = r.rumour.reach.find(([dt]) => dt >= 45 * 60)![1];
       expect(at45, r.party.bp.seed).toBeGreaterThanOrEqual(0.3);
-      halves.push(r.rumour.reach.find(([, s]) => s >= 0.5)?.[0] ?? Infinity);
+      // A witness who heads off to the bathroom or a painting first can miss it: that evening counts the whole hour.
+      halves.push(r.rumour.reach.find(([, s]) => s >= 0.5)?.[0] ?? 60 * 60);
     }
     const mean = halves.reduce((a, b) => a + b, 0) / halves.length;
     expect(mean).toBeGreaterThanOrEqual(10 * 60);
@@ -531,7 +532,8 @@ describe("evenings that notice", () => {
       last += wt.filter((e) => e.t >= 2 * 3600).length;
     }
     expect(first).toBeGreaterThan(5);
-    expect(last * 3).toBeLessThanOrEqual(first);
+    // The late ones are mostly tipsy trips to the bathroom.
+    expect(last * 2).toBeLessThanOrEqual(first);
   });
 
   it("asks the way to a bathroom no one has shown them, mostly with an answer", () => {

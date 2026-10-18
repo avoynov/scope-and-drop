@@ -22,7 +22,7 @@ import type { Sight } from "./sight";
 import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from "./types";
 import type { World } from "./world";
 
-export type SoundKind = "knock" | "bolt" | "clink" | "laugh" | "raised-voice" | "dropped-tray" | "breaking-glass" | "slap" | "door-slam" | "scream" | "shutter" | "call";
+export type SoundKind = "knock" | "bolt" | "clink" | "laugh" | "raised-voice" | "dropped-tray" | "breaking-glass" | "slap" | "door-slam" | "scream" | "shutter" | "call" | "rattle" | "smash";
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -53,6 +53,10 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   shutter: { db: 45, tension: 0 },
   /** Last orders called at the bar, or the host calling everyone for the photo. */
   call: { db: 72, tension: 0 },
+  /** A locked door's handle tried. */
+  rattle: { db: 55, tension: 0, fact: "locked-door" },
+  /** A vase smashing on the floor. */
+  smash: { db: 88, tension: 0.06, fact: "crash" },
 };
 
 export interface Sound {
@@ -107,6 +111,8 @@ export interface SensesHost {
   readonly register: Register;
   readonly body: Body;
   readonly places: Places;
+  /** Whether someone has changed into something borrowed after a spill (dramas.ts). */
+  readonly dramas: { changed(p: Person): boolean };
   readonly groups: Map<number, Group>;
   readonly phaseId: PhaseId;
   log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
@@ -317,8 +323,10 @@ export class Senses {
       this.checkedT[k] = h.t;
       ident.refresh(b);
       const explained = h.t - memory.sawDrinking[k]! < 3600 || memory.knowsAbout(a.id, "tipsy", b.id);
+      // A stain, a borrowed jacket, a bandage: no surprise to anyone who knows of the spill or the cut.
+      const dressed = (!!b.stain || b.bandage || h.dramas.changed(b)) && (memory.knowsAbout(a.id, "spill", b.id) || memory.knowsAbout(a.id, "cut", b.id));
       const light = b.room >= 0 ? Math.max(0.3, h.world.lit(b.room)) : 0.6;
-      const e = ident.check(a.id, b.id, h.t, Math.max(0, dt), d, h.together(a, b), light, a.tipsy, explained);
+      const e = ident.check(a.id, b.id, h.t, Math.max(0, dt), d, h.together(a, b), light, a.tipsy, explained, dressed);
       if (e === "double-take") {
         h.glance(a, b.x, b.z, 1.5);
         memory.observe(a.id, "not-themselves", b.id, -1, b.room);

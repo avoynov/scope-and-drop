@@ -1,6 +1,6 @@
 # The party
 
-`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus the first three parts of milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, knowing each other by sight, and the register in which guests connect the dots. Everyday life: what the house offers, conversation circles, the evening's rituals, errands, tours, searches, the photographer and the band, and a staggered goodbye. Friendships and rows come in the next part; the spy, mishaps and the endings after that.
+`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, knowing each other by sight, and the register in which guests connect the dots. Everyday life: what the house offers, conversation circles, the evening's rituals, errands, tours, searches, the photographer and the band, and a staggered goodbye. Ties: flirting, couples, friendships, affairs, rows and fallings-out. Trouble: mishaps, a few oddballs and the evening's small dramas. The spy and the endings come next.
 
 ![party lab, plan view](images/party-plan.jpg)
 
@@ -223,13 +223,12 @@ The evening's beats fire at points in the programme and for a while pull on what
 
 Jobs of a few steps (go to, meet, say, wait, unlock and lock, pick up, hand over) for one person or a small party following in single file. Everyone in a task is busy; a task gives way to the toast and dinner.
 
-- **Tours.** The host shows one to three guests who don't know the house (the plus-one first) three to six rooms they don't know, unlocking a key-locked door on the way in and locking it on the way out; at most four an evening, 20 minutes apart.
+- **Tours.** The host shows one to three guests who don't know the house (the plus-one first) three to six rooms they don't know, unlocking a key-locked door on the way in and locking it on the way out; at most four an evening, 20 minutes apart, offered at two in five of the host's free moments with such a guest close by and free.
 - **Errands.** The good whisky to the bar, clean glasses, a coat, a drink for someone. The carrier sometimes tries the wrong room first. A fetched drink is carried as a glass and handed over, so the asker holds it and drinks it.
 - **Searches.** Someone who hasn't seen their partner for 17 minutes (the plus-one after 9) goes to the room they last saw them in and looks round; at most twice an evening, and not while the other is already looking for them. Most find them.
 - **The photographer.** Candid shots from the edge of the busiest room, every 3–5 minutes. After the toast, the group photo: everyone lined up by height before the grand stair, the tallest at the back, the host couple in the middle of the front row; three flashes, then a few crowd round the camera.
 - **Leaving.** Each guest has a hidden threshold, skewed low: from the farewell's last toast they go once that share of the guests has gone, so a few goodbyes tip the rest. The elderly tire and go during the dancing, and now and then someone has a babysitter or feels unwell. A couple goes together: find the host to say goodbye, collect a coat from the attendant at the door, and out. From 8 minutes before the end whoever is left goes at their own moment, and from 5 minutes the rest hurry.
 
-## Walking
 ## Ties (`bonds.ts`)
 
 Ties form and break through the evening. Everything is n × n typed arrays drawn at the start from their own random stream (`bonds`), so adding them shifted nothing else. Growth runs every four steps over the pairs the mood already finds (within 3 m in the same room), and fading is worked out when a pair next meets. The spy, when milestone 3 casts one as a guest, gets all of it like anyone else.
@@ -247,12 +246,60 @@ Ties form and break through the evening. Everything is n × n typed arrays drawn
 - **Onto the floor.** A friend seen taking to the floor may pull someone after them (chance 0.25 × the bond, a partner 2.4 times as likely, once a pair in 10 minutes): the dance scores three times higher for two minutes, and they dance beside them. A dancer waves a close friend standing by over. Partners dance face to face (the slow dance), and a tipsy flirting pair club-style, one in front with their back to the other. Someone very proper leaves a floor where that's going on.
 - **Slipping away.** Every 10 minutes, a couple (or a stray and their lover, out of the partner's sight) close together and both tipsier than 0.4 may slip off to a guest bedroom that one of them knows, with nobody in it and a lock on the inside: they bolt the door and draw the curtains, and come out 20–40 minutes later, a little dishevelled, which whoever sees them come out remembers. Once a night a couple, two couples an evening at most.
 
+## Trouble (`dramas.ts`)
+
+The evening's innocent trouble: accidents anyone can have, the few oddballs who do one spy-like thing all night, and a handful of small dramas. Innocents make every kind of signal the spy will, for innocent reasons. One scheduler runs it all every 20 steps (10 in-game s). Each mishap, drama or oddball's outing is an episode with a cast, a stage and the tasks it runs (`tasks.ts`, kinds `mishap`, `drama` and `habit`, which see a phase change through). An episode counts as seen once someone outside its cast lays eyes on someone in it; a habit only while the oddball is at it, not on the way there.
+
+**Mishaps.** Each check draws exactly one number per person from a stream of its own (`mishaps`), whatever happens, so nothing elsewhere shifts the rolls. The number is read against each mishap's slice of the hazard: its chance per guest per evening × (0.5 + clumsiness) × (1 + 2 × tipsiness) × (1 + people within 2 m / 4), spread over the share of the evening its context holds (a glass in hand by someone standing for a spill, 3.6% of an evening; walking for an ankle, 5%), so the chances hold per evening. Nobody has an accident at the toast or dinner, in the bathroom, on a task, leaving, arriving or in a row.
+
+| Mishap | Chance | What follows | What stays visible |
+|---|---|---|---|
+| Spill | 10% | A drink down someone standing within 1.2 m: a stain the drink's colour, a grudge (0.35, + 0.25 with no apology, + 0.2 on a light outfit, twice for a repeat offender). A third of those the host is free to help borrow the host's jacket or shawl and change upstairs (one spill in six over 16 evenings); the rest dab at it by the bar | The stain, or a new outfit colour |
+| Cut hand | 4% | A glass breaks in the hand (a crash, glass on the floor until swept): a wash in the bathroom, three minutes longer than a visit, while the doctor, the host or the butler fetches the kit and waits at the door; with no one free they see to it themselves | A bandage, all night |
+| Lost glasses or bag | 3% | Put down at the nearest table or seat and forgotten; missed 1–10 minutes later: a search, a crouch to look, asking whoever is near (someone who was there points the way), four places at most. Anyone close may spot it and hand it back. A bag not found at the first look opens a case with nobody to blame (`register.ts`) | An open search |
+| Twisted ankle | 2% | While walking: a sit for 4–10 minutes | A limp, 25% slower, for the night |
+| Feeling faint | 2% | In a crowd or tipsy: a sit, a friend fanning them, then the terrace | Recovering in view |
+| Leaning on a switch | 1% | Within 3 m of it, standing: the room dark 10–30 s, arms out, heads turning, a little tension | Nothing after |
+| Dropped tray | 0.3% a check, × (1 − tray fluency) × the crowd | A crash, the glasses broken on the floor, the waiter sweeps up | Glass on the floor until swept |
+
+**Oddballs.** At casting 0, 1 or 2 guests (weights 1 : 2 : 1) get one habit each that mirrors a spy tell and repeats it in plain view. Habits that go out (creep, wanderer, snoop) have their outings spread over the evening, never at the champagne, toast or dinner and at least 6 minutes apart; an outing the oddball is too busy for is let go after 5 minutes. Doors off rooms with people in them count as nearer, so what they do is seen.
+
+| Oddball | What they do | Rate |
+|---|---|---|
+| The creep | Stands 0.55 m behind someone (preferring the other sex) for 10–30 s, or lingers by a bedroom door. A target who notices (0.3 + 0.4 × nosiness) frowns and steps away, or slaps them (40%) | 2–4 outings |
+| The wanderer | Tries 2–4 doors into bedrooms, studies and dressing rooms: a locked one rattles; an open one, a look inside, seen coming out | 3–6 outings |
+| The nervous one | Startles (a jerk, a step back, a glance) when someone walks into their room, at most every 20 s | All night |
+| The latecomer | Arrives 1–8 minutes after the toast, with no champagne, out of step for 3 minutes. Takes over from the cast's occasional latecomer | Once |
+| The snoop | Alone in a room they know with a desk, cabinet, sideboard, console or wardrobe: goes through the drawers for 5–10 s; thinks better of it if someone is there | 4–8 outings |
+| The camera-shy one | Turns from every flash, leaves a room the photographer walks into, slips out of the group photo or stands at the back | Every photo |
+
+**The deck.** 13 cards, shuffled at casting; the house drops what it can't hold (the piano with no piano, the photo with a terrace under six spots, the fuse with no dance floor, tears with no bathroom), and 3 to 6 are dealt, each at a time in its window. When the time comes the card looks for people who fit; with nobody it tries again two minutes later, and when its window closes the next card in the deck takes its place.
+
+| Card | Window | Who and what |
+|---|---|---|
+| The quarrel | second mingling to the third's end | A couple whose tipsiness + 2 × tension + an eye for someone else (0.5 each) reach 0.5: sharp words, then one storms off to the terrace (the other follows 40% of the time) or shuts themselves in the bathroom; 10–25 minutes later they make up (60%), one goes home (30% of the rest), or they keep apart |
+| One drink too many | dancing to the farewell | Past 0.85, or from 0.6 after two quick whiskies at the bar: loud singing, then a friend or the host steers them to a seat, a waiter brings water, and they doze; 30% are sent home |
+| Tears in the bathroom | second mingling on | Someone who quarrelled or rowed in the last 30 minutes (or tense and nervy): the door shut 10–15 minutes; a friend knocks, waits, and they come out together |
+| The long speech | the middle of dinner | A talker on their feet at table for 90–150 s: everyone looks their way, fidgets, checks a watch; near the end the partner tugs a sleeve |
+| The lost earring | from the first mingling | A search on hands and knees, one to three friends crouching to help, until a waiter on their round finds it |
+| Red wine on the carpet | dancing on | A full red glass in a crowd: two waiters scrub, the host fusses, the guests round it step back |
+| The bore | from the first mingling | Holds the floor in a circle; listeners glance away and peel off one by one, with a look at a watch or an empty glass, and avoid them for 20 minutes |
+| The early leaver | second mingling | A call, then home; at dinner a waiter clears the empty place |
+| The stranger | arrives in the second mingling | Cast with no friends here (a late plus-one, or a gatecrasher); the host greets them stiffly |
+| The piano | games on | A guest plays and 3–7 gather round to sing |
+| The photo | dancing on | A guest lines up their friends on the terrace for an impromptu photo, the camera-shy at the back |
+| The broken vase | from the first mingling | Someone backs into a stand: a smash, the host upset, staff sweeping up |
+| The fuse | the dancing | The band's amp blows it: the dance floor's whole storey dark 20–40 s, the band and the dancers still |
+
+The new facts are innocent: a twisted ankle, fainted, broke something, lost something, crying, drunk; and one that is a little odd, camera-shy. A stain, a bandage or a borrowed jacket doesn't make anyone who knows of the spill or the cut look twice (`ident.ts`: the colour and state terms count a fifth, and the memory catches up); on anyone else they do. A limp from an ankle turned tonight is no part of how anyone looks: someone hurt, not someone else. Glass breaking and a vase smashing are loud (and a crash is a fact); a locked door rattling is heard close by.
+
+## Walking
 
 A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corners), and the path is string-pulled to a few waypoints with an exact grid traversal, so a straight leg never crosses a blocked cell. A walker within 0.3 m of a waypoint cuts the corner to the next one when the way is clear, so two people heading for the same doorway don't stall on one point. Stairs join the storeys; a route crosses one storey at a time through the stair with the shortest detour. Doors gate it all (see Things in the house). People push apart to 0.42 m, never into a doorway that is locked against them, and anyone pushed off their line finds a new route from where they stand.
 
 ## People on screen
 
-`render/crowd.ts` draws everyone as simple jointed figures, one `InstancedMesh` per body part (thighs, shins, skirt, torso, shirt front, head, hair, arms, a glass, a tray, a hat, glasses, a cane). The mansion's scoped room lights reach them through a per-person `aScope`. Poses come from the sim (walk, climb, sit, talk with the group's speaker gesturing, drink, toast, dance, the slow dance, the club-style pair, play, serve, smoke, greet, announce, look, knock, argue, hug), and habits show while standing about (scratching an ear, checking a watch, hands in pockets, a big laugh). Gestures go over the pose for a few seconds: a hand out to ask the way, an arm out pointing it, a shrug, leaning in to pass something on, a slap, a shove, a thrown drink, a pull by the hand; heads turn toward a glance or a sound. A glass shows the colour of its drink, someone past 0.6 tipsiness lists slowly from side to side, and a couple back from slipping away shows hair and shirt awry for ten minutes.
+`render/crowd.ts` draws everyone as simple jointed figures, one `InstancedMesh` per body part (thighs, shins, skirt, torso, shirt front, head, hair, arms, a glass, a tray, a hat, glasses, a cane). The mansion's scoped room lights reach them through a per-person `aScope`. Poses come from the sim (walk, climb, sit, talk with the group's speaker gesturing, drink, toast, dance, the slow dance, the club-style pair, play, serve, smoke, greet, announce, look, knock, argue, hug), and habits show while standing about (scratching an ear, checking a watch, hands in pockets, a big laugh). Gestures go over the pose for a few seconds: a hand out to ask the way, an arm out pointing it, a shrug, leaning in to pass something on, a slap, a shove, a thrown drink, a pull by the hand; heads turn toward a glance or a sound. A glass shows the colour of its drink, someone past 0.6 tipsiness lists slowly from side to side, and a couple back from slipping away shows hair and shirt awry for ten minutes. Trouble adds a crouch (looking for something lost, sweeping up), fanning someone, dabbing at a stain, singing, reading a phone and rattling a handle, and three gestures: a startle, groping in the dark and a look at the watch. A spill leaves a dark patch the drink's colour down the front, a cut a white bandage on the hand, a change of clothes repaints the jacket or dress, and the first-aid kit is a red box in the hand. On the floor, broken glass, a vase in pieces, wine on the carpet and anything lost lie where they fell until someone clears them (`Crowd.setLitter`).
 
 `render/fixtures.ts` draws what moves in the house: door leaves on their hinges (two for a double door) and the drapes and sheers of the windows people can draw, four instanced meshes in all. The mansion builder leaves those out of its baked mesh when asked (`buildMansion(bp, { dynamicDoors: true, dynamicCurtains: (room) => … })`), and with the options off the house is built exactly as before. `ScopedLighting.setScopeScale(room, s)` dims a room's lights for a switch. A plan marker in the outfit's colour shows each person on the storey the plan cuts. Detailed bodies and the full body-language catalogue are milestone 5.
 
@@ -269,8 +316,9 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 - Overlays on the plan, each a toggle: **sight** (the picked person's field of view, the sharper cone for detail, solid lines to who they took in on their last look and dashed to who is in view), **sound** (a ring where each sound was made and lines to who heard it), **gossip** (speaker to listeners, coloured by kind of fact), **suspicion** (how much the picked person suspects each other person, or with nobody picked how suspected each person is on average), **map** (rooms shaded by how well the picked person knows them, unknown ones dark), **mood** (rooms tinted and named festive, relaxed, uneasy or tense), **cases** (the picked person's case rooms outlined, with lines to each candidate and their chance; with nobody picked, how many know of a case in each room), **circles** (each conversation's ring, lines to its members, the speaker marked, and who is waiting or hovering at the edge), **tasks** (lines from each task's owner to its party, with the kind and the step) and **bonds** (couples, flirting with its strength, an affair marked, friends and close friends, those who fell out, grudges as arrows from whoever holds them, and how much anyone doubts their partner; with someone picked, only theirs).
 - **Goes missing here** on the card makes something of the host's go missing from the picked person's room; **seen there** has the picked person seen poking round that room. Together they plant a theft for the guests to work out. The card's register block lists the picked person's cases and their candidates.
 - **Spark** makes the picked person and the one picked before take to each other (both right at the flirting line); **grudge** gives the one picked before a grudge against the picked person; **cheating rumour** starts word going round that the picked person is cheating on their partner. The card's ties lines show their temper, doubt about their partner, a stray's eye or lover, whom they're drawn to, whom they get on with, whom they fell out with, and their grudges and how hot they run.
+- **Spill**, **cut hand**, **faint** and **lose glasses or bag** on the card give the picked person that mishap now; the row below plays any card from the deck now, with the picked person in it if they fit (a quarrel with their partner, the fuse on their storey), else whoever the card picks. The card shows a stain, a bandage or a borrowed jacket, an oddball's habit and how often they've been seen at it, the stranger, and the mishap or drama they're caught up in (and whether anyone has seen it yet).
 - **Plant a rumour** on the card: a guest in a conversation hears something juicy and a little odd about the picked person. The **mood** row sets tension (tense, calm) or scales energy (liven, dampen) for everyone, the picked person's room or just them. Both take effect from the next step and are kept, so going back in time replays them where they were made; a new house clears them.
-- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), romance & rows (noticing, flirting, affairs, couples, friendships, rebuffs, spats and rows, who is sure, confrontations, pulls onto the floor, slipping away, games won), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes; and the ties: couples, friendships, flirtations and rebuffs, affairs, who found out, confrontations, spats, rows, fallings-out and makings-up, pulls onto the floor, staff friendships and slipping away. The detail card shows the picked person's task and step.
+- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), romance & rows (noticing, flirting, affairs, couples, friendships, rebuffs, spats and rows, who is sure, confrontations, pulls onto the floor, slipping away, games won), mishaps & dramas (every mishap, drama and oddball at it, with how each turns out, and the lights going out and on), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes; and the ties: couples, friendships, flirtations and rebuffs, affairs, who found out, confrontations, spats, rows, fallings-out and makings-up, pulls onto the floor, staff friendships and slipping away; and the trouble: mishaps by kind, the dramas played (and any nobody saw), and each oddball with how often they've been seen at it. The detail card shows the picked person's task and step.
 
 | URL parameter | Meaning |
 |---|---|
@@ -282,8 +330,9 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 | `sel`, `follow` | Select a person by index; keep the scope on them |
 | `ov` | Plan overlays, comma-separated: `sight`, `sound`, `gossip`, `suspicion`, `map`, `mood`, `cases`, `circles`, `tasks`, `bonds` |
 | `gone`, `seen` | Plant a theft: `gone=80:5` (minute, room), `seen=75:11:5` (minute, person, room); first house only |
+| `mishap`, `drama` | A mishap on someone, `mishap=30:21:cut` (minute, person, `spill`, `cut`, `lost`, `ankle`, `faint`, `switch`); a card played, `drama=125:quarrel` or `drama=125:quarrel:16` (minute, card, person; a card that finds nobody who fits, at dinner say, does nothing); first house only |
 | `tension`, `energy` | Set everyone's tension (0–1), or scale their energy (0.5–1.5), at time `t` |
-| `log` | Log filter: `everyday life`, `romance & rows`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
+| `log` | Log filter: `everyday life`, `romance & rows`, `mishaps & dramas`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
 | `profile` | Time each stage of the step and show the totals under the stats |
 | `shot=1&w=&h=&ui=1` | Headless capture (`ui=1` keeps the panels) |
 
@@ -291,11 +340,11 @@ Stills: `npx tsx scripts/render.ts --page party/ --views plan,scope --params "t=
 
 ## Numbers
 
-Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 guests):
+Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 guests). The rows the trouble moved were measured again with it; the rest are from before it:
 
 | Measure | Result | Test asks |
 |---|---|---|
-| A whole evening, headless (21,600 steps) | 4.1–5.4 s on the machine that measured 3.7–4.9 s before ties, about 40% of it seeing; the ties' own stage 0.17 s | under 15 s |
+| A whole evening, headless (21,600 steps) | 4.2–4.4 s on the machine that measured 3.5–4.9 s before the trouble, 40–50% of it seeing; the trouble's own stage 0.03 s | under 15 s |
 | Guests holding champagne as the glasses go up | 91–95% | ≥ 60% |
 | Guests at the toast, 85% of the way through it | 96–100% | ≥ 70% |
 | Guests at dinner, 60% of the way through it | 100%, and every guest with a chair seated | ≥ 90% |
@@ -306,20 +355,20 @@ Measured on three houses, `gala-night`, `match-42` and `orangery-1` (21–28 gue
 | Two people in one bathroom; more than two in a line | never | never |
 | Drinks a guest | 4.0–5.3 | |
 | Tipsiness at 22:00, median and highest | 0.35–0.57, 0.64–0.75 | mean 0.05–0.7 |
-| Bumps an evening, with a drink slopped | 226–333, 11–18 | under 400 |
+| Bumps an evening, with a drink slopped | 218–350, 15–24 | under 400 |
 | A* searches an evening, cache hits | 1,850–2,020, 12–13% | |
-| Things passed on in conversation (listeners), overheard | 205–936, 18–229 | over 50 an evening |
-| A rumour planted 8 minutes into the second mingling, after the group photo: time to reach half the guests, share at 45 minutes (five houses) | 11–30 min (mean 21), 52–100% | mean 10–35 min, ≥ 30% |
-| Highest suspicion anyone holds at 22:00; of the rumour's subject | 0.02–0.16 (0.16 after a slap seen); 0.02–0.03 | nobody innocent ≥ 0.55; with nothing gone under 0.25 |
-| Wrong turns, first hour and last hour | 1–8 and 0–5 | last hour a third of the first or less, over five houses |
+| Things passed on in conversation (listeners), overheard | 360–973, 42–263 | over 50 an evening |
+| A rumour planted 8 minutes into the second mingling, after the group photo: time to reach half the guests, share at 45 minutes (five houses) | 4–10 min in four houses; in `match-42` the one who heard it went to the bathroom and then to look at a painting, and it reached 39% (mean 17 min, that one counted as the hour); 36–100% | mean 10–35 min (never reaching half counts as the hour), ≥ 30% |
+| Highest suspicion anyone holds at 22:00, with nothing planted | 0.03–0.14 | nobody innocent ≥ 0.55; with nothing taken under 0.25 |
+| Wrong turns, first hour and last hour | 0–7 and 0–6, 19 and 8 over five houses (the late ones mostly tipsy trips to the bathroom) | last hour half the first or less, over five houses |
 | Asked the way, pointed to a bathroom | 19–44, 80–95% | over 5, mostly pointed |
-| Double takes, tests | 9–16, 2–5 | 1–30, no doubt after a test |
-| The register on an evening with nothing gone: entries filed, claims, cases, conflicts | 549–2,044, 53–81, 0, 0 | no case, 3 conflicts at most |
-| A planted theft (one guest seen there at 75 min, something gone at 80): who knows of it, blamed on the one seen, on anyone else | 23–24 people; 0–13; 0 | ≥ 5 people, ≥ 6 blames on the one seen over three houses, more than twice anyone else |
-| Highest suspicion of the one seen, by the end | 0.02–0.41 | |
+| Double takes, tests | 13–31, 1–20 | 1–30, no doubt after a test |
+| The register on an evening with nothing taken: entries filed, claims, cases, conflicts | 868–2,965, 40–63, 16–112 (all of them who made that crash), 0 | only crash, dark-room and lost-bag cases, blamed only for a crash or the dark; 3 conflicts at most |
+| A planted theft (one guest seen there at 75 min, something gone at 80): who knows of it, blamed on the one seen, on anyone else | 23–29 people; 6–9; 0 | ≥ 5 people, ≥ 6 blames on the one seen over three houses, more than twice anyone else |
+| Highest suspicion of the one seen, by the end | 0.15–0.31 | |
 | Energy halfway through the dancing, dancers and the rest; halfway through dinner | 0.70–0.84 and 0.53–0.67; 0.42–0.46 | within 0–1 |
-| Tours, errands, partner searches (found) | 2–3, 7–10, 4–15 (4–7); searches 4–15 over six houses | 1–4, 4–12, 3–15 |
-| Circles standing through the middle of the first two minglings (median) | 3–4 | 3–6 |
+| Tours, errands, partner searches (found) | 1–2 (0–4 over twelve houses, mean 2.6), 8–11, 1–7 (0–3) | at most 4 and some tour over the three houses, 4–12, 1–15 |
+| Circles standing through the middle of the first two minglings (median) | 2–4 (over twelve evenings in `gala-night`, 3–5 but for this one) | 3–6 on average, none under 2 |
 | Circle sizes of five or more; median stay | 0–0.2%; 8.0–8.8 min | under 10%; 5–15 min |
 | Let in, turned away, split, hellos, breaches | 79–109, 17–46, 6–18, 126–146, 4–10 | joins over 20, some turned away |
 | Guests leaving in the last 15 minutes | 91–100% | ≥ 80% |
@@ -340,6 +389,17 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
 | Evenings with a staff friendship | 6 of 16 | at most half |
 | Couples slipping away | 0.3 (0–2) | at most 2 |
 
+Trouble, over the same 16 evenings; the test runs eight of them:
+
+| Measure | Result | Test asks |
+|---|---|---|
+| Mishaps an evening: spills, cut hands, turned ankles, feeling faint, lost things, the lights, trays | 5.3 (1–10): 2.3, 0.7, 0.5, 0.6, 0.4, 0.4, 0.4 | 2–8 on average, at most 15 |
+| Spills ending in borrowed clothes; cuts bandaged; lost things back with their owner | 6 of 37; 11 of 11; 7 of 8 (one given up) | every bandage still on at 22:00 |
+| Mishaps someone outside it saw | 99% (80–100%) | |
+| Dramas played; seen; let go with nobody to play them | 4.8 (3–6); all; 0.2 | 3–6 each, all seen |
+| Oddballs an evening; outings or moments seen at it | 0.9 (0–2); the nervous one 85–89 startles, the camera-shy 6–24, the latecomer, creep and wanderer 1–2 | each seen at least once |
+| Episodes still running 40 minutes on | 0 | nothing left hanging at 22:00 |
+
 ## Tuning notes
 
 - Bathroom trips: about 1.5–2 a guest an evening, and about half are abandoned on the way when the guest sees the door shut from across a room. In houses whose only bathrooms are two floors up at the far end a trip can take 8 minutes, which is why bathroom trips stop 20 minutes before the end.
@@ -354,6 +414,12 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
 
 - Ties: with the cast's nine couples in ten hardly anyone could flirt; at half, couples form about one an evening. Strays at first never got their affair going: out of the partner's sight they stood near the one they fancied but in another circle, where flirting barely grows, so a stray now drifts away from their partner, seeks that one's circle out and walks over for a word when they spot them. Partners were being told of "cheating" that was flirting from before they got together; that's now ignored. A friend's word counted 0.8 × how sure the teller was (about 0.6 passed on), which left partners stuck below the line to confront; it's 1.15 now. Rows at first cost a friendship too little to end any (0 in 32 evenings); a row now costs 0.8.
 
+- Trouble: the first hazard spread each mishap over the whole evening, so a spill (which needs a glass in hand, standing) came up a third as often as its chance; each is now spread over the share of the evening its context holds, measured over six houses, and the result divided by 3 to bring an evening to about five. Outings went unseen when oddballs tried doors off empty corridors, so doors off rooms with people in them count as nearer; a habit counts as seen only while the oddball is at it. Drama tasks see a phase change through, or the programme ended a quarrel halfway.
+- A crash heard opened a case for everyone in earshot ("who broke that?"), and an open case had each of them note everyone they saw in its room for the rest of the evening: entries filed went from about 700 to 7,000–9,000 an evening, and the planted theft's sighting got lost in it (one blame on the one seen over three houses instead of 19). A case now watches its room only as long after as it looks back before (a crash a minute, a theft ten minutes); after that no sighting fits its window anyway.
+- A limp from a turned ankle made everyone who knew the guest look twice (41 double takes on one evening, 13 on one guest), so it's no part of how they look.
+- With the trouble, two of the three test houses had no tour: the host offered at one in four free moments, and the moments with a first-timer free nearby fell differently. It's two in five now: 0–4 an evening over twelve houses, mean 2.6.
+- A planted fact or mood nudge from the lab landed one step later than the same one replayed from the URL, and the evening drifted; both now land on the first step after their time.
+
 ## Known gaps
 
 - Rooms that are dark at the start have no lamps in the blueprint, so a bathroom switched on shows in the sim and the lab's panel but not yet on screen, and switching a lit room off leaves its baked bulbs and lampshades glowing and its window light on the lawn.
@@ -361,8 +427,8 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
 - Doors swing in 1.5 in-game s rather than the plan's 0.6, which looked like a snap at 1×.
 - Routes don't yet avoid rooms a person doesn't know: the plan's knowledge-weighted route search isn't built. What someone knows decides which options they consider, where they can go wrong and when they ask; the route itself is still the true shortest one.
 - Going back in the lab replays the evening from 19:00, now 3–4 s for a whole evening. The plan's snapshots every 15 in-game minutes, due once a replay passes 2 s, aren't built.
-- Nothing yet makes the loud sounds (a tray dropped, glass breaking, a slap, a scream), so nobody goes to see a noise; mishaps and rows bring them.
-- The register: in `match-42` the planted theft is known to 23 people but never settled; the sighting stays with a witness who rarely talks about it, so no lead forms. Which house settles depends on who sees first (it was `gala-night` that stayed open before everyday life). That's how it should be when the evidence is thin.
+- Nothing makes a scream yet (milestone 4).
+- The register: which house settles a planted theft depends on who sees first and how much else there is to talk about. Before the trouble `match-42` never settled it (the witness rarely talked about it); now all three test houses do, though over ten houses most still don't (as before the trouble). That's how it should be when the evidence is thin.
 - Departures from the register's design in the technical plan: the prior is 0.5, not 1 (with 1 a single witness never settled anything); a missing thing's severity is 0.6, not 0.3; claims travel in case talk and on joining a conversation, not as a gossip verb; cheating settles at 0.52; two places at once needs the sure stretches to overlap, since plain overlapping windows made 30 false conflicts an evening out of vague gossip; whoever notices something gone tells those nearby at once.
 - Departures from the technical plan, all found while tuning:
   - The knock is 58 dB, not 50, so it carries a couple of metres down a corridor over party noise.
@@ -387,6 +453,13 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
   - Making up needs a friendship of 1.5 or more and 30 minutes apart; none happened in 16 evenings, since the few that end are rarely that close.
   - A split circle forms a clear step away (the two rings plus 0.9 m) rather than at 1.5 m, which put two split circles on one spot.
 
+- Trouble, changed from the plan:
+  - The latecomer oddball takes over from the cast's occasional latecomer, so an evening has one at most.
+  - An impromptu photo on the terrace is a card of its own, so the camera-shy have a second camera to dodge.
+  - A bag nobody can find at the first look opens a case with nobody to blame, so the register has an innocent loss to work on.
+  - A quarrel's making up waits for both to be free, and tries again two minutes later, up to three times.
+  - A glass emptied by a spill or knocked over is set down at once, like one drunk dry.
+
 ## Files
 
 | File | What it holds |
@@ -409,7 +482,8 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
 | `groups.ts` | Conversation circles: rings, the edge, open or closed, splitting, stays, greetings |
 | `bonds.ts`                        | Chemistry and affinity, flirting, couples, friendships, staff friends, strays and affairs, doubt and confronting, grudges and rows, falling out and making up, pulls onto the floor, slipping away                                                       |
 | `practices.ts` | The evening's beats and how they pull on choices; the two norms and their breaches |
-| `tasks.ts` | Tours, errands, searches, candid shots and the group photo, leaving with a goodbye and a coat |
+| `dramas.ts` | Mishaps, oddballs and the small-dramas deck: casting, the scheduler and its fixed-draw mishap stream, every episode's script |
+| `tasks.ts` | Tours, errands, searches, candid shots and the group photo (and an impromptu one), leaving with a goodbye and a coat, and the scripted tasks the dramas run |
 | `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the butler, kitchen hand, cloakroom, band and photographer, the host, groups and gossip, coats, departures, the lab's provocations |
 | `render/crowd.ts` | The instanced three.js crowd |
 | `render/fixtures.ts` | Door leaves and movable curtains |
@@ -419,5 +493,6 @@ Ties, over 16 evenings (`gala-night`, `manor-7`, `villa-3`, `house-11`, `oranger
 | `tests/party-minds.test.ts` | Sight, hearing, memory, the mental map, mood, recognising people, hushes, five whole evenings with a planted rumour, the lab's provocations, golden digests |
 | `tests/party-life.test.ts` | Rings and a split, three whole evenings: task counts, circles and stays, tours, a fetched drink, the beats and breaches, everyone home |
 | `tests/party-ties.test.ts`        | The cast's couples and strays, who may flirt, a spark, doubt by word and old flirting, grudges and heat, eight whole evenings against the ties' numbers                                                                                                  |
+| `tests/party-dramas.test.ts` | Casting the oddballs, the latecomer, the stranger and the deck; a spill, a cut, a lost thing and a switch played through; the mishap stream's fixed draws; the fuse, a quarrel and a speech; every habit at it; eight whole evenings against the trouble's numbers |
 | `tests/party-perf.test.ts` | A whole evening's cost, stage by stage |
 | `tests/golden/party-digests.json` | Digests of three houses at 19:30, 20:15 and 21:30. Any change to what people do, see or remember changes them; when it's meant, check the lab and the numbers here, then `npx vitest run tests/party-minds.test.ts -u` |

@@ -110,17 +110,32 @@ export type Pose =
   | "slow"
   /** Club style: in front of a partner, back to them, and the one behind. */
   | "front"
-  | "behind";
+  | "behind"
+  /** Fanning someone who feels faint. */
+  | "fan"
+  /** Down on one knee, searching the floor or sweeping up glass. */
+  | "crouch"
+  /** Dabbing at a stain. */
+  | "dab"
+  /** Singing round the piano, swaying. */
+  | "sing"
+  /** A phone to the ear: called away. */
+  | "phone"
+  /** Trying a locked door's handle. */
+  | "rattle";
 
-/** A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over; and at the height of a row a slap, a shove, a drink thrown, a pull by the arm. */
-export type Gesture = "ask" | "point" | "shrug" | "lean" | "wave" | "frown" | "beckon" | "slap" | "shove" | "throw" | "pull";
+/**
+ * A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over;
+ * at the height of a row a slap, a shove, a drink thrown, a pull by the arm; a startled jerk, arms out in the dark, a look at the watch.
+ */
+export type Gesture = "ask" | "point" | "shrug" | "lean" | "wave" | "frown" | "beckon" | "slap" | "shove" | "throw" | "pull" | "startle" | "grope" | "watch";
 
 /** The six drinks of the evening. */
 export type DrinkId = "champagne" | "red" | "white" | "beer" | "whisky" | "water";
 export const ALCOHOL: ReadonlySet<DrinkId> = new Set(["champagne", "red", "white", "beer", "whisky"]);
 
 /** What shows in someone's hands: a drink, a tray, a cue, cards or a cigarette. */
-export type Held = DrinkId | "tray" | "cue" | "cards" | "cigarette" | "bottle" | "coat" | "bag" | "camera";
+export type Held = DrinkId | "tray" | "cue" | "cards" | "cigarette" | "bottle" | "coat" | "bag" | "camera" | "kit";
 export const DRINKS: ReadonlySet<Held> = new Set<Held>(["champagne", "red", "white", "beer", "whisky", "water"]);
 
 /** Keys a person carries: none, the staff ring (service rooms) or the host's ring (everything). */
@@ -299,6 +314,10 @@ export interface Person {
   notableUntil: number;
   /** A wrong turn in progress: the goal they meant to reach, when the look round ends (-1 still walking in), and the locked door they'll try (-1 none). */
   detour: { goal: Waypoint; until: number; door: number } | null;
+  /** A drink spilled down them tonight (the renderer tints the shirt), or null. */
+  stain: DrinkId | null;
+  /** A cut hand dressed: a bandage for the rest of the night. */
+  bandage: boolean;
 }
 
 export interface Group {
@@ -392,7 +411,13 @@ export type EventKind =
   /** A couple slipped away to a bedroom and locked the door (note 'in', 'out'; actors: the pair). */
   | "slip-away"
   /** A frame or a hand was won (note: the game; actors: winner, loser). */
-  | "won";
+  | "won"
+  /** An accident (dramas.ts; note: the mishap, then ':' and how it went on, e.g. 'spill', 'spill:changed'; actors: who it happened to first). */
+  | "mishap"
+  /** A small drama from the evening's deck (note: the card, then ':' and its beat; actors: its cast). */
+  | "drama"
+  /** An oddball's habit, seen once more (note: the habit, then ':' and what they did; actors: the oddball, then whom it involved). */
+  | "habit";
 
 export interface PartyEvent {
   t: number;

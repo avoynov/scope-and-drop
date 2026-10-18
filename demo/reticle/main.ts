@@ -555,7 +555,10 @@ function fire(): void {
   recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(shots++) };
 }
 $("fire").onclick = () => fire();
-/** B works the action (the bolt, or the charging handle), R changes the magazine: whenever asked, needed or not. */
+/**
+ * B works the action (the bolt, or the charging handle), R changes the magazine, C flicks the safety: whenever
+ * asked, needed or not, and only what the real rifle does.
+ */
 function work(kind: "cycle" | "reload"): void {
   if (!shooting.work(clock, kind)) return;
   // The hands leave the grip, and the head comes up off the scope with them.
@@ -564,6 +567,7 @@ function work(kind: "cycle" | "reload"): void {
 }
 $("bolt").onclick = () => work("cycle");
 $("reload").onclick = () => work("reload");
+$("safety").onclick = () => shooting.safety();
 
 /**
  * Scope-in and scope-out (see src/scope/ads.ts). The rifle stays on its bipod and the head moves: down onto
@@ -797,6 +801,7 @@ addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyB" && !e.repeat) work("cycle");
   if (e.code === "KeyR" && !e.repeat) work("reload");
+  if (e.code === "KeyC" && !e.repeat) shooting.safety();
   if (e.code === "KeyL") {
     state.illum = !state.illum;
     syncUi();

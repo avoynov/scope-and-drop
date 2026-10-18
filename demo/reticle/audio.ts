@@ -60,6 +60,8 @@ const PAN: Partial<Record<Synth, number>> = {
   "charge-release": 0.25,
   "dry-fire": 0.1,
   trigger: 0.1,
+  safety: 0.25,
+  "safety-stop": 0.3,
 };
 /**
  * How loud each sound peaks against an open-muzzle report, at the shooter's ear. Every take, recorded or
@@ -81,6 +83,8 @@ const LEVEL: Record<Synth, number> = {
   "charge-release": 0.4,
   "dry-fire": 0.22,
   trigger: 0.06,
+  safety: 0.14,
+  "safety-stop": 0.18,
 };
 const VSS_SHOT = 0.55;
 const VARIANTS = 4;

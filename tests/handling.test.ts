@@ -197,8 +197,91 @@ describe("working the action", () => {
   });
 });
 
+describe("a magazine change's timing", () => {
+  it("takes the old magazine off its catch when the catch is pressed, and latches the new one when it is home", () => {
+    for (const rifle of ["bolt", "svd", "vss"] as const) {
+      const plan = planHandling(rifle, "reload", 3, 1);
+      const [off, on] = plan.swap!;
+      expect(off).toBeGreaterThan(0);
+      expect(on).toBeGreaterThan(off);
+      expect(on).toBeLessThan(plan.dur);
+      expect(poseAt(plan, on + 0.001).mags[1].visible).toBe(true);
+      expect(off).toBe(plan.cues.find((c) => c.ev === "mag-release")!.t);
+    }
+    expect(planHandling("svd", "cycle", 3, 1).swap).toBeNull();
+  });
+});
+
+describe("the safety", () => {
+  const RIFLES = ["bolt", "svd", "vss"] as const;
+  /** The action worked with the safety on. */
+  const safe = (rifle: RifleId, seed = 0) => planHandling(rifle, "cycle", 0, seed, { chamber: "empty", safe: true });
+
+  it("with the safety on, the handle stops short and nothing is thrown out or fed", () => {
+    for (const rifle of RIFLES) {
+      const plan = planHandling(rifle, "cycle", 5, 0, { chamber: "live", safe: true });
+      let lift = 0;
+      let travel = 0;
+      let carrier = 0;
+      sample(plan, (p) => {
+        lift = Math.max(lift, p.bolt.lift);
+        travel = Math.max(travel, p.bolt.travel);
+        carrier = Math.max(carrier, p.carrier);
+      });
+      // The bolt rifle's bolt is locked shut; the SVD's and VSS's handles meet the lever's shield.
+      expect(lift).toBeLessThan(0.05);
+      expect(travel).toBe(0);
+      expect(carrier).toBeLessThan(0.15);
+      if (rifle !== "bolt") expect(carrier).toBeGreaterThan(0.05);
+      expect(plan.ejects).toHaveLength(0);
+      expect(plan.feeds).toHaveLength(0);
+      expect(plan.cues.map((c) => c.ev)).toEqual(["safety-stop"]);
+      expect(plan.mags[0].rounds).toHaveLength(1);
+      const end = poseAt(plan, plan.dur);
+      const rest = restPose(rifle, 5);
+      for (const s of ["R", "L"] as const) expect(dist(end.hands[s].wrist.p, rest.hands[s].wrist.p)).toBeLessThan(0.01);
+      expect(end.carrier).toBe(0);
+      expect(end.bolt.lift).toBe(0);
+    }
+  });
+
+  it("keeps wrists, arms and sounds real when the handle stops short", () => {
+    for (const rifle of RIFLES) {
+      for (const plan of [safe(rifle, 4)]) {
+        const t = plan.cues.map((c) => c.t);
+        expect(t).toEqual([...t].sort((a, b) => a - b));
+        expect(t.at(-1)!).toBeLessThan(plan.dur);
+        sample(plan, (p) => {
+          for (const s of ["R", "L"] as const) {
+            expect(wristBend(p.hands[s])).toBeLessThan(1.4);
+            const a = p.hands[s].arm;
+            expect(dist(a.elbow, a.shoulder)).toBeCloseTo(UPPER_ARM, 3);
+            expect(dist(a.wrist, a.elbow)).toBeCloseTo(FOREARM, 3);
+          }
+        });
+      }
+    }
+  });
+});
+
 describe("synthesised action sounds", () => {
-  const EVENTS: Synth[] = ["shot", "bolt-up", "bolt-back", "bolt-forward", "bolt-down", "case-land", "mag-release", "mag-out", "mag-in", "charge-back", "charge-release", "dry-fire", "trigger"];
+  const EVENTS: Synth[] = [
+    "shot",
+    "bolt-up",
+    "bolt-back",
+    "bolt-forward",
+    "bolt-down",
+    "case-land",
+    "mag-release",
+    "mag-out",
+    "mag-in",
+    "charge-back",
+    "charge-release",
+    "dry-fire",
+    "trigger",
+    "safety",
+    "safety-stop",
+  ];
   it("are finite and peak at full scale", () => {
     for (const rifle of ["bolt", "svd", "vss"] as const) {
       for (const ev of EVENTS) {

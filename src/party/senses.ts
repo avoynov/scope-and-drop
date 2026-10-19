@@ -22,7 +22,22 @@ import type { Sight } from "./sight";
 import { ALCOHOL, type ActionId, type DrinkId, type Group, type PartyEvent, type Person } from "./types";
 import type { World } from "./world";
 
-export type SoundKind = "knock" | "bolt" | "clink" | "laugh" | "raised-voice" | "dropped-tray" | "breaking-glass" | "slap" | "door-slam" | "scream" | "shutter" | "call" | "rattle" | "smash";
+export type SoundKind =
+  | "knock"
+  | "bolt"
+  | "clink"
+  | "laugh"
+  | "raised-voice"
+  | "dropped-tray"
+  | "breaking-glass"
+  | "slap"
+  | "door-slam"
+  | "scream"
+  | "shutter"
+  | "call"
+  | "rattle"
+  | "smash"
+  | "announce";
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -57,6 +72,8 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   rattle: { db: 55, tension: 0, fact: "locked-door" },
   /** A vase smashing on the floor. */
   smash: { db: 88, tension: 0.06, fact: "crash" },
+  /** The host's announcement: a glass tapped, then a raised voice over the crowd. Only the spy listens for it (spy/cues.ts); everyone else just knows. */
+  announce: { db: 90, tension: 0 },
 };
 
 export interface Sound {
@@ -441,6 +458,11 @@ export class Senses {
   hears(s: Sound, p: Person, lv = this.levels(s)): boolean {
     const R = this.host.sight.R;
     return this.levelAt(s, p, lv) >= this.noise[p.room < 0 ? R - 1 : p.room]! + MASK;
+  }
+
+  /** Whether a person would hear a sound made at a point now: a query of the sound model that queues nothing, so no head turns. */
+  wouldHear(kind: SoundKind, at: { level: number; x: number; z: number; room: number }, p: Person): boolean {
+    return p.present && this.hears({ kind, level: at.level, x: at.x, z: at.z, room: at.room, source: -1, ref: -1 }, p);
   }
 
   private carry(s: Sound): void {

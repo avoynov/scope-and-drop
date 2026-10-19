@@ -220,6 +220,8 @@ export class Memory {
   private readonly seenIntoT: Float32Array;
   /** The household never forgets the house. */
   readonly household: Uint8Array;
+  /** Someone of the household who learns the house like anyone else (the spy playing the host): the household still counts them, their map is their own. */
+  readonly ownMap: Uint8Array;
 
   readonly stats = { told: 0, overheard: 0, facts: 0 };
   /** Called whenever someone is told a fact, news or not (the register listens). */
@@ -250,6 +252,7 @@ export class Memory {
     this.visits = new Uint8Array(n * this.M);
     this.seenIntoT = new Float32Array(n * this.M).fill(-1e9);
     this.household = new Uint8Array(n);
+    this.ownMap = new Uint8Array(n);
     this.grow(256);
   }
 
@@ -516,10 +519,15 @@ export class Memory {
     return room < 0 ? this.M - 1 : room;
   }
 
+  /** Whether i knows the whole house by heart: the household, unless their map is their own. */
+  knowsHouse(i: number): boolean {
+    return this.household[i] === 1 && this.ownMap[i] === 0;
+  }
+
   /** How well i knows a room (-2 the terrace) now, 0 to 1. Fades toward a floor for rooms used often. */
   familiarity(i: number, room: number): number {
     if (room === -1) return 0;
-    if (this.household[i]) return 1;
+    if (this.knowsHouse(i)) return 1;
     const k = i * this.M + this.mi(room);
     const k0 = this.know[k]!;
     if (k0 <= 0) return 0;
@@ -543,9 +551,18 @@ export class Memory {
     this.visits[k] = Math.max(this.visits[k]!, Math.min(255, visits));
   }
 
+  /** Someone who has never been here after all (the spy in another's record): their map wiped, to be learnt afresh. */
+  forgetHouse(i: number): void {
+    const a = i * this.M;
+    this.know.fill(0, a, a + this.M);
+    this.knowT.fill(0, a, a + this.M);
+    this.visits.fill(0, a, a + this.M);
+    this.seenIntoT.fill(-1e9, a, a + this.M);
+  }
+
   /** Walking into a room: learnt well, less so when tipsy. */
   walkInto(i: number, room: number): void {
-    if (room === -1 || this.household[i]) return;
+    if (room === -1 || this.knowsHouse(i)) return;
     const k = this.familiarity(i, room);
     this.setKnow(i, room, k + 0.5 * (1 - k) * (1 - 0.5 * this.host.people[i]!.tipsy));
     const v = i * this.M + this.mi(room);
@@ -554,7 +571,7 @@ export class Memory {
 
   /** Seeing into a room through a doorway or glass (at most once a minute per room). */
   seeInto(i: number, room: number): void {
-    if (room === -1 || this.household[i]) return;
+    if (room === -1 || this.knowsHouse(i)) return;
     const v = i * this.M + this.mi(room);
     if (this.host.t - this.seenIntoT[v]! < SEE_INTO_EVERY) return;
     this.seenIntoT[v] = this.host.t;
@@ -564,7 +581,7 @@ export class Memory {
 
   /** Someone pointed the way: a rough idea of every room along it. */
   pointed(i: number, rooms: readonly number[]): void {
-    if (this.household[i]) return;
+    if (this.knowsHouse(i)) return;
     for (const r of rooms) {
       if (r === -1) continue;
       const k = this.familiarity(i, r);

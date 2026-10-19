@@ -1,6 +1,6 @@
 /**
- * How long an evening takes headless, stage by stage (the `profile` option). The budget is
- * generous for slow machines; the lab's profile line shows the real numbers.
+ * How long an evening takes headless, stage by stage (the `profile` option), with and without a
+ * spy. The budget is generous for slow machines; the lab's profile line shows the real numbers.
  */
 import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
@@ -20,5 +20,17 @@ describe("an evening’s cost", () => {
     expect(total).toBeLessThan(15_000);
     // Without the option, nothing is timed.
     expect(new Party(generateMansion({ seed: "gala-night" }), { seed: "perf" }).profile).toBeNull();
+  }, 60_000);
+
+  it("keeps an evening with a spy within the same budget, the spy's own part a sliver of it", () => {
+    const party = new Party(generateMansion({ seed: "gala-night" }), { seed: "perf", spy: true, profile: true });
+    const t0 = performance.now();
+    while (!party.over) party.advance(60);
+    const total = performance.now() - t0;
+    const spy = party.profile!.spy!;
+    console.log(`an evening with a spy: ${(total / 1000).toFixed(2)} s, the spy and the reactions ${spy.toFixed(0)} ms (${((100 * spy) / total).toFixed(1)}%)`);
+    expect(spy).toBeGreaterThan(0);
+    expect(spy / total).toBeLessThan(0.05);
+    expect(total).toBeLessThan(15_000);
   }, 60_000);
 });

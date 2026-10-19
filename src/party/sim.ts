@@ -16,17 +16,20 @@ import { makeProgramme, PARTY_LENGTH, phaseIndexAt, phaseProgress, TIME_SCALE, t
 import { generateCast, type CastOptions } from "./cast";
 import { castDramas, DRAMA_EVERY, Dramas, type CardId, type DramasHost, type MishapId } from "./dramas";
 import { Groups, type GroupsHost } from "./groups";
-import { Ident } from "./ident";
+import { Ident, type Tie } from "./ident";
 import { Memory, KNOWN, PASS_ON, SUSPICIOUS, VERBS, type MemoryHost, type Verb } from "./memory";
 import { beside, choose, decay, destination, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from "./mind";
 import { Mood, type MoodOverride } from "./mood";
 import { Pathfinder } from "./path";
 import { facing, resolvePlaces, RoomCells, yawTo, type Places } from "./places";
 import { Practices, type PracticesHost } from "./practices";
+import { Reactions, type ReactionsHost } from "./reactions";
 import { CASES, Register, type CaseTalk, type RegisterHost } from "./register";
 import { Senses, type Sound, type SoundKind, type SensesHost } from "./senses";
 import { Sight } from "./sight";
-import { Tasks, type Step, type Task, type TaskHost } from "./tasks";
+import { castSpy, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
+import { asItself, dress } from "./spy/swap";
+import { Tasks, type Step, type Task, type TaskHost, type TaskKind } from "./tasks";
 import { DRINKS, type ActionId, type ActionState, type DrinkId, type Gesture, type Group, type Held, type PartyEvent, type Person, type Pose, type Seat, type Spot, type Waypoint } from "./types";
 import { DRINK_IDS, World } from "./world";
 
@@ -64,6 +67,8 @@ export interface PartyOptions extends CastOptions {
   provoke?: Provocation[];
   /** Time each stage of the step into `party.profile` (ms). */
   profile?: boolean;
+  /** A spy among the guests (milestone 3): off by default; `true` draws everything, options pin parts of it. */
+  spy?: boolean | SpyOptions;
 }
 
 /** What the party has noticed so far, for the lab and the tests. */
@@ -120,6 +125,11 @@ export interface PartyStats {
   mishaps: number;
   habits: number;
   dramas: number;
+  /** Out of step with the programme: people still not with the toast or dinner three minutes on, beckoned in, pointed the way, brought a flute (reactions.ts). */
+  late: number;
+  beckons: number;
+  points: number;
+  flutes: number;
 }
 
 /** In-game seconds per sim step (a sixth of a real second). */
@@ -169,7 +179,7 @@ const TOUR_GAP = 20 * 60;
 const TOUR_CHANCE = 0.4;
 /** Guests still here head home from this long before the end (in-game s), one by one until HURRY_OUT, when the rest, and the leaving still under way, hurry. */
 const LAST_OUT = 8 * 60;
-const HURRY_OUT = 5 * 60;
+export const HURRY_OUT = 5 * 60;
 /** The photographer's candid rounds (in-game s apart). */
 const CANDID: readonly [number, number] = [180, 300];
 /** A musician's set lasts until the programme says otherwise (in-game s); the band looks again whenever it changes. */
@@ -182,11 +192,13 @@ const SIDE_GOSSIP = 0.02;
 const POINTED = 0.4;
 /** A pause to look round after a wrong turn (in-game s). */
 const LOOK_ROUND = 2;
+/** Tasks seen through whatever the programme says: leaving, the photo, slipping away, a mishap, a drama, a habit. */
+const COMMITTED: ReadonlySet<TaskKind> = new Set(["leave", "photo", "elope", "mishap", "drama", "habit"]);
 
 /** Which drinks the waiters carry: champagne before the toast, wine at dinner, a mix after. */
 const bandOf = (id: PhaseId): Body["band"] => (id === "dinner" ? "dinner" : id === "dancing" || id === "games" || id === "farewell" ? "after" : "before");
 
-export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, RegisterHost, GroupsHost, TaskHost, PracticesHost, BondsHost, DramasHost {
+export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, RegisterHost, GroupsHost, TaskHost, PracticesHost, BondsHost, DramasHost, ReactionsHost, SpyHost {
   readonly bp: MansionBlueprint;
   readonly pf: Pathfinder;
   readonly cells: RoomCells;
@@ -216,6 +228,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   readonly bonds: Bonds;
   /** Mishaps, the oddballs' habits and the evening's small dramas. */
   readonly dramas: Dramas;
+  /** People reacting to someone out of step with the programme, spy or not. */
+  readonly reactions: Reactions;
+  /** The spy (milestone 3), or null on an evening without one. */
+  readonly spy: Spy | null;
+  /** When the farewell's first goodbye was said (-1 not yet): the spy never goes before it. */
+  byeAt = -1;
+  /** How many guests had gone home or set off by then (the household aside), counting the first goodbye. */
+  private byeGoing = 0;
   /** What the house offers (advertisements resolved for this house). */
   readonly offers: readonly Offer[];
   /** Camera flashes, newest last (the renderer pulses a light for each). */
@@ -289,12 +309,25 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     // The oddballs, the deck and the stranger are settled before anyone knows anyone.
     const dramaRng = root.fork("dramas");
     const dramaCast = castDramas(dramaRng, this.people, this.programme, this.places);
+    // Then the spy, from its own fork, so every draw before it comes out as it always has. It
+    // changes no record until the minds that remember people exist, except that coming as itself
+    // it is nobody's friend.
+    const spyRng = root.fork("spy");
+    const spyOpts = opts.spy === true ? {} : opts.spy || null;
+    const spyCast = spyOpts ? castSpy(spyRng.fork("cast"), this.people, dramaCast, bp, this.places, spyOpts) : null;
+    if (spyCast?.setup === "self") asItself(this.people[spyCast.record]!, spyCast.own, this.people);
     this.body = new Body(this, root.fork("body"));
     this.sight = new Sight(bp, this.pf, this.world);
     this.memory = new Memory(this, bp.rooms.length, root.fork("gossip"));
     this.nudges = [...(opts.mood ?? [])];
     this.mood = new Mood(this.people, this.nudges);
     this.ident = new Ident(this.people, root.fork("ident"));
+    // Playing someone killed before the party: the record takes the spy's body, mind and voice, and everyone remembers the victim.
+    const impostor = spyCast && spyCast.victim >= 0 ? this.people[spyCast.record]! : null;
+    if (impostor) {
+      dress(impostor, spyCast!.own, true);
+      this.ident.recast(impostor, spyCast!.own.voice);
+    }
     this.register = new Register(this, bp.rooms.length, (r) => SNOOP.has(bp.rooms[r]!.type), root.fork("register"));
     this.memory.onTold = (i, f, from) => {
       this.register.told(i, f, from);
@@ -306,6 +339,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.tasks = new Tasks(this, root.fork("tasks"));
     this.practices = new Practices(this, root.fork("practices"));
     this.bonds = new Bonds(this, root.fork("bonds"));
+    if (impostor) this.bonds.setTemper(impostor.id, spyCast!.own.temper);
     this.dramas = new Dramas(this, dramaCast, dramaRng, root.fork("mishaps"));
     this.life = root.fork("life");
     this.leavers = this.people.filter((p) => !p.staff && p.role !== "host");
@@ -324,6 +358,23 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     for (const l of bp.levels) this.levelY.set(l.index, l.floorY);
     this.terraceY = bp.site.terrace.y;
     this.knowTheHouse();
+    let spy: Spy | null = null;
+    if (spyCast) {
+      const rooms = goalRooms(spyCast.goal, bp, this.places);
+      this.spyMap(spyCast.record, rooms, spyRng.fork("map"));
+      const g = spyCast.garment;
+      const garment = g ? { item: this.world.items.add("garment", "lost", spyCast.victim, -1, g.at, 0), view: this.gardenView(g.at) } : null;
+      spy = new Spy(
+        this,
+        spyCast,
+        studied(spyCast, this.people, (i, j) => this.ident.tieOf(i, j)),
+        rooms,
+        garment,
+        spyRng,
+      );
+    }
+    this.spy = spy;
+    this.reactions = new Reactions(this, root.fork("react"));
     // Staff and the host are in place before the first guest arrives.
     for (const p of this.people) {
       if (!p.staff && p.role !== "host") continue;
@@ -331,6 +382,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.place(p, at);
       p.present = true;
     }
+    // Playing the host or a waiter, the spy is here from the start.
+    if (spy?.record.present) spy.arrived();
   }
 
   get host(): Person {
@@ -348,6 +401,16 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   get over(): boolean {
     return this.t >= PARTY_LENGTH;
+  }
+
+  /** The phase running now (the real programme). */
+  get phaseIndex(): number {
+    return this.phaseIdx;
+  }
+
+  /** The record the spy lives in, or -1. */
+  get spyId(): number {
+    return this.spy?.id ?? -1;
   }
 
   phaseOf(p: Person): { id: PhaseId; progress: number } {
@@ -442,7 +505,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       }
       this.updateNeeds(p, dt);
       this.updatePhase(p);
-      if (!p.staff && p.role !== "host" && (p.id + this.stepNo) % 4 === 0) this.departure(p);
+      // Guests look at the time every other second; the spy, once the farewell's first goodbye is said, every step, so it sets off among the first half even when many go at once.
+      if (p.id === this.spyId ? this.byeAt >= 0 : !p.staff && p.role !== "host" && (p.id + this.stepNo) % 4 === 0) this.departure(p);
       if (!p.present) continue;
       // Someone known, seen for the first time tonight: a wave, and for those free to, going over to say hello.
       if (!p.staff && (p.id + this.stepNo) % 4 === 1) this.maybeGreet(p);
@@ -464,9 +528,13 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (this.stepNo % 4 === 0) this.sideTalk();
     if (this.stepNo % 60 === 0) this.circles.sample();
     if (this.stepNo % 10 === 0) this.everyday();
-    lap("talk");
     // Out of step with the programme: doing something else through the toast or dinner.
     if ((ph.id === "toast" || ph.id === "dinner") && this.stepNo % 20 === 0) this.outOfStep();
+    lap("talk");
+    // The spy's cues, then people reacting to anyone out of step, just before everyone looks.
+    this.spy?.step();
+    if (this.stepNo % 20 === 0) this.reactions.step();
+    lap("spy");
     this.senses.step(this.stepNo);
     lap("senses");
     this.mood.applyOverrides(this.t);
@@ -510,7 +578,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const off = this.pf.snap(e.level, e.x + this.rng.range(-0.6, 0.6), e.z + this.rng.range(-0.6, 0.6), 1) ?? e;
     this.place(p, { ...e, x: off.x, z: off.z });
     p.present = true;
-    p.phaseSeen = phaseIndexAt(this.programme, this.t - p.phaseLag);
+    const spy = this.spy;
+    if (spy && p.id === spy.id) spy.arrived();
+    p.phaseSeen = spy && p.id === spy.id ? spy.phase : phaseIndexAt(this.programme, this.t - p.phaseLag);
     this.memory.walkInto(p.id, p.room);
     this.log("arrive", [p.id], p.room);
     this.arriveWithThings(p);
@@ -540,18 +610,17 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (p.item >= 0 && p.held && DRINKS.has(p.held)) p.needs.thirst = Math.min(1, p.needs.thirst + 0.008 * k);
   }
 
-  /** People act on the phase they believe is running, a little after it starts. */
+  /** People act on the phase they believe is running, a little after it starts; the spy on the one its cues gave it. */
   private updatePhase(p: Person): void {
     const lag = p.staff || p.role === "host" ? 0 : p.phaseLag;
-    const idx = phaseIndexAt(this.programme, this.t - lag);
+    const idx = p.id === this.spyId ? this.spy!.phase : phaseIndexAt(this.programme, this.t - lag);
     const a = p.action;
     if (idx !== p.phaseSeen) {
       p.phaseSeen = idx;
       if (!a) return;
       const id = this.programme[idx]!.id;
       // Someone in a bathroom or waiting at its door sees it through, and so does anyone on their way home, in the group photo or caught up in a mishap or a drama; most else gives way to the programme.
-      const committed =
-        (a.id === "toilet" && a.note !== "door") || a.id === "row" || (a.id === "task" && ["leave", "photo", "elope", "mishap", "drama", "habit"].includes(this.tasks.of(p)?.kind ?? ""));
+      const committed = (a.id === "toilet" && a.note !== "door") || a.id === "row" || (a.id === "task" && this.committedTask(p));
       const keep = p.staff ? true : p.role === "host" ? committed : committed || ((PHASE_WEIGHTS[id][a.id] ?? 0) >= 0.3 && a.id !== "toast" && a.id !== "dinner");
       if (!keep && a.id !== "leave" && a.id !== "arrive") this.end(p, false);
       return;
@@ -1394,7 +1463,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const hook = spots.length ? spots[p.id % spots.length]! : this.places.entrance;
     p.coat = items.add("coat", "hung", p.id, -1, hook, this.t);
     if (this.people.some((q) => q.role === "cloakroom" && q.present)) this.pendingCoats++;
-    if (this.things.chance(p.look.sex === "f" ? 0.6 : 0.08)) items.add("bag", "carried", p.id, p.id, p, this.t);
+    // The spy's mark for a bag has one whatever the draw says (the draw is made all the same).
+    if (this.things.chance(p.look.sex === "f" ? 0.6 : 0.08) || p.id === (this.spy?.bagFor ?? -1)) items.add("bag", "carried", p.id, p.id, p, this.t);
     if (p.quirks.includes("glasses")) items.add("spectacles", "worn", p.id, p.id, p, this.t);
   }
 
@@ -1861,6 +1931,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   private departure(p: Person): void {
     const a = p.action;
     if (!p.present || a?.id === "leave" || this.tasks.of(p)?.kind === "leave") return;
+    if (p.id === this.spyId) return this.spyDeparture(p, this.spy!);
     // Near the end everyone goes, each at their own moment over a few minutes; the last few hurry.
     const late = this.t >= PARTY_LENGTH - LAST_OUT + p.leaveAt * (LAST_OUT - HURRY_OUT);
     if (!late && (this.memory.household[p.id] || (a?.id === "toilet" && a.note !== "door") || a?.id === "task" || a?.id === "row" || !this.wantsToGo(p))) return;
@@ -1877,8 +1948,52 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     return this.shareGone() >= p.leaveAt;
   }
 
+  /**
+   * The spy goes home by its own rule (spy/index.ts), never before the farewell's first goodbye,
+   * and in the last hurry whatever it meant to do. When its moment comes it drops whatever it is
+   * busy with (dabbing a spill, an errand) rather than miss the first leavers, but it waits out
+   * the bathroom and a row. Playing the host or a waiter, it walks out with the leavers and doesn't
+   * come back.
+   */
+  private spyDeparture(p: Person, spy: Spy): void {
+    const a = p.action;
+    const hurry = this.t >= PARTY_LENGTH - HURRY_OUT;
+    if (!spy.mayGo()) return;
+    if (!hurry && ((a?.id === "toilet" && a.note !== "door") || a?.id === "row" || !spy.wantsToGo())) return;
+    this.log("spy", [p.id], p.room, "leave");
+    if (p.staff || p.role === "host") {
+      this.end(p, false);
+      const t = this.tasks.leave(p, null, null, true);
+      if (t.outcome === "gave-up") this.start(p, { id: "leave", target: this.places.entrance, duration: 0, pose: "walk", gain: {}, programme: true });
+      return;
+    }
+    this.goHome(p, hurry);
+  }
+
+  /** Guests (the household aside) gone home or on their way out, of how many. */
+  private going(): { going: number; n: number } {
+    let n = 0;
+    let going = 0;
+    for (const q of this.leavers) {
+      if (this.memory.household[q.id]) continue;
+      n++;
+      if (q.gone || q.action?.id === "leave" || this.tasks.of(q)?.kind === "leave") going++;
+    }
+    return { going, n };
+  }
+
+  /**
+   * Share of the farewell's leavers on their way out: of the guests still here after the first
+   * goodbye, those who have set off home since (0 before it). The spy goes by it, among the first half.
+   */
+  farewellGoing(): number {
+    if (this.byeAt < 0) return 0;
+    const { going, n } = this.going();
+    return n > this.byeGoing ? (going - this.byeGoing) / (n - this.byeGoing) : 1;
+  }
+
   /** Share of the guests (the household aside) already gone home. */
-  private shareGone(): number {
+  shareGone(): number {
     let n = 0;
     let gone = 0;
     for (const q of this.leavers) {
@@ -1890,15 +2005,24 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   }
 
   goHome(p: Person, hurry: boolean): void {
+    const spy = this.spy;
+    // The spy leaves by its own rule alone: no scene, card or partner takes it home before the farewell's first goodbye.
+    if (spy && p.id === spy.id && !spy.mayGo()) return;
     const q = p.partner !== null ? this.people[p.partner]! : null;
     let partner: Person | null = null;
-    if (q && q.role !== "host" && !this.bonds.apart[p.id] && q.present && !q.gone && q.action?.id !== "leave" && this.tasks.of(q)?.kind !== "leave") {
+    const staysOn = !!spy && q?.id === spy.id && !spy.mayGo();
+    if (q && q.role !== "host" && !staysOn && !this.bonds.apart[p.id] && q.present && !q.gone && q.action?.id !== "leave" && this.tasks.of(q)?.kind !== "leave") {
       // Wait for them to come out of the bathroom first.
       if (!hurry && q.action?.id === "toilet" && q.action.note !== "door") return;
       partner = q;
     }
     const attendant = this.people.find((x) => x.role === "cloakroom" && x.present) ?? null;
     const t = this.tasks.leave(p, partner, attendant, hurry);
+    if (this.byeAt < 0 && this.phase.id === "farewell") {
+      this.byeAt = this.t;
+      this.byeGoing = this.going().going;
+      this.spy?.firstGoodbye();
+    }
     // The attendant leaves the cloakroom for the door with the coats.
     if (attendant?.action?.id === "staff" && attendant.action.note === "cloakroom") {
       this.end(attendant, false);
@@ -2042,7 +2166,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
    */
   private maybeWrongTurn(p: Person, from: number): void {
     const a = p.action;
-    if (!a || p.detour || p.staff || this.memory.household[p.id] || a.startedAt !== null || !LOSES_WAY.has(a.id)) return;
+    if (!a || p.detour || p.staff || this.memory.knowsHouse(p.id) || a.startedAt !== null || !LOSES_WAY.has(a.id)) return;
     if ((a.id === "toilet" && a.note !== "door") || this.t - this.lostAt[p.id]! < 120) return;
     const goal = p.path[p.path.length - 1];
     if (!goal || p.room === -1) return;
@@ -2472,7 +2596,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** After a scene: out to the terrace, or home. */
   stormOff(p: Person, home: boolean): void {
     this.end(p, false);
-    if (home && this.leavers.includes(p)) return this.goHome(p, false);
+    if (home && p.id !== this.spyId && this.leavers.includes(p)) return this.goHome(p, false);
     const s = this.places.terrace.length
       ? this.chat.pick(this.places.terrace)
       : this.cells.random(this.chat.pick(this.places.mingleRooms.length ? this.places.mingleRooms : [this.places.toastRoom.index]), this.chat);
@@ -2541,6 +2665,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   saw(a: Person, b: Person, d: number): void {
     this.bonds.saw(a, b, d);
     this.dramas.saw(a, b);
+    this.spy?.saw(a, b);
   }
 
   bumped(fast: Person, hit: Person, slop: boolean): void {
@@ -2549,6 +2674,114 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   gossipWeight(f: number, speaker: number, listeners: readonly number[]): number {
     return this.bonds.gossipWeight(f, speaker, listeners);
+  }
+
+  // ------------------------------------------------------- the spy, the programme
+
+  /** The tie i greets j by: the ident's, or for the spy its own idea of it. */
+  tieFor(i: number, j: number): Tie {
+    return this.spy ? this.spy.tieFor(i, j) : this.ident.tieOf(i, j);
+  }
+
+  /** The announcement being made now: the phase it calls and where the host stands, or null. */
+  announcing(): { phase: number; at: { level: number; x: number; z: number; room: number } } | null {
+    const h = this.host;
+    if (this.t > this.announceUntil || !h.present) return null;
+    return { phase: this.phaseIdx, at: { level: h.level, x: h.x, z: h.z, room: h.room } };
+  }
+
+  /** Whether p would hear an announcement made at a point now (the sound model; it queues nothing). */
+  wouldHear(at: { level: number; x: number; z: number; room: number }, p: Person): boolean {
+    return this.senses.wouldHear("announce", at, p);
+  }
+
+  /** The spy acted on a new phase. Beckoned in, it drops what it's doing as anyone called in would. */
+  cued(k: number, how: CueHow): void {
+    const p = this.spy!.record;
+    this.log("spy", [p.id], p.room, `cue:${this.programme[k]!.id}:${how}`);
+    if (how === "told") this.comeIn(p);
+  }
+
+  canSee(a: Person, b: Person): boolean {
+    return this.senses.canSee(a, b);
+  }
+
+  /** Whether someone's task is one seen through whatever the programme says. */
+  committedTask(p: Person): boolean {
+    const t = this.tasks.of(p);
+    return !!t && COMMITTED.has(t.kind);
+  }
+
+  wantsChampagne(p: Person): boolean {
+    return this.body.wants(p, "champagne");
+  }
+
+  /** The nearest waiter on this storey with flutes on the tray, standing at a stop or between rounds, within 20 m. */
+  flutesFor(p: Person): Person | null {
+    let best: Person | null = null;
+    let bd = 20;
+    for (const w of this.people) {
+      if (w.role !== "waiter" || !w.present || w.level !== p.level || this.body.trayDrink(w) !== "champagne") continue;
+      const a = w.action;
+      if (a && !(a.id === "staff" && a.note === "serve" && a.startedAt !== null)) continue;
+      const d = Math.hypot(w.x - p.x, w.z - p.z);
+      if (d < bd) {
+        bd = d;
+        best = w;
+      }
+    }
+    return best;
+  }
+
+  /** A waiter takes the tray over to someone: a stop beside them, offering as any stop does (false when there's no spot or no way). */
+  bringGlass(w: Person, q: Person, secs: number): boolean {
+    const s = this.beside(q, w, 0.8);
+    if (!s || s.room === -1 || (s.room >= 0 && PRIVATE.has(this.bp.rooms[s.room]!.type))) return false;
+    this.end(w, false);
+    this.offeredAt[q.id] = this.t;
+    this.stops.set(w.id, (this.stops.get(w.id) ?? 0) + 1);
+    this.start(w, { id: "staff", target: s, duration: secs, pose: "serve", gain: {}, note: "serve" });
+    return w.action?.note === "serve";
+  }
+
+  /** Beckoned in or pointed the way: anyone drops what they're doing and thinks again; the spy takes it as a cue. */
+  callIn(p: Person): void {
+    const spy = this.spy;
+    if (spy && p.id === spy.id && spy.byCues) return spy.told();
+    this.comeIn(p);
+  }
+
+  /** Drop whatever can be dropped and think again now. */
+  private comeIn(p: Person): void {
+    const a = p.action;
+    if (a && (a.id === "toilet" || a.id === "leave" || a.id === "row" || a.id === "arrive" || (a.id === "task" && this.committedTask(p)))) return;
+    this.end(p, false);
+    p.thinkAt = this.t;
+  }
+
+  /**
+   * The spy's map: it has never been here, so it knows the house as a first-timer does (the
+   * entrance hall and the rooms off it), and before it came it learnt the way from the door to
+   * each room its goal needs. Playing the host, the household still counts it, but the map is its own.
+   */
+  private spyMap(id: number, rooms: readonly number[], rng: Rng): void {
+    const m = this.memory;
+    const pl = this.places;
+    m.ownMap[id] = 1;
+    m.forgetHouse(id);
+    const hall = pl.entranceRoom?.index ?? pl.entrance.room;
+    m.startKnowing(id, hall, 0.6, 1);
+    for (const e of this.world.graph[hall] ?? []) if (e.kind !== "stair") m.startKnowing(id, e.to, 0.6);
+    for (const r of rooms) {
+      const to = this.cells.random(r, rng);
+      if (to) for (const w of this.roomsOnTheWay(pl.entrance, to, null)) m.startKnowing(id, w, 0.8, 2);
+      m.startKnowing(id, r, 0.8, 2);
+    }
+  }
+
+  /** The perch's view of a spot in the garden: the house's grid where it reaches, else half-hidden in the open. */
+  private gardenView(at: { level: number; x: number; z: number }): number {
+    return this.pf.cellOf(at.level, at.x, at.z) >= 0 ? this.pf.visAt(at.level, at.x, at.z) : 0.5;
   }
 
   // ------------------------------------------------------------- mood and senses
@@ -2681,6 +2914,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.notableObj = obj;
     p.notableRoom = room;
     p.notableUntil = this.t + secs;
+    this.spy?.noted(p, verb, secs);
   }
 
   gesture(p: Person, g: Gesture, secs: number): void {
@@ -2809,6 +3043,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       mishaps: this.dramas.stats.mishaps,
       habits: this.dramas.stats.outings,
       dramas: this.dramas.stats.dramas,
+      late: this.reactions.stats.late,
+      beckons: this.reactions.stats.beckons,
+      points: this.reactions.stats.points,
+      flutes: this.reactions.stats.glasses,
     };
   }
 
@@ -2834,6 +3072,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const d = this.dramas.stats;
     mix(`d${d.rolls},${d.mishaps},${d.outings},${d.dramas}`);
     for (const p of this.people) if (p.stain || p.bandage) mix(`s${p.id}${p.stain ?? ""}${p.bandage ? 1 : 0}`);
+    const r = this.reactions.stats;
+    mix(`r${r.late},${r.beckons},${r.points},${r.glasses}`);
+    if (this.spy) mix(this.spy.digest());
     return `${this.t}:${(h >>> 0).toString(16)}`;
   }
 

@@ -29,7 +29,7 @@ const ITEMS: Partial<Record<Held, { size: [number, number, number]; color: strin
 const STAIN_COLOR: Record<DrinkId, string> = { champagne: "#a8945a", red: "#4e0d1a", white: "#a99c6c", beer: "#6e4a1c", whisky: "#4e2c10", water: "#3c4048" };
 
 /** Things on the floor (broken glass, a vase in pieces, wine on the carpet, a lost bag): size (m) and colour. */
-export type LitterKind = "glass" | "shards" | "stain" | "bag" | "spectacles" | "earring";
+export type LitterKind = "glass" | "shards" | "stain" | "bag" | "spectacles" | "earring" | "garment";
 const LITTER: Record<LitterKind, { size: [number, number, number]; color: string }> = {
   glass: { size: [0.26, 0.012, 0.2], color: "#cfe1e6" },
   shards: { size: [0.26, 0.03, 0.2], color: "#e9e3d6" },
@@ -37,6 +37,8 @@ const LITTER: Record<LitterKind, { size: [number, number, number]; color: string
   bag: { size: [0.2, 0.13, 0.06], color: "#5a2a22" },
   spectacles: { size: [0.15, 0.03, 0.05], color: "#1a1a1a" },
   earring: { size: [0.035, 0.035, 0.035], color: "#e6c45a" },
+  /** A scarf, a glove or a pocket square dropped in the garden, in a colour of its own. */
+  garment: { size: [0.3, 0.02, 0.16], color: "#c8e05a" },
 };
 const LITTER_MAX = 48;
 
@@ -48,6 +50,8 @@ export interface Litter {
   z: number;
   /** Turned about the vertical (radians). */
   yaw: number;
+  /** Its own colour, instead of its kind's. */
+  color?: string;
 }
 
 /** Camera flashes drawn at once, and how long each lasts (game s). */
@@ -174,7 +178,8 @@ export class Crowd {
 
   private readonly litter: THREE.InstancedMesh;
   private readonly litterScope: THREE.InstancedBufferAttribute;
-  private litterKinds: Array<LitterKind | null> = [];
+  /** Each instance's kind and colour, so a colour is set only when it changes. */
+  private litterKinds: Array<string | null> = [];
 
   /** What lies on the floor: glass and a vase broken, wine on the carpet, things lost. `room` lights each (-1 outside). */
   setLitter(list: ReadonlyArray<Litter & { room: number }>): void {
@@ -186,9 +191,10 @@ export class Crowd {
       const [sx, sy, sz] = LITTER[l.kind].size;
       this.litter.setMatrixAt(k, tmpM.compose(tmpP.set(l.x, l.y + 0.003, l.z), tmpQ.setFromAxisAngle(UP, l.yaw), tmpS.set(sx, sy, sz)));
       this.litterScope.setX(k, l.room >= 0 ? l.room : -1);
-      if (this.litterKinds[k] !== l.kind) {
-        this.litterKinds[k] = l.kind;
-        this.litter.setColorAt(k, c.set(LITTER[l.kind].color));
+      const look = l.color ?? LITTER[l.kind].color;
+      if (this.litterKinds[k] !== `${l.kind}${look}`) {
+        this.litterKinds[k] = `${l.kind}${look}`;
+        this.litter.setColorAt(k, c.set(look));
         dirty = true;
       }
       k++;

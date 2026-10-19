@@ -18,6 +18,8 @@ export interface BodyHost {
   readonly places: Places;
   readonly world: World;
   readonly pf: Pathfinder;
+  /** The record the spy lives in, or -1: it sips slowly, leaves glasses half drunk and turns to water early. */
+  readonly spyId: number;
   log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   /** Walk to a spot as part of the current action (it stays unstarted until they arrive); false when there is no way. */
   goTo(p: Person, s: Spot): boolean;
@@ -30,6 +32,10 @@ export interface BodyHost {
 
 /** How long a drink lasts in hand (in-game s): sipped from full to empty. */
 export const DRINK_LIFE: Record<DrinkId, number> = { champagne: 1500, red: 900, white: 900, beer: 900, whisky: 700, water: 600 };
+/** The spy sips at this share of the usual rate, sets a glass down once it has held it this long (in-game s), and asks for water past this tipsiness. */
+const SPY_SIP = 0.4;
+const SPY_HOLD = 600;
+const SPY_WATER = 0.15;
 /** A bathroom seen taken is skipped for this long, unless the need is urgent. */
 const SEEN_FOR = 180;
 /** Bladder level below which someone queues rather than tries elsewhere. */
@@ -426,6 +432,7 @@ export class Body {
 
   /** What someone asks for: usually their favourite, never the drink they don't touch, water when they've had plenty. */
   choose(p: Person, phase: "before" | "dinner" | "after"): DrinkId {
+    if (p.id === this.host.spyId && p.tipsy > SPY_WATER) return "water";
     const fav = p.fav !== p.never ? p.fav : "water";
     if (this.rng.chance(0.55) && !(p.tipsy > 0.6 && ALCOHOL.has(fav))) return fav;
     const w: Array<readonly [DrinkId, number]> = [
@@ -474,6 +481,7 @@ export class Body {
 
   /** Whether someone would take this drink if offered. */
   wants(p: Person, drink: DrinkId): boolean {
+    if (p.id === this.host.spyId && p.tipsy > SPY_WATER && ALCOHOL.has(drink) && drink !== "champagne") return false;
     return drink !== p.never && !(drink !== "water" && p.tipsy > 0.85);
   }
 
@@ -496,7 +504,8 @@ export class Body {
     const id = p.item;
     if (id < 0 || items.kindOf(id) !== "glass" || items.fill[id]! <= 0) return;
     const drink = items.drinkOf(id);
-    const k = dt / DRINK_LIFE[drink];
+    const spy = p.id === this.host.spyId;
+    const k = (dt / DRINK_LIFE[drink]) * (spy ? SPY_SIP : 1);
     items.fill[id] = Math.max(0, items.fill[id]! - k);
     const take = Math.min(this.absorb[p.id]!, this.dose[p.id]! * k);
     if (take > 0) {
@@ -506,7 +515,7 @@ export class Body {
     if (items.fill[id]! <= 0) {
       items.set(id, "empty", this.host.t);
       this.setDown(p);
-    }
+    } else if (spy && this.host.t - items.since[id]! >= SPY_HOLD) this.setDown(p);
   }
 
   // -------------------------------------------------------------------- bar

@@ -165,6 +165,8 @@ export interface BondsHost {
   readonly mood: Mood;
   readonly sight: Sight;
   readonly phaseId: PhaseId;
+  /** The record the spy lives in, or -1: its heat counts half and it never strikes, and it answers a row with an apology. */
+  readonly spyId: number;
   log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
   gesture(p: Person, g: Gesture, secs: number): void;
   glance(p: Person, x: number, z: number, secs: number): void;
@@ -1071,6 +1073,11 @@ export class Bonds {
       ]);
       at = act === "slap" ? f : act === "throw" ? (this.rng.chance(0.5) ? g : f) : g;
       if (act === "shove" && h0.look.sex === "m" && at.look.sex === "m" && h0.tipsy > ACT_TIPSY && at.tipsy > ACT_TIPSY && this.rng.chance(0.2)) kind = "scuffle";
+      // The spy strikes nobody, and is struck by nobody: it takes a jealous word with an apology (startRow cuts it short).
+      if (h0.id === h.spyId || at.id === h.spyId) {
+        kind = "jealous";
+        act = null;
+      }
     }
     // The news, shouted: whoever is in the room hears what it's about.
     for (const o of h.people) {
@@ -1146,9 +1153,14 @@ export class Bonds {
     }
   }
 
-  /** How hot a's grudge against b runs now: temper, drink and tension stoke it. */
+  /** How hot a's grudge against b runs now: temper, drink and tension stoke it; the spy's at half. */
   heatOf(a: Person, b: Person): number {
-    return this.grudgeOf(a.id, b.id) * this.temper[a.id]! * (1 + a.tipsy) * (1 + this.host.mood.tension[a.id]!) * HEAT_K;
+    return this.grudgeOf(a.id, b.id) * this.temper[a.id]! * (1 + a.tipsy) * (1 + this.host.mood.tension[a.id]!) * HEAT_K * (a.id === this.host.spyId ? 0.5 : 1);
+  }
+
+  /** Someone else's temper in this record (the spy moved into its victim's). */
+  setTemper(i: number, v: number): void {
+    this.temper[i] = clamp01(v);
   }
 
   /** a, facing b within 2 m: a grudge that's hot enough comes out. */
@@ -1159,12 +1171,21 @@ export class Bonds {
     if (heat < SPAT || h.t - this.lastRow[sym(this.n, a.id, b.id)]! < ROW_GAP) return;
     if (d > 1.2 && Math.abs(wrap(Math.atan2(b.x - a.x, b.z - a.z) - a.yaw)) > 1.2) return;
     if (!h.free(a) || !h.free(b)) return;
-    this.startRow(a, b, heat >= ACT && a.tipsy > ACT_TIPSY ? "act" : heat >= ROW ? "row" : "spat");
+    this.startRow(a, b, heat >= ACT && a.tipsy > ACT_TIPSY && a.id !== h.spyId ? "act" : heat >= ROW ? "row" : "spat");
   }
 
   /** A row begins: the sim walks it through (sim.ts: the 'row' action). */
   private startRow(a: Person, b: Person, kind: RowKind, act: RowAct | null = null, logged = false): void {
     const h = this.host;
+    // The spy never strikes; answering someone else's grudge, it takes the sharp word and apologises, so the row is a spat.
+    const sorry = b.id === h.spyId && kind !== "spat" && kind !== "hiss";
+    if (sorry) {
+      kind = "spat";
+      act = null;
+    } else if (a.id === h.spyId && (kind === "act" || kind === "scuffle")) {
+      kind = "row";
+      act = null;
+    }
     this.lastRow[sym(this.n, a.id, b.id)] = h.t;
     if (kind === "act" && !act)
       act = this.rng.weighted<RowAct>([
@@ -1179,6 +1200,10 @@ export class Bonds {
     h.end(b, false);
     h.start(a, { id: "row", target: s, duration: len, pose: "argue", gain: {}, ref: b.id, note: act ? `${kind}:${act}` : kind });
     h.start(b, { id: "row", target: null, duration: len + 40, pose: "argue", gain: {}, ref: a.id, note: "answer" });
+    if (sorry) {
+      this.stats.apologies++;
+      h.gesture(b, "shrug", 2);
+    }
     // An eruption has its own entry in the log.
     if (!logged && kind !== "jealous" && kind !== "pull" && kind !== "scuffle" && !this.apart[a.id]) h.log("row", [a.id, b.id], a.room, act ? `${kind}:${act}` : kind);
   }

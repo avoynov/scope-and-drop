@@ -116,6 +116,12 @@ export class Ident {
     this.look[o + F_STATE] = (p.stain ? 0.5 : 0) + (p.bandage ? 0.5 : 0);
   }
 
+  /** Someone else's voice in this record (the spy moved into its victim's): their own pitch, before drink. Nobody's memory of them changes. */
+  recast(p: Person, voice: number): void {
+    this.voice[p.id] = voice;
+    this.refresh(p);
+  }
+
   /** i takes a fresh mental picture of j. */
   private remember(i: number, j: number): void {
     const m = (i * this.n + j) * FEATURES;

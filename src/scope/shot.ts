@@ -105,7 +105,7 @@ export const RIFLES = {
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
-   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round detachable box magazine.
+   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Ten-round detachable box magazine, as the TRG 22 in .308 ships with.
    * Scope 58 mm over the bore, as modelled in the demo. Its scope is a modern FFP mil scope (Leupold Mark 5HD
    * class): an M5C3-style turret, 0.1 mil a click, 10 mil a turn over three turns (29 mil), zero stop at 0, the
    * 100 m zero. Nothing on it or on the reticle is cut for the load: the shooter dials from the DOPE card.
@@ -122,7 +122,7 @@ export const RIFLES = {
     lockS: 0.003,
     barrelS: 0.0013,
     action: "bolt",
-    magazine: 5,
+    magazine: 10,
     blastDust: 0.6,
     sightM: 0.058,
     dial: { kind: "mil", clickMil: 0.1, clicksPerRev: 100, clicks: 290 },

@@ -14,7 +14,7 @@
  *
  * Two things the shooter does, each on its own key: work the action ('cycle') and change the magazine
  * ('reload'). Neither does the other's job, so a fresh magazine still needs the action worked to chamber a round.
- *  - Bolt rifle (M24 class, detachable 5-round box). Cycle: lift the handle 90° (this cocks the striker), pull
+ *  - Bolt rifle (M24 class, detachable 10-round box as on the TRG 22). Cycle: lift the handle 90° (this cocks the striker), pull
  *    the bolt back (the extractor pulls whatever is in the chamber and the ejector flicks it out of the port to
  *    the right), push it forward (the bolt face strips the top round out of the magazine and pushes it into
  *    the chamber, if there is one) and turn it down. Reload: the box out and a full one in, bolt untouched.
@@ -289,14 +289,15 @@ export interface ActionGeom {
 const DEG = Math.PI / 180;
 const CART_308 = { caseLen: 51.2, dia: 11.9, oal: 71 };
 export const ACTIONS: Record<RifleId, ActionGeom> = {
-  // M24 class: round receiver, the bolt handle over the grip, a 5-round box ahead of the trigger guard. The
-  // handle closes 35° below level and lifts 90°, so the knob clears the eyepiece bell on its way back.
+  // M24 class: round receiver, the bolt handle over the grip, a 10-round box ahead of the trigger guard (the TRG
+  // 22's in .308: five more rounds in the staggered column make it 28 mm deeper than a 5-round box). The handle
+  // closes 35° below level and lifts 90°, so the knob clears the eyepiece bell on its way back.
   bolt: {
     boreY: -58,
     trigger: [0, -118, -255],
     grip: [0, -145, -198],
     release: [0, -128, -293],
-    mag: { pivot: [0, -84, -392], size: [24, 96, 92], tilt: 0, rounds: 5, cartridge: CART_308 },
+    mag: { pivot: [0, -84, -392], size: [24, 124, 92], tilt: 0, rounds: 10, cartridge: CART_308 },
     bolt: {
       axisY: -58,
       bodyR: 9.5,

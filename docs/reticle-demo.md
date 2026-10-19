@@ -318,7 +318,7 @@ The cues:
 | Muzzle velocity spread | SD 8 m/s (military ammunition) | SD 4 m/s (match) | SD 4 m/s. At subsonic speed every m/s is 1.5 cm of height at 183 m |
 | Spread at its mannequin | 412 m: ≈ 5 cm per axis, plus ≈ 3 cm vertical from velocity | 412 m: ≈ 3 cm per axis, plus ≈ 1.5 cm vertical | 183 m: ≈ 2.4 cm per axis, plus ≈ 6 cm vertical |
 | Lock and barrel time | 6 ms (hammer) + 1.3 ms | 3 ms (striker) + 1.3 ms | 5 ms (striker) + 1.9 ms (a 200 mm ported barrel and the suppressor ahead of it) |
-| Action | Semi-automatic, 10-round magazine, hammer fired. Held open after the last round | Bolt, 5-round detachable box, striker fired. After each shot B works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine, striker fired (the automatic mode is left out). Shuts on an empty chamber after the last round |
+| Action | Semi-automatic, 10-round magazine, hammer fired. Held open after the last round | Bolt, 10-round detachable box (the TRG 22's), striker fired. After each shot B works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine, striker fired (the automatic mode is left out). Shuts on an empty chamber after the last round |
 | Working the action (B) | Rack the charging handle, about 1.2 s | About 1.4 s | Rack the charging handle, about 1.2 s |
 | Magazine change (R) | About 2.9 s | About 2.7 s | About 2.9 s |
 
@@ -338,7 +338,7 @@ Working the action (B) or changing the magazine (R) takes a hand off the rifle, 
 
 Each rifle is worked the way it really is:
 
-- **Bolt rifle** (M24 class, 5-round detachable box).
+- **Bolt rifle** (M24 class, 10-round detachable box as on the TRG 22).
   - Working the bolt: the right hand pinches the knob and lifts it 90°, which cocks the striker. It pulls the bolt 100 mm back: the extractor draws out the case (or an unfired round), and the ejector flicks it out of the port to the right, into the dirt. It pushes the bolt forward, and the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber, if there is a round. Then it turns the handle down. About 1.4 s.
   - Changing the magazine: the index finger presses the paddle catch in front of the trigger guard. The box drops into the hand and goes to the pouch, and the full one is pushed straight up the well until the catch clicks. The bolt isn't touched. About 2.7 s.
 - **SVD.**

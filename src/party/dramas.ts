@@ -24,7 +24,7 @@ import type { Pathfinder } from "./path";
 import { frontOf, yawTo, type Places, type RoomCells } from "./places";
 import type { SoundKind } from "./senses";
 import type { Step, Task, Tasks } from "./tasks";
-import type { ActionState, DrinkId, Gesture, Group, PartyEvent, Person, Pose, Seat, Spot } from "./types";
+import { SKILLS, type ActionState, type DrinkId, type Gesture, type Group, type PartyEvent, type Person, type Pose, type Seat, type Skill, type Spot } from "./types";
 import type { World } from "./world";
 
 const MIN = 60;
@@ -65,6 +65,9 @@ const CROWD_MAX = 8;
 const MAX_HAZARD = (TOTAL * 1.5 * 3 * (1 + CROWD_MAX / 4)) / CHECKS / NORM;
 /** A tray dropped: per check carried, × (1 − tray fluency) × the crowd. */
 const TRAY = 0.003;
+/** The skills a dropped tray and a piano asked of the spy are (ident.ts SLIP_SKILLS). */
+const TRAY_SKILL = SKILLS.indexOf("tray");
+const PIANO_SKILL = SKILLS.indexOf("piano");
 /** Doing any of these, nobody has an accident: the programme, a task, the bathroom, leaving, arriving, words. */
 const NO_MISHAP: ReadonlySet<string> = new Set(["toast", "dinner", "champagne", "toilet", "task", "leave", "arrive", "row"]);
 
@@ -186,6 +189,14 @@ export interface DramasHost {
   /** Hand someone a drink they asked for, poured (the whiskies at the bar). */
   pour(p: Person, d: DrinkId): void;
   setDown(p: Person): void;
+  /** Someone fumbled a skill (an index into ident.ts SLIP_SKILLS), showing for this long. */
+  slipped?(p: Person, skill: number, secs: number): void;
+  /** Steps to ask where something is kept first, for someone sent for it who doesn't know the house (the spy playing the host); none for anyone else. */
+  askWhere?(p: Person): Step[];
+  /** Whether the spy, in this record, turns a skill down when asked. */
+  dodges?(p: Person, skill: Skill): boolean;
+  /** The spy turns down what the one it plays was known for, asked by `asker`. */
+  begOff?(asker: Person, p: Person, skill: number): void;
 }
 
 /** What the scheduler has done so far, for the lab and the tests. */
@@ -384,6 +395,8 @@ export class Dramas {
   private readonly darkN: Uint8Array;
   /** Where the first-aid kit lives. */
   private kitHome: { level: number; x: number; z: number; room: number } | null = null;
+  /** The spy has been asked to play the piano once tonight. */
+  private pianoAsked = false;
 
   constructor(
     private readonly host: DramasHost,
@@ -483,6 +496,7 @@ export class Dramas {
     this.rollMishaps();
     this.outings();
     this.deal();
+    if (this.unswept.length) this.resweep();
     for (const e of this.episodes) {
       if (e.done) continue;
       if (e.item >= 0 && (e.stage === "search" || e.stage === "given-up")) this.spotting(e);
@@ -797,7 +811,7 @@ export class Dramas {
     const steps: Step[] = [];
     if (kit >= 0) {
       const at = this.kitSpot(kit);
-      if (at) steps.push({ do: "goto", to: at, label: "to-kit" }, { do: "pick", item: kit, label: "pick" });
+      if (at) steps.push(...(h.askWhere?.(carrier) ?? []), { do: "goto", to: at, label: "to-kit" }, { do: "pick", item: kit, label: "pick" });
     }
     if (b >= 0 && p.action?.id === "toilet") steps.push({ do: "goto", to: h.places.bathrooms[b]!.door, label: "to-bathroom" }, { do: "wait", s: 15 * MIN, pose: "wait", label: "await" });
     steps.push(
@@ -1093,6 +1107,7 @@ export class Dramas {
     const e = this.ep("mishap", "tray", [p], "sweep", h.t + 10 * MIN, p.room);
     e.item = shards[0] ?? -1;
     h.log("mishap", [p.id], p.room, "tray");
+    h.slipped?.(p, TRAY_SKILL, 6);
     h.end(p, false);
     this.task(
       e,
@@ -1109,22 +1124,46 @@ export class Dramas {
 
   /** Broken things each episode leaves for a sweep. */
   private readonly shards = new Map<number, number[]>();
+  /** Messes nobody was free to sweep up yet: staff are looked for again at each check. */
+  private unswept: Array<{ e: number; at: { level: number; x: number; z: number; room: number }; label: string }> = [];
 
   /** Staff come over and sweep something up. */
   private sweep(e: Episode, at: { level: number; x: number; z: number; room: number }, things: number[], label: string, who?: Person | null): void {
     this.shards.set(e.id, [...(this.shards.get(e.id) ?? []), ...things]);
     const q = who === undefined ? this.staffNear(at, 30) : who;
     const s = q ? this.spotNear(at, 0.9, at) : null;
-    if (!q || !s) return;
-    this.task(
-      e,
-      q,
-      [],
-      [
-        { do: "goto", to: s, label: "to-mess" },
-        { do: "wait", s: this.rng.range(25, 45), pose: "crouch", label },
-      ],
-    );
+    if (!q || !s) {
+      if (things.length) this.unswept.push({ e: e.id, at, label });
+      return;
+    }
+    this.sweeper(e, q, s, label);
+  }
+
+  private sweeper(e: Episode, q: Person, s: Spot, label: string): void {
+    const steps: Step[] = [
+      { do: "goto", to: s, label: "to-mess" },
+      { do: "wait", s: this.rng.range(25, 45), pose: "crouch", label },
+    ];
+    if (!e.done) {
+      this.task(e, q, [], steps);
+      return;
+    }
+    // The episode is over (the cut dressed, say), but the glass is still on the floor.
+    const t = this.host.tasks.run(e.kind === "habit" ? "habit" : e.kind, e.what, q, [], steps);
+    if (t.outcome === null) this.taskEp.set(t.id, e.id);
+  }
+
+  /** A mess left with nobody free to sweep it: staff nearby now come over. */
+  private resweep(): void {
+    const keep: typeof this.unswept = [];
+    for (const u of this.unswept) {
+      if (!this.shards.get(u.e)?.length) continue;
+      const q = this.staffNear(u.at, 30);
+      const s = q ? this.spotNear(u.at, 0.9, u.at) : null;
+      if (q && s) this.sweeper(this.episodes[u.e]!, q, s, u.label);
+      else keep.push(u);
+    }
+    this.unswept = keep;
   }
 
   /** Swept up: out of play. */
@@ -1465,6 +1504,23 @@ export class Dramas {
     return c.length ? this.rng.weighted(c) : null;
   }
 
+  /** Who asks someone to play: a free guest within 10 m who knew them best, else the nearest. */
+  private askerOf(p: Person): Person | null {
+    const h = this.host;
+    let best: Person | null = null;
+    let bv = -Infinity;
+    for (const q of this.freeGuests()) {
+      const d = Math.hypot(q.x - p.x, q.z - p.z);
+      if (q === p || q.level !== p.level || d > 10) continue;
+      const v = h.ident.tieOf(q.id, p.id) * 10 - d;
+      if (v > bv) {
+        bv = v;
+        best = q;
+      }
+    }
+    return best;
+  }
+
   /** Free guests present, not the host; never the spy, who keeps out of the lead of any card. */
   private freeGuests(): Person[] {
     const h = this.host;
@@ -1760,13 +1816,24 @@ export class Dramas {
     return true;
   }
 
-  /** Music round the piano: a guest plays and others gather to sing. */
+  /**
+   * Music round the piano: a guest plays and others gather to sing. The spy, playing someone known
+   * for the piano, is asked like anyone (once); it waves the request away, and the card waits.
+   */
   private piano(who?: Person): boolean {
     const h = this.host;
     const pianos = h.places.games.filter((g) => g.kind === "piano");
     const playing = h.people.find((q) => q.present && q.pose === "play" && q.action?.note === "piano" && q.id !== h.spyId);
     const near = (q: Person, g: (typeof pianos)[number]) => Math.hypot(g.spots[0]!.x - q.x, g.spots[0]!.z - q.z) + 15 * Math.abs(g.spots[0]!.level - q.level);
-    const player = who ?? playing ?? this.choose(this.freeGuests(), (q) => (q.role === "pianist" ? 4 : q.fluency.piano >= 0.5 ? 1 : q.traits.talk >= 0.7 ? 0.2 : 0));
+    const spy = !who && !playing && !this.pianoAsked && h.spyId >= 0 ? h.people[h.spyId]! : null;
+    const asker = spy && !spy.staff && spy.role !== "host" && this.available(spy) && h.dodges?.(spy, "piano") ? this.askerOf(spy) : null;
+    const pool = asker ? [...this.freeGuests(), spy!] : this.freeGuests();
+    const player = who ?? playing ?? this.choose(pool, (q) => (q.role === "pianist" ? 4 : q.fluency.piano >= 0.5 || (asker && q === spy) ? 1 : q.traits.talk >= 0.7 ? 0.2 : 0));
+    if (asker && player === spy) {
+      this.pianoAsked = true;
+      h.begOff?.(asker, spy!, PIANO_SKILL);
+      return false;
+    }
     if (!player || !pianos.length) return false;
     const g = [...pianos].sort((a, b) => near(player, a) - near(player, b))[0]!;
     const seat = g.spots[0]!;
@@ -2195,9 +2262,9 @@ export class Dramas {
     else if (label === "rummage") h.log("habit", [p.id], p.room, "snoop");
     // Seen coming out of someone's bedroom.
     else if (label.startsWith("peek-out:")) h.notable(p, "left-bedroom", -1, 8, Number(label.slice(9)));
-    else if ((label === "sweep" || label === "scrub") && !e.done) {
+    else if (label === "sweep" || label === "scrub") {
       this.swept(e);
-      if (e.what === "tray" || e.what === "vase" || e.what === "wine") this.close(e);
+      if (!e.done && (e.what === "tray" || e.what === "vase" || e.what === "wine")) this.close(e);
     } else if (label === "stiff") {
       h.gesture(h.host, "frown", 1);
       this.close(e);
@@ -2263,6 +2330,11 @@ export class Dramas {
         .find((q) => this.taskOf(e, q));
       const ct = carrier ? this.taskOf(e, carrier) : undefined;
       if (ct && ct.steps[ct.i]?.label === "await") h.tasks.next(ct);
+      else if (ct) {
+        // Out before the kit got there: whoever brings it won't wait at the door.
+        const k = ct.steps.findIndex((s, i) => i > ct.i && s.label === "await");
+        if (k >= 0) ct.steps.splice(k, 1);
+      }
       if (ct) p.thinkAt = h.t + 20;
       else p.thinkAt = h.t + 5;
       this.pending.push({ e: e.id, who: p.id, carrier: !!ct });

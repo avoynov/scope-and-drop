@@ -400,7 +400,8 @@ function urlNudges(): MoodOverride[] {
  * The URL's provocations: `gone=80:5` (something of the house's goes missing from room 5 at
  * 80 min), `seen=75:16:5` (person 16 seen poking round room 5 at 75 min), `mishap=80:16:spill` (a
  * spill on person 16 at 80 min), `drama=125:quarrel` (a card played at 125 min; `drama=125:quarrel:16`
- * with person 16 in it). Several are joined by commas.
+ * with person 16 in it), `test=90:16` (person 16's closest tie here walks over and tests them at
+ * 90 min). Several are joined by commas.
  */
 function urlProvocations(): Provocation[] {
   const out: Provocation[] = [];
@@ -421,6 +422,10 @@ function urlProvocations(): Provocation[] {
     const [t, what, who] = g.split(":");
     if (Number.isFinite(Number(t)) && (CARD_IDS as readonly string[]).includes(what ?? ""))
       out.push({ t: Number(t) * 60, kind: "drama", subject: who !== undefined ? Number(who) : -1, what: what as CardId });
+  }
+  for (const g of (params.get("test") ?? "").split(",").filter(Boolean)) {
+    const [t, who] = g.split(":").map(Number);
+    if (Number.isFinite(t) && Number.isFinite(who)) out.push({ t: t! * 60, kind: "test", subject: who! });
   }
   return out.sort((a, b) => a.t - b.t);
 }
@@ -669,7 +674,7 @@ function frameStates(): FrameState[] {
   });
 }
 
-/** What lies on the floor: broken glass and a vase in pieces until swept up, wine on the carpet until scrubbed, things lost until found, and the garment the spy left on the lawn. */
+/** What lies on the floor: broken glass and a vase in pieces until swept up, wine on the carpet until scrubbed, things lost until found, and the garment the spy dropped by a garden door. */
 function litter(): Array<Litter & { room: number }> {
   const garment = party.spy?.garment;
   const items = party.world.items;
@@ -691,7 +696,7 @@ function litter(): Array<Litter & { room: number }> {
     if (!k) continue;
     const room = items.room[i]!;
     const [x, z] = [items.x[i]!, items.z[i]!];
-    const y = k === "garment" ? terrainHeight(bp.site.terrain, x, z) : room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[items.level[i]!]?.floorY ?? 0);
+    const y = room === -1 ? terrainHeight(bp.site.terrain, x, z) : room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[items.level[i]!]?.floorY ?? 0);
     out.push({ kind: k, x, y, z, yaw: (i * 2.39996) % (Math.PI * 2), room, color: garment?.item === i ? garment.color : undefined });
   }
   return out;
@@ -1346,6 +1351,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "drama",
     "habit",
     "react",
+    "challenge",
     "spy",
   ]),
   gossip: new Set(["gossip"]),
@@ -1358,6 +1364,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
   "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
   "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
   "the spy": new Set(["spy", "react"]),
+  "seen through": new Set(["double-take", "test", "challenge", "react"]),
 };
 let logFilter = params.get("log") ?? "the evening";
 if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
@@ -1391,8 +1398,6 @@ function eventText(e: PartyEvent): string {
       return `lights ${e.note} in the ${e.room !== undefined ? (bp.rooms[e.room]?.label.toLowerCase() ?? "room") : "room"}`;
     case "double-take":
       return `${n(e.actors[0])} looks twice at ${n(e.actors[1])}`;
-    case "test":
-      return `${n(e.actors[0])} tries a shared joke on ${n(e.actors[1])}: it's them`;
     case "gossip": {
       const to = e.actors.length > 2 ? `${n(e.actors[1])} and ${e.actors.length - 2} more` : n(e.actors[1]);
       return `${n(e.actors[0])} tells ${to}: ${(e.note ?? "").replace(/-/g, " ")}`;
@@ -1473,6 +1478,8 @@ function eventText(e: PartyEvent): string {
     case "drama":
     case "habit":
       return troubleText(e, n);
+    case "test":
+    case "challenge":
     case "spy":
     case "react":
       return spyLab.eventText(e, n) ?? e.kind;
@@ -1633,7 +1640,8 @@ function refreshPanel(): void {
     `${st.spats} spats · ${st.rows} rows · ${st.fellOut} fell out · ${st.madeUp} made up · ${st.pulled} pulled onto the floor · ${st.staffFriends} staff friendships · ${st.slipAways} slipped away`,
     `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     troubleStats(),
-    `${st.late} late for the programme · ${st.beckons} beckoned in · ${st.points} pointed the way · ${st.flutes} brought a flute`,
+    `${st.late} late for the programme · ${st.beckons} beckoned in · ${st.points} pointed the way · ${st.flutes} brought a flute · ${st.prompts} host prompted`,
+    `${st.frowns} fumbles frowned at (${st.helps} helped) · ${st.shrugs} shrugs · ${st.cool} cool hellos · ${st.compared} notes compared · ${st.sure} sure · ${st.challenges} had it out · ${st.tourAsks} tours asked${st.finds ? ` · ${st.finds} found something in the garden` : ""}`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile
@@ -1779,6 +1787,9 @@ $("seen").onclick = () => {
   const p = party.people[selected];
   if (!p?.present) return;
   provoke({ t: party.t, kind: "seen", subject: p.id, room: goneRoom !== -1 ? goneRoom : p.room });
+};
+$("test").onclick = () => {
+  if (party.people[selected]?.present) provoke({ t: party.t, kind: "test", subject: selected });
 };
 // Mishaps on the picked person, and a card from the deck played now (with them in it if it fits, else whoever it picks).
 for (const m of ["spill", "cut", "faint", "lost"] as const) {

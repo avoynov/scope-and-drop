@@ -24,7 +24,7 @@ import type { Groups } from "./groups";
 import type { Places, RoomCells } from "./places";
 import type { Pathfinder } from "./path";
 import { KNOWN } from "./memory";
-import { DRINKS, type ActionId, type ActionState, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Spot } from "./types";
+import { DRINKS, type ActionId, type ActionState, type Held, type NeedId, type Needs, type Person, type Pose, type Seat, type Skill, type Spot } from "./types";
 
 /** How fitting each action is in each phase (0 = never chosen). */
 export const PHASE_WEIGHTS: Record<PhaseId, Partial<Record<ActionId, number>>> = {
@@ -114,6 +114,8 @@ export interface MindWorld {
    * (beside, face to face, or club style in front with their back to them).
    */
   danceNear(p: Person): { who: number; k: number; mode: "beside" | "face" | "front" } | null;
+  /** Whether this person stays off something they'd be expected to do well (the spy, playing someone known for it). */
+  dodges?(p: Person, skill: Skill): boolean;
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
@@ -211,7 +213,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
     }
   }
   out.push(...offerCandidates(p, w, phase.id));
-  if (has("dance") && places.danceSpots.length) {
+  if (has("dance") && places.danceSpots.length && !w.dodges?.(p, "dance")) {
     // Couples dance together, friends follow friends on, flirts dance close (bonds.ts).
     const near = w.danceNear(p);
     const q = near ? people[near.who] : undefined;
@@ -286,12 +288,13 @@ function offerCandidates(p: Person, w: MindWorld, phase: PhaseId): Candidate[] {
     const ad = o.ad;
     const k = (W[ad.action] ?? 0) * (ad.phases?.[phase] ?? 1);
     if (k <= 0 || (ad.gate && !ad.gate(p)) || w.familiarity(p, o.room) < KNOWN) continue;
+    if (ad.note === "billiards" && w.dodges?.(p, "billiards")) continue;
     let spot = -1;
     if (o.seat) spot = w.seatTaken(o.seat) ? -1 : 0;
     else {
       for (let i = 0; i < o.spots.length && spot < 0; i++) {
-        // The piano stool is the pianist's when they want it.
-        if (ad.note === "piano" && i === 0 && p.role !== "pianist") continue;
+        // The piano stool is the pianist's when they want it (not the spy's, playing a pianist it can't play like).
+        if (ad.note === "piano" && i === 0 && (p.role !== "pianist" || w.dodges?.(p, "piano"))) continue;
         if (!w.taken(spotKey(o.spots[i]!))) spot = i;
       }
     }

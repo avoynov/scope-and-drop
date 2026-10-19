@@ -54,7 +54,11 @@ export type Verb =
   | "crying"
   | "drunk"
   | "broke"
-  | "camera-shy";
+  | "camera-shy"
+  | "garment"
+  | "prompted"
+  | "refused-tour"
+  | "confronted";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -123,6 +127,12 @@ export const VERBS: Record<Verb, VerbSpec> = {
   broke: { kind: "mishap", juicy: 0.7, odd: 0, halfLife: 60 * MIN },
   /** Turned away from a camera, or slipped out of a photograph: the baseline for keeping out of the picture. */
   "camera-shy": { kind: "odd", juicy: 0.3, odd: 0.04, halfLife: 45 * MIN },
+  // Seen through (milestone 3, PR 2): something of a guest's found in the garden (the object is the thing; whose, when the finder
+  // knows), the host prompted by the household at a change in the programme, a tour turned down, and someone confronted out loud.
+  garment: { kind: "mishap", juicy: 0.6, odd: 0, halfLife: 45 * MIN, thing: true, elsewhere: true },
+  prompted: { kind: "odd", juicy: 0.3, odd: 0.05, halfLife: 45 * MIN },
+  "refused-tour": { kind: "odd", juicy: 0.5, odd: 0.1, halfLife: 45 * MIN },
+  confronted: { kind: "odd", juicy: 1, odd: 0.3, halfLife: 45 * MIN },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

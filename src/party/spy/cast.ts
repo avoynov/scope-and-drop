@@ -64,8 +64,8 @@ export const GARMENT_SHARE = 1 / 3;
 /** What it is, by the victim's sex, and the colours such things come in: none an outfit's, so a find can't be matched to a guest by colour. */
 const GARMENT: Record<Sex, readonly string[]> = { f: ["scarf", "glove"], m: ["pocket square", "glove"] };
 const GARMENT_COLORS: readonly string[] = ["#9fe0cf", "#c8e05a", "#ff8f8f", "#f3ec8a", "#3fd0d4", "#ffc49b"];
-/** How far out from the terrace the garment lies (m). */
-const GARMENT_OUT: readonly [number, number] = [6, 15];
+/** How far out from the garden door the garment lies (m). */
+const GARMENT_OUT = 1.5;
 /** How well the pre-party body is hidden (milestone 4's chance a look there misses it). */
 const BODY_HIDES = 0.9;
 
@@ -308,23 +308,28 @@ function bodySpot(bp: MansionBlueprint, rng: Rng): { at: SpyBody["at"]; place: s
   return { at: { level: 0, x: best.x, z: best.z, room: -1 }, place: best.place };
 }
 
-/** Where the garment lies, half-hidden nearer the house: by the topiary nearest the terrace, the fountain steps or a parterre's edge, 6 to 15 m out. */
-function garmentSpot(bp: MansionBlueprint, rng: Rng): { level: number; x: number; z: number; room: number } {
-  const site = bp.site;
-  const tr = site.terrace.rect;
-  const out = (x: number, z: number) => {
-    const dx = Math.max(tr.x0 - x, 0, x - tr.x1);
-    const dz = Math.max(tr.z0 - z, 0, z - tr.z1);
-    return Math.hypot(dx, dz);
-  };
-  const spots: Array<{ x: number; z: number }> = [];
-  const near = [...site.topiary].sort((a, b) => out(a.x, a.z) - out(b.x, b.z))[0];
-  if (near) spots.push({ x: near.x + near.radius + 0.3, z: near.z });
-  if (site.fountain) spots.push({ x: site.fountain.x, z: site.fountain.z - site.fountain.radius - 0.4 });
-  for (const p of site.parterres) spots.push({ x: rng.range(p.rect.x0, p.rect.x1), z: p.rect.z0 - 0.3 });
-  const ok = spots.filter((s) => out(s.x, s.z) >= GARMENT_OUT[0] && out(s.x, s.z) <= GARMENT_OUT[1]);
-  const s = ok.length ? rng.pick(ok) : { x: rng.range(tr.x0 + 1, tr.x1 - 1), z: tr.z1 + rng.range(GARMENT_OUT[0], GARMENT_OUT[1]) };
-  return { level: 0, x: s.x, z: s.z, room: -1 };
+/**
+ * Where the garment lies: dropped as the spy came back in from the garden, just outside one of the
+ * garden doors onto the terrace (half under a planter by the wall), where guests going out pass:
+ * the terrace spot nearest the door, a little to one side. With no garden door, by the house in the
+ * middle of the terrace.
+ */
+function garmentSpot(bp: MansionBlueprint, places: Places, rng: Rng): { level: number; x: number; z: number; room: number } {
+  const doors: Array<{ x: number; z: number }> = [];
+  for (const w of bp.walls) {
+    if (w.level !== 0 || !w.exterior || w.side !== "garden") continue;
+    for (const o of w.openings) {
+      if (!o.passable) continue;
+      const u = (o.u0 + o.u1) / 2;
+      const out = w.neg === null ? -1 : 1;
+      doors.push(w.axis === "x" ? { x: w.a.x + u, z: w.a.z + out * GARMENT_OUT } : { x: w.a.x + out * GARMENT_OUT, z: w.a.z + u });
+    }
+  }
+  const tr = bp.site.terrace.rect;
+  const at = doors.length ? rng.pick(doors) : { x: (tr.x0 + tr.x1) / 2, z: tr.z0 + GARMENT_OUT };
+  const d = (q: { x: number; z: number }) => Math.hypot(q.x - at.x, q.z - at.z);
+  const s = [...places.terrace].sort((a, b) => d(a) - d(b))[0] ?? at;
+  return { level: 0, x: s.x + rng.range(-0.5, 0.5), z: s.z + rng.range(-0.5, 0.5), room: -2 };
 }
 
 /**
@@ -390,13 +395,13 @@ export function castSpy(rng: Rng, people: readonly Person[], drama: DramaCast, b
   const study = new Float32Array(people.length);
   for (let i = 0; i < people.length; i++) study[i] = r.study.next();
 
-  // Before the party: the victim's body hidden outside, and now and then something they wore half-hidden nearer the house.
+  // Before the party: the victim's body hidden outside, and now and then something they wore dropped on the way back in.
   let body: SpyBody | null = null;
   let garment: SpyCast["garment"] = null;
   if (setup !== "self") {
     const b = bodySpot(bp, r.site);
     body = { who: record.id, at: b.at, place: b.place, hides: BODY_HIDES, t: -r.site.range(20, 90) * 60, how: "before" };
-    if (r.site.chance(GARMENT_SHARE)) garment = { at: garmentSpot(bp, r.site), what: r.site.pick(GARMENT[record.look.sex]), color: r.site.pick(GARMENT_COLORS) };
+    if (r.site.chance(GARMENT_SHARE)) garment = { at: garmentSpot(bp, places, r.site), what: r.site.pick(GARMENT[record.look.sex]), color: r.site.pick(GARMENT_COLORS) };
   }
   return { setup, record: record.id, victim: setup === "self" ? -1 : record.id, goal: { kind, target, first }, own, study, body, garment, bagFor };
 }

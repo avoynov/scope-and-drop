@@ -62,6 +62,45 @@ export function makeProgramme(rng: Rng): Phase[] {
   return out;
 }
 
+/** The phases that give way when one before them starts late: the minglings and the games. */
+export const FLEXIBLE: ReadonlySet<PhaseId> = new Set(["mingle", "games"]);
+/** A flexible phase gives way down to this length (in-game s), never less. */
+export const FLEX_MIN = 300;
+
+/**
+ * How much later phase `i` can start (in-game s): what the flexible phases from it on can give,
+ * each down to FLEX_MIN. The evening never runs past its end.
+ */
+export function phaseSlack(prog: readonly Phase[], i: number): number {
+  let slack = 0;
+  for (let j = Math.max(1, i); j < prog.length; j++) if (FLEXIBLE.has(prog[j]!.id)) slack += Math.max(0, prog[j]!.end - prog[j]!.start - FLEX_MIN);
+  return slack;
+}
+
+/**
+ * Start phase `i` later by `delay` (the host announced it late): the phase before runs on, and
+ * the flexible phases from `i` on give the time back, nearest first, so the evening still ends
+ * when it would have. A fixed phase (the toast, dinner) keeps its length and moves whole. The
+ * delay is capped at what the flexible phases can give; returns the delay applied.
+ */
+export function shiftPhase(prog: Phase[], i: number, delay: number): number {
+  if (i < 1 || i >= prog.length) return 0;
+  const d = Math.round(Math.max(0, Math.min(delay, phaseSlack(prog, i))));
+  if (d <= 0) return 0;
+  let carry = d;
+  prog[i - 1]!.end += d;
+  prog[i]!.start += d;
+  for (let j = i; j < prog.length && carry > 0; j++) {
+    const ph = prog[j]!;
+    // Its start has moved by `carry`; a flexible phase shrinks to take it, down to FLEX_MIN.
+    if (FLEXIBLE.has(ph.id)) carry -= Math.min(carry, Math.max(0, ph.end - (ph.start - carry) - FLEX_MIN));
+    if (carry <= 0 || j + 1 >= prog.length) break;
+    ph.end += carry;
+    prog[j + 1]!.start += carry;
+  }
+  return d;
+}
+
 /** Index of the phase running at `t` (clamped to the programme). */
 export function phaseIndexAt(prog: readonly Phase[], t: number): number {
   if (t < prog[0]!.start) return 0;

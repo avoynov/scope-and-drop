@@ -1,12 +1,14 @@
 /**
- * Knowing each other by sight (milestone 2 technical plan: Recognising people). The innocent
- * half of seeing through a disguise: people remember how those they know look and behave,
- * compare whenever they see them, and an unexplained change grows into a double take, then a
- * friendly test. The real person always passes, so this milestone never goes further;
- * milestone 3 lets an impostor fail.
+ * Knowing each other by sight (milestone 2 technical plan: Recognising people; milestone 3: Seen
+ * through). People remember how those they know look and behave, compare whenever they see them,
+ * and an unexplained change grows into a double take, then a friendly test. The real person
+ * passes (very drunk, now and then fumbles and passes the next); the spy in someone else's record
+ * bluffs or fails. Past a test doubt can grow on: to comparing notes with another of their
+ * friends, and to sure. Manner (a cool greeting, a name not known) and skill (fumbling what they
+ * did easily) add to it too.
  */
 import type { Rng } from "../mansion/core/rng";
-import type { Person, Quirk } from "./types";
+import { SKILLS, type Person, type Quirk, type Skill } from "./types";
 
 /** Features per look: height (cm), build, gait, voice, quirks (bits), drink, outfit hue, outfit state. */
 export const FEATURES = 8;
@@ -30,11 +32,47 @@ export const DOUBLE_TAKE = 0.2;
 export const TEST = 0.45;
 export const COMPARE = 0.6;
 export const SURE = 0.85;
+/** Doubt goes no higher: certain they aren't who they seem. */
+export const MAX_DOUBT = 1;
+
+/** Where each pair stands (`stage`): nothing yet, a double take, a test passed (or bluffed), a test failed, sure. */
+export const NONE = 0;
+export const LOOKED = 1;
+export const PASSED = 2;
+export const FAILED = 3;
+export const SURE_OF = 4;
+
+/** What a test came to: passed, fumbled by someone very drunk (who passes the next), bluffed or failed by an impostor. */
+export type TestOutcome = "passed" | "fumbled" | "bluffed" | "failed";
+/** A very drunk real person fumbles a test this often, past this tipsiness. */
+const FUMBLE = 1 / 7;
+const FUMBLE_TIPSY = 0.7;
+/** Where a failed test leaves doubt: past comparing notes, short of sure. */
+export const FAIL_AT = TEST + 0.3;
+/** After a test, the same pair isn't tested again for this long (in-game s). */
+const RETEST = 10 * 60;
+/** After comparing notes, a doubter looks for someone else to compare with only after this long (in-game s). */
+const RECOMPARE = 5 * 60;
+
+/** The skills a slip can be of: the cast's own, then the way round the house (index HOUSE). */
+export type SlipSkill = Skill | "house";
+export const SLIP_SKILLS: readonly SlipSkill[] = [...SKILLS, "house"];
+export const HOUSE = SKILLS.length;
+/** How well people know the way round: the household, the staff, regulars, everyone else. */
+const KNOWS_HOUSE = { household: 0.95, staff: 0.8, regular: 0.7, first: 0.3 };
+/** A slip counts only when the one watching expected the skill at this or more. */
+export const EXPECT = 0.6;
+/** Doubt from a slip seen: this × tie weight × the skill expected × the gap between that and how they do now (a full gap at SLIP_GAP). */
+const SLIP_DOUBT = 0.15;
+const SLIP_GAP = 0.3;
+/** A greeting colder than the tie calls for, and a name not known, add this × tie weight of doubt. */
+export const COOL = 0.12;
+export const NAME = 0.1;
 
 const QUIRK_BITS: readonly Quirk[] = ["glasses", "limp", "cane", "ear-scratch", "globe-pointer", "dances-after-drink", "hands-in-pockets", "tie-adjust", "big-laugh", "smoker", "watch-check"];
 
 /** What a sighting brings about. */
-export type IdentEvent = "double-take" | "test" | "want-test" | null;
+export type IdentEvent = "double-take" | "test" | "want-test" | "compare" | "sure" | null;
 
 export class Ident {
   readonly n: number;
@@ -46,19 +84,47 @@ export class Ident {
   /** How strongly i feels j is "not themselves", and when it was last brought up to date. */
   readonly doubt: Float32Array;
   private readonly doubtT: Float32Array;
-  /** 0 nothing yet, 1 a double take, 2 tested and passed. */
+  /** Where i stands with j: NONE, LOOKED (a double take), PASSED (a test passed or bluffed), FAILED, SURE_OF. */
   readonly stage: Uint8Array;
   /** Each person's own voice, before drink raises it. */
   private readonly voice: Float32Array;
   /** A test i wants to put to j, or -1. */
   readonly wantTest: Int16Array;
+  /** Someone i wants to compare notes about (doubt past COMPARE after a test), or -1. */
+  readonly wantCompare: Int16Array;
   /** Limping on an ankle turned tonight (dramas.ts): someone hurt, not someone else, so the limp is no part of how they look. */
   readonly hurt: Uint8Array;
-  readonly stats = { doubleTakes: 0, tests: 0, passed: 0, compared: 0, sure: 0, met: 0 };
+  /** How well each person does each skill (SLIP_SKILLS) as the cast drew them, before anyone took their place: what those who know them expect. */
+  readonly expect: Float32Array;
+  /** The record the spy lives in, playing someone (-1 none): the one person here who isn't who they seem. */
+  fake = -1;
+  /** How the impostor answers a test put by i: bluffed or failed (spy/answers.ts). */
+  private answer: ((i: number, t: number) => "bluffed" | "failed") | null = null;
+  /** The party hears of every test and what it came to. */
+  onTest: ((i: number, j: number, out: TestOutcome) => void) | null = null;
+  /** A slip someone is showing (an index into SLIP_SKILLS, -1 none), until when, and its number (each observer counts a slip once). */
+  readonly slipping: Int8Array;
+  readonly slipUntil: Float32Array;
+  private readonly slipNo: Int32Array;
+  private readonly slipSeen: Int32Array;
+  private slips = 0;
+  /** How well each knows the way round now: what they're expected to, but the spy's own for the record it wears. */
+  private readonly house: Float32Array;
+  /** When i last tested j, and when i may next look for someone to compare notes with about j. */
+  private readonly lastTest: Float32Array;
+  private readonly nextCompare: Float32Array;
+  /** i has compared notes with j (once a pair, whomever about). */
+  private readonly compared: Uint8Array;
+  /** A very drunk j fumbled i's test: the next one passes. */
+  private readonly fumbled: Uint8Array;
+  private readonly people: readonly Person[];
+  private readonly rng: Rng;
+  readonly stats = { doubleTakes: 0, tests: 0, passed: 0, fumbled: 0, bluffed: 0, failed: 0, compared: 0, sure: 0, met: 0, slips: 0, cool: 0, names: 0 };
 
   constructor(people: Person[], rng: Rng) {
     const n = people.length;
     this.n = n;
+    this.people = people;
     this.look = new Float32Array(n * FEATURES);
     this.tie = new Uint8Array(n * n);
     this.memLook = new Float32Array(n * n * FEATURES);
@@ -67,7 +133,20 @@ export class Ident {
     this.stage = new Uint8Array(n * n);
     this.voice = new Float32Array(n);
     this.wantTest = new Int16Array(n).fill(-1);
+    this.wantCompare = new Int16Array(n).fill(-1);
     this.hurt = new Uint8Array(n);
+    this.expect = new Float32Array(n * SLIP_SKILLS.length);
+    this.slipping = new Int8Array(n).fill(-1);
+    this.slipUntil = new Float32Array(n);
+    this.slipNo = new Int32Array(n);
+    this.slipSeen = new Int32Array(n * n);
+    this.house = new Float32Array(n);
+    this.lastTest = new Float32Array(n * n).fill(-1e9);
+    this.nextCompare = new Float32Array(n * n);
+    this.compared = new Uint8Array(n * n);
+    this.fumbled = new Uint8Array(n * n);
+    // Draws of its own for the tests, so the ties below come out as they always have.
+    this.rng = rng.fork("test");
     for (const p of people) this.voice[p.id] = (p.look.sex === "f" ? 0.65 : 0.35) + rng.range(-0.1, 0.1);
     for (const p of people) this.refresh(p);
 
@@ -90,6 +169,24 @@ export class Ident {
       for (const f of p.friends) for (const ff of people[f]!.friends) if (ff !== p.id && rng.chance(0.5)) set(p, people[ff]!, 2);
     }
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (this.tie[i * n + j]) this.remember(i, j);
+    // What everyone does well, as they came: the skills, and the way round the house.
+    const S = SLIP_SKILLS.length;
+    for (const p of people) {
+      SKILLS.forEach((k, s) => (this.expect[p.id * S + s] = p.fluency[k]));
+      const home = p === host || (host !== undefined && host.partner === p.id);
+      this.house[p.id] = this.expect[p.id * S + HOUSE] = home ? KNOWS_HOUSE.household : p.staff ? KNOWS_HOUSE.staff : p.regular ? KNOWS_HOUSE.regular : KNOWS_HOUSE.first;
+    }
+  }
+
+  /**
+   * The spy plays this record: the one person here who isn't who they seem. It answers tests
+   * with `answer`, and finds its way round the house as a first-timer, whatever the record's
+   * owner knew.
+   */
+  impostor(id: number, answer: (i: number, t: number) => "bluffed" | "failed"): void {
+    this.fake = id;
+    this.answer = answer;
+    this.house[id] = KNOWS_HOUSE.first;
   }
 
   tieOf(i: number, j: number): Tie {
@@ -175,11 +272,80 @@ export class Ident {
     return this.doubt[k]! * 0.5 ** ((t - this.doubtT[k]!) / DOUBT_HALF);
   }
 
-  /** Something i was told doesn't fit with j being themselves (the register's two places at once). */
-  addDoubt(i: number, j: number, v: number, t: number): void {
+  /**
+   * More doubt for i about j from something besides a look: told something that doesn't fit (the
+   * register's two places at once), a cool greeting, a slip, notes compared. Until they've tested
+   * j it stops short of comparing notes (or of `cap`, when lower), as a look's does.
+   */
+  addDoubt(i: number, j: number, v: number, t: number, cap = Infinity): void {
     const k = i * this.n + j;
-    this.doubt[k] = this.doubtOf(i, j, t) + v;
+    let d = this.doubtOf(i, j, t) + v;
+    if (this.stage[k]! < PASSED) d = Math.min(d, COMPARE - 0.01);
+    this.doubt[k] = Math.max(this.doubtOf(i, j, t), Math.min(d, cap, MAX_DOUBT));
     this.doubtT[k] = t;
+  }
+
+  /** i expected warmth from j (a wave back, a kiss) and got a stranger's greeting: a sulk, or someone who doesn't know them. */
+  cool(i: number, j: number, t: number): void {
+    const tie = this.tie[i * this.n + j]!;
+    if (!tie) return;
+    this.stats.cool++;
+    this.addDoubt(i, j, COOL * TIE_WEIGHT[tie]!, t);
+  }
+
+  /** j didn't know i's name ("he didn't know my name"). */
+  noName(i: number, j: number, t: number): void {
+    const tie = this.tie[i * this.n + j]!;
+    if (!tie) return;
+    this.stats.names++;
+    this.addDoubt(i, j, NAME * TIE_WEIGHT[tie]!, t);
+  }
+
+  // ------------------------------------------------------------------ skill
+
+  /** j fumbles something (an index into SLIP_SKILLS), showing for `secs`: whoever catches it in a look's detail may make something of it. */
+  slip(j: number, skill: number, t: number, secs: number): void {
+    this.slipping[j] = skill;
+    this.slipUntil[j] = t + secs;
+    this.slipNo[j] = ++this.slips;
+  }
+
+  /** The slip j is showing now, if i hasn't caught this one yet: its skill (marked as caught), else -1. */
+  catchSlip(i: number, j: number, t: number): number {
+    const s = this.slipping[j]!;
+    if (s < 0 || t > this.slipUntil[j]!) return -1;
+    const k = i * this.n + j;
+    if (this.slipSeen[k] === this.slipNo[j]) return -1;
+    this.slipSeen[k] = this.slipNo[j]!;
+    return s;
+  }
+
+  /** How well j does a skill now (the spy's own, in a record it wears). */
+  actual(j: number, skill: number): number {
+    return skill === HOUSE ? this.house[j]! : this.people[j]!.fluency[SKILLS[skill]!];
+  }
+
+  /** How well i expects j to do a skill: what j did as the cast drew them (0 for a stranger, who expects nothing). */
+  expected(i: number, j: number, skill: number): number {
+    return this.tie[i * this.n + j] ? this.expect[j * SLIP_SKILLS.length + skill]! : 0;
+  }
+
+  /**
+   * The doubt i takes from seeing j fumble a skill (`k` 0.5 for begging off it): 0.15 × tie weight
+   * × the skill they expected, when that was EXPECT or more, scaled by how far short j now falls
+   * of it, so a real person's fumble (what they always do now and then) counts nothing. Nothing
+   * when they can explain it; and a slip alone never brings a test. Returns the doubt added.
+   */
+  slipDoubt(i: number, j: number, skill: number, t: number, explained: boolean, k = 1): number {
+    const tie = this.tie[i * this.n + j]!;
+    const e = this.expected(i, j, skill);
+    if (!tie || e < EXPECT || explained) return 0;
+    const gap = Math.max(0, Math.min(1, (e - this.actual(j, skill)) / SLIP_GAP));
+    const v = SLIP_DOUBT * TIE_WEIGHT[tie]! * e * gap * k;
+    if (v <= 0) return 0;
+    this.stats.slips++;
+    this.addDoubt(i, j, v, t, this.stage[i * this.n + j]! < PASSED ? TEST - 0.01 : Infinity);
+    return v;
   }
 
   /**
@@ -207,19 +373,23 @@ export class Ident {
     }
     const mis = this.mismatch(i, j, sal, explained, dressed);
     let v = this.doubtOf(i, j, t);
-    // Once someone has passed a test, they're themselves for the rest of the evening.
-    const trust = this.stage[k] === 2 ? 0.2 : 1;
+    const stage = this.stage[k]!;
+    // Once someone has passed a test, they're themselves for the rest of the evening: what still looks off
+    // (an impostor's bluff leaves the difference) counts a fifth. Once they've failed one, the look has
+    // told all it can: only something new (a slip, a name not known, a word from someone else) adds doubt.
+    const trust = stage === PASSED ? 0.2 : stage >= FAILED ? 0 : 1;
     v += 0.08 * TIE_WEIGHT[tie]! * sal * mis * dt * trust;
     // Doubt about someone not yet tested stops short of comparing notes: the test settles it first.
-    if (this.stage[k]! < 2) v = Math.min(v, COMPARE - 0.01);
+    if (stage < PASSED) v = Math.min(v, COMPARE - 0.01);
+    v = Math.min(v, MAX_DOUBT);
     this.doubt[k] = v;
     this.doubtT[k] = t;
-    if (this.stage[k] === 0 && v >= DOUBLE_TAKE) {
-      this.stage[k] = 1;
+    if (stage === NONE && v >= DOUBLE_TAKE) {
+      this.stage[k] = LOOKED;
       this.stats.doubleTakes++;
       return "double-take";
     }
-    if (this.stage[k] === 1 && v >= TEST) {
+    if (stage === LOOKED && v >= TEST && t - this.lastTest[k]! >= RETEST) {
       if (faceToFace && d < 1.5) {
         this.test(i, j, t);
         return "test";
@@ -227,23 +397,78 @@ export class Ident {
       this.wantTest[i] = j;
       return "want-test";
     }
+    if (stage >= PASSED && stage < SURE_OF && v >= SURE) {
+      this.stage[k] = SURE_OF;
+      this.stats.sure++;
+      if (this.wantCompare[i] === j) this.wantCompare[i] = -1;
+      return "sure";
+    }
+    if (stage >= PASSED && stage < SURE_OF && v >= COMPARE && this.wantCompare[i] !== j && t >= this.nextCompare[k]!) {
+      this.wantCompare[i] = j;
+      return "compare";
+    }
     return null;
   }
 
   /**
-   * A beat in conversation: a nickname, a shared joke, an offered drink. The real person always
-   * passes; the doubt goes and the new look becomes the one remembered.
+   * A beat in conversation: a nickname, a shared joke, an offered drink. The real person passes:
+   * the doubt goes and the new look becomes the one remembered; very drunk, one time in seven
+   * they fumble it, and pass the next. The impostor bluffs (it passes on the surface, but the look
+   * isn't remembered, so the doubt climbs again, slowly) or fails, and the doubt jumps.
    */
-  test(i: number, j: number, t: number): boolean {
+  test(i: number, j: number, t: number): TestOutcome {
     const k = i * this.n + j;
     this.stats.tests++;
-    this.stats.passed++;
-    this.doubt[k] = this.doubtOf(i, j, t) * 0.2;
-    this.doubtT[k] = t;
-    this.stage[k] = 2;
+    this.lastTest[k] = t;
     if (this.wantTest[i] === j) this.wantTest[i] = -1;
-    this.remember(i, j);
-    return true;
+    let out: TestOutcome;
+    if (j === this.fake && this.answer) out = this.answer(i, t);
+    else if (this.people[j]!.tipsy > FUMBLE_TIPSY && !this.fumbled[k] && this.rng.chance(FUMBLE)) out = "fumbled";
+    else out = "passed";
+    const v = this.doubtOf(i, j, t);
+    if (out === "passed") {
+      this.stats.passed++;
+      this.doubt[k] = v * 0.2;
+      this.stage[k] = PASSED;
+      this.remember(i, j);
+    } else if (out === "fumbled") {
+      this.stats.fumbled++;
+      this.fumbled[k] = 1;
+      this.doubt[k] = Math.min(COMPARE - 0.01, v + 0.1);
+    } else if (out === "bluffed") {
+      this.stats.bluffed++;
+      this.doubt[k] = v * 0.5;
+      this.stage[k] = PASSED;
+    } else {
+      this.stats.failed++;
+      // The test settles what the look raised: whatever it had built up, a blank look leaves doubt at
+      // FAIL_AT, past comparing notes and short of sure, which needs something more.
+      this.doubt[k] = Math.max(v, FAIL_AT);
+      if (this.stage[k]! < FAILED) this.stage[k] = FAILED;
+    }
+    this.doubtT[k] = t;
+    this.onTest?.(i, j, out);
+    return out;
+  }
+
+  /** i compared notes about someone with j: once a pair (either way round), and i looks for someone else only a while later. */
+  comparedWith(i: number, j: number, about: number, t: number): void {
+    this.compared[i * this.n + j] = 1;
+    this.compared[j * this.n + i] = 1;
+    this.stats.compared++;
+    if (this.wantCompare[i] === about) this.wantCompare[i] = -1;
+    this.nextCompare[i * this.n + about] = t + RECOMPARE;
+  }
+
+  /** Whether i has compared notes with j yet. */
+  hasCompared(i: number, j: number): boolean {
+    return this.compared[i * this.n + j] === 1;
+  }
+
+  /** Nobody left to compare notes with about j for now: i looks again a while later. */
+  noneToCompare(i: number, about: number, t: number): void {
+    if (this.wantCompare[i] === about) this.wantCompare[i] = -1;
+    this.nextCompare[i * this.n + about] = t + RECOMPARE;
   }
 }
 

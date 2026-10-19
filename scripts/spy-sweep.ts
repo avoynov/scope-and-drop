@@ -140,9 +140,9 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     ["Innocent twins", "1 per 5 real min, ≥ soft tells", `${twinsRate.toFixed(2)} per 5 real min; ${mean(rs.map((r) => r.twins)).toFixed(1)} a night against ${soft.toFixed(1)} soft tells`],
     ["A guest sees a hard tell", "~1 evening in 15 to 20", "– (PR 3: no hard tells yet)"],
     ["A hard tell in a perch's view", "1 evening in 3 or more", "– (PR 3)"],
-    ["Playing someone: tested by the end of dinner", "60% or more", `${pct(playing.filter((r) => r.tested).length, playing.length)} of ${playing.length} (tests always pass until PR 2)`],
-    ["Playing someone: someone sure by the last toast", "30 to 60%", `${pct(playing.filter((r) => r.sure).length, playing.length)} of ${playing.length} (PR 2 adds the slips and comparing notes)`],
-    ["An innocent confronted", "slightly under 1 in 20", "– (PR 2)"],
+    ["Playing someone: tested by the end of dinner", "60% or more", `${pct(playing.filter((r) => r.tested).length, playing.length)} of ${playing.length}`],
+    ["Playing someone: someone sure by the last toast", "30 to 60%", `${pct(playing.filter((r) => r.sure).length, playing.length)} of ${playing.length}`],
+    ["An innocent confronted", "slightly under 1 in 20", `${pct(rs.filter((r) => r.innocentConfronted > 0).length, n)} of ${n} evenings`],
     ["Spy in the crowd's top three when its goal left a trace", "half or more", "– (PR 3)"],
     [
       "One evening, headless",
@@ -194,6 +194,26 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
   L.push(
     `tells: out of step ${mean(steps.map((s) => s.length)).toFixed(1)} a night (seen by someone ${pct(steps.flat().filter((x) => x.seen).length, steps.flat().length)}) · the garment in ${garment.length} of ${playing.length} pre-party evenings`,
   );
+
+  // Seen through.
+  const night = (f: (r: EveningResult) => number, of: readonly EveningResult[] = playing) => mean(of.map(f)).toFixed(1);
+  L.push("");
+  L.push(`seen through, a night playing someone (${playing.length} evenings):`);
+  L.push(
+    `  tests of it ${night((r) => r.spyTests.bluffed + r.spyTests.failed)} (bluffed ${night((r) => r.spyTests.bluffed)}, failed ${night((r) => r.spyTests.failed)}) · notes compared about it ${night((r) => r.compared)}`,
+  );
+  L.push(`  sure of it ${night((r) => r.sureOfSpy)}: out loud ${night((r) => r.outLoud)} · backed away and told ${night((r) => r.told)} · kept silent ${night((r) => r.silent)}`);
+  L.push(`  slips that added doubt ${night((r) => r.slips)} · cool greetings ${night((r) => r.cool)} · names it didn't know ${night((r) => r.names)} · begged off ${night((r) => r.begOffs)}`);
+  L.push(
+    `innocents: someone sure of one in ${rs.filter((r) => r.innocentSure > 0).length} of ${n} evenings, confronted in ${rs.filter((r) => r.innocentConfronted > 0).length} · tours asked of the host ${night((r) => r.tourAsks, rs)} a night`,
+  );
+  const hosts = rs.filter((r) => r.setup === "host");
+  if (hosts.length)
+    L.push(
+      `playing the host (${hosts.length}): prompted ${night((r) => r.prompts, hosts)} times a night · tours asked ${night((r) => r.tourAsks, hosts)}, turned down ${night((r) => r.toursRefused, hosts)}`,
+    );
+  const withGarment = rs.filter((r) => r.garment);
+  if (withGarment.length) L.push(`the garment found in ${withGarment.filter((r) => r.finds > 0).length} of the ${withGarment.length} evenings with one`);
 
   // By arrival.
   L.push("");

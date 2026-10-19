@@ -354,7 +354,7 @@ export type EventKind =
   | "light"
   /** Someone looked twice at someone they know who didn't seem quite themselves. */
   | "double-take"
-  /** A friendly test (a nickname, a shared joke) put to someone who seemed not themselves (note 'passed'). */
+  /** A friendly test (a nickname, a shared joke) put to someone who seemed not themselves (note: 'passed', 'fumbled' by someone very drunk, 'bluffed' or 'failed' by an impostor). */
   | "test"
   /** A speaker passed something on (note: the verb; actors: speaker, then listeners). */
   | "gossip"
@@ -420,8 +420,19 @@ export type EventKind =
   | "habit"
   /** The spy's own doings, for the lab and hidden there until the reveal (note: e.g. 'cue:dinner', 'leave'; actors: the spy's record). */
   | "spy"
-  /** Someone reacting to someone out of step (note: 'beckon', 'glass', 'point'; actors: who reacted, then whom). */
-  | "react";
+  /**
+   * Someone reacting to someone else: out of step ('beckon', 'glass', 'point'), a fumble of what they do well ('frown', 'help', 'puzzled'), a
+   * request turned down ('shrug', or the host's 'later' to a tour) and asked again ('ask-again'), a greeting cooler than their tie ('cool'), a
+   * name they didn't know ('name'), the host prompted by the household ('prompt'), and something of a guest's found outside ('garment');
+   * actors: who reacted, then whom (for 'garment', the finder, then whose it is when they know).
+   */
+  | "react"
+  /**
+   * Seeing through someone (milestone 3): sure at last ('sure'), and what the doubter did about it: confronting them out loud ('out-loud'),
+   * backing away ('backed-away') to tell someone ('told'), or saying nothing and keeping away ('silent'); and notes compared ('compare').
+   * Actors: the doubter, then whom about; for 'compare' and 'told', the doubter, the listener, then whom about.
+   */
+  | "challenge";
 
 export interface PartyEvent {
   t: number;

@@ -12,6 +12,7 @@
         --line: rgba(233, 228, 216, 0.14);
         --panel: rgba(12, 14, 20, 0.74);
         --accent: #e0b56a;
+        --spy: #e2786a;
       }
       html, body { margin: 0; height: 100%; background: #07080c; color: var(--ink); font: 12px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; overflow: hidden; }
       canvas { display: block; }
@@ -71,6 +72,19 @@
       .label { color: var(--muted); }
       #evfilter { padding: 3px 6px; }
       body.plan #plan-hint { display: block; color: var(--muted); }
+      /* The spy (spy.ts): the reveal, the goal odds, and its card once revealed. */
+      #spy { border-top: 1px solid var(--line); padding-top: 8px; margin-bottom: 8px; }
+      #spy .row { margin-bottom: 4px; }
+      #spy .odds { display: grid; grid-template-columns: 14px 1fr 54px 6.5em; gap: 3px 6px; align-items: center; margin-top: 6px; }
+      #spy .odds input[type='number'] { padding: 2px 4px; }
+      #spy .odds input[type='checkbox'] { margin: 0; accent-color: var(--accent); }
+      #spy button:disabled { cursor: default; opacity: 0.6; }
+      #spycard { display: none; border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-bottom: 8px; color: var(--muted); max-height: 40vh; overflow: auto; flex: none; }
+      #spycard.on { display: block; }
+      #spycard .spyname { background: none; border: none; padding: 0; font-size: 14px; color: var(--spy); margin-bottom: 2px; }
+      #spycard.picked .spyname { text-decoration: underline; }
+      .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+      .person.spy .who { color: var(--spy); }
       #busy { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: none; z-index: 3; }
       #busy.on { display: block; }
       body.shot:not(.ui) #panel, body.shot:not(.ui) #side { display: none; }
@@ -97,6 +111,7 @@
       <div class="row" id="overlays" title="Overlays on the plan; sight, the map and suspicion follow whoever is picked"></div>
       <div class="row" id="plan-hint">scroll to zoom; drag to move; double-click to reset; click a marker to pick</div>
       <div class="row" id="mood" title="Nudge the mood from now on; the evening's own rules take over after"><span class="label">mood</span></div>
+      <div id="spy" title="The spy: who it is stays hidden until you reveal it"></div>
       <div class="row"><span class="label">log</span><select id="evfilter" aria-label="Which events to show"></select></div>
       <div id="events"></div>
       <div id="stats"></div>
@@ -113,6 +128,7 @@
         <div class="row"><select id="card" aria-label="A small drama to play now" title="A small drama from the deck: with this person in it if they fit, else whoever it picks"></select><button id="play" title="Play the drama now">play</button></div>
         <div id="needs"></div>
       </div>
+      <div id="spycard"></div>
       <h2>People</h2>
       <div id="people"></div>
     </div>

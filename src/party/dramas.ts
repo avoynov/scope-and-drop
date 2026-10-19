@@ -146,6 +146,8 @@ export interface DramasHost {
   readonly t: number;
   readonly bp: MansionBlueprint;
   readonly people: Person[];
+  /** The record the spy lives in, or -1: it never leads a card and never faints. */
+  readonly spyId: number;
   readonly programme: Phase[];
   readonly phaseId: PhaseId;
   readonly places: Places;
@@ -1003,7 +1005,7 @@ export class Dramas {
   /** Hot, crowded or tipsy: a sit, a friend fanning them, then the terrace for air. */
   private faint(p: Person, near: number, forced: boolean): boolean {
     const h = this.host;
-    if (!forced && near < 2 && p.tipsy < 0.5) return false;
+    if (p.id === h.spyId || (!forced && near < 2 && p.tipsy < 0.5)) return false;
     h.gesture(p, "startle", 1);
     h.notable(p, "fainted", -1, 120);
     h.memory.observe(p.id, "fainted", p.id, -1, p.room);
@@ -1463,9 +1465,10 @@ export class Dramas {
     return c.length ? this.rng.weighted(c) : null;
   }
 
-  /** Free guests present, not the host. */
+  /** Free guests present, not the host; never the spy, who keeps out of the lead of any card. */
   private freeGuests(): Person[] {
-    return this.host.people.filter((q) => !q.staff && q.role !== "host" && this.available(q));
+    const h = this.host;
+    return h.people.filter((q) => !q.staff && q.role !== "host" && q.id !== h.spyId && this.available(q));
   }
 
   /**
@@ -1480,7 +1483,7 @@ export class Dramas {
     for (const a of who ? [who] : this.freeGuests()) {
       if (a.partner === null || (!who && a.partner < a.id)) continue;
       const b = h.people[a.partner]!;
-      if (b.role === "host" || !this.available(b) || h.bonds.apart[a.id]) continue;
+      if (b.role === "host" || b.id === h.spyId || !this.available(b) || h.bonds.apart[a.id]) continue;
       const eye = (x: Person) => (h.people.some((q) => q.id !== x.partner && q !== x && h.bonds.flirtOf(x.id, q.id) >= 0.15) ? 0.5 : 0);
       const v = a.tipsy + b.tipsy + 2 * (h.mood.tension[a.id]! + h.mood.tension[b.id]!) + eye(a) + eye(b) + this.rng.range(0, 0.1);
       if ((who || v >= QUARREL_FROM) && (!best || v > best[2])) best = [a, b, v];
@@ -1603,7 +1606,7 @@ export class Dramas {
     const p =
       who ??
       this.choose(
-        diners.filter((q) => q.role !== "host" && !q.staff && q.traits.talk >= 0.6),
+        diners.filter((q) => q.role !== "host" && !q.staff && q.id !== h.spyId && q.traits.talk >= 0.6),
         (q) => q.traits.talk + q.tipsy + bonus(q),
       );
     if (!p || p.action?.id !== "dinner") return false;
@@ -1761,7 +1764,7 @@ export class Dramas {
   private piano(who?: Person): boolean {
     const h = this.host;
     const pianos = h.places.games.filter((g) => g.kind === "piano");
-    const playing = h.people.find((q) => q.present && q.pose === "play" && q.action?.note === "piano");
+    const playing = h.people.find((q) => q.present && q.pose === "play" && q.action?.note === "piano" && q.id !== h.spyId);
     const near = (q: Person, g: (typeof pianos)[number]) => Math.hypot(g.spots[0]!.x - q.x, g.spots[0]!.z - q.z) + 15 * Math.abs(g.spots[0]!.level - q.level);
     const player = who ?? playing ?? this.choose(this.freeGuests(), (q) => (q.role === "pianist" ? 4 : q.fluency.piano >= 0.5 ? 1 : q.traits.talk >= 0.7 ? 0.2 : 0));
     if (!player || !pianos.length) return false;
@@ -2297,6 +2300,11 @@ export class Dramas {
       const e = this.episodes[d.e]!;
       const p = h.people[d.who]!;
       if (e.done || !p.present || p.gone) continue;
+      // Already on the way out (going home ended the action): they take it home with them.
+      if (p.action?.id === "leave" || h.tasks.of(p)?.kind === "leave") {
+        this.close(e);
+        continue;
+      }
       if (d.air) {
         h.end(p, false);
         h.start(p, { id: "terrace", target: d.air, duration: this.rng.range(300, 600), pose: "stand", gain: { air: 0.8, rest: 0.3 } });

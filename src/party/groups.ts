@@ -12,7 +12,7 @@ import type { Candidate, MindWorld } from "./mind";
 import type { Pathfinder } from "./path";
 import { yawTo } from "./places";
 import { SUSPICIOUS, WARY, type Memory } from "./memory";
-import { TIE_WEIGHT, type Ident } from "./ident";
+import { TIE_WEIGHT, type Ident, type Tie } from "./ident";
 import type { ActionState, Gesture, Group, PartyEvent, Person, Pose, Spot } from "./types";
 import type { Verb } from "./memory";
 
@@ -55,6 +55,8 @@ export interface GroupsHost {
   shuns(p: Person, j: number): boolean;
   /** How much more p wants to join a circle with j in it for the bonds (noticing, flirting). */
   joinPull(i: number, j: number): number;
+  /** The tie i greets j by: the ident's, or for the spy its own idea of it (what it studied of its victim's people). */
+  tieFor(i: number, j: number): Tie;
 }
 
 /** Room kept between one conversation's ring and the next one started (m). */
@@ -419,14 +421,14 @@ export class Groups {
     const people = h.people;
     for (const j of h.seenLast(p.id)) {
       const q = people[j]!;
-      if (q.staff || q === p || this.hasGreeted(p.id, j) || h.ident.tieOf(p.id, j) < 2 || q.level !== p.level) continue;
+      if (q.staff || q === p || this.hasGreeted(p.id, j) || h.tieFor(p.id, j) < 2 || q.level !== p.level) continue;
       const d = Math.hypot(q.x - p.x, q.z - p.z);
       if (d > GREET_RANGE) continue;
       this.markGreeted(p.id, j);
       h.gesture(p, "wave", 2);
       h.glance(p, q.x, q.z, 2);
       // Close friends and family, or anyone they're fond of, come over; acquaintances just wave.
-      if (free && d > 1.6 && (h.ident.tieOf(p.id, j) >= 3 || this.rng.chance(0.3)) && q.action?.id !== "toilet" && q.action?.id !== "leave") return j;
+      if (free && d > 1.6 && (h.tieFor(p.id, j) >= 3 || this.rng.chance(0.3)) && q.action?.id !== "toilet" && q.action?.id !== "leave") return j;
       this.stats.greetings++;
       h.log("greet", [p.id, j], p.room, "wave");
       return -1;
@@ -434,9 +436,9 @@ export class Groups {
     return -1;
   }
 
-  /** Close enough: a handshake or a kiss on the cheek by how well they know each other. */
+  /** Close enough: a handshake or a kiss on the cheek by how well they know each other (the cooler of the two, when one is the spy). */
   greetPose(p: Person, q: Person): Pose {
-    const tie = this.host.ident.tieOf(p.id, q.id);
+    const tie = Math.min(this.host.tieFor(p.id, q.id), this.host.tieFor(q.id, p.id));
     const twoMen = p.look.sex === "m" && q.look.sex === "m";
     return tie >= 3 && !twoMen ? "kiss" : "shake";
   }

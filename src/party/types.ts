@@ -417,7 +417,11 @@ export type EventKind =
   /** A small drama from the evening's deck (note: the card, then ':' and its beat; actors: its cast). */
   | "drama"
   /** An oddball's habit, seen once more (note: the habit, then ':' and what they did; actors: the oddball, then whom it involved). */
-  | "habit";
+  | "habit"
+  /** The spy's own doings, for the lab and hidden there until the reveal (note: e.g. 'cue:dinner', 'leave'; actors: the spy's record). */
+  | "spy"
+  /** Someone reacting to someone out of step (note: 'beckon', 'glass', 'point'; actors: who reacted, then whom). */
+  | "react";
 
 export interface PartyEvent {
   t: number;

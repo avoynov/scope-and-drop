@@ -6,7 +6,8 @@
  * t is minutes after 19:00 (or a clock time such as 20:30); speed multiplies the
  * game's own pace, where 1x plays the three-hour party in one real hour. ov turns on
  * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
- * tension and energy= scales everyone's energy at time t.
+ * tension and energy= scales everyone's energy at time t. The spy is on: spy=0 turns it off,
+ * and setup=, goal=, odds=, steal= and reveal=1 pin its draws and show it (see spy.ts).
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -14,7 +15,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { generateMansion, type MansionBlueprint, type MansionOptions } from "../../src/mansion";
+import { generateMansion, terrainHeight, type MansionBlueprint, type MansionOptions } from "../../src/mansion";
 import { buildMansion, type BuiltMansion, type Quality } from "../../src/mansion/build";
 import { createGradePass } from "../../src/mansion/build/grade";
 import { clockLabel, LIGHT_OFF, MOVABLE_CURTAINS, Party, PARTY_LENGTH, PARTY_START, phaseIndexAt, STEP, TIME_SCALE, type PhaseId } from "../../src/party";
@@ -31,6 +32,7 @@ import { Fixtures } from "../../src/party/render/fixtures";
 import type { TaskKind } from "../../src/party/tasks";
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
 import { labelForms } from "../briefing";
+import { SpyLab } from "./spy";
 
 type View = "scope" | "wide" | "plan" | "orbit";
 
@@ -73,6 +75,19 @@ composer.addPass(new OutputPass());
 const $ = (id: string) => document.getElementById(id)!;
 const seedInput = $("seed") as HTMLInputElement;
 seedInput.value = params.get("seed") ?? "gala-night";
+// The spy's panel: a change to its odds builds the evening afresh in the same house.
+const spyLab = new SpyLab(
+  params,
+  {
+    rebuild: () => {
+      newParty();
+      refreshPanel();
+    },
+    select: (id) => select(id),
+  },
+  $("spy"),
+  $("spycard"),
+);
 
 const LEVEL_NAMES = ["ground", "first", "second", "third"];
 const PHASE_COLOR: Record<PhaseId, string> = {
@@ -454,6 +469,7 @@ function newParty(): void {
     provoke: planted,
     mood: nudges,
     profile: params.has("profile"),
+    spy: spyLab.option(),
   });
   if (crowd) {
     scene.remove(crowd.root);
@@ -653,8 +669,9 @@ function frameStates(): FrameState[] {
   });
 }
 
-/** What lies on the floor: broken glass and a vase in pieces until swept up, wine on the carpet until scrubbed, things lost until found. */
+/** What lies on the floor: broken glass and a vase in pieces until swept up, wine on the carpet until scrubbed, things lost until found, and the garment the spy left on the lawn. */
 function litter(): Array<Litter & { room: number }> {
+  const garment = party.spy?.garment;
   const items = party.world.items;
   const out: Array<Litter & { room: number }> = [];
   for (let i = 0; i < items.n; i++) {
@@ -668,13 +685,14 @@ function litter(): Array<Litter & { room: number }> {
           : "glass"
         : kind === "stain" && state === "down"
           ? "stain"
-          : state === "lost" && (kind === "bag" || kind === "spectacles" || kind === "earring")
+          : state === "lost" && (kind === "bag" || kind === "spectacles" || kind === "earring" || kind === "garment")
             ? kind
             : null;
     if (!k) continue;
     const room = items.room[i]!;
-    const y = room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[items.level[i]!]?.floorY ?? 0);
-    out.push({ kind: k, x: items.x[i]!, y, z: items.z[i]!, yaw: (i * 2.39996) % (Math.PI * 2), room });
+    const [x, z] = [items.x[i]!, items.z[i]!];
+    const y = k === "garment" ? terrainHeight(bp.site.terrain, x, z) : room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[items.level[i]!]?.floorY ?? 0);
+    out.push({ kind: k, x, y, z, yaw: (i * 2.39996) % (Math.PI * 2), room, color: garment?.item === i ? garment.color : undefined });
   }
   return out;
 }
@@ -803,6 +821,8 @@ function drawOverlays(states: FrameState[]): void {
   const pxPerM = h / (2 * planFrame().half);
   const t = party.t;
   const sel = party.people[selected];
+  // Maps stay hidden until the spy is revealed (spy.ts mapsShown).
+  const mapSel = spyLab.mapsShown ? sel : undefined;
   const here = (i: number): [number, number] | null => {
     const p = party.people[i];
     const st = states[i];
@@ -817,18 +837,18 @@ function drawOverlays(states: FrameState[]): void {
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     // The room's name sits at its top edge; these go in the middle, one above the other when there's room.
-    const both = overlays.has("mood") && overlays.has("map") && sel && y1 - y0 > 64;
+    const both = overlays.has("mood") && overlays.has("map") && mapSel && y1 - y0 > 64;
     const fits = y1 - y0 > 40 ? x1 - x0 - 4 : 0;
     if (overlays.has("mood")) {
       const m = party.mood.room(i);
       if (m) {
         octx.fillStyle = `rgba(${MOOD_RGB[m.label]}, 0.16)`;
         octx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        if (both || !(overlays.has("map") && sel)) chip(m.label, cx, cy + (both ? 9 : 4), `rgb(${MOOD_RGB[m.label]})`, fits);
+        if (both || !(overlays.has("map") && mapSel)) chip(m.label, cx, cy + (both ? 9 : 4), `rgb(${MOOD_RGB[m.label]})`, fits);
       }
     }
-    if (overlays.has("map") && sel) {
-      const k = party.familiarity(sel, i);
+    if (overlays.has("map") && mapSel) {
+      const k = party.familiarity(mapSel, i);
       // Rooms they couldn't find their way to go dark.
       octx.fillStyle = k < KNOWN ? "rgba(0, 0, 0, 0.5)" : `rgba(120, 180, 255, ${0.06 + 0.22 * k})`;
       octx.fillRect(x0, y0, x1 - x0, y1 - y0);
@@ -1237,7 +1257,7 @@ function mindText(p: Person): string {
   for (let r = 0; r < bp.rooms.length; r++) if (party.familiarity(p, r) >= KNOWN) known++;
   lines.push(`energy ${pct(party.energy(p))} · tension ${pct(party.tension(p))}`);
   const tie = party.memory.household[p.id] ? "lives here" : p.staff ? "works here" : p.regular ? "been here before" : "first time here";
-  lines.push(`${tie} · knows ${known} of ${bp.rooms.length} rooms`);
+  lines.push(spyLab.mapsShown ? `${tie} · knows ${known} of ${bp.rooms.length} rooms` : tie);
   const top = (f: (q: Person) => number, min: number, k: number) =>
     party.people
       .filter((q) => q !== p)
@@ -1325,16 +1345,19 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "mishap",
     "drama",
     "habit",
+    "react",
+    "spy",
   ]),
   gossip: new Set(["gossip"]),
   "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
   noticing: new Set(["double-take", "test", "hush", "heard"]),
   "finding the way": new Set(["wrong-turn", "ask"]),
   "the house": new Set(["bathroom-taken", "knock", "bump", "light"]),
-  programme: new Set(["phase", "announce", "arrive", "leave", "toast", "beat"]),
+  programme: new Set(["phase", "announce", "arrive", "leave", "toast", "beat", "react"]),
   "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
   "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
   "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
+  "the spy": new Set(["spy", "react"]),
 };
 let logFilter = params.get("log") ?? "the evening";
 if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
@@ -1450,6 +1473,9 @@ function eventText(e: PartyEvent): string {
     case "drama":
     case "habit":
       return troubleText(e, n);
+    case "spy":
+    case "react":
+      return spyLab.eventText(e, n) ?? e.kind;
     default:
       return e.kind;
   }
@@ -1588,8 +1614,8 @@ function refreshPanel(): void {
   const kinds = LOG_FILTERS[logFilter]!;
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
-    // Bumps are many; only one that slops a drink is worth a line.
-    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop")) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    // Bumps are many; only one that slops a drink is worth a line. The spy's own doings wait for its reveal.
+    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop") && !spyLab.hides(e)) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
   $("events").textContent = lines.join("\n");
 
@@ -1607,6 +1633,7 @@ function refreshPanel(): void {
     `${st.spats} spats · ${st.rows} rows · ${st.fellOut} fell out · ${st.madeUp} made up · ${st.pulled} pulled onto the floor · ${st.staffFriends} staff friendships · ${st.slipAways} slipped away`,
     `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     troubleStats(),
+    `${st.late} late for the programme · ${st.beckons} beckoned in · ${st.points} pointed the way · ${st.flutes} brought a flute`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile
@@ -1624,7 +1651,9 @@ function refreshPanel(): void {
     r.doing.textContent = describe(p);
     r.b.classList.toggle("away", !p.present);
     r.b.classList.toggle("sel", i === selected);
+    r.b.classList.toggle("spy", spyLab.revealed && party.spy?.id === i);
   });
+  spyLab.refresh(party, selected, refreshPanel);
 
   const card = $("detail");
   const p = party.people[selected];

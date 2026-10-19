@@ -1,6 +1,6 @@
 # The party
 
-`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, knowing each other by sight, and the register in which guests connect the dots. Everyday life: what the house offers, conversation circles, the evening's rituals, errands, tours, searches, the photographer and the band, and a staggered goodbye. Ties: flirting, couples, friendships, affairs, rows and fallings-out. Trouble: mishaps, a few oddballs and the evening's small dramas. The spy and the endings come next.
+`src/party/` plays one evening at a generated mansion: 20–30 guests, the staff and a host, through a fixed programme from 19:00 to 22:00. It is milestone 1 (party core) of the design spec, [Guests and the Spy](https://claude.ai/code/artifact/e2c50e9e-e5fd-40d7-ba1f-e5b112831f52), plus milestone 2 ([milestone 2 plan](https://claude.ai/code/artifact/51e90a8d-8fe8-46ef-bbf4-b123ab4e2ebe), [technical plan](https://claude.ai/code/artifact/4a53e787-fa10-481d-a66b-d0db163eca77)). Things: doors that lock, curtains, light switches, glasses and coats, bathrooms with a queue, six drinks and tipsiness. Minds that notice: sight and hearing, what each person knows and passes on, suspicion, the house as each person knows it (wrong turns, asking the way), the mood, knowing each other by sight, and the register in which guests connect the dots. Everyday life: what the house offers, conversation circles, the evening's rituals, errands, tours, searches, the photographer and the band, and a staggered goodbye. Ties: flirting, couples, friendships, affairs, rows and fallings-out. Trouble: mishaps, a few oddballs and the evening's small dramas. Milestone 3 ([plan](https://claude.ai/code/artifact/68947424-84c2-4a3a-875a-39de07a902c9), [technical plan](https://claude.ai/code/artifact/4ad4277a-d8d9-4ba2-894e-9d8eec7d2324)) has begun: the spy arrives, as itself or as someone it killed before the party, and lives the evening as an ordinary guest. Its slips, its goal and the endings come next.
 
 ![party lab, plan view](images/party-plan.jpg)
 
@@ -18,6 +18,11 @@ party.body.stats;                // bathroom, bar and bump counts
 party.stats;                     // { told, overheard, doubleTakes, tests, wrongTurns, asks, hushes, … }
 party.familiarity(party.people[7], 4); // 0..1, how well they know room 4 now
 party.suspects(7, 12);           // 0..1, how much person 7 suspects person 12
+
+const evening = new Party(generateMansion({ seed: 'gala-night' }), { spy: true });
+evening.spy?.record.name;        // whose record it lives in tonight
+evening.spy?.setup;              // 'self', 'victim', 'host' or 'waiter'
+evening.spy?.goal.kind;          // 'kill', 'statuette', 'safe', 'bag', 'bug' or 'ledger'
 ```
 
 The same blueprint and seed always give the same evening. Everything is plain data, so a run can be stepped headless, hashed (`party.digest()`) and replayed.
@@ -293,6 +298,36 @@ The evening's innocent trouble: accidents anyone can have, the few oddballs who 
 
 The new facts are innocent: a twisted ankle, fainted, broke something, lost something, crying, drunk; and one that is a little odd, camera-shy. A stain, a bandage or a borrowed jacket doesn't make anyone who knows of the spill or the cut look twice (`ident.ts`: the colour and state terms count a fifth, and the memory catches up); on anyone else they do. A limp from an ankle turned tonight is no part of how anyone looks: someone hurt, not someone else. Glass breaking and a vase smashing are loud (and a crash is a fact); a locked door rattling is heard close by.
 
+## The spy (`spy/`)
+
+Milestone 3 puts a spy among the guests. Its first part, "the spy arrives", makes it come and live the evening as an ordinary guest; its slips, covers, goal plans, the bodies and the endings come in the parts after it. The `spy` option is off by default, and then none of this is built and the evening is milestone 2's but for the reactions (below), which run on every evening. `new Party(bp, { spy: true })` draws everything; `{ setup, goal, odds, steal, target }` pin parts of it, and a value that doesn't fit (a setup the cast can't give, a goal the house can't hold) is dropped so that draw is made as usual. `party.spy` is the spy: the record it lives in, how it came, its goal, what it knows and what it has given away.
+
+**How it comes (`spy/cast.ts`).** Cast before anyone knows anyone, from its own fork, so every other draw of the evening comes out as it would without it. It comes as itself in 55% of evenings and otherwise as someone it killed before the party: the host in 55% of the evenings the host has no partner, then a waiter one time in ten, else a guest. Over 2,000 casts: as itself 54%, as a guest 32%, the host 11%, a waiter 3%.
+
+- As itself it takes over a guest who came alone, with no archetype, not an oddball or the stranger, rather one with few friends. Nobody here knows it: the record's friendships are cut both ways, it has never been to the house and it keeps the steadier head. When nobody alone is ordinary (8% of these evenings) it takes one whose archetype is only a manner (the young one, the life of the party, the gossip, the bore, the flirt) and drops the manner. In about 3% of casts nobody alone fits at all, and it comes as a guest instead.
+- Playing someone, the victim is a guest who is not the host's partner, an oddball or the stranger and has no archetype (the evening's special parts are allowed), much rather someone alone (a partnered guest counts 0.1) with few friends and not a regular.
+- Its goal is one of six by the plan's shares, kill 35, the statuette 15, the safe 15, a bag 10, a bug 15 and the ledger 10, with a goal the house can't hold (no safe in a study, no ledger, no mantel or console for a statuette) at 0 and the rest scaled. A kill steals something first half the time: the papers from the target's bag, or their phone from their coat on its hook or their pocket (the host's pocket). The target of a bag, or of a kill that steals from one, is given a bag at the door when the usual draw gives none. The goal waits for its plan (PR 3).
+- Its own body and mind are drawn like any guest's with a steadier head: nerves at most 0.3, sociability 0.4 to 0.6, thirst at most 0.35, propriety about 0.8. Playing someone it is the victim's sex nine times in ten, within 15 cm of their height (sd 5 cm) and close to their build (sd 0.15); its skills are its own, 0.2 to 0.5, and it has four knacks nobody else has (a lock, the safe, a quiet kill, palming small things, 0.6 to 0.9). A limp of its own slows it by a quarter.
+- Before the party: the victim's body lies behind the topiary or parterre hedge farthest from the terrace lamps (or under the trees), 20 to 90 minutes before 19:00. In a third of those evenings (36% of 2,000 casts) something the victim wore, a scarf, a glove or a pocket square in a colour no outfit has, lies half-hidden 6 to 15 m out from the terrace: the garment, a trace from the start. Nobody picks it up yet (PR 2).
+
+**The swap (`spy/swap.ts`).** Playing someone, the record keeps who the person is to everyone else: the name, the role, the clothes, the partner and friends, the seat, the coat and every memory anyone has of them. Its body and mind become the spy's: height, build, walk and habits, traits, skills, temper (`Bonds.setTemper`) and voice (`Ident.recast`). Having studied the victim it copies what can be copied, the smoking and the favourite drink. Everyone still remembers the victim's height, voice and habits, so the difference shows from the first look through milestone 2's own machinery: the victim's partner's doubt passes 0.2 in the first hour in the test.
+
+**Whom it knows.** Before the party it watched some of its victim's people: an acquaintance 10% of the time, a friend 35%, a close friend 50%, the partner 90%, and each of the staff 80% when it plays the host. Those it knows by sight and name, and believes as close as their tie with the victim; everyone else it learns tonight, by sight only. It greets by its own idea of the tie: the record's for those it believes close and for any tie made tonight, none for anyone else however well they knew the victim, and a greeting takes the cooler of the two ties, so it never kisses a cheek it doesn't know it should.
+
+**Its map.** It has never been here: it knows the entrance hall and the rooms off it as a first-timer does, and the way from the door to each room its goal needs, learnt before it came (0.8). Playing the host it is still one of the household, but its map is its own (`memory.ownMap`), so it can take a wrong turn and ask the way.
+
+**Following the programme (`spy/cues.ts`).** It has no programme of its own. It catches each change from the host's announcement, if it hears it (a 90 dB sound put to the sound model with `senses.wouldHear`, which queues nothing and turns no heads), or from the room moving, if it sees three people acting on the new phase (a flute in hand counts in the champagne). Then it moves with the crowd's tail: 60 to 150 s after an announcement it heard, 1.5 to 3 minutes after seeing the room move, 5 to 15 s after being beckoned in. A change caught while another waits is acted on after its own delay, once the first is. Its phase only ever steps on a cue, and only to the phase running, so it is never ahead of the room; out of earshot and out of sight of everyone it notices after 20 minutes. Playing the host or a waiter, the household keeps it to the programme for now (PR 2 has the butler prompt a fake host).
+
+**People react to anyone out of step (`reactions.ts`).** Innocents are late too, back from the bathroom or kept by an errand, so this runs on every evening, spy or not, every 20 steps through the champagne, the toast and dinner. Anyone still not with the programme 3 minutes after a change (longer than anyone's own lag) carries milestone 2's out-of-step; a partner or friend who sees them beckons them in, and at dinner the host points the way in. Someone in the toast's ring with nothing to raise is brought a flute by the nearest waiter with a tray of them. Each is a gesture and a `react` event; the doubt a late spy can raise comes in PR 2. Because these run without a spy too, milestone 2's golden digests moved with them.
+
+**An ordinary guest.** It sips at 40% of the usual rate and sets a glass down once it has held it 10 minutes; past 0.15 tipsiness it asks for water and takes nothing stronger from a tray but champagne. It never leads a card, faints or is the quarrelling couple; its grudges run at half heat; it strikes nobody and nobody strikes it (a jealous scene with it is words only), and answering someone's grudge it takes the sharp word and apologises, so the row is a spat. No scene, card or partner sends it home early.
+
+**Going home.** Never before the farewell's first goodbye, and then among the first half of the farewell's leavers. Of the guests still here after the first goodbye, it sets off once the share on their way out reaches its moment, drawn evenly over the first half (a quarter on average), so it isn't always among the very first goodbyes; guests gone before the farewell don't count. From the first goodbye it checks every step, so a crowd setting off at once doesn't carry it past its moment, and when the moment comes it drops whatever it is busy with (dabbing a spill, an errand) but waits out the bathroom and a row. Its partner can take it home with them sooner. In the last 5 minutes it goes anyway. Playing the host or a waiter it walks out with the leavers and doesn't come back. With its goal done (PR 3 on) its moment is drawn afresh over the first half, and a deed done in the farewell keeps it 3 to 6 minutes more; with its goal undone at the first goodbye it gives it up for tonight.
+
+**Counting what it gives away (`spy/measure.ts`).** For the lab, the tests and the sweep; nothing the sim chooses reads it. Its tells are written by its own code as it gives them, with the perch's view of the spot and who picked each up while it showed. This part has two: out of step (a cover, which an innocent can give too) and the garment (a trace). Innocent twins are innocents' notables of the same verbs: out of step, camera-shy, startled, a wrong turn, a rattled door, a fumble, a bandage gone and snooping. `ranks()` scores everyone by the crowd's doubt and suspicion of them, for the lab's ranking (milestone 4 decides how the crowd pools for real).
+
+**Determinism.** Its draws come from children of the `spy` fork, one for each part of the cast (the arrival, the goal, its own body and mind, its study, the garden) and one each for its map, its mind and its cues, so pinning one part leaves the others as they were; the reactions draw from `react`. One blueprint, seed and set of spy options give one evening, and `party.digest()` takes in the spy's line.
+
 ## Walking
 
 A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corners), and the path is string-pulled to a few waypoints with an exact grid traversal, so a straight leg never crosses a blocked cell. A walker within 0.3 m of a waypoint cuts the corner to the next one when the way is clear, so two people heading for the same doorway don't stall on one point. Stairs join the storeys; a route crosses one storey at a time through the stair with the shortest detour. Doors gate it all (see Things in the house). People push apart to 0.42 m, never into a doorway that is locked against them, and anyone pushed off their line finds a new route from where they stand.
@@ -318,7 +353,8 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 - **Spark** makes the picked person and the one picked before take to each other (both right at the flirting line); **grudge** gives the one picked before a grudge against the picked person; **cheating rumour** starts word going round that the picked person is cheating on their partner. The card's ties lines show their temper, doubt about their partner, a stray's eye or lover, whom they're drawn to, whom they get on with, whom they fell out with, and their grudges and how hot they run.
 - **Spill**, **cut hand**, **faint** and **lose glasses or bag** on the card give the picked person that mishap now; the row below plays any card from the deck now, with the picked person in it if they fit (a quarrel with their partner, the fuse on their storey), else whoever the card picks. The card shows a stain, a bandage or a borrowed jacket, an oddball's habit and how often they've been seen at it, the stranger, and the mishap or drama they're caught up in (and whether anyone has seen it yet).
 - **Plant a rumour** on the card: a guest in a conversation hears something juicy and a little odd about the picked person. The **mood** row sets tension (tense, calm) or scales energy (liven, dampen) for everyone, the picked person's room or just them. Both take effect from the next step and are kept, so going back in time replays them where they were made; a new house clears them.
-- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), romance & rows (noticing, flirting, affairs, couples, friendships, rebuffs, spats and rows, who is sure, confrontations, pulls onto the floor, slipping away, games won), mishaps & dramas (every mishap, drama and oddball at it, with how each turns out, and the lights going out and on), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes; and the ties: couples, friendships, flirtations and rebuffs, affairs, who found out, confrontations, spats, rows, fallings-out and makings-up, pulls onto the floor, staff friendships and slipping away; and the trouble: mishaps by kind, the dramas played (and any nobody saw), and each oddball with how often they've been seen at it. The detail card shows the picked person's task and step.
+- **The spy** (on by default in the lab; `spy=0` turns it off). Until it is revealed the lab shows its record as the crowd believes it: its own events stay out of the log, its card stays shut, and nobody's map shows (the room count and the map overlay), since the spy's alone would give it away. With someone picked the button asks whether it is them, and scores the guess. The goal odds show from the start, each goal with a switch, a weight and its chance in this house ("not here" for one the house can't hold), and how often a kill steals first; a change builds the evening afresh from 19:00 with the same house, guests and provocations, only the spy cast anew. Revealed, the spy's card under the picked person's says how it came and as whom (and where the body lies), its goal and any theft first, the rooms it knows the way to, the phase it acts on and how it caught it (and how far behind the room it is), whom it studied, its drink, when it means to go, the garment in its colour, and its tells and innocent twins; its name picks its record, and its row in the people list is marked. The garment lies on the lawn in every view.
+- Doors swing and curtains draw as the sim has them. The log lists what's happening, filtered to the evening as a whole, everyday life (greetings, joins and rebuffs, splits, tasks, the photo, goodbyes, breaches and beats), gossip, connecting the dots (cases, asking around, leads, blame, telling the host, conflicts, recognising), noticing (double takes, tests, hushes, a noise gone to look at), romance & rows (noticing, flirting, affairs, couples, friendships, rebuffs, spats and rows, who is sure, confrontations, pulls onto the floor, slipping away, games won), mishaps & dramas (every mishap, drama and oddball at it, with how each turns out, and the lights going out and on), the spy (its arrival, its cues, giving its goal up and going home, once revealed, and anyone beckoned in, pointed the way or brought a flute), finding the way, the house or the programme. The stats add bathroom and bump totals, what was told and overheard, double takes, tests, hushes, wrong turns and asks, and where the coats and the whisky went in this house, and the everyday life totals: hellos, joins, rebuffs, splits, breaches, tours, errands, searches and how many found their partner, the group photo, candids and goodbyes; and the ties: couples, friendships, flirtations and rebuffs, affairs, who found out, confrontations, spats, rows, fallings-out and makings-up, pulls onto the floor, staff friendships and slipping away; and the trouble: mishaps by kind, the dramas played (and any nobody saw), and each oddball with how often they've been seen at it; and the guests found out of step with the programme, beckoned in, pointed the way and brought a flute. The detail card shows the picked person's task and step.
 
 | URL parameter | Meaning |
 |---|---|
@@ -332,7 +368,11 @@ A* runs on the mansion's walk grid (0.25 m cells, 8 neighbours, no cutting corne
 | `gone`, `seen` | Plant a theft: `gone=80:5` (minute, room), `seen=75:11:5` (minute, person, room); first house only |
 | `mishap`, `drama` | A mishap on someone, `mishap=30:21:cut` (minute, person, `spill`, `cut`, `lost`, `ankle`, `faint`, `switch`); a card played, `drama=125:quarrel` or `drama=125:quarrel:16` (minute, card, person; a card that finds nobody who fits, at dinner say, does nothing); first house only |
 | `tension`, `energy` | Set everyone's tension (0–1), or scale their energy (0.5–1.5), at time `t` |
-| `log` | Log filter: `everyday life`, `romance & rows`, `mishaps & dramas`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
+| `log` | Log filter: `everyday life`, `romance & rows`, `mishaps & dramas`, `the spy`, `gossip`, `connecting the dots`, `noticing`, `finding the way`, `the house`, `programme` |
+| `spy` | `spy=0`: an evening without a spy |
+| `setup`, `goal` | Pin how the spy comes (`self`, `victim`, `host`, `waiter`) and its goal (`kill`, `statuette`, `safe`, `bag`, `bug`, `ledger`); one the cast or the house can't give is drawn as usual |
+| `odds`, `steal` | The goal weights, `odds=kill:50,bug:0` (a goal left out keeps the plan's share, 0 switches it off); how often a kill steals first, 0–100 |
+| `reveal` | `reveal=1` shows the spy from the start |
 | `profile` | Time each stage of the step and show the totals under the stats |
 | `shot=1&w=&h=&ui=1` | Headless capture (`ui=1` keeps the panels) |
 
@@ -400,6 +440,26 @@ Trouble, over the same 16 evenings; the test runs eight of them:
 | Oddballs an evening; outings or moments seen at it | 0.9 (0–2); the nervous one 85–89 startles, the camera-shy 6–24, the latecomer, creep and wanderer 1–2 | each seen at least once |
 | Episodes still running 40 minutes on | 0 | nothing left hanging at 22:00 |
 
+The spy, over the sweep's 60 evenings (`npx tsx scripts/spy-sweep.ts 60`: 20 compact, 20 grand and 20 palatial houses, seeds `sweep-<size>-<i>`); the tests run ten evenings in five houses, every arrival and goal among them:
+
+| Measure | Result | Test asks |
+|---|---|---|
+| How it came: as itself, a guest, the host, a waiter (2,000 casts in one house) | 37, 17, 4 and 2 evenings (54%, 32%, 11%, 3%) | each within 5 points of the plan's table, over 900 casts in three houses |
+| Goals: kill, statuette, safe, bag, bug, ledger; kills stealing first | 26, 10, 8, 7, 5, 4; 54% | the house's odds within 5 points; a goal at 0 or one the house can't hold never |
+| The monitors: gone before the farewell's first goodbye (or still here at 22:00), on a phase before it had run a minute, tipsy past 0.25, leading a drama or fainting | never | never |
+| Programme changes it acted on, a night; caught by hearing the host, seeing the room move, being beckoned in, noticing late | 7.8; 354, 107, 2 and 5 of 468 | |
+| From catching a change to acting on it: heard, seen | 61–150 s (mean 104), 91–178 s (mean 134) | within 60–150 s and 90–180 s |
+| Other guests in its room already on the phase when it moves on | 71% on average (73% coming as itself, 69% playing a guest) | over half on average |
+| The farewell's leavers on their way when it sets off; how long after the first goodbye | 0–52%, mean 24% (the first after the first goodbye in 7 of 60); 0–4.1 min | at most 60%, and 10–40% on average |
+| Its tipsiness at the highest; drinks | at most 0.19, 0.08 on average; 5.9 | under 0.25 |
+| Found out of step, beckoned in, pointed the way, brought a flute, a night (everyone); evenings the spy drew one | 2.5, 0.5, 0.1, 1.8; 8 of 60 | with and without a spy, a flute brought in the toast and a guest kept from dinner beckoned or pointed in |
+| Out of step, its one cover so far; seen by someone | 0.9 a night; 46% | |
+| First tell anyone could see, median | 12.7 real min, in the 31 evenings that had one | |
+| Innocent twins | 31.8 a night (2.65 every 5 real minutes), against its 0.9 | |
+| The garment left in the garden | 9 of the 23 evenings it played someone | |
+| Playing someone: tested by the end of dinner; anyone sure by the last toast | 83%; none (tests always pass until PR 2) | |
+| An evening, headless, with a spy; the spy and the reactions' own part | 3.7 s alone (median 4.6 s with four at once); 9 ms, 0.3% | under 15 s; under 5% |
+
 ## Tuning notes
 
 - Bathroom trips: about 1.5–2 a guest an evening, and about half are abandoned on the way when the guest sees the door shut from across a room. In houses whose only bathrooms are two floors up at the far end a trip can take 8 minutes, which is why bathroom trips stop 20 minutes before the end.
@@ -419,6 +479,8 @@ Trouble, over the same 16 evenings; the test runs eight of them:
 - A limp from a turned ankle made everyone who knew the guest look twice (41 double takes on one evening, 13 on one guest), so it's no part of how they look.
 - With the trouble, two of the three test houses had no tour: the host offered at one in four free moments, and the moments with a first-timer free nearby fell differently. It's two in five now: 0–4 an evening over twelve houses, mean 2.6.
 - A planted fact or mood nudge from the lab landed one step later than the same one replayed from the URL, and the evening drifted; both now land on the first step after their time.
+- The spy's exit: counting guests already gone home, the share it waited for was passed in a rush (most go within seconds of the last toast) and it left after 65–90% of the leavers. It now counts the farewell's leavers on their way out and checks every step from the first goodbye. Its moment was first 0.55u², like a guest's, then 0.5u², which put it next out after the first goodbye in 38% of evenings: the very giveaway the first half was meant to avoid. It is drawn evenly over the first half now, and in the sweep it sets off with 0–52% of them on their way (24% on average). One evening it was dabbing a spill when its moment came and set off after 95% of them, so it now drops a task to go.
+- Coming as itself it took over only a guest alone with no archetype, and in one evening in ten there was none, which put the arrivals 10 points short of the plan's 55%; it now takes one whose archetype is only a manner and sheds it.
 
 ## Known gaps
 
@@ -460,6 +522,22 @@ Trouble, over the same 16 evenings; the test runs eight of them:
   - A quarrel's making up waits for both to be free, and tries again two minutes later, up to three times.
   - A glass emptied by a spill or knocked over is set down at once, like one drunk dry.
 
+- The spy's first part, changed from the technical plan or still to come:
+  - The programme monitor is two checks: strictly, the spy is never on a phase before it has run a minute (the guests' own lag starts at 20 s); and on average more than half the other guests in its room are on it when it moves on. "Never before the room" as a single check fails on a room with one early guest in it.
+  - The host's announcement is a sound of its own, 90 dB, put to the sound model with `senses.wouldHear`, which queues nothing; everyone else still just knows the programme.
+  - In the champagne a flute in hand counts as acting on it, since the toast's ring forms only later.
+  - A change caught while another waits is queued behind it (two slots) rather than replacing it, so the spy steps through every phase.
+  - Playing the host or a waiter it keeps the house's programme; the butler's prompts come with PR 2.
+  - It goes by the farewell's leavers on their way out, checked every step, and drops a task when its moment comes (see the tuning notes).
+  - Coming as itself it can shed a manner from the deck (see the tuning notes); with nobody alone at all (about 3% of casts) it comes as a guest instead.
+  - The target of a bag, or of a kill that steals from one, is given a bag at the door when the usual draw gives none.
+  - Its goal is drawn and waits for its plan (PR 3): nothing is stolen or killed yet, so it always gives the goal up at the first goodbye.
+  - Tests of who someone is always pass and nobody compares notes until PR 2, so nobody is sure of the spy by the last toast.
+  - The garment lies on the lawn and nobody picks it up yet (PR 2).
+  - Playing a guest with a special part (the pianist, the doctor), it still takes their place at the piano or with the first-aid kit; fumbling or dodging the victim's skills comes with PR 2.
+  - The sweep runs its evenings in child processes (`child_process.fork` with `--import tsx`), since worker threads can't load the TypeScript sources.
+  - Found on the way, in milestone 2: a mishap's follow-up (the wash after a cut hand) could take over a guest who had just set off home, and their leave gave up; it now goes home with them.
+
 ## Files
 
 | File | What it holds |
@@ -484,6 +562,12 @@ Trouble, over the same 16 evenings; the test runs eight of them:
 | `practices.ts` | The evening's beats and how they pull on choices; the two norms and their breaches |
 | `dramas.ts` | Mishaps, oddballs and the small-dramas deck: casting, the scheduler and its fixed-draw mishap stream, every episode's script |
 | `tasks.ts` | Tours, errands, searches, candid shots and the group photo (and an impromptu one), leaving with a goodbye and a coat, and the scripted tasks the dramas run |
+| `reactions.ts` | Someone out of step with the programme: found late, beckoned in, pointed the way in, brought a flute |
+| `spy/index.ts` | `Spy`: the record it lives in, whom it knows and how close it believes them, its greetings, its cues, going home, its line in the digest |
+| `spy/cast.ts` | How it comes and whom it plays, its goal, target and any theft first, the goal odds and what a house can hold, its own body and mind, its study, the body and the garment |
+| `spy/swap.ts` | Coming as itself, and moving into a victim's record |
+| `spy/cues.ts` | Catching the programme's changes by ear and by eye, the delays and the late notice |
+| `spy/measure.ts` | Its tells, the innocent twins and the crowd's ranking, for the lab and the sweep |
 | `sim.ts` | `Party`: the step loop, phases, walking and doors, giving way, wrong turns and asking the way, staff and their trays, the butler, kitchen hand, cloakroom, band and photographer, the host, groups and gossip, coats, departures, the lab's provocations |
 | `render/crowd.ts` | The instanced three.js crowd |
 | `render/fixtures.ts` | Door leaves and movable curtains |
@@ -494,5 +578,9 @@ Trouble, over the same 16 evenings; the test runs eight of them:
 | `tests/party-life.test.ts` | Rings and a split, three whole evenings: task counts, circles and stays, tours, a fetched drink, the beats and breaches, everyone home |
 | `tests/party-ties.test.ts`        | The cast's couples and strays, who may flirt, a spark, doubt by word and old flirting, grudges and heat, eight whole evenings against the ties' numbers                                                                                                  |
 | `tests/party-dramas.test.ts` | Casting the oddballs, the latecomer, the stranger and the deck; a spill, a cut, a lost thing and a switch played through; the mishap stream's fixed draws; the fuse, a quarrel and a speech; every habit at it; eight whole evenings against the trouble's numbers |
-| `tests/party-perf.test.ts` | A whole evening's cost, stage by stage |
+| `tests/party-spy.test.ts` | Casting and the goal odds, what it studied, the record swap, ten evenings under the monitors, following its cues, the ordinary guest, going home, a row with it, the reactions with and without a spy, golden digests |
+| `tests/spy-watch.ts` | The spy's monitors and the measures of one watched evening, for the tests and the sweep |
+| `scripts/spy-sweep.ts` | `npx tsx scripts/spy-sweep.ts [n] [--check] [--json file]`: n evenings (60) over the three sizes, in parallel, against the monitors and the plan's targets |
+| `tests/party-perf.test.ts` | A whole evening's cost, stage by stage, with and without a spy |
 | `tests/golden/party-digests.json` | Digests of three houses at 19:30, 20:15 and 21:30. Any change to what people do, see or remember changes them; when it's meant, check the lab and the numbers here, then `npx vitest run tests/party-minds.test.ts -u` |
+| `tests/golden/spy-digests.json` | The same for the ten spy evenings; `npx vitest run tests/party-spy.test.ts -u` |

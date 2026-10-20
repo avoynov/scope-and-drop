@@ -195,8 +195,9 @@ export interface ShotVariation {
  * Deterministic variation for the n-th shot. One hidden "hold" draw ties the shoulder and cheek together,
  * as in a real shooter: a loose hold lets the scope come further back, recover more slowly, peak later and
  * jolt the head longer. Drift is mostly right (a right-handed shooter) but now and then goes a little left.
+ * `holdSpread` narrows that hold draw: a stock that fits (src/armoury/rig.ts) gives a more even hold, 0.6.
  */
-export function shotVariation(n: number): ShotVariation {
+export function shotVariation(n: number, holdSpread = 1): ShotVariation {
   const r = (k: number) => {
     let h = Math.imul(n + 1, 0x27d4eb2d) ^ Math.imul(k + 7, 0x165667b1);
     h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
@@ -206,7 +207,7 @@ export function shotVariation(n: number): ShotVariation {
   // Roughly normal, standard deviation 1, never beyond ±3.
   const g = (k: number) => (r(k) + r(k + 100) + r(k + 200) + r(k + 300) - 2) * Math.sqrt(3);
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
-  const hold = g(10); // + loose, − firm
+  const hold = g(10) * holdSpread; // + loose, − firm
   const own = (k: number) => 0.6 * hold + 0.8 * g(k);
   return {
     rise: 0.8 + 0.4 * r(1),

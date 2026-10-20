@@ -238,7 +238,7 @@ export class RestDynamics {
         this.jolts.push({ at: t, yaw: 0.0003 * (this.n++ % 2 ? 1 : -1), pitch: 0.0007 });
       }
     }
-    this.jolts = this.jolts.filter((j) => t - j.at < 1);
+    if (this.jolts.length && t - this.jolts[0]!.at >= 1) this.jolts = this.jolts.filter((j) => t - j.at < 1);
     let jy = 0;
     let jp = 0;
     for (const j of this.jolts) {

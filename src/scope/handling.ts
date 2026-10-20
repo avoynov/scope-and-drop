@@ -401,6 +401,8 @@ export interface Cue {
 
 export interface Plan {
   rifle: RifleId;
+  /** The rifle's action, with the magazine it has in it. */
+  geom: ActionGeom;
   kind: HandlingKind;
   dur: number;
   ch: Map<Channel, ChMove[]>;
@@ -460,6 +462,8 @@ export interface HandlingState {
   held?: boolean;
   /** Working the action with the safety on: the handle stops short (SVD, VSS) or will not lift (bolt rifle). */
   safe?: boolean;
+  /** The magazine in the rifle, when it isn't the issued one (the VSS's 20-round box). */
+  mag?: MagGeom;
 }
 
 /**
@@ -468,7 +472,7 @@ export interface HandlingState {
  * from one to the next.
  */
 export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number, seed = 0, state: HandlingState = {}): Plan {
-  const g = ACTIONS[rifle];
+  const g = state.mag ? { ...ACTIONS[rifle], mag: state.mag } : ACTIONS[rifle];
   const r = (k: number) => rnd(seed, k);
   // A practised shooter's pace varies by some ±6 % from one time to the next.
   const k = 0.94 + 0.12 * r(0);
@@ -669,7 +673,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     cues.sort((a, b) => a.t - b.t);
     // A magazine change: the old magazine off its catch when it is pressed, the new one on when it is home.
     const swap: Plan["swap"] = kind === "reload" ? [cues.find((c) => c.ev === "mag-release")!.t, mags[1].events.find((e) => e.mode === "well")!.t] : null;
-    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
+    return { rifle, geom: g, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
   }
 }
 
@@ -787,7 +791,7 @@ function handAt(plan: Plan, s: Side, t: number): HandState {
 
 /** The state of everything at `t` seconds into the plan. */
 export function poseAt(plan: Plan, t: number): HandlingPose {
-  const g = ACTIONS[plan.rifle];
+  const g = plan.geom;
   const c = (x: Channel) => channel(plan, x, t);
   const hands = { R: handAt(plan, "R", t), L: handAt(plan, "L", t) };
   const mags = plan.mags.map((track, i) => {
@@ -845,8 +849,8 @@ export function poseAt(plan: Plan, t: number): HandlingPose {
 }
 
 /** The rifle at rest, hands where they live: the firing hand on the grip, the support hand under the butt. */
-export function restPose(rifle: RifleId, rounds: number, carrierOpen = false): HandlingPose {
-  const plan = planHandling(rifle, rifle === "bolt" ? "cycle" : "reload", rounds);
+export function restPose(rifle: RifleId, rounds: number, carrierOpen = false, mag?: MagGeom): HandlingPose {
+  const plan = planHandling(rifle, rifle === "bolt" ? "cycle" : "reload", rounds, 0, mag ? { mag } : {});
   const p = poseAt(plan, 0);
   p.carrier = carrierOpen ? 1 : 0;
   p.mags[1].visible = false;

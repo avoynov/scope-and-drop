@@ -20,12 +20,12 @@
  */
 import * as THREE from "three";
 import { AIR, ROUNDS } from "../../src/scope/ballistics";
-import { planHandling, poseAt, restPose, type HandlingPose, type Plan } from "../../src/scope/handling";
+import { ACTIONS, planHandling, poseAt, restPose, type HandlingPose, type MagGeom, type Plan } from "../../src/scope/handling";
 import { cycle, latch, loaded, pull, setSafe, unlatch, type ActionState } from "../../src/scope/action";
 import { SCOPE } from "../../src/scope/optics";
 import { assess, type Wound } from "../../src/body/wound";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
-import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type RifleId, type Vec3 } from "../../src/scope/shot";
+import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type Vec3 } from "../../src/scope/shot";
 import { windAt, type Wind } from "../../src/scope/wind";
 import type { ImpactSound, Sound } from "./audio";
 import { spray, type GlassScreens, type GlassSpray } from "./glass";
@@ -250,8 +250,10 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   const shots: Shot[] = [];
   let shotCount = 0;
   let rifle: Rifle = RIFLES.svd;
+  /** The magazine it takes: the issued one, or the bigger box the kit put in. */
+  let mag: MagGeom = ACTIONS.svd.mag;
   /** The action's state, as the shooter has to keep track of it (src/scope/action.ts). */
-  let gun: ActionState = loaded(rifle.id);
+  let gun: ActionState = loaded(rifle.id, mag.rounds);
   let handling: Handling | null = null;
   let handlingCount = 0;
   /** How far the elevation dial tilts the bore up from the line of sight (shot.ts `dialTiltRad`). */
@@ -317,10 +319,16 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     return best;
   };
 
-  function setRifle(id: RifleId): void {
-    if (rifle.id === id) return;
-    rifle = RIFLES[id];
-    gun = loaded(id);
+  /**
+   * The rifle as the kit has it (src/armoury/rig.ts): its load, precision and magazine. Another rifle, load or
+   * magazine reloads it; the same one rebuilt keeps the action as it is.
+   */
+  function setRifle(rf: Rifle, m: MagGeom): void {
+    const same = rifle.id === rf.id && rifle.round === rf.round && mag.rounds === m.rounds;
+    rifle = rf;
+    mag = m;
+    if (same) return;
+    gun = loaded(rf.id, m.rounds);
     handling?.hush();
     handling = null;
   }
@@ -329,7 +337,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   function handle(now: number, kind: "cycle" | "reload"): void {
     const reload = kind === "reload";
     const seed = handlingCount++;
-    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held, safe: gun.safe });
+    const plan = planHandling(rifle.id, kind, gun.mag, seed, { chamber: gun.chamber, held: gun.held, safe: gun.safe, mag });
     handling = {
       kind,
       start: now,
@@ -709,8 +717,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     }
     if (!pose) {
       // At rest. After the SVD's last round its empty magazine holds the carrier open.
-      const key = `${rifle.id}|${gun.mag}|${gun.held}`;
-      if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, gun.mag, gun.held) };
+      const key = `${rifle.id}|${mag.rounds}|${gun.mag}|${gun.held}`;
+      if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, gun.mag, gun.held, mag) };
       pose = rest.pose;
     }
     return { hand, fold, pose, busy: !!handling };
@@ -719,7 +727,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   /** For stills: the rifle `s` seconds into working its action (a magazine change if `reload`). */
   function handleAt(now: number, reload: boolean): void {
     // A magazine change after the last round; working the action after a shot with rounds left.
-    gun = loaded(rifle.id);
+    gun = loaded(rifle.id, mag.rounds);
     gun.mag = reload ? 0 : rifle.magazine - 2;
     pull(gun, rifle.id);
     handle(now, reload ? "reload" : "cycle");

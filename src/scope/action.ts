@@ -52,6 +52,8 @@ export interface ActionState {
   held: boolean;
   /** Rounds in the magazine (not counting the chamber). */
   mag: number;
+  /** What a full magazine holds: the issued one's, or the bigger box the kit put in. */
+  cap: number;
   /** A magazine on its catch. Off it only partway through a magazine change. */
   magIn: boolean;
   /** The safety on. */
@@ -64,9 +66,9 @@ export type Pull = "fire" | "click" | "dead" | "safe";
 const semi = (rifle: RifleId) => !!ACTIONS[rifle].carrier;
 const holdsOpen = (rifle: RifleId) => !!ACTIONS[rifle].carrier?.holdOpen;
 
-/** Loaded and ready: a full magazine, one of it chambered, the safety off. */
-export function loaded(rifle: RifleId): ActionState {
-  return { chamber: "live", cocked: true, held: false, mag: ACTIONS[rifle].mag.rounds - 1, magIn: true, safe: false };
+/** Loaded and ready: a full magazine (of `cap` rounds; the issued magazine's by default), one of it chambered, the safety off. */
+export function loaded(rifle: RifleId, cap = ACTIONS[rifle].mag.rounds): ActionState {
+  return { chamber: "live", cocked: true, held: false, mag: cap - 1, cap, magIn: true, safe: false };
 }
 
 /** The trigger pulled. Returns what happened; the state changes for a shot or a click. */
@@ -119,9 +121,9 @@ export function unlatch(s: ActionState): void {
 }
 
 /** A full magazine onto the catch. */
-export function latch(s: ActionState, rifle: RifleId): void {
+export function latch(s: ActionState, _rifle: RifleId): void {
   s.magIn = true;
-  s.mag = ACTIONS[rifle].mag.rounds;
+  s.mag = s.cap;
 }
 
 /** A full magazine in place of the old one, all at once. The chamber, and a held carrier, stay as they were. */

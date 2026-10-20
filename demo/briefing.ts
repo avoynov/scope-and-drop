@@ -4,6 +4,9 @@
  * moving the dial calls movePerch(), which only recomputes sightlines.
  */
 import { movePerch, POI_VISIBLE, type MansionBlueprint } from "../src/mansion";
+import { ITEMS } from "../src/armoury/catalogue";
+import { carried, payFactor, spotterShare } from "../src/armoury/loadout";
+import { chosenLoadout, loadCareer, loadChosen } from "./armoury/store";
 
 const INK = "#e9e4d8";
 const MUTED = "#9a9486";
@@ -256,6 +259,16 @@ function drawDial(canvas: HTMLCanvasElement, bp: MansionBlueprint, az: number): 
   return { cx, cy, R };
 }
 
+const RIFLE_NAMES = { vss: "VSS", svd: "SVD", bolt: "Sako" } as const;
+/** The loadout chosen in the armoury, in a line: the rifle, the kit carried, the spotters and what it leaves of the pay. */
+function kitSummary(): string {
+  const career = loadCareer();
+  const l = chosenLoadout(loadChosen(career.owned));
+  const kit = carried(l).map((id) => ITEMS[id].name);
+  const spot = l.spotters.length ? `${l.spotters.length} spotter${l.spotters.length > 1 ? "s" : ""} (${Math.round(spotterShare(l) * 100)}%)` : "";
+  return `${RIFLE_NAMES[l.rifle]} · ${[...kit, spot].filter(Boolean).join(", ") || "issued kit only"} · pay ×${payFactor(l).toFixed(2)} · €${career.balance.toLocaleString("en-GB")} in hand`;
+}
+
 export interface Briefing {
   open(bp: MansionBlueprint): void;
   close(): void;
@@ -431,6 +444,8 @@ export function createBriefing(onDeploy: (bp: MansionBlueprint) => void): Briefi
         floors.appendChild(b);
       }
       root.classList.add("on");
+      const kit = document.getElementById("brief-kit");
+      if (kit) kit.textContent = kitSummary();
       render();
     },
     close() {

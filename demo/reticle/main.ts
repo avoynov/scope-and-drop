@@ -205,8 +205,11 @@ let rigKey = "";
 /** How the rifle swings on its rest, and where that has it now (before the hold's own sway). */
 let restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
 let restNow: RestState = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
-/** The wind's dynamic pressure on the rifle and the shooter now (Pa), for the buffeting in the hold. */
+/** The wind's dynamic pressure on the rifle and the shooter now (Pa), for the buffeting in the hold, and its speed (m/s). */
 let windLoad = 0;
+let windAtMuzzle = 0;
+/** How far a hot can's plume has risen (shader units), for its shimmer. */
+let hazeT = 0;
 /**
  * The hide's window faces between the two mannequins; with the hide carried the rifle (and the rangefinder) turn
  * only so far either side of that before the barrel meets its frame.
@@ -231,7 +234,8 @@ function syncRig(): void {
     state.treeStyle = rig.optic === "ebr" ? "ebr" : "pr2";
     state.easy = rig.windMeter;
   }
-  shooting.setRifle(rig.rifle, rig.mag);
+  shooting.setRifle(rig.rifle, rig.mag, rig.report);
+  rifle.setKit({ can: rig.can, sleeve: rig.sleeve, weight: rig.muzzleKg > 0 && !rig.can, mag: rig.mag });
   state.yaw = clampArc(state.yaw);
   restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
   restNow = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
@@ -239,7 +243,10 @@ function syncRig(): void {
 const windAtRifle: [number, number, number] = [0, 0, 0];
 /** The wind on the rifle and the shooter at `t`: in the hide a fifth of its speed gets in, a twenty-fifth of its push. */
 function updateWindLoad(t: number): void {
-  windLoad = state.sway ? dynamicPressure(windAt(state.wind, eyePos.x, eyePos.y, eyePos.z, t, windAtRifle)) * (rig.hide ? 0.04 : 1) : 0;
+  const w = windAt(state.wind, eyePos.x, eyePos.y, eyePos.z, t, windAtRifle);
+  const inside = rig.hide ? 0.2 : 1;
+  windAtMuzzle = Math.hypot(w[0], w[1], w[2]) * inside;
+  windLoad = state.sway ? dynamicPressure(w) * inside * inside : 0;
 }
 /** Glazes the frames afresh (or takes them away); their shadows change, so the shadow map is redrawn. */
 function glaze(): void {
@@ -1002,6 +1009,14 @@ function windText(): string {
   return `${sp.toFixed(1)} m/s · from ${h === 0 ? 12 : h}${c % 1 ? ":30" : ""}`;
 }
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
+/** The can's heat over the air, whether it is still cold enough to throw its first shot, and its sleeve. */
+function canText(t: number): string {
+  const can = shooting.can()!;
+  const parts = [`+${Math.round(can.riseAt(t))} °C`];
+  if (rig.report !== "integral" && can.coldness(t) > 0.5) parts.push("cold: first shot high");
+  if (rig.sleeve) parts.push("sleeve");
+  return parts.join(" · ");
+}
 const REST_NAMES = { lab: "bipod", pack: "pack", harris: "Harris bipod", atlas: "Atlas bipod", tripod: "tripod" } as const satisfies Record<Rig["restKind"], string>;
 /** What the rifle rests on, and what the rest is doing: the legs re-set, the bag settling, the hide's frame reached. */
 function restText(): string {
@@ -1275,6 +1290,12 @@ function frame(t: number, dt: number): void {
   }
   u.uMirFlow!.value.copy(mirFlow);
   u.uBoil!.value = boil;
+  // A hot can's plume rising through the line of sight; not in the rangefinder, held up clear of it.
+  const can = shooting.can();
+  u.uHaze!.value = can && !kr && state.mirage ? can.hazeRad(t, windAtMuzzle, rig.sleeve) * toUv : 0;
+  // The plume rises at about half a metre a second, a few of the shader's swells a second at the objective.
+  hazeT = shot ? 2.5 * t : hazeT + 2.5 * dt;
+  u.uHazeT!.value = hazeT;
   // Bullets in flight and what they hit.
   scopeCam.updateMatrixWorld();
   sunView.copy(toSun).transformDirection(scopeCam.matrixWorldInverse);
@@ -1386,6 +1407,7 @@ function frame(t: number, dt: number): void {
       ["Round", `${ROUNDS[rig.rifle.round].name} · ${ROUNDS[rig.rifle.round].cartridge}`],
       ["Rounds", status.state ? `${status.rounds} · ${status.state}` : status.rounds],
       ["Rest", restText()],
+      ...(shooting.can() ? [["Suppressor", canText(t)]] : []),
       ...(kitMode ? [["Kit", `${encodeKit(rig.loadout).replaceAll(",", ", ") || "issued"} · pay ×${payFactor(rig.loadout).toFixed(2)}`]] : []),
       ...(state.easy ? [["Wind meter", windText()]] : []),
       ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
@@ -1425,6 +1447,8 @@ if (shot) {
   const t = num("t", 2.4);
   // recoil=<s>: the still is taken that long after the trigger.
   if (params.has("recoil")) recoil = { start: t - num("recoil", 0), spec: rig.recoil, v: shotVariation(0, rig.fit.holdSpread) };
+  // canheat=<K>: the suppressor that much over the air, as after a string of shots.
+  if (params.has("canheat")) shooting.can()?.warm(t - 0.5, num("canheat", 60));
   updateWindLoad(t);
   // fire=<s>: the still is taken that long after the bullet left the muzzle (recoil and all).
   if (params.has("fire")) {

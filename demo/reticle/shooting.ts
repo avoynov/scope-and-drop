@@ -23,6 +23,7 @@ import { AIR, ROUNDS } from "../../src/scope/ballistics";
 import { ACTIONS, planHandling, poseAt, restPose, type HandlingPose, type MagGeom, type Plan } from "../../src/scope/handling";
 import { cycle, latch, loaded, pull, setSafe, unlatch, type ActionState } from "../../src/scope/action";
 import { SCOPE } from "../../src/scope/optics";
+import { CanHeat, type Report } from "../../src/scope/can";
 import { assess, type Wound } from "../../src/body/wound";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
 import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type Vec3 } from "../../src/scope/shot";
@@ -254,6 +255,9 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   let mag: MagGeom = ACTIONS.svd.mag;
   /** The action's state, as the shooter has to keep track of it (src/scope/action.ts). */
   let gun: ActionState = loaded(rifle.id, mag.rounds);
+  /** What is on the muzzle, and the heat in a suppressor (screwed on or the VSS's own). */
+  let report: Report = "open";
+  let can: CanHeat | null = null;
   let handling: Handling | null = null;
   let handlingCount = 0;
   /** How far the elevation dial tilts the bore up from the line of sight (shot.ts `dialTiltRad`). */
@@ -323,7 +327,10 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
    * The rifle as the kit has it (src/armoury/rig.ts): its load, precision and magazine. Another rifle, load or
    * magazine reloads it; the same one rebuilt keeps the action as it is.
    */
-  function setRifle(rf: Rifle, m: MagGeom): void {
+  function setRifle(rf: Rifle, m: MagGeom, muzzle: Report = rf.id === "vss" ? "integral" : "open"): void {
+    // Another rifle, or another can on it, starts at the air's temperature.
+    if (rifle.id !== rf.id || muzzle !== report) can = muzzle === "open" ? null : new CanHeat();
+    report = muzzle;
     const same = rifle.id === rf.id && rifle.round === rf.round && mag.rounds === m.rounds;
     rifle = rf;
     mag = m;
@@ -414,6 +421,11 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const n = shotCount++;
     const round = ROUNDS[rifle.round];
     const d = dispersion(rifle, n);
+    // Through a can: a cold one throws its first shot high (src/scope/can.ts), and every shot heats it. The VSS is
+    // zeroed with its own, so only a screwed-on can moves the shot.
+    const through = can?.fire(exit, rifle.round);
+    const screwed = report === "can" || report === "can-sub";
+    const [cx, cy] = through && screwed ? through.shift : [0, 0];
     euler.set(aim.pitch, aim.yaw, 0);
     fwd.set(0, 0, -1).applyEuler(euler);
     right.set(1, 0, 0).applyEuler(euler);
@@ -425,8 +437,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const tilt = tiltRad;
     const dir = fwd
       .clone()
-      .addScaledVector(right, d.dx)
-      .addScaledVector(up, d.dy + jump + tilt)
+      .addScaledVector(right, d.dx + cx)
+      .addScaledVector(up, d.dy + jump + tilt + cy)
       .normalize();
     const air = {
       round,
@@ -530,7 +542,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     shots.push(shot);
     if (shots.length > 12) shots.shift();
     if (delay !== null) {
-      sound.shot(delay, rifle.id);
+      sound.shot(delay, rifle.id, report, !!through?.pop && screwed);
       // A semi-automatic throws its case out as it fires; it lands in the dirt to the right half a second later.
       if (rifle.action === "semi") sound.cue("case-land", rifle.id, delay + 0.45 + 0.12 * rnd(n, 9));
       if (kind) {
@@ -809,6 +821,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     handleAt,
     /** Whether the hands are off the grip, working the action. */
     busy: () => !!handling,
+    /** The suppressor's heat, if there is one. */
+    can: (): CanHeat | null => can,
     status(now: number) {
       const last = shots[shots.length - 1];
       let shot = "–";

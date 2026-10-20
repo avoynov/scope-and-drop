@@ -7,6 +7,7 @@
 import { TERMINAL } from "../body/wound";
 import { ROUNDS, type RoundId } from "../scope/ballistics";
 import { ACTIONS, MAG_VSS20, type MagGeom } from "../scope/handling";
+import type { Report } from "../scope/can";
 import { BAG, HOLD, LAB_REST, REST, cloneHold, muzzleSteadying, type HoldSpec, type RestKind, type RestSpec } from "../scope/hold";
 import { GAS_THROUGH, scaleRecoil, type RecoilSpec } from "../scope/recoil";
 import { RIFLES, type Rifle, type RifleId } from "../scope/shot";
@@ -45,8 +46,7 @@ export interface FitSpec {
 const ISSUED_FIT: FitSpec = { adsError: 1, adsPace: 1, wander: 1, panLag: 1, holdSpread: 1 };
 const RISER_FIT: FitSpec = { adsError: 0.5, adsPace: 0.85, wander: 0.5, panLag: 0.7, holdSpread: 0.6 };
 
-/** How the report sounds: an open muzzle, a can on a supersonic round, a can on a subsonic one, the VSS's own. */
-export type Report = "open" | "can" | "can-sub" | "integral";
+export type { Report } from "../scope/can";
 
 export interface Rig {
   loadout: Loadout;

@@ -46,6 +46,9 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       // Mirage: how far the crosswind has carried the shimmer (mrad, object space) and how much it boils.
       uMirFlow: { value: new THREE.Vector2() },
       uBoil: { value: 0 },
+      // A hot suppressor's shimmer (scope uv) and how far its plume has risen.
+      uHaze: { value: 0 },
+      uHazeT: { value: 0 },
       // Trace: the wake from tail a to head b in scope uv, its half-width there, strength, and a seed.
       uTrA: { value: new THREE.Vector2() },
       uTrB: { value: new THREE.Vector2() },
@@ -70,7 +73,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       precision highp float;
       uniform sampler2D tScope, tWide, tRet, tNear, tLens, tBody;
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur, uMirFlow, uTrA, uTrB, uTrW;
-      uniform float uBoil, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
+      uniform float uBoil, uHaze, uHazeT, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
       uniform vec3 uEye, uEyeSweep, uRetCol, uTint;
       uniform float uRetAdd, uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
@@ -211,6 +214,12 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
           vec2 mir = vec2(vn(ma*1.6 + vec2(uBoil*1.1, uBoil*.35)) - .5, vn(ma*1.6 + vec2(17. + uBoil*.9, 5. - uBoil*.5)) - .5);
           mir += .5*vec2(vn(ma*4. + vec2(uBoil*2.6, 3.)) - .5, vn(ma*4. + vec2(9., uBoil*2.)) - .5);
           vec2 mq = mir*uMirage;
+          // Heat rising off a hot can through the line of sight just ahead of the objective: far out of focus, so
+          // it waves the whole picture in broad, slow swells that climb, rather than shimmering its detail.
+          if (uHaze > 0.) {
+            vec2 hz = trueAng*.08 + vec2(0., -uHazeT);
+            mq += uHaze*(vec2(vn(hz) - .5, vn(hz + vec2(13.1, 7.3)) - .5) + .45*vec2(vn(hz*2.7 + 5.) - .5, vn(hz*2.7 + 19.) - .5));
+          }
           if (length(uBlur) > .002 || length(uSweep) > .5*uTanHalf/uR || length(uEyeSweep) > .3) {
             // Recoil: across the exposure the picture swings in the eye's view, the scene sweeps through it
             // and the eye slides over the exit pupil. Stratified, jittered taps turn ghosting into grain.

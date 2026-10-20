@@ -7,8 +7,8 @@ import { RestDynamics, dynamicPressure, holdAt, type RestState } from "../../src
 import { rigFor, type Rig } from "../../src/armoury/rig";
 import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
 import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
-import { speedDrop, type AimAid } from "../../src/scope/aids";
-import { BEAM_RAYS, KILO8K, Kilo, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
+import { speedDrop, windHoldMil, type AimAid } from "../../src/scope/aids";
+import { BEAM_RAYS, KILO8K, Kilo, PLAIN_LRF, PLAIN_RAYS, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
 import { compose, invert, qRot } from "../../src/scope/handling";
 import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
@@ -23,6 +23,7 @@ import { KILO_DOWN_S, KILO_UP_S, kiloRig, paintOled, rasterOled, toQuat, type Ki
 import { CHEST_M, EYE_HEIGHT, buildRange, configureTargets, heightAt, targetRanges, terrainLift, type TargetSpot } from "./scene";
 import { createShooting, type Aim } from "./shooting";
 import { createWindGL } from "./wind-gl";
+import { buildHide } from "./hide";
 import { woundSvg, woundText } from "./wound-card";
 
 const params = new URLSearchParams(location.search);
@@ -196,7 +197,6 @@ function loadoutNow(): Loadout {
   const l = emptyLoadout(id);
   if (id === "bolt" && state.aid === "lrf") l.items.ranging = "kilo";
   if (id === "bolt" && state.treeStyle === "ebr") l.items.optic = "ebr";
-  if (state.easy) l.items.wind = "kestrel";
   return l;
 }
 /** The rifle as the kit has it: load, recoil, hold, rest, stock fit, magazine, aids (src/armoury/rig.ts). */
@@ -214,29 +214,45 @@ let hazeT = 0;
  * The hide's window faces between the two mannequins; with the hide carried the rifle (and the rangefinder) turn
  * only so far either side of that before the barrel meets its frame.
  */
-const arcYaw = (() => {
+const [arcYaw, arcPitch] = (() => {
   const a = range.targets.map((m) => {
-    const d = m.foot.clone().sub(eyePos);
-    return Math.atan2(-d.x, -d.z);
+    const d = m.foot.clone().setY(m.foot.y + CHEST_M).sub(eyePos);
+    return [Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z))] as const;
   });
-  return a.reduce((x, y) => x + y, 0) / a.length;
+  return [a.reduce((x, y) => x + y[0], 0) / a.length, a.reduce((x, y) => x + y[1], 0) / a.length];
 })();
+/** How far the window lets the muzzle dip or rise from its middle (rad). */
+const ARC_PITCH = (6 * Math.PI) / 180;
 const clampArc = (yaw: number) => (rig.arcRad === null ? yaw : arcYaw + Math.max(-rig.arcRad, Math.min(rig.arcRad, yaw - arcYaw)));
+const clampArcPitch = (pitch: number) => {
+  const p = Math.max(-0.3, Math.min(0.3, pitch));
+  return rig.arcRad === null ? p : arcPitch + Math.max(-ARC_PITCH, Math.min(ARC_PITCH, p - arcPitch));
+};
+const hide = buildHide(range.scene, eyePos, arcYaw, arcPitch, (12 * Math.PI) / 180, ARC_PITCH);
 /** Rebuilds the rig when the rifle, or in the lab the buttons it follows, change; a new rig settles on its rest. */
 function syncRig(): void {
   const id = RIFLE[state.reticle];
-  const key = kitMode ? id : `${id}|${state.aid}|${state.treeStyle}|${state.easy}`;
+  const key = kitMode ? id : `${id}|${state.aid}|${state.treeStyle}`;
   if (key === rigKey) return;
   rigKey = key;
   rig = rigFor(loadoutNow(), { lab: !kitMode });
   if (kitMode) {
     state.aid = rig.ranging === "kilo" ? "lrf" : "manual";
     state.treeStyle = rig.optic === "ebr" ? "ebr" : "pr2";
-    state.easy = rig.windMeter;
+    // The lab's mast meter is not kit: the Kestrel is.
+    state.easy = false;
+  }
+  kilo.setRifle(rig.rifle);
+  kilo.kind = rig.ranging === "plain" ? "plain" : "abs";
+  if (hide.group.visible !== rig.hide) {
+    hide.group.visible = rig.hide;
+    // The surround is redrawn only when the view turns; the hide's walls change it now.
+    wideDrawn = null;
   }
   shooting.setRifle(rig.rifle, rig.mag, rig.report);
   rifle.setKit({ can: rig.can, sleeve: rig.sleeve, weight: rig.muzzleKg > 0 && !rig.can, mag: rig.mag });
   state.yaw = clampArc(state.yaw);
+  state.pitch = clampArcPitch(state.pitch);
   restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
   restNow = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
 }
@@ -381,7 +397,8 @@ const kilo = new Kilo(RIFLES.bolt, () => {
   const solids = [range.boulder, ...range.targets.map((m) => m.group)];
   for (const o of solids) o.updateWorldMatrix(true, true);
   const rock = (o: THREE.Object3D | null): boolean => !!o && (o === range.boulder || rock(o.parent));
-  const hits: RayHit[] = BEAM_RAYS.map(([mx, my]) => {
+  const plain = kilo.kind === "plain";
+  const hits: RayHit[] = (plain ? PLAIN_RAYS : BEAM_RAYS).map(([mx, my]) => {
     kiloDir
       .set(mx / 1000, my / 1000, -1)
       .normalize()
@@ -393,10 +410,10 @@ const kilo = new Kilo(RIFLES.bolt, () => {
     if (h && h.distance < g) return { m: h.distance, kind: rock(h.object) ? "rock" : "person" };
     return Number.isFinite(g) ? { m: g, kind: "ground" } : { m: Infinity, kind: "none" };
   });
-  const m = pickReturn(hits, kilo.settings.target);
+  const m = plain ? pickReturn(hits, PLAIN_LRF.target, PLAIN_LRF.reachM) : pickReturn(hits, kilo.settings.target);
   kiloDir.set(0, 0, -1).applyQuaternion(kiloMeasQ);
   const slopeRad = Math.asin(Math.max(-1, Math.min(1, kiloDir.y)));
-  return { losM: m === null ? null : m + rangeSigmaM(m) * shotRandom(1000 + kiloShots++)(), slopeRad };
+  return { losM: m === null ? null : m + (plain ? PLAIN_LRF.sigmaM : rangeSigmaM(m)) * shotRandom(1000 + kiloShots++)(), slopeRad };
 });
 /** Its settings from the URL, for stills: `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`. */
 {
@@ -408,7 +425,8 @@ const kilo = new Kilo(RIFLES.bolt, () => {
   if (mph !== undefined && Number.isFinite(mph)) kilo.settings.wind.mph = Math.max(0, Math.min(30, Math.round(mph)));
   if (clk !== undefined && Number.isFinite(clk)) kilo.settings.wind.clock = ((Math.round(clk) + 11) % 12) + 1;
 }
-const kiloReady = () => state.reticle === "tree" && state.aid === "lrf";
+/** A rangefinder in the kit (in the lab without a kit, the bolt rifle's Pro button). */
+const kiloReady = () => rig.ranging !== "none";
 /** X: up from the ground to the eye, or back down. The head comes up off the scope first. */
 function toggleKilo(): void {
   if (kiloState.phase === "down") {
@@ -895,10 +913,10 @@ canvas.addEventListener("pointermove", (e) => {
       // Turning the rangefinder: one px moves its view one px (its field fills the same circle on screen).
       const kk = Math.tan((KILO8K.fovDeg * Math.PI) / 360) / (R / dpr);
       kiloState.yaw = clampArc(kiloState.yaw + (e.clientX - prev.x) * kk);
-      kiloState.pitch = Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk));
+      kiloState.pitch = rig.arcRad === null ? Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk)) : clampArcPitch(kiloState.pitch + (e.clientY - prev.y) * kk);
     } else {
       state.yaw = clampArc(state.yaw + (e.clientX - prev.x) * k);
-      state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + (e.clientY - prev.y) * k));
+      state.pitch = clampArcPitch(state.pitch + (e.clientY - prev.y) * k);
     }
   }
   prev.x = e.clientX;
@@ -968,6 +986,11 @@ addEventListener("keydown", (e) => {
     syncUi();
   }
   if (e.code === "KeyH") document.body.classList.toggle("nohud");
+  // The Kestrel's target range: , and . step it 25 m (with Shift, 100 m).
+  if ((e.code === "Comma" || e.code === "Period") && rig.windMeter) {
+    const step = (e.shiftKey ? 100 : 25) * (e.code === "Comma" ? -1 : 1);
+    kestrel.rangeM = Math.max(50, Math.min(1500, kestrel.rangeM + step));
+  }
   if (e.code === "KeyF" && !e.repeat) {
     if (kiloState.phase === "up") toggleKilo();
     else if (kiloState.phase === "down") toggleScope();
@@ -1008,6 +1031,41 @@ function windText(): string {
   const h = Math.floor(c);
   return `${sp.toFixed(1)} m/s · from ${h === 0 ? 12 : h}${c % 1 ? ":30" : ""}`;
 }
+/**
+ * The Kestrel 5700 Elite on its vane mount (kit `kestrel`), beside the shooter about a metre up: the wind where it
+ * stands (in the hide, the hide's still air), averaged over a few seconds as shooters read it, and its Applied
+ * Ballistics solver's wind hold for the loaded round at the range set on it (`,` and `.`), for the way the rifle
+ * points. The hold is exact for that wind; the wind along the bullet's way is still the shooter's to judge.
+ */
+const kestrel = { rangeM: Math.round(Math.max(50, Math.min(1500, num("kestrel", 300)))), x: 0, z: 0, primed: false };
+const KESTREL_UP_M = 1;
+const kestrelTmp: [number, number, number] = [0, 0, 0];
+function stepKestrel(t: number, dt: number): void {
+  if (!rig.windMeter) {
+    kestrel.primed = false;
+    return;
+  }
+  const kx = eyePos.x + 0.6;
+  const w = windAt(state.wind, kx, heightAt(kx, eyePos.z) + KESTREL_UP_M, eyePos.z, t, kestrelTmp);
+  const inside = rig.hide ? 0.2 : 1;
+  const a = shot || !kestrel.primed ? 1 : 1 - Math.exp(-dt / 3);
+  kestrel.x += (w[0] * inside - kestrel.x) * a;
+  kestrel.z += (w[2] * inside - kestrel.z) * a;
+  kestrel.primed = true;
+}
+function kestrelText(): string {
+  const { x, z, rangeM } = kestrel;
+  const sp = Math.hypot(x, z);
+  if (sp < 0.2) return `calm · ${rangeM} m: no hold`;
+  // In the rifle's frame: across to the right, and back toward the shooter; the clock it blows from.
+  const across = x * Math.cos(state.yaw) - z * Math.sin(state.yaw);
+  const back = x * Math.sin(state.yaw) + z * Math.cos(state.yaw);
+  const clockF = ((((Math.atan2(-across, back) * 6) / Math.PI) % 12) + 12) % 12;
+  const hold = windHoldMil(rig.rifle, rangeM, sp, clockF);
+  const c = Math.round(clockF * 2) / 2;
+  const side = hold >= 0.05 ? " right" : hold <= -0.05 ? " left" : "";
+  return `${sp.toFixed(1)} m/s from ${Math.floor(c) || 12}${c % 1 ? ":30" : ""} · ${rangeM} m: hold ${Math.abs(hold).toFixed(1)} mil${side}`;
+}
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
 /** The can's heat over the air, whether it is still cold enough to throw its first shot, and its sleeve. */
 function canText(t: number): string {
@@ -1025,7 +1083,7 @@ function restText(): string {
   if (rig.hide) parts.push("hide");
   if (restNow.resetting) parts.push("re-setting");
   else if (restNow.bagUnsettled > 0.15) parts.push("bag settling");
-  if (rig.arcRad !== null && Math.abs(Math.abs(state.yaw - arcYaw) - rig.arcRad) < 1e-6) parts.push("at the frame");
+  if (rig.arcRad !== null && (Math.abs(Math.abs(state.yaw - arcYaw) - rig.arcRad) < 1e-6 || Math.abs(Math.abs(state.pitch - arcPitch) - ARC_PITCH) < 1e-6)) parts.push("at the frame");
   return parts.join(" · ");
 }
 const readout = $("readout");
@@ -1119,9 +1177,10 @@ function frame(t: number, dt: number): void {
   const squeeze = rig.bag && !acted.busy && kiloState.phase === "down" ? Number(keys.has("ArrowUp")) - Number(keys.has("ArrowDown")) : 0;
   bagRate += (squeeze * BAG_RATE - bagRate) * (1 - Math.exp(-dt / 0.15));
   if (Math.abs(bagRate) < 1e-7) bagRate = 0;
-  state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + bagRate * dt));
+  if (bagRate) state.pitch = clampArcPitch(state.pitch + bagRate * dt);
   // The rifle on its rest follows the hands, as the rest lets it; the wind buffets the hold.
   updateWindLoad(t);
+  stepKestrel(t, dt);
   restNow = restDyn.step(state.yaw, state.pitch, t, dt);
   const eye = { ...state.eye };
   if (state.drift) {
@@ -1410,6 +1469,7 @@ function frame(t: number, dt: number): void {
       ...(shooting.can() ? [["Suppressor", canText(t)]] : []),
       ...(kitMode ? [["Kit", `${encodeKit(rig.loadout).replaceAll(",", ", ") || "issued"} · pay ×${payFactor(rig.loadout).toFixed(2)}`]] : []),
       ...(state.easy ? [["Wind meter", windText()]] : []),
+      ...(rig.windMeter ? [["Kestrel", kestrelText()]] : []),
       ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
       ["Last shot", status.shot],
       ["Aim point", fmt(D)],

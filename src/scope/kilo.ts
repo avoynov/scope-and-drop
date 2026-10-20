@@ -55,9 +55,29 @@ export const KILO8K = {
 /** Pixels per mrad on the OLED (true angle). */
 export const KILO_PX_PER_MRAD = KILO8K.oled.w / (KILO8K.oledSpan * ((KILO8K.fovDeg * Math.PI) / 180) * 1000);
 
-/** Rays across the beam's footprint (mrad right, up from its centre): a 7 × 3 grid over 1.25 × 0.25. */
-export const BEAM_RAYS: [number, number][] = [];
-for (let j = 0; j < 3; j++) for (let i = 0; i < 7; i++) BEAM_RAYS.push([((i - 3) / 6) * KILO8K.beamMrad[0], ((j - 1) / 2) * KILO8K.beamMrad[1]]);
+/** Rays across a beam's footprint (mrad right, up from its centre): a 7 × 3 grid over its width and height. */
+export function beamRays(beam: readonly [number, number]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 7; i++) out.push([((i - 3) / 6) * beam[0], ((j - 1) / 2) * beam[1]]);
+  return out;
+}
+/** The KILO's beam, 1.25 × 0.25 mrad. */
+export const BEAM_RAYS = beamRays(KILO8K.beamMrad);
+
+/**
+ * The armoury's plain laser rangefinder, a hunting-class unit: range and angle on its display and nothing else (no
+ * solver, no menus, no target modes: it reports the strongest return). Its beam is wider and rounder than the
+ * KILO's (2 × 1 mrad, typical of the class), so at 400 m a man fills only part of it and a rock behind him can win;
+ * it reaches a person to about 640 m, answers in a third of a second, and is good to about ±1 m.
+ */
+export const PLAIN_LRF = {
+  beamMrad: [2, 1] as const,
+  responseS: 0.33,
+  sigmaM: 0.5,
+  reachM: { reflective: 1500 * YD, trees: 900 * YD, deer: 700 * YD },
+  target: "BEST" as TargetMode,
+};
+export const PLAIN_RAYS = beamRays(PLAIN_LRF.beamMrad);
 
 /** What one ray of the beam meets: its distance (m) and how well that surface sends the pulse back. */
 export interface RayHit {
@@ -74,8 +94,8 @@ export type TargetMode = "FIRST" | "BEST" | "LAST" | "XR" | "FOG";
  * default) the farthest, BEST the strongest; XR samples four times, so reaches further, and FOG is LAST past
  * the first 100 m of haze.
  */
-export function pickReturn(hits: RayHit[], mode: TargetMode): number | null {
-  const reach = { person: KILO8K.reachM.deer, rock: KILO8K.reachM.trees, ground: KILO8K.reachM.trees, none: 0 };
+export function pickReturn(hits: RayHit[], mode: TargetMode, rated: { trees: number; deer: number } = KILO8K.reachM): number | null {
+  const reach = { person: rated.deer, rock: rated.trees, ground: rated.trees, none: 0 };
   const sorted = hits.filter((h) => h.kind !== "none" && Number.isFinite(h.m)).sort((a, b) => a.m - b.m);
   const groups: { m: number; n: number; reach: number }[] = [];
   for (const h of sorted) {
@@ -190,8 +210,12 @@ export type Measure = () => { losM: number | null; slopeRad: number };
 
 type Button = "range" | "mode";
 
-/** The device: its buttons, timers and screen. Times are seconds on one clock. */
+/**
+ * The device: its buttons, timers and screen. Times are seconds on one clock. `kind` "plain" makes it the plain
+ * rangefinder (PLAIN_LRF): the same two buttons, a tap ranges and a hold scans, but no menus and only range and angle.
+ */
 export class Kilo {
+  kind: "abs" | "plain" = "abs";
   settings: KiloSettings = { ...KILO_DEFAULTS, wind: { ...KILO_DEFAULTS.wind } };
   private on = false;
   private onAt = 0;
@@ -213,6 +237,16 @@ export class Kilo {
     private rifle: Rifle,
     private measure: Measure,
   ) {}
+
+  /** Loads the profile for the rifle as it is loaded; a reading for another profile no longer stands. */
+  setRifle(rf: Rifle): void {
+    if (rf.id !== this.rifle.id || rf.round !== this.rifle.round || rf.sightM !== this.rifle.sightM) this.reading = null;
+    this.rifle = rf;
+  }
+  /** The profile's name on the status line: P1 and the load. */
+  profile(): string {
+    return `P1 ${this.rifle.round.toUpperCase()}`;
+  }
 
   isOn(): boolean {
     return this.on;
@@ -252,7 +286,7 @@ export class Kilo {
       return;
     }
     if (b === "range" && this.down.mode === null) {
-      this.due = t + KILO8K.responseS;
+      this.due = t + (this.kind === "plain" ? PLAIN_LRF.responseS : KILO8K.responseS);
     }
   }
 
@@ -271,12 +305,13 @@ export class Kilo {
   update(t: number): void {
     if (!this.on) return;
     const { range, mode } = this.down;
-    if (range !== null && mode !== null && !this.spent.mode && t - Math.max(range, mode) >= KILO8K.hotHoldS) {
+    const menus = this.kind === "abs";
+    if (menus && range !== null && mode !== null && !this.spent.mode && t - Math.max(range, mode) >= KILO8K.hotHoldS) {
       this.page = { list: "hot", i: 0 };
       this.spent.range = this.spent.mode = true;
       this.due = null;
       this.scanFrom = null;
-    } else if (mode !== null && range === null && !this.spent.mode && t - mode >= KILO8K.menuHoldS) {
+    } else if (menus && mode !== null && range === null && !this.spent.mode && t - mode >= KILO8K.menuHoldS) {
       if (this.page) this.page = null;
       else this.page = { list: "menu", i: 0 };
       this.spent.mode = true;
@@ -290,7 +325,7 @@ export class Kilo {
         this.scanFrom = null;
         this.spent.range = true;
       } else if (t >= this.nextScan) {
-        const hz = this.settings.target === "XR" ? 1 : KILO8K.scanHz;
+        const hz = this.settings.target === "XR" && this.kind === "abs" ? 1 : KILO8K.scanHz;
         this.nextScan += 1 / hz;
         this.take(t);
       }
@@ -309,7 +344,7 @@ export class Kilo {
 
   private take(t: number): void {
     const m = this.measure();
-    const sol = m.losM === null ? null : solveFiring(this.rifle, m.losM, m.slopeRad, this.settings.wind);
+    const sol = m.losM === null ? null : this.kind === "plain" ? rangeOnly(m.losM, m.slopeRad) : solveFiring(this.rifle, m.losM, m.slopeRad, this.settings.wind);
     this.reading = { sol, at: t };
     if (this.firstRangeAt === Infinity) this.firstRangeAt = t;
     this.onReading?.(sol);
@@ -358,8 +393,13 @@ export class Kilo {
     const ops: OledOp[] = [];
     const text = (s: string, x: number, y: number, size = 1, align: "l" | "c" | "r" = "l") => ops.push({ k: "text", s, x, y, size, align });
     if (t < this.onAt + KILO8K.splashS) {
-      text("SIG SAUER", 152, 112, 3, "c");
-      text("KILO8K-ABS", 152, 146, 1, "c");
+      if (this.kind === "plain") {
+        text("LRF", 152, 112, 3, "c");
+        text("RANGE · ANGLE", 152, 146, 1, "c");
+      } else {
+        text("SIG SAUER", 152, 112, 3, "c");
+        text("KILO8K-ABS", 152, 146, 1, "c");
+      }
       return ops;
     }
     const s = this.settings;
@@ -378,12 +418,13 @@ export class Kilo {
       if (value[item]) text(value[item], 152, 124, 3, "c");
       return ops;
     }
+    if (this.kind === "plain") return [...ops, ...this.plainScreen(t)];
     ops.push({ k: "reticle", style: s.reticle });
     if (t < this.firstRangeAt + KILO8K.declutterS) {
       ops.push({ k: "battery", x: 140, y: 14 });
       text(s.rangeMode, 56, 16);
       text(s.target, 248, 16, 1, "r");
-      text("P1 M118LR", 56, 232);
+      text(this.profile(), 56, 232);
       text(`${s.wind.mph}MPH ${s.wind.clock}:00`, 248, 232, 1, "r");
     }
     const r = this.reading;
@@ -415,6 +456,29 @@ export class Kilo {
     text(`${Math.round(sol.energyJ)} J`, 270, 196, 1, "r");
     return ops;
   }
+
+  /** The plain rangefinder's screen: a circle, the battery until the first range, then the range and the angle. */
+  private plainScreen(t: number): OledOp[] {
+    const ops: OledOp[] = [{ k: "reticle", style: "CIRCLE" }];
+    const text = (s: string, x: number, y: number, size = 1, align: "l" | "c" | "r" = "l") => ops.push({ k: "text", s, x, y, size, align });
+    if (t < this.firstRangeAt + KILO8K.declutterS) ops.push({ k: "battery", x: 140, y: 14 });
+    const r = this.reading;
+    if (!r) return ops;
+    if (!r.sol) {
+      text("- - - -", 152, 150, 3, "c");
+      return ops;
+    }
+    text(r.sol.losM.toFixed(1), 152, 150, 3, "c");
+    text("M", 152 + 52, 158, 1);
+    const inc = Math.round(r.sol.slopeDeg);
+    text(`${inc > 0 ? "^" : inc < 0 ? "v" : ""}${Math.abs(inc)}*`, 152, 196, 2, "c");
+    return ops;
+  }
+}
+
+/** What the plain rangefinder knows: the range and the angle. Everything a solver would add is left unknown. */
+function rangeOnly(losM: number, slopeRad: number): Solution {
+  return { losM, slopeDeg: (slopeRad * 180) / Math.PI, amrM: NaN, elevMil: NaN, windMil: NaN, velMs: NaN, energyJ: NaN };
 }
 
 /**

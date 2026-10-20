@@ -106,11 +106,20 @@ function renderLoadout(): void {
   );
   const iss = ISSUED[rf];
   $("issued").textContent = `Issued, free: ${OPTIC_NAMES[iss.optic]}, ${ROUNDS[iss.round].name}, ${iss.magazine} rounds, ${iss.muzzle.toLowerCase()}, ${iss.stock.toLowerCase()}, a rolled pack to rest it on.`;
+  // What each slot holds when nothing is chosen for it: the rifle as issued.
+  const issuedIn: Partial<Record<Slot, string>> = {
+    front: "rolled pack",
+    stock: iss.stock,
+    magazine: `${iss.magazine} rounds`,
+    muzzle: iss.muzzle,
+    optic: OPTIC_NAMES[iss.optic],
+    ammo: ROUNDS[iss.round].name,
+  };
   const l = loadout();
   $("slots").replaceChildren(
     ...SLOTS.filter((slot) => ITEM_IDS.some((id) => ITEMS[id].slot === slot && fits(id, rf))).map((slot) => {
       const sel = h("select", { onchange: () => setSlot(slot, (sel.value || null) as ItemId | null) });
-      sel.append(h("option", { value: "", textContent: "— issued / none —" }));
+      sel.append(h("option", { value: "", textContent: `Issued (${issuedIn[slot] ?? "none"})` }));
       for (const id of ITEM_IDS.filter((x) => ITEMS[x].slot === slot && fits(x, rf))) {
         const it = ITEMS[id];
         const owned = career.owned.has(id);

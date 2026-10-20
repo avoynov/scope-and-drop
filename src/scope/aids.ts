@@ -6,7 +6,7 @@
  *    puts the rifle's sight down, ranges with it at the eye and reads the elevation and wind holds off its display.
  */
 import { ROUNDS, holdRad } from "./ballistics";
-import { BATTLE_ZERO_M, dialTiltRad, firstHit, fly, type Rifle, type Vec3 } from "./shot";
+import { BATTLE_ZERO_M, dialTiltRad, firstHit, fly, millerStability, type Rifle, type Vec3 } from "./shot";
 
 export type AimAid = "manual" | "lrf";
 
@@ -76,4 +76,31 @@ export function solveElevationMil(rf: Rifle, slantM: number, slopeRad: number): 
     [h0, m0, h1] = [h1, m1, next];
   }
   return h1 * 1000;
+}
+
+/**
+ * The wind hold (mil, positive right) a solver gives on the level at `rangeM` for a steady wind of `ms` m/s from
+ * `clock` (3 = from the right), spin drift included: the Kestrel's Applied Ballistics answer for the wind it reads.
+ * The bullet is flown with the come-up for that range, so it crosses the target's plane where it would.
+ */
+export function windHoldMil(rf: Rifle, rangeM: number, ms: number, clock: number): number {
+  const r = ROUNDS[rf.round];
+  const th = (clock * Math.PI) / 6;
+  const w: Vec3 = [-Math.sin(th) * ms, 0, Math.cos(th) * ms];
+  const up = dialTiltRad(rf, 0) + holdRad(r, rangeM, BATTLE_ZERO_M, rf.sightM);
+  const p = fly({
+    round: r,
+    mv: r.mv,
+    origin: [0, -rf.sightM, 0],
+    dir: [0, Math.sin(up), -Math.cos(up)],
+    wind: (_x, _y, _z, _t, out) => ((out[0] = w[0]), (out[1] = w[1]), (out[2] = w[2]), out),
+    sg: millerStability(rf, r.mv),
+    floor: 1e4,
+  });
+  const h = firstHit(
+    p,
+    () => -1e9,
+    (A, B) => (A[2] > -rangeM && B[2] <= -rangeM ? { f: (A[2] + rangeM) / (A[2] - B[2]), what: "plane" } : null),
+  );
+  return (-h.pos[0] / rangeM) * 1000;
 }

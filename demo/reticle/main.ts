@@ -1,13 +1,17 @@
 import * as THREE from "three";
-import { ROUNDS, holdRad } from "../../src/scope/ballistics";
+import { ROUNDS } from "../../src/scope/ballistics";
 import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
-import { RECOIL, followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
-import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
-import { speedDrop, type AimAid } from "../../src/scope/aids";
-import { BEAM_RAYS, KILO8K, Kilo, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
+import { followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
+import { RestDynamics, dynamicPressure, holdAt, type RestState } from "../../src/scope/hold";
+import { rigFor, type Rig } from "../../src/armoury/rig";
+import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
+import { ACSS_RANGES, PSO_CHEVRON_RANGES, RETICLES, TREMOR_ROWS, VSS_CHEVRON_RANGES, acssReticle, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
+import { comeUps, dotValues, loadCard, loadCardNeeded } from "../../src/scope/cards";
+import { speedDrop, windHoldMil, type AimAid } from "../../src/scope/aids";
+import { BEAM_RAYS, KILO8K, Kilo, PLAIN_LRF, PLAIN_RAYS, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
 import { compose, invert, qRot } from "../../src/scope/handling";
-import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
+import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltLoaded, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
 import { createComposite } from "./composite";
@@ -20,6 +24,7 @@ import { KILO_DOWN_S, KILO_UP_S, kiloRig, paintOled, rasterOled, toQuat, type Ki
 import { CHEST_M, EYE_HEIGHT, buildRange, configureTargets, heightAt, targetRanges, terrainLift, type TargetSpot } from "./scene";
 import { createShooting, type Aim } from "./shooting";
 import { createWindGL } from "./wind-gl";
+import { buildHide } from "./hide";
 import { woundSvg, woundText } from "./wound-card";
 
 const params = new URLSearchParams(location.search);
@@ -47,11 +52,13 @@ configureTargets([spotParam("far"), spotParam("near")]);
 const RIFLE = { pso: "svd", tree: "bolt", vss: "vss" } as const satisfies Record<Reticle["id"], RifleId>;
 const HOME = { pso: 0, tree: 0, vss: 1 } as const satisfies Record<Reticle["id"], number>;
 const reticleParam = params.get("reticle");
+/** What `kit=` asks for, before the kit itself is fitted (the reticle's unit is needed sooner). */
+const kitAsks = new Set((params.get("kit") ?? "").split(",").map((x) => x.trim().toLowerCase()));
 
 const state = {
   reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
-  /** The bolt rifle's reticle: Leupold PR2-MIL or Vortex EBR-7D (`tree=pr2|ebr`). */
-  treeStyle: (params.get("tree") === "ebr" ? "ebr" : "pr2") as TreeStyle,
+  /** The bolt rifle's reticle: Leupold PR2-MIL, Vortex EBR-7D or the TReMoR3-style grid (`tree=pr2|ebr|tremor`). */
+  treeStyle: (kitAsks.has("tremor") ? "tremor" : kitAsks.has("ebr") ? "ebr" : params.get("tree") === "ebr" || params.get("tree") === "tremor" ? params.get("tree") : "pr2") as TreeStyle,
   /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a handheld rangefinder (`aid=manual|lrf`). */
   aid: (params.get("aid") === "lrf" ? "lrf" : "manual") as AimAid,
   mag: num("mag", 8),
@@ -97,8 +104,18 @@ const state = {
   pitch: 0,
 };
 
-/** The reticle in the scope now. */
-const currentReticle = (): Reticle => (state.reticle === "tree" ? treeReticle(state.treeStyle) : RETICLES[state.reticle]());
+/** The VSS's scope: the issued PSO-1-1, or the ACSS-style one in the kit. */
+let vssStyle: "pso" | "acss" = kitAsks.has("acss") ? "acss" : "pso";
+const reticles = new Map<string, Reticle>();
+/** The reticle in the scope now, built once for each style. */
+const currentReticle = (): Reticle => {
+  const key = state.reticle === "tree" ? `tree|${state.treeStyle}` : state.reticle === "vss" ? `vss|${vssStyle}` : "pso";
+  let r = reticles.get(key);
+  if (!r) reticles.set(key, (r = state.reticle === "tree" ? treeReticle(state.treeStyle) : state.reticle === "vss" && vssStyle === "acss" ? acssReticle() : RETICLES[state.reticle]()));
+  return r;
+};
+/** The reticle's unit for the readouts and cards. */
+const unitShort = (r: Reticle) => (r.unitName === "mrad" ? "mil" : "th");
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: shot });
 const dpr = shot ? 1 : Math.min(devicePixelRatio, 2);
@@ -179,6 +196,88 @@ const toSun = range.sun.position.clone().sub(range.sun.target.position).normaliz
 const sound = createSound();
 const glass = createGlass(range, eyePos);
 const shooting = createShooting(range, sound, glass);
+
+/**
+ * The kit (src/armoury): `kit=atlas,bag,kilo` puts a loadout on whichever rifle is up, as the armoury would, and
+ * leaves behind what doesn't fit it; the Pro, EBR and Easy buttons then follow the kit. Without it the lab is the
+ * lab: its own bipod hold, and those buttons stand for the rangefinder, the reticle and the wind meter.
+ */
+const kitParam = params.get("kit");
+const kitMode = kitParam !== null;
+function loadoutNow(): Loadout {
+  const id = RIFLE[state.reticle];
+  if (kitMode) return decodeKit(id, kitParam);
+  const l = emptyLoadout(id);
+  if (id === "bolt" && state.aid === "lrf") l.items.ranging = "kilo";
+  if (id === "bolt" && state.treeStyle !== "pr2") l.items.optic = state.treeStyle;
+  return l;
+}
+/** The rifle as the kit has it: load, recoil, hold, rest, stock fit, magazine, aids (src/armoury/rig.ts). */
+let rig: Rig = rigFor(loadoutNow(), { lab: !kitMode });
+let rigKey = "";
+/** How the rifle swings on its rest, and where that has it now (before the hold's own sway). */
+let restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
+let restNow: RestState = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
+/** The wind's dynamic pressure on the rifle and the shooter now (Pa), for the buffeting in the hold, and its speed (m/s). */
+let windLoad = 0;
+let windAtMuzzle = 0;
+/** How far a hot can's plume has risen (shader units), for its shimmer. */
+let hazeT = 0;
+/**
+ * The hide's window faces between the two mannequins; with the hide carried the rifle (and the rangefinder) turn
+ * only so far either side of that before the barrel meets its frame.
+ */
+const [arcYaw, arcPitch] = (() => {
+  const a = range.targets.map((m) => {
+    const d = m.foot.clone().setY(m.foot.y + CHEST_M).sub(eyePos);
+    return [Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z))] as const;
+  });
+  return [a.reduce((x, y) => x + y[0], 0) / a.length, a.reduce((x, y) => x + y[1], 0) / a.length];
+})();
+/** How far the window lets the muzzle dip or rise from its middle (rad). */
+const ARC_PITCH = (6 * Math.PI) / 180;
+const clampArc = (yaw: number) => (rig.arcRad === null ? yaw : arcYaw + Math.max(-rig.arcRad, Math.min(rig.arcRad, yaw - arcYaw)));
+const clampArcPitch = (pitch: number) => {
+  const p = Math.max(-0.3, Math.min(0.3, pitch));
+  return rig.arcRad === null ? p : arcPitch + Math.max(-ARC_PITCH, Math.min(ARC_PITCH, p - arcPitch));
+};
+const hide = buildHide(range.scene, eyePos, arcYaw, arcPitch, (12 * Math.PI) / 180, ARC_PITCH);
+/** Rebuilds the rig when the rifle, or in the lab the buttons it follows, change; a new rig settles on its rest. */
+function syncRig(): void {
+  const id = RIFLE[state.reticle];
+  const key = kitMode ? id : `${id}|${state.aid}|${state.treeStyle}`;
+  if (key === rigKey) return;
+  rigKey = key;
+  rig = rigFor(loadoutNow(), { lab: !kitMode });
+  if (kitMode) {
+    state.aid = rig.ranging === "kilo" ? "lrf" : "manual";
+    state.treeStyle = rig.optic === "ebr" || rig.optic === "tremor" ? rig.optic : "pr2";
+    vssStyle = rig.optic === "acss" ? "acss" : "pso";
+    // The lab's mast meter is not kit: the Kestrel is.
+    state.easy = false;
+  }
+  kilo.setRifle(rig.rifle);
+  kilo.kind = rig.ranging === "plain" ? "plain" : "abs";
+  if (hide.group.visible !== rig.hide) {
+    hide.group.visible = rig.hide;
+    // The surround is redrawn only when the view turns; the hide's walls change it now.
+    wideDrawn = null;
+  }
+  shooting.setRifle(rig.rifle, rig.mag, rig.report);
+  rifle.setKit({ can: rig.can, sleeve: rig.sleeve, weight: rig.muzzleKg > 0 && !rig.can, mag: rig.mag });
+  state.yaw = clampArc(state.yaw);
+  state.pitch = clampArcPitch(state.pitch);
+  restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
+  restNow = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
+}
+const windAtRifle: [number, number, number] = [0, 0, 0];
+/** The wind on the rifle and the shooter at `t`: in the hide a fifth of its speed gets in, a twenty-fifth of its push. */
+function updateWindLoad(t: number): void {
+  const w = windAt(state.wind, eyePos.x, eyePos.y, eyePos.z, t, windAtRifle);
+  const inside = rig.hide ? 0.2 : 1;
+  windAtMuzzle = Math.hypot(w[0], w[1], w[2]) * inside;
+  windLoad = state.sway ? dynamicPressure(w) * inside * inside : 0;
+}
 /** Glazes the frames afresh (or takes them away); their shadows change, so the shadow map is redrawn. */
 function glaze(): void {
   glass.set(state.glass === "off" ? null : state.glass, state.glassAngle);
@@ -241,7 +340,7 @@ function drawKilo(t: number): void {
   retTex.needsUpdate = true;
 }
 function drawRet(): void {
-  const key = `${state.reticle}|${state.treeStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
+  const key = `${state.reticle}|${state.treeStyle}|${vssStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
   if (key === retKey) return;
   retKey = key;
   kiloKey = "";
@@ -312,7 +411,8 @@ const kilo = new Kilo(RIFLES.bolt, () => {
   const solids = [range.boulder, ...range.targets.map((m) => m.group)];
   for (const o of solids) o.updateWorldMatrix(true, true);
   const rock = (o: THREE.Object3D | null): boolean => !!o && (o === range.boulder || rock(o.parent));
-  const hits: RayHit[] = BEAM_RAYS.map(([mx, my]) => {
+  const plain = kilo.kind === "plain";
+  const hits: RayHit[] = (plain ? PLAIN_RAYS : BEAM_RAYS).map(([mx, my]) => {
     kiloDir
       .set(mx / 1000, my / 1000, -1)
       .normalize()
@@ -324,10 +424,10 @@ const kilo = new Kilo(RIFLES.bolt, () => {
     if (h && h.distance < g) return { m: h.distance, kind: rock(h.object) ? "rock" : "person" };
     return Number.isFinite(g) ? { m: g, kind: "ground" } : { m: Infinity, kind: "none" };
   });
-  const m = pickReturn(hits, kilo.settings.target);
+  const m = plain ? pickReturn(hits, PLAIN_LRF.target, PLAIN_LRF.reachM) : pickReturn(hits, kilo.settings.target);
   kiloDir.set(0, 0, -1).applyQuaternion(kiloMeasQ);
   const slopeRad = Math.asin(Math.max(-1, Math.min(1, kiloDir.y)));
-  return { losM: m === null ? null : m + rangeSigmaM(m) * shotRandom(1000 + kiloShots++)(), slopeRad };
+  return { losM: m === null ? null : m + (plain ? PLAIN_LRF.sigmaM : rangeSigmaM(m)) * shotRandom(1000 + kiloShots++)(), slopeRad };
 });
 /** Its settings from the URL, for stills: `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`. */
 {
@@ -339,7 +439,8 @@ const kilo = new Kilo(RIFLES.bolt, () => {
   if (mph !== undefined && Number.isFinite(mph)) kilo.settings.wind.mph = Math.max(0, Math.min(30, Math.round(mph)));
   if (clk !== undefined && Number.isFinite(clk)) kilo.settings.wind.clock = ((Math.round(clk) + 11) % 12) + 1;
 }
-const kiloReady = () => state.reticle === "tree" && state.aid === "lrf";
+/** A rangefinder in the kit (in the lab without a kit, the bolt rifle's Pro button). */
+const kiloReady = () => rig.ranging !== "none";
 /** X: up from the ground to the eye, or back down. The head comes up off the scope first. */
 function toggleKilo(): void {
   if (kiloState.phase === "down") {
@@ -380,23 +481,57 @@ const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 1
  * the slant range × the cosine read off the ACI, which holds up on steep, long shots where the classic rifleman's
  * rule (range × cosine) falls low. Wind is on the wind card.
  */
-const SPEED_DROP = speedDrop(RIFLES.bolt);
 const dope = $("dope");
+let dopeFor = "";
+/** Signed hold off a chevron: ▼ below it, ▲ above, "on" within half a tenth. */
+const offChevron = (c: number) => (Math.abs(c) < 0.05 ? "on" : `${c > 0 ? "▼" : "▲"}${Math.abs(c).toFixed(1)}`);
+/**
+ * The card for the rifle as loaded (src/scope/cards.ts), worked out from the load in the magazine:
+ *  - the bolt rifle, the manual way: its Speed Drop card, or, for a load with no useful band (the subsonic one),
+ *    a card of come-ups;
+ *  - a reticle cut for another load than the one in the rifle (the PSO's chevrons, the ACSS's): a load card, how
+ *    far below or above each chevron to hold, with the drum on 1.
+ */
 function syncDope(): void {
-  const show = state.reticle === "tree" && state.aid === "manual";
-  dope.hidden = !show;
-  if (!show || dope.innerHTML) return;
-  const rf = RIFLES.bolt;
+  const ret = currentReticle();
+  const rf = rig.rifle;
   const r = ROUNDS[rf.round];
-  const sd = SPEED_DROP;
-  const far = [500, 600, 700, 800, 900, 1000].filter((d) => d > sd.maxM);
-  const elev = (d: number) => (holdRad(r, d, BATTLE_ZERO_M, rf.sightM) * 1000).toFixed(1);
-
-  dope.innerHTML =
-    `<div class="dope-head"><b>SPEED DROP</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
-    `<div class="sd"><span class="sd-n">${sd.factor.toFixed(1)}</span><span>elevation = range in hundreds − ${sd.factor.toFixed(1)}<br>good ${Math.ceil(sd.minM / 10) * 10}–${Math.floor(sd.maxM / 10) * 10} m, within ${sd.tolMil} mil</span></div>` +
-    `<table><tr><th>past</th>${far.map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${far.map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
-    `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
+  const kind = state.reticle === "tree" ? (state.aid === "manual" ? "drop" : null) : rf.round !== ret.round ? "load" : null;
+  const key = `${kind}|${rf.round}|${ret.name}`;
+  if (key === dopeFor) return;
+  dopeFor = key;
+  dope.innerHTML = "";
+  if (kind === "drop") {
+    const sd = speedDrop(rf);
+    const elev = (d: number) => comeUps(rf, [d])[0]!.mil.toFixed(1);
+    if (sd.maxM - sd.minM >= 150) {
+      const far = [500, 600, 700, 800, 900, 1000].filter((d) => d > sd.maxM);
+      dope.innerHTML =
+        `<div class="dope-head"><b>SPEED DROP</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
+        `<div class="sd"><span class="sd-n">${sd.factor.toFixed(1)}</span><span>elevation = range in hundreds − ${sd.factor.toFixed(1)}<br>good ${Math.ceil(sd.minM / 10) * 10}–${Math.floor(sd.maxM / 10) * 10} m, within ${sd.tolMil} mil</span></div>` +
+        `<table><tr><th>past</th>${far.map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${far.map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
+    } else {
+      // A slow load's drop grows too fast for one factor: the card is its come-ups, every 25 m.
+      const rows = [125, 150, 175, 200, 225, 250, 275, 300];
+      dope.innerHTML =
+        `<div class="dope-head"><b>COME-UPS</b> ${r.name}<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
+        `<table><tr><th>m</th>${rows.slice(0, 4).map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${rows.slice(0, 4).map((d) => `<td>${elev(d)}</td>`).join("")}</tr>` +
+        `<tr><th>m</th>${rows.slice(4).map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${rows.slice(4).map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">No Speed Drop factor holds for this load: range it closely.<br>1 click = 0.1 mil · up or downhill: × the ACI's cosine</div>`;
+    }
+  } else if (kind === "load") {
+    const ranges = vssStyle === "acss" && state.reticle === "vss" ? ACSS_RANGES : state.reticle === "vss" ? VSS_CHEVRON_RANGES : PSO_CHEVRON_RANGES;
+    const rows = loadCard(rf, ret.round, ranges, ret.unitRad);
+    if (loadCardNeeded(rows)) {
+      const unit = ret.unitName === "mrad" ? "mil" : "thousandths";
+      dope.innerHTML =
+        `<div class="dope-head"><b>LOAD CARD</b> ${r.name}<span>${ret.name} cut for ${ROUNDS[ret.round].name} · ${unit}</span></div>` +
+        `<table><tr><th>chevron</th>${rows.map((x) => `<td>${x.rangeM}</td>`).join("")}</tr><tr><th>hold</th>${rows.map((x) => `<td>${offChevron(x.corr)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">▼ hold that far below the chevron, ▲ above it.<br>With the drum on 1: its marks are cut for ${ROUNDS[ret.round].name} too.</div>`;
+    } else dope.innerHTML = `<div class="dope-head"><b>LOAD CARD</b> ${r.name}<span>flies as ${ROUNDS[ret.round].name}: every chevron holds</span></div>`;
+  }
+  dope.hidden = !dope.innerHTML;
 }
 
 /**
@@ -425,20 +560,26 @@ const flagIcon = (deg: number) => {
   );
 };
 function syncWindCard(): void {
-  const key = `${state.reticle}|${state.easy}`;
+  const ret = currentReticle();
+  const round = rig.rifle.round;
+  const key = `${state.reticle}|${state.easy}|${round}|${ret.name}`;
   if (key === windCardFor) return;
   windCardFor = key;
-  const ret = currentReticle();
-  const ranges = CARD_RANGES[state.reticle];
-  const drift = crossDriftPerMs(ROUNDS[ret.round], ranges);
-  const unit = ret.id === "tree" ? "mil" : "thousandths";
+  // Short loads (the subsonic ones) are on the VSS's ranges.
+  const ranges = ROUNDS[round].mv < 330 ? CARD_RANGES.vss : CARD_RANGES[state.reticle];
+  const drift = crossDriftPerMs(ROUNDS[round], ranges);
+  const unit = ret.unitName === "mrad" ? "mil" : "thousandths";
+  // The grid's wind dots: what one is worth for this load, on a few rows.
+  const dots = ret.name === "TReMoR3" ? dotValues(rig.rifle, TREMOR_ROWS.filter((k) => k % 2 === 0 && k <= 10)) : [];
   windCard.innerHTML =
-    `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[ret.round].name}<span>${unit} into the wind</span></div>` +
+    `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[round].name}<span>${unit} into the wind</span></div>` +
     `<table><tr><th>flag</th>${CARD_FLAGS.map((d) => `<td>${flagIcon(d)}</td>`).join("")}</tr>` +
     // Easy: what the meter reads for each flag, to go from its number to a column.
     (state.easy ? `<tr class="card-sub"><th>m/s</th>${CARD_FLAGS.map((d) => `<td>${d >= 90 ? 10 : Math.round(d / FLAG_DEG_PER_MS)}</td>`).join("")}</tr>` : "") +
     ranges.map((r, i) => `<tr><th>${r} m</th>${CARD_FLAGS.map((d) => `<td>${quarters(((d >= 90 ? 10 : d / FLAG_DEG_PER_MS) * drift[i]!) / r / ret.unitRad)}</td>`).join("")}</tr>`).join("") +
-    `</table><div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
+    `</table>` +
+    (dots.length ? `<table><tr><th>grid row</th>${dots.map((d) => `<td>${d.row}</td>`).join("")}</tr><tr><th>1 dot, m/s</th>${dots.map((d) => `<td>${d.msPerDot.toFixed(1)}</td>`).join("")}</tr></table>` : "") +
+    `<div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
 }
 
 const windIn = $("wind") as HTMLInputElement;
@@ -482,11 +623,12 @@ function syncDrum(): void {
     drum.set(dialDetents(r.dial), state.dial[state.reticle]);
     rifle.setDrumMarks(r.dial);
   }
-  shooting.setTilt(dialTiltRad(r, state.dial[state.reticle]));
+  // The rifle as loaded: a range drum's marks are cut for the issued load, the 100 m zero is the load's own.
+  shooting.setTilt(dialTiltLoaded(rig.rifle, rig.issuedRound, state.dial[state.reticle]));
 }
 
 function syncUi(): void {
-  shooting.setRifle(RIFLE[state.reticle]);
+  syncRig();
   syncDrum();
   syncDope();
   sound.enabled = state.sound;
@@ -502,6 +644,8 @@ function syncUi(): void {
   ezIn.value = String(state.eye.z);
   panIn.value = String(state.pan);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]")) b.classList.toggle("on", b.dataset.ret === state.reticle);
+  // With a kit the rangefinder, the reticle and the wind meter are what was packed.
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid], [data-tree], [data-flag=easy]")) b.disabled = kitMode;
   $("treestyle").hidden = state.reticle !== "tree";
   $("aid").hidden = state.reticle !== "tree";
   syncTarget();
@@ -527,6 +671,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>("[data-ret]"))
   };
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]"))
   b.onclick = () => {
+    if (kitMode) return;
     state.treeStyle = b.dataset.tree as TreeStyle;
     syncUi();
   };
@@ -557,12 +702,14 @@ $("tmove").onclick = moveTarget;
 for (const el of [tRange, tElev]) el.addEventListener("keydown", (e) => e.key === "Enter" && moveTarget());
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-aid]"))
   b.onclick = () => {
+    if (kitMode) return;
     state.aid = b.dataset.aid as AimAid;
     syncUi();
   };
 for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]"))
   b.onclick = () => {
     const k = b.dataset.flag as "illum";
+    if (kitMode && k === ("easy" as string)) return;
     state[k] = !state[k];
     syncUi();
   };
@@ -578,6 +725,9 @@ $("center").onclick = () => {
  * shooter has to drag it back down.
  */
 let recoil: { start: number; spec: RecoilSpec; v: ShotVariation } | null = null;
+/** How fast the squeeze bag is moving the muzzle now (rad/s, up +), and its most (0.6 mrad a second). */
+let bagRate = 0;
+const BAG_RATE = 0.0006;
 let shots = 0;
 let clock = 0;
 const REST: RecoilState = { pitch: 0, yaw: 0, tiltPitch: 0, tiltYaw: 0, eye: { x: 0, y: 0, z: 0 } };
@@ -585,26 +735,27 @@ const REST: RecoilState = { pitch: 0, yaw: 0, tiltPitch: 0, tiltYaw: 0, eye: { x
 const EXPOSURE = 1 / 60;
 function foldRecoil(r: RecoilState): void {
   const pitch = Math.max(-0.3, Math.min(0.3, state.pitch + r.pitch));
-  // The head comes along, so folding the rise into the aim is not a swing.
+  // The head and the rest come along, so folding the rise into the aim is not a swing.
   panHead.pitch += pitch - state.pitch;
   panHead.yaw -= r.yaw;
+  restDyn.shift(-r.yaw, pitch - state.pitch);
   state.pitch = pitch;
   state.yaw -= r.yaw; // three.js yaw is positive to the left
 }
-/** Breathing (≈0.25 Hz figure-eight) plus heartbeat twitch, in object-space radians: [yaw, pitch]. */
+/**
+ * The hold (src/scope/hold.ts): breathing, wander, heartbeat and tremor as the rest and the kit allow, and the wind
+ * buffeting the rifle. Object-space radians: [yaw, pitch].
+ */
 function swayAt(t: number): [number, number] {
-  if (!state.sway) return [0, 0];
-  const b = 0.00032;
-  const beat = Math.exp(-((t * 1.15) % 1) * 18);
-  return [b * (Math.sin(t * 1.55) * 0.6 + Math.sin(t * 0.37 + 1) * 0.8), b * (Math.sin(t * 3.1 + 0.4) * 0.5 + Math.sin(t * 0.29) * 0.9) - 0.00006 * beat];
+  return state.sway ? holdAt(rig.hold, t, windLoad) : [0, 0];
 }
 /** The hands working the action: offsets to the aim (see shooting.act). */
 let hand: { yaw: number; pitch: number } | null = null;
-/** Where the bore points at time t: the aim, sway, the hands on the action and any recoil still running. */
+/** Where the bore points at time t: the rifle on its rest, sway, the hands on the action and any recoil still running. */
 function aimAt(t: number): Aim {
   const [sy, sp] = swayAt(t);
   const rc = recoil ? recoilAt(recoil.spec, recoil.v, t - recoil.start) : REST;
-  return { yaw: state.yaw + sy - rc.yaw - (hand?.yaw ?? 0), pitch: state.pitch + sp + rc.pitch + (hand?.pitch ?? 0) };
+  return { yaw: restNow.yaw + sy - rc.yaw - (hand?.yaw ?? 0), pitch: restNow.pitch + sp + rc.pitch + (hand?.pitch ?? 0) };
 }
 function fire(): void {
   if (kiloState.phase !== "down") return;
@@ -613,7 +764,7 @@ function fire(): void {
   if (exit === null) return;
   // A second shot before the first settles starts from wherever the rifle is when the bullet leaves.
   if (recoil) foldRecoil(recoilAt(recoil.spec, recoil.v, exit - recoil.start));
-  recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(shots++) };
+  recoil = { start: exit, spec: rig.recoil, v: shotVariation(shots++, rig.fit.holdSpread) };
 }
 $("fire").onclick = () => fire();
 /**
@@ -654,7 +805,8 @@ function toggleScope(): void {
   const from = headAt(clock);
   const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
   adsIn = !adsIn;
-  ads = (adsIn ? planScopeIn : planScopeOut)(clock, from, vel, adsMoves++);
+  // A stock that fits brings the eye down closer to the exit pupil, and sooner.
+  ads = adsIn ? planScopeIn(clock, from, vel, adsMoves++, rig.fit) : planScopeOut(clock, from, vel, adsMoves++);
   syncUi();
 }
 $("scope").onclick = () => toggleScope();
@@ -815,11 +967,11 @@ canvas.addEventListener("pointermove", (e) => {
     if (kiloState.phase === "up") {
       // Turning the rangefinder: one px moves its view one px (its field fills the same circle on screen).
       const kk = Math.tan((KILO8K.fovDeg * Math.PI) / 360) / (R / dpr);
-      kiloState.yaw += (e.clientX - prev.x) * kk;
-      kiloState.pitch = Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk));
+      kiloState.yaw = clampArc(kiloState.yaw + (e.clientX - prev.x) * kk);
+      kiloState.pitch = rig.arcRad === null ? Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk)) : clampArcPitch(kiloState.pitch + (e.clientY - prev.y) * kk);
     } else {
-      state.yaw += (e.clientX - prev.x) * k;
-      state.pitch = Math.max(-0.3, Math.min(0.3, state.pitch + (e.clientY - prev.y) * k));
+      state.yaw = clampArc(state.yaw + (e.clientX - prev.x) * k);
+      state.pitch = clampArcPitch(state.pitch + (e.clientY - prev.y) * k);
     }
   }
   prev.x = e.clientX;
@@ -858,6 +1010,8 @@ const keys = new Set<string>();
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
   keys.add(e.code);
+  // The arrows squeeze the bag (in the frame loop), not scroll the page.
+  if (e.code === "ArrowUp" || e.code === "ArrowDown") e.preventDefault();
   if (e.code === "KeyT") {
     state.reticle = ({ pso: "tree", tree: "vss", vss: "pso" } as const)[state.reticle];
     syncUi();
@@ -872,13 +1026,13 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyM" && kiloState.phase === "up") {
     // At the eye, M is the rangefinder's MODE button.
     if (!e.repeat) kilo.press("mode", clock);
-  } else if (e.code === "KeyM" && state.reticle === "tree") {
+  } else if (e.code === "KeyM" && state.reticle === "tree" && !kitMode) {
     state.aid = state.aid === "manual" ? "lrf" : "manual";
     syncUi();
   }
   if (e.code === "KeyX" && !e.repeat) toggleKilo();
-  if (e.code === "KeyV" && state.reticle === "tree") {
-    state.treeStyle = state.treeStyle === "pr2" ? "ebr" : "pr2";
+  if (e.code === "KeyV" && state.reticle === "tree" && !kitMode) {
+    state.treeStyle = ({ pr2: "ebr", ebr: "tremor", tremor: "pr2" } as const)[state.treeStyle];
     syncUi();
   }
   if (e.code === "KeyG") {
@@ -887,6 +1041,11 @@ addEventListener("keydown", (e) => {
     syncUi();
   }
   if (e.code === "KeyH") document.body.classList.toggle("nohud");
+  // The Kestrel's target range: , and . step it 25 m (with Shift, 100 m).
+  if ((e.code === "Comma" || e.code === "Period") && rig.windMeter) {
+    const step = (e.shiftKey ? 100 : 25) * (e.code === "Comma" ? -1 : 1);
+    kestrel.rangeM = Math.max(50, Math.min(1500, kestrel.rangeM + step));
+  }
   if (e.code === "KeyF" && !e.repeat) {
     if (kiloState.phase === "up") toggleKilo();
     else if (kiloState.phase === "down") toggleScope();
@@ -927,7 +1086,61 @@ function windText(): string {
   const h = Math.floor(c);
   return `${sp.toFixed(1)} m/s · from ${h === 0 ? 12 : h}${c % 1 ? ":30" : ""}`;
 }
+/**
+ * The Kestrel 5700 Elite on its vane mount (kit `kestrel`), beside the shooter about a metre up: the wind where it
+ * stands (in the hide, the hide's still air), averaged over a few seconds as shooters read it, and its Applied
+ * Ballistics solver's wind hold for the loaded round at the range set on it (`,` and `.`), for the way the rifle
+ * points. The hold is exact for that wind; the wind along the bullet's way is still the shooter's to judge.
+ */
+const kestrel = { rangeM: Math.round(Math.max(50, Math.min(1500, num("kestrel", 300)))), x: 0, z: 0, primed: false };
+const KESTREL_UP_M = 1;
+const kestrelTmp: [number, number, number] = [0, 0, 0];
+function stepKestrel(t: number, dt: number): void {
+  if (!rig.windMeter) {
+    kestrel.primed = false;
+    return;
+  }
+  const kx = eyePos.x + 0.6;
+  const w = windAt(state.wind, kx, heightAt(kx, eyePos.z) + KESTREL_UP_M, eyePos.z, t, kestrelTmp);
+  const inside = rig.hide ? 0.2 : 1;
+  const a = shot || !kestrel.primed ? 1 : 1 - Math.exp(-dt / 3);
+  kestrel.x += (w[0] * inside - kestrel.x) * a;
+  kestrel.z += (w[2] * inside - kestrel.z) * a;
+  kestrel.primed = true;
+}
+function kestrelText(): string {
+  const { x, z, rangeM } = kestrel;
+  const sp = Math.hypot(x, z);
+  if (sp < 0.2) return `calm · ${rangeM} m: no hold`;
+  // In the rifle's frame: across to the right, and back toward the shooter; the clock it blows from.
+  const across = x * Math.cos(state.yaw) - z * Math.sin(state.yaw);
+  const back = x * Math.sin(state.yaw) + z * Math.cos(state.yaw);
+  const clockF = ((((Math.atan2(-across, back) * 6) / Math.PI) % 12) + 12) % 12;
+  const hold = windHoldMil(rig.rifle, rangeM, sp, clockF);
+  const c = Math.round(clockF * 2) / 2;
+  const side = hold >= 0.05 ? " right" : hold <= -0.05 ? " left" : "";
+  return `${sp.toFixed(1)} m/s from ${Math.floor(c) || 12}${c % 1 ? ":30" : ""} · ${rangeM} m: hold ${Math.abs(hold).toFixed(1)} mil${side}`;
+}
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
+/** The can's heat over the air, whether it is still cold enough to throw its first shot, and its sleeve. */
+function canText(t: number): string {
+  const can = shooting.can()!;
+  const parts = [`+${Math.round(can.riseAt(t))} °C`];
+  if (rig.report !== "integral" && can.coldness(t) > 0.5) parts.push("cold: first shot high");
+  if (rig.sleeve) parts.push("sleeve");
+  return parts.join(" · ");
+}
+const REST_NAMES = { lab: "bipod", pack: "pack", harris: "Harris bipod", atlas: "Atlas bipod", tripod: "tripod" } as const satisfies Record<Rig["restKind"], string>;
+/** What the rifle rests on, and what the rest is doing: the legs re-set, the bag settling, the hide's frame reached. */
+function restText(): string {
+  const parts: string[] = [REST_NAMES[rig.restKind]];
+  if (rig.bag) parts.push("squeeze bag");
+  if (rig.hide) parts.push("hide");
+  if (restNow.resetting) parts.push("re-setting");
+  else if (restNow.bagUnsettled > 0.15) parts.push("bag settling");
+  if (rig.arcRad !== null && (Math.abs(Math.abs(state.yaw - arcYaw) - rig.arcRad) < 1e-6 || Math.abs(Math.abs(state.pitch - arcPitch) - ARC_PITCH) < 1e-6)) parts.push("at the frame");
+  return parts.join(" · ");
+}
 const readout = $("readout");
 let lastReadout = 0;
 const woundCard = $("wound");
@@ -1002,6 +1215,7 @@ function frame(t: number, dt: number): void {
     state.pitch += acted.fold[1];
     panHead.yaw -= acted.fold[0];
     panHead.pitch += acted.fold[1];
+    restDyn.shift(-acted.fold[0], acted.fold[1]);
     syncUi();
   }
   // Head keys: WASD slide the eye across the exit pupil, Q/E change eye relief.
@@ -1013,22 +1227,34 @@ function frame(t: number, dt: number): void {
   if (keys.has("KeyQ")) state.eye.z -= k * 3;
   if (keys.has("KeyE")) state.eye.z += k * 3;
   if (keys.size) syncUi();
+  // The squeeze bag under the stock: squeeze it (↓) and the stock rises, so the muzzle dips; ease off (↑) and it
+  // comes up. Elevation a hair at a time without touching the grip, the hand closing and opening over about 0.15 s.
+  const squeeze = rig.bag && !acted.busy && kiloState.phase === "down" ? Number(keys.has("ArrowUp")) - Number(keys.has("ArrowDown")) : 0;
+  bagRate += (squeeze * BAG_RATE - bagRate) * (1 - Math.exp(-dt / 0.15));
+  if (Math.abs(bagRate) < 1e-7) bagRate = 0;
+  if (bagRate) state.pitch = clampArcPitch(state.pitch + bagRate * dt);
+  // The rifle on its rest follows the hands, as the rest lets it; the wind buffets the hold.
+  updateWindLoad(t);
+  stepKestrel(t, dt);
+  restNow = restDyn.step(state.yaw, state.pitch, t, dt);
   const eye = { ...state.eye };
   if (state.drift) {
-    // Even with a solid cheek weld the head wanders a fraction of a millimetre.
-    eye.x += 0.3 * Math.sin(t * 0.31) + 0.12 * Math.sin(t * 0.83 + 1);
-    eye.y += 0.22 * Math.sin(t * 0.27 + 2) + 0.1 * Math.sin(t * 0.71);
-    eye.z += 1.0 * Math.sin(t * 0.19 + 0.5);
+    // Even with a solid cheek weld the head wanders a fraction of a millimetre; less on a riser set to the eye.
+    const wd = rig.fit.wander;
+    eye.x += wd * (0.3 * Math.sin(t * 0.31) + 0.12 * Math.sin(t * 0.83 + 1));
+    eye.y += wd * (0.22 * Math.sin(t * 0.27 + 2) + 0.1 * Math.sin(t * 0.71));
+    eye.z += wd * 1.0 * Math.sin(t * 0.19 + 0.5);
   }
   eye.x += rc.eye.x;
   eye.y += rc.eye.y;
   eye.z += rc.eye.z;
   // How far a swing has carried the scope ahead of the head (up and right), and where that puts the eye.
-  const lag = PAN_LAG * state.pan;
-  panHead.yaw = followHead(panHead.yaw, state.yaw, dt, lag);
-  panHead.pitch = followHead(panHead.pitch, state.pitch, dt, lag);
-  const panPitch = state.pitch - panHead.pitch;
-  const panYaw = panHead.yaw - state.yaw;
+  // The head follows the rifle as it moves on its rest: a jolt of the legs or a sagging bag shows here too.
+  const lag = PAN_LAG * state.pan * rig.rest.panLag;
+  panHead.yaw = followHead(panHead.yaw, restNow.yaw, dt, lag);
+  panHead.pitch = followHead(panHead.pitch, restNow.pitch, dt, lag);
+  const panPitch = restNow.pitch - panHead.pitch;
+  const panYaw = panHead.yaw - restNow.yaw;
   eye.x += SUPPORT_TO_EYE_MM * panYaw;
   eye.y += SUPPORT_TO_EYE_MM * panPitch;
   // Working the action the eyes leave the target for the hands: the head's view turns down and right.
@@ -1056,8 +1282,8 @@ function frame(t: number, dt: number): void {
 
   // Wobble: breathing and heartbeat, and the hands on the action.
   const [swYaw, swPitch] = swayAt(t);
-  const yaw = state.yaw + swYaw - (hand?.yaw ?? 0);
-  const pitch = state.pitch + swPitch + (hand?.pitch ?? 0);
+  const yaw = restNow.yaw + swYaw - (hand?.yaw ?? 0);
+  const pitch = restNow.pitch + swPitch + (hand?.pitch ?? 0);
   // The scope looks where the rifle points; the naked eye looks where the head points, which lags it.
   euler.set(pitch + rc.pitch, yaw - rc.yaw, 0);
   scopeCam.quaternion.setFromEuler(euler);
@@ -1178,6 +1404,12 @@ function frame(t: number, dt: number): void {
   }
   u.uMirFlow!.value.copy(mirFlow);
   u.uBoil!.value = boil;
+  // A hot can's plume rising through the line of sight; not in the rangefinder, held up clear of it.
+  const can = shooting.can();
+  u.uHaze!.value = can && !kr && state.mirage ? can.hazeRad(t, windAtMuzzle, rig.sleeve) * toUv : 0;
+  // The plume rises at about half a metre a second, a few of the shader's swells a second at the objective.
+  hazeT = shot ? 2.5 * t : hazeT + 2.5 * dt;
+  u.uHazeT!.value = hazeT;
   // Bullets in flight and what they hit.
   scopeCam.updateMatrixWorld();
   sunView.copy(toSun).transformDirection(scopeCam.matrixWorldInverse);
@@ -1256,7 +1488,7 @@ function frame(t: number, dt: number): void {
     const tf = trueFovRad(SCOPE, state.mag);
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
     const fig = 1.7 / range.targets[watched]!.range / ret.unitRad;
-    const unit = ret.id === "tree" ? "mil" : "th";
+    const unit = unitShort(ret);
     const status = shooting.status(t);
     readout.innerHTML = [
       [
@@ -1286,9 +1518,13 @@ function frame(t: number, dt: number): void {
         dial.kind === "range"
           ? ["Zero", `${dialReading(dial, state.dial[state.reticle])} m · drum ${dialReading(dial, state.dial[state.reticle]) / 100}`]
           : ["Turret", `${dialReading(dial, state.dial[state.reticle]).toFixed(1)} mil up · zero ${BATTLE_ZERO_M} m`])(drumRifle().dial),
-      ["Round", `${ROUNDS[ret.round].name} · ${ROUNDS[ret.round].cartridge}`],
+      ["Round", `${ROUNDS[rig.rifle.round].name} · ${ROUNDS[rig.rifle.round].cartridge}`],
       ["Rounds", status.state ? `${status.rounds} · ${status.state}` : status.rounds],
+      ["Rest", restText()],
+      ...(shooting.can() ? [["Suppressor", canText(t)]] : []),
+      ...(kitMode ? [["Kit", `${encodeKit(rig.loadout).replaceAll(",", ", ") || "issued"} · pay ×${payFactor(rig.loadout).toFixed(2)}`]] : []),
       ...(state.easy ? [["Wind meter", windText()]] : []),
+      ...(rig.windMeter ? [["Kestrel", kestrelText()]] : []),
       ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
       ["Last shot", status.shot],
       ["Aim point", fmt(D)],
@@ -1325,18 +1561,21 @@ if (shot) {
   // Deterministic still: fixed clock, a couple of frames so shadows and MSAA settle.
   const t = num("t", 2.4);
   // recoil=<s>: the still is taken that long after the trigger.
-  if (params.has("recoil")) recoil = { start: t - num("recoil", 0), spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
+  if (params.has("recoil")) recoil = { start: t - num("recoil", 0), spec: rig.recoil, v: shotVariation(0, rig.fit.holdSpread) };
+  // canheat=<K>: the suppressor that much over the air, as after a string of shots.
+  if (params.has("canheat")) shooting.can()?.warm(t - 0.5, num("canheat", 60));
+  updateWindLoad(t);
   // fire=<s>: the still is taken that long after the bullet left the muzzle (recoil and all).
   if (params.has("fire")) {
     const exit = t - num("fire", 0);
     shooting.fireAt(exit, eyePos, aimAt(exit), state.wind);
     // norecoil: keep the rifle still, to look at the impact.
-    if (!params.has("norecoil")) recoil = { start: exit, spec: RECOIL[RIFLE[state.reticle]], v: shotVariation(0) };
+    if (!params.has("norecoil")) recoil = { start: exit, spec: rig.recoil, v: shotVariation(0, rig.fit.holdSpread) };
   }
   // panrate=<right>,<up> (deg/s): the still is taken mid-swing, with the head trailing as it would.
   if (params.has("panrate")) {
     const [right = 0, up = 0] = params.get("panrate")!.split(",").map(Number);
-    const lag = PAN_LAG * state.pan;
+    const lag = PAN_LAG * state.pan * rig.rest.panLag;
     panHead.yaw = state.yaw + ((right * Math.PI) / 180) * lag;
     panHead.pitch = state.pitch - ((up * Math.PI) / 180) * lag;
   }
@@ -1353,7 +1592,7 @@ if (shot) {
     const start = k === "adsout" && handStart !== null ? handStart : t - num(k, 0);
     headRest = inward ? { ...HEAD_UP } : { ...ON_WELD };
     adsIn = inward;
-    ads = (inward ? planScopeIn : planScopeOut)(start, headRest, { x: 0, y: 0, z: 0 }, 0);
+    ads = inward ? planScopeIn(start, headRest, { x: 0, y: 0, z: 0 }, 0, rig.fit) : planScopeOut(start, headRest, { x: 0, y: 0, z: 0 }, 0);
     // Replay the eye's adaptation from well before the move.
     adapt = inward ? 0 : 1;
     for (let u = start - 0.5; u < t; u += 1 / 240) {

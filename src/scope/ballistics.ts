@@ -61,6 +61,23 @@ export const ROUNDS = {
    * 1.28 × the G7 shape, so G7 ≈ 0.21 (≈ G1 0.40 at this speed).
    */
   sp5: { id: "sp5", name: "SP-5", cartridge: "9×39", bulletGr: 250, mv: 280, bc: 0.21, model: "G7" },
+  /**
+   * The armoury's rounds (src/armoury). Each is set so that every aid that reads it tells the truth: the cards,
+   * the rangefinder and a spotter's holds are all worked out from these figures.
+   *  - SP-6 (VSS): 16.0 g armour-piercing, hardened steel core. Published at the SP-5's 280–290 m/s, so it is
+   *    given the SP-5's speed and BC and shoots to the SP-5's cut chevrons exactly.
+   *  - 7N14 (SVD): the 7N1's 9.8 g boat-tail shape with a hardened steel penetrator, 830 m/s.
+   *  - Sellier & Bellot 180 gr soft point (SVD): 800 m/s (SB76254RB). Its G1 BC (≈ 0.38, flat base) is put
+   *    at G7 0.18, an estimate.
+   *  - Bonded barrier-blind .308, 168 gr (Federal Tactical Bonded Tip class): 2700 ft/s from 24", BC 0.452 G1,
+   *    put at G7 0.226 (an estimate).
+   *  - Lapua .308 Win Subsonic 200 gr FMJBT: 1066 ft/s (325 m/s), G7 0.235, for a 1:9 twist (Lapua B416).
+   */
+  sp6: { id: "sp6", name: "SP-6", cartridge: "9×39", bulletGr: 247, mv: 280, bc: 0.21, model: "G7" },
+  "7n14": { id: "7n14", name: "7N14", cartridge: "7.62×54R", bulletGr: 151, mv: 830, bc: 0.206, model: "G7" },
+  sb180sp: { id: "sb180sp", name: "S&B 180 gr SP", cartridge: "7.62×54R", bulletGr: 180, mv: 800, bc: 0.18, model: "G7" },
+  tbt168: { id: "tbt168", name: "Bonded 168 gr", cartridge: "7.62×51", bulletGr: 168, mv: 823, bc: 0.226, model: "G7" },
+  sub200: { id: "sub200", name: "Subsonic 200 gr", cartridge: "7.62×51", bulletGr: 200, mv: 325, bc: 0.235, model: "G7" },
 } as const satisfies Record<string, Round>;
 export type RoundId = keyof typeof ROUNDS;
 

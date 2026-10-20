@@ -7,14 +7,23 @@
  */
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { ACTIONS, type HandlingPose, type MagGeom } from "../../src/scope/handling";
+import { ACTIONS, MAG_VSS20, type HandlingPose, type MagGeom } from "../../src/scope/handling";
 import type { RifleId } from "../../src/scope/shot";
 import { buildHand } from "./hands";
 
 export type MatFn = (base: number, gloss: number, spec: number) => THREE.Material;
 
+/** What the kit puts on the rifle that shows: a can (and its sleeve) or a weight on the muzzle, and the magazine. */
+export interface RifleKit {
+  can: boolean;
+  sleeve: boolean;
+  weight: boolean;
+  mag: MagGeom;
+}
+
 export interface Actions {
   setRifle(id: RifleId): void;
+  setKit(k: RifleKit): void;
   apply(p: HandlingPose): void;
 }
 
@@ -32,6 +41,8 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
   const lacquer = mat(0x4f4527, 35, 0.3);
   const copper = mat(0x8a4f2e, 60, 0.6);
   const glove = mat(0x3a3125, 6, 0.06);
+  const cerakote = mat(0x24231f, 8, 0.06);
+  const cordura = mat(0x4b4636, 3, 0.02);
   const sleeve = mat(0x4c4a3b, 4, 0.03);
 
   const mesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D, x = 0, y = 0, z = 0) => {
@@ -103,6 +114,45 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
   const rifles = {} as Record<RifleId, THREE.Group>;
   const mags = {} as Record<RifleId, [MagParts, MagParts]>;
 
+  interface Muzzle {
+    /** The issued muzzle device: the bolt rifle's brake, the SVD's flash hider. */
+    issued: THREE.Mesh;
+    can: THREE.Group;
+    sleeve: THREE.Group;
+    weight: THREE.Group;
+  }
+  const muzzles = {} as Record<"svd" | "bolt", Muzzle>;
+  /**
+   * What can go on a muzzle at `muzzleZ` (the barrel's end) on the bore at height y. The can (46 mm across, 195 mm
+   * long, about half a kilogram) slides back over the issued device on its mount; the sleeve is a cordura cover over
+   * its tube, stitched in three places; the weight is 0.4 kg of steel threaded on in place of the device (32 mm
+   * across, 70 mm long: 0.4 kg at 7.85 g/cm³ less its bore).
+   */
+  const muzzleKit = (g: THREE.Group, issued: THREE.Mesh, muzzleZ: number, y: number): Muzzle => {
+    const can = new THREE.Group();
+    const back = muzzleZ + 30;
+    const front = muzzleZ - 165;
+    mesh(cylZ(17, 23, back + 14, back, 32), cerakote, can, 0, y, 0);
+    mesh(cylZ(23, 23, back, front, 40), cerakote, can, 0, y, 0);
+    // A turned groove behind the front cap, the cap's chamfer, and the dark bore in its face.
+    mesh(cylZ(22.3, 22.3, front + 14, front + 11, 40), dark, can, 0, y, 0);
+    mesh(cylZ(23, 19.5, front, front - 6, 40), cerakote, can, 0, y, 0);
+    const bore = new THREE.CircleGeometry(4.6, 20);
+    bore.rotateY(Math.PI);
+    mesh(bore, dark, can, 0, y, front - 6.05);
+    const sleeve = new THREE.Group();
+    mesh(cylZ(24.6, 24.6, back - 6, front + 18, 40), cordura, sleeve, 0, y, 0);
+    for (const z of [back - 8, (back + front) / 2 + 6, front + 20]) mesh(cylZ(25.1, 25.1, z, z - 2.5, 40), dark, sleeve, 0, y, 0);
+    const weight = new THREE.Group();
+    mesh(cylZ(16, 16, muzzleZ, muzzleZ - 70, 32), steel, weight, 0, y, 0);
+    mesh(cylZ(15.4, 15.4, muzzleZ - 22, muzzleZ - 25, 32), dark, weight, 0, y, 0);
+    for (const o of [can, sleeve, weight]) {
+      o.visible = false;
+      g.add(o);
+    }
+    return { issued, can, sleeve, weight };
+  };
+
   // ---- bolt rifle: M24 class ----
   const boltParts = (() => {
     const g = new THREE.Group();
@@ -119,7 +169,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     // Recoil lug, barrel and brake.
     mesh(box(26, 12, 10, 1), blued, g, 0, y - 18, -425);
     mesh(cylZ(12.5, 10.5, -420, -1080), blued, g, 0, y, 0);
-    mesh(cylZ(13, 13, -1080, -1160), blued, g, 0, y, 0);
+    muzzles.bolt = muzzleKit(g, mesh(cylZ(13, 13, -1080, -1160), blued, g, 0, y, 0), -1080, y);
     // Scope rail.
     mesh(box(21, 8, 370, 1), steel, g, 0, -36, -295);
     // The bolt: slides back and forth; the body and handle turn with the lift, the shroud does not.
@@ -224,7 +274,7 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
       mesh(cylZ(24, 23, -435, -645, 32), wood, g, 0, y + 4, 0);
       for (let i = 0; i < 3; i++) mesh(box(1, 7, 28, 0.5), dark, g, 23.5, y + 12, -470 - i * 55);
       mesh(cylZ(10, 9, -430, -1060), blued, g, 0, y, 0);
-      mesh(cylZ(11, 11, -1060, -1140), blued, g, 0, y, 0);
+      muzzles.svd = muzzleKit(g, mesh(cylZ(11, 11, -1060, -1140), blued, g, 0, y, 0), -1060, y);
       mesh(box(14, 34, 22, 2), blued, g, 0, y + 20, -700);
     } else {
       // The integral suppressor, a wooden forend under its rear half, and the front sight at its end.
@@ -241,6 +291,10 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
   };
   const svd = akParts("svd");
   const vss = akParts("vss");
+  // The VSS's 20-round box, built once and swapped in when the kit has it.
+  const vss10 = mags.vss;
+  const vss20: [MagParts, MagParts] = [magazine(rifles.vss, MAG_VSS20, lacquer, false, true), magazine(rifles.vss, MAG_VSS20, lacquer, false, true)];
+  for (const m of vss20) m.group.visible = false;
 
   // ---- spent cases and the round going into the chamber (bolt rifle) ----
   const caseG = () => {
@@ -266,6 +320,17 @@ export function buildActions(root: THREE.Group, mat: MatFn, place: (o: THREE.Mes
     setRifle(id) {
       rifle = id;
       for (const k of Object.keys(rifles) as RifleId[]) rifles[k].visible = k === id;
+    },
+    setKit(k) {
+      for (const m of Object.values(muzzles)) {
+        m.can.visible = k.can;
+        m.sleeve.visible = k.can && k.sleeve;
+        m.weight.visible = k.weight && !k.can;
+        m.issued.visible = !k.can && !k.weight;
+      }
+      const big = k.mag.rounds === MAG_VSS20.rounds;
+      mags.vss = big ? vss20 : vss10;
+      for (const m of big ? vss10 : vss20) m.group.visible = false;
     },
     apply(p) {
       const b = ACTIONS.bolt.bolt!;

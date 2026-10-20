@@ -111,6 +111,16 @@ export const GLASS_BULLET: Record<RoundId, GlassBullet> = {
   "7n1": { diaM: 0.00792, lenM: 0.0323, jacket: 0.38, stripV: 850, deform: 0.25, breakup: 0 },
   m118lr: { diaM: 0.00782, lenM: 0.0315, jacket: 0.3, stripV: 420, deform: 0.4, breakup: 0.3 },
   sp5: { diaM: 0.00925, lenM: 0.036, jacket: 0.28, stripV: 520, deform: 0.15, breakup: 0 },
+  /**
+   * The armoury's rounds. The hard-cored SP-6 and 7N14 barely crush on the glass, so they lose less speed and turn
+   * less. The soft point's lead nose flattens on the pane and its jacket tears easily. The bonded round's core is
+   * welded to its jacket: it deforms but stays in one piece. The slow subsonic FMJ behaves like the SP-5.
+   */
+  sp6: { diaM: 0.00925, lenM: 0.039, jacket: 0.2, stripV: 520, deform: 0.05, breakup: 0 },
+  "7n14": { diaM: 0.00792, lenM: 0.0325, jacket: 0.35, stripV: 850, deform: 0.08, breakup: 0 },
+  sb180sp: { diaM: 0.00792, lenM: 0.03, jacket: 0.25, stripV: 380, deform: 0.55, breakup: 0.35 },
+  tbt168: { diaM: 0.00782, lenM: 0.031, jacket: 0.25, stripV: 3000, deform: 0.3, breakup: 0.03 },
+  sub200: { diaM: 0.00782, lenM: 0.0345, jacket: 0.3, stripV: 520, deform: 0.15, breakup: 0 },
 };
 
 const RHO_GLASS = 2500;

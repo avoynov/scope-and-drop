@@ -333,6 +333,12 @@ export const ACTIONS: Record<RifleId, ActionGeom> = {
   },
 };
 
+/**
+ * The VSS's 20-round magazine, the 6L25 it shares with the AS Val: ten more 9×39 rounds in the staggered column make
+ * it about 49 mm deeper (5 × 11.3 mm × cos 30°), and it hangs a little further forward.
+ */
+export const MAG_VSS20: MagGeom = { ...ACTIONS.vss.mag, size: [25, 141, 64], tilt: 0.09, rounds: 20 };
+
 /** The bolt knob's centre for a lift (0…1) and travel (0…1). */
 export function knobAt(b: BoltGeom, lift: number, travel: number): V3 {
   const a = b.closedRad + b.liftRad * lift;

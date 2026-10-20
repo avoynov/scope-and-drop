@@ -35,6 +35,12 @@ export interface Terminal {
   /** Above this striking speed part of the bullet breaks up (m/s), and how much of it at most. */
   fragmentAbove: number;
   fragmentFrac: number;
+  /**
+   * An expanding bullet (soft point, bonded): from this striking speed up its nose opens to `ratio` × its calibre over
+   * the first `overM` of tissue and it keeps `retain` of its mass, the rest shed as fragments into the channel. Opened,
+   * it travels nose-first instead of yawing. Slower, it opens less, and not at all below 0.6 × `minV`.
+   */
+  expand?: { minV: number; ratio: number; overM: number; retain: number };
 }
 
 /**
@@ -52,6 +58,19 @@ export const TERMINAL = {
   "7n1": { massKg: 0.0098, diaM: 0.00792, lenM: 0.0323, neckM: 0.11, fragmentAbove: Infinity, fragmentFrac: 0 },
   m118lr: { massKg: 0.01134, diaM: 0.00782, lenM: 0.0315, neckM: 0.07, fragmentAbove: 580, fragmentFrac: 0.3 },
   sp5: { massKg: 0.0162, diaM: 0.00925, lenM: 0.036, neckM: 0.12, fragmentAbove: Infinity, fragmentFrac: 0 },
+  /**
+   * The armoury's rounds.
+   *  - SP-6, 7N14: hardened steel penetrators with no air space in the nose: they hold point-forward longer
+   *    (≈ 18 and 15 cm) and go through with a narrower track. Built to pierce, not to wound.
+   *  - S&B 180 gr soft point: cup-and-core, opens to ≈ 1.8 calibres and keeps ≈ 75 % of its weight.
+   *  - Bonded 168 gr: the core is bonded to the jacket: opens to ≈ 1.7 calibres and keeps ≈ 95 %.
+   *  - Subsonic 200 gr FMJ: long and slow; it yaws late (≈ 16 cm) and its cavity stays small, like the SP-5's.
+   */
+  sp6: { massKg: 0.016, diaM: 0.00925, lenM: 0.039, neckM: 0.18, fragmentAbove: Infinity, fragmentFrac: 0 },
+  "7n14": { massKg: 0.0098, diaM: 0.00792, lenM: 0.0325, neckM: 0.15, fragmentAbove: Infinity, fragmentFrac: 0 },
+  sb180sp: { massKg: 0.01166, diaM: 0.00792, lenM: 0.03, neckM: 0.15, fragmentAbove: Infinity, fragmentFrac: 0, expand: { minV: 450, ratio: 1.8, overM: 0.025, retain: 0.75 } },
+  tbt168: { massKg: 0.01089, diaM: 0.00782, lenM: 0.031, neckM: 0.12, fragmentAbove: Infinity, fragmentFrac: 0, expand: { minV: 500, ratio: 1.7, overM: 0.03, retain: 0.95 } },
+  sub200: { massKg: 0.01296, diaM: 0.00782, lenM: 0.0345, neckM: 0.16, fragmentAbove: Infinity, fragmentFrac: 0 },
 } as const satisfies Record<string, Terminal>;
 export type TerminalId = keyof typeof TERMINAL;
 

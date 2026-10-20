@@ -63,6 +63,19 @@ export function dialTiltRad(rf: Rifle, detent: number): number {
   return zeroTiltRad(r, BATTLE_ZERO_M, rf.sightM) + detent * d.clickMil * 0.001;
 }
 
+/**
+ * The bore's tilt for a rifle carrying another load than its range drum was cut for (`cutFor`): the armourer zeroes
+ * it for the load at 100 m with the drum on 1, and each mark above that tilts the bore as much more as it was cut to
+ * for its own load, so the drum's marks are only true for that load (the load card gives the difference). A mil
+ * turret's clicks are the same for any load.
+ */
+export function dialTiltLoaded(rf: Rifle, cutFor: RoundId, detent: number): number {
+  const d = rf.dial;
+  if (d.kind !== "range" || cutFor === rf.round) return dialTiltRad(rf, detent);
+  const cut = ROUNDS[cutFor];
+  return zeroTiltRad(ROUNDS[rf.round], BATTLE_ZERO_M, rf.sightM) + zeroTiltRad(cut, d.marksM[detent]!, rf.sightM) - zeroTiltRad(cut, BATTLE_ZERO_M, rf.sightM);
+}
+
 /** The dial's reading on `detent`, as its engraving gives it: metres on a range drum, mils on a turret. */
 export const dialReading = (d: Dial, detent: number): number => (d.kind === "range" ? d.marksM[detent]! : detent * d.clickMil);
 

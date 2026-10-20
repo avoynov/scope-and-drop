@@ -1,16 +1,17 @@
 import * as THREE from "three";
-import { ROUNDS, holdRad } from "../../src/scope/ballistics";
+import { ROUNDS } from "../../src/scope/ballistics";
 import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
 import { RestDynamics, dynamicPressure, holdAt, type RestState } from "../../src/scope/hold";
 import { rigFor, type Rig } from "../../src/armoury/rig";
 import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
-import { RETICLES, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
+import { ACSS_RANGES, PSO_CHEVRON_RANGES, RETICLES, TREMOR_ROWS, VSS_CHEVRON_RANGES, acssReticle, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
+import { comeUps, dotValues, loadCard, loadCardNeeded } from "../../src/scope/cards";
 import { speedDrop, windHoldMil, type AimAid } from "../../src/scope/aids";
 import { BEAM_RAYS, KILO8K, Kilo, PLAIN_LRF, PLAIN_RAYS, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
 import { compose, invert, qRot } from "../../src/scope/handling";
-import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltRad, type Dial, type RifleId } from "../../src/scope/shot";
+import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltLoaded, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
 import { createComposite } from "./composite";
@@ -51,11 +52,13 @@ configureTargets([spotParam("far"), spotParam("near")]);
 const RIFLE = { pso: "svd", tree: "bolt", vss: "vss" } as const satisfies Record<Reticle["id"], RifleId>;
 const HOME = { pso: 0, tree: 0, vss: 1 } as const satisfies Record<Reticle["id"], number>;
 const reticleParam = params.get("reticle");
+/** What `kit=` asks for, before the kit itself is fitted (the reticle's unit is needed sooner). */
+const kitAsks = new Set((params.get("kit") ?? "").split(",").map((x) => x.trim().toLowerCase()));
 
 const state = {
   reticle: (reticleParam === "tree" || reticleParam === "vss" ? reticleParam : "pso") as Reticle["id"],
-  /** The bolt rifle's reticle: Leupold PR2-MIL or Vortex EBR-7D (`tree=pr2|ebr`). */
-  treeStyle: (params.get("tree") === "ebr" ? "ebr" : "pr2") as TreeStyle,
+  /** The bolt rifle's reticle: Leupold PR2-MIL, Vortex EBR-7D or the TReMoR3-style grid (`tree=pr2|ebr|tremor`). */
+  treeStyle: (kitAsks.has("tremor") ? "tremor" : kitAsks.has("ebr") ? "ebr" : params.get("tree") === "ebr" || params.get("tree") === "tremor" ? params.get("tree") : "pr2") as TreeStyle,
   /** How the bolt rifle gets its elevation: the Speed Drop sum (manual) or a handheld rangefinder (`aid=manual|lrf`). */
   aid: (params.get("aid") === "lrf" ? "lrf" : "manual") as AimAid,
   mag: num("mag", 8),
@@ -101,8 +104,18 @@ const state = {
   pitch: 0,
 };
 
-/** The reticle in the scope now. */
-const currentReticle = (): Reticle => (state.reticle === "tree" ? treeReticle(state.treeStyle) : RETICLES[state.reticle]());
+/** The VSS's scope: the issued PSO-1-1, or the ACSS-style one in the kit. */
+let vssStyle: "pso" | "acss" = kitAsks.has("acss") ? "acss" : "pso";
+const reticles = new Map<string, Reticle>();
+/** The reticle in the scope now, built once for each style. */
+const currentReticle = (): Reticle => {
+  const key = state.reticle === "tree" ? `tree|${state.treeStyle}` : state.reticle === "vss" ? `vss|${vssStyle}` : "pso";
+  let r = reticles.get(key);
+  if (!r) reticles.set(key, (r = state.reticle === "tree" ? treeReticle(state.treeStyle) : state.reticle === "vss" && vssStyle === "acss" ? acssReticle() : RETICLES[state.reticle]()));
+  return r;
+};
+/** The reticle's unit for the readouts and cards. */
+const unitShort = (r: Reticle) => (r.unitName === "mrad" ? "mil" : "th");
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: shot });
 const dpr = shot ? 1 : Math.min(devicePixelRatio, 2);
@@ -196,7 +209,7 @@ function loadoutNow(): Loadout {
   if (kitMode) return decodeKit(id, kitParam);
   const l = emptyLoadout(id);
   if (id === "bolt" && state.aid === "lrf") l.items.ranging = "kilo";
-  if (id === "bolt" && state.treeStyle === "ebr") l.items.optic = "ebr";
+  if (id === "bolt" && state.treeStyle !== "pr2") l.items.optic = state.treeStyle;
   return l;
 }
 /** The rifle as the kit has it: load, recoil, hold, rest, stock fit, magazine, aids (src/armoury/rig.ts). */
@@ -238,7 +251,8 @@ function syncRig(): void {
   rig = rigFor(loadoutNow(), { lab: !kitMode });
   if (kitMode) {
     state.aid = rig.ranging === "kilo" ? "lrf" : "manual";
-    state.treeStyle = rig.optic === "ebr" ? "ebr" : "pr2";
+    state.treeStyle = rig.optic === "ebr" || rig.optic === "tremor" ? rig.optic : "pr2";
+    vssStyle = rig.optic === "acss" ? "acss" : "pso";
     // The lab's mast meter is not kit: the Kestrel is.
     state.easy = false;
   }
@@ -326,7 +340,7 @@ function drawKilo(t: number): void {
   retTex.needsUpdate = true;
 }
 function drawRet(): void {
-  const key = `${state.reticle}|${state.treeStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
+  const key = `${state.reticle}|${state.treeStyle}|${vssStyle}|${state.mag.toFixed(3)}|${state.illum}|${retCanvas.width}`;
   if (key === retKey) return;
   retKey = key;
   kiloKey = "";
@@ -467,23 +481,57 @@ const sliderToPar = (v: number) => (v > 101 ? Infinity : 50 * Math.pow(30, v / 1
  * the slant range × the cosine read off the ACI, which holds up on steep, long shots where the classic rifleman's
  * rule (range × cosine) falls low. Wind is on the wind card.
  */
-const SPEED_DROP = speedDrop(RIFLES.bolt);
 const dope = $("dope");
+let dopeFor = "";
+/** Signed hold off a chevron: ▼ below it, ▲ above, "on" within half a tenth. */
+const offChevron = (c: number) => (Math.abs(c) < 0.05 ? "on" : `${c > 0 ? "▼" : "▲"}${Math.abs(c).toFixed(1)}`);
+/**
+ * The card for the rifle as loaded (src/scope/cards.ts), worked out from the load in the magazine:
+ *  - the bolt rifle, the manual way: its Speed Drop card, or, for a load with no useful band (the subsonic one),
+ *    a card of come-ups;
+ *  - a reticle cut for another load than the one in the rifle (the PSO's chevrons, the ACSS's): a load card, how
+ *    far below or above each chevron to hold, with the drum on 1.
+ */
 function syncDope(): void {
-  const show = state.reticle === "tree" && state.aid === "manual";
-  dope.hidden = !show;
-  if (!show || dope.innerHTML) return;
-  const rf = RIFLES.bolt;
+  const ret = currentReticle();
+  const rf = rig.rifle;
   const r = ROUNDS[rf.round];
-  const sd = SPEED_DROP;
-  const far = [500, 600, 700, 800, 900, 1000].filter((d) => d > sd.maxM);
-  const elev = (d: number) => (holdRad(r, d, BATTLE_ZERO_M, rf.sightM) * 1000).toFixed(1);
-
-  dope.innerHTML =
-    `<div class="dope-head"><b>SPEED DROP</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
-    `<div class="sd"><span class="sd-n">${sd.factor.toFixed(1)}</span><span>elevation = range in hundreds − ${sd.factor.toFixed(1)}<br>good ${Math.ceil(sd.minM / 10) * 10}–${Math.floor(sd.maxM / 10) * 10} m, within ${sd.tolMil} mil</span></div>` +
-    `<table><tr><th>past</th>${far.map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${far.map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
-    `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
+  const kind = state.reticle === "tree" ? (state.aid === "manual" ? "drop" : null) : rf.round !== ret.round ? "load" : null;
+  const key = `${kind}|${rf.round}|${ret.name}`;
+  if (key === dopeFor) return;
+  dopeFor = key;
+  dope.innerHTML = "";
+  if (kind === "drop") {
+    const sd = speedDrop(rf);
+    const elev = (d: number) => comeUps(rf, [d])[0]!.mil.toFixed(1);
+    if (sd.maxM - sd.minM >= 150) {
+      const far = [500, 600, 700, 800, 900, 1000].filter((d) => d > sd.maxM);
+      dope.innerHTML =
+        `<div class="dope-head"><b>SPEED DROP</b> ${r.name} · ${r.bulletGr} gr<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
+        `<div class="sd"><span class="sd-n">${sd.factor.toFixed(1)}</span><span>elevation = range in hundreds − ${sd.factor.toFixed(1)}<br>good ${Math.ceil(sd.minM / 10) * 10}–${Math.floor(sd.maxM / 10) * 10} m, within ${sd.tolMil} mil</span></div>` +
+        `<table><tr><th>past</th>${far.map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${far.map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">1 mil = 10 cm at 100 m · 1 click = 0.1 mil<br>Up or downhill: elevation for the slant range × the ACI's cosine</div>`;
+    } else {
+      // A slow load's drop grows too fast for one factor: the card is its come-ups, every 25 m.
+      const rows = [125, 150, 175, 200, 225, 250, 275, 300];
+      dope.innerHTML =
+        `<div class="dope-head"><b>COME-UPS</b> ${r.name}<span>zero ${BATTLE_ZERO_M} m · mil</span></div>` +
+        `<table><tr><th>m</th>${rows.slice(0, 4).map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${rows.slice(0, 4).map((d) => `<td>${elev(d)}</td>`).join("")}</tr>` +
+        `<tr><th>m</th>${rows.slice(4).map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${rows.slice(4).map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">No Speed Drop factor holds for this load: range it closely.<br>1 click = 0.1 mil · up or downhill: × the ACI's cosine</div>`;
+    }
+  } else if (kind === "load") {
+    const ranges = vssStyle === "acss" && state.reticle === "vss" ? ACSS_RANGES : state.reticle === "vss" ? VSS_CHEVRON_RANGES : PSO_CHEVRON_RANGES;
+    const rows = loadCard(rf, ret.round, ranges, ret.unitRad);
+    if (loadCardNeeded(rows)) {
+      const unit = ret.unitName === "mrad" ? "mil" : "thousandths";
+      dope.innerHTML =
+        `<div class="dope-head"><b>LOAD CARD</b> ${r.name}<span>${ret.name} cut for ${ROUNDS[ret.round].name} · ${unit}</span></div>` +
+        `<table><tr><th>chevron</th>${rows.map((x) => `<td>${x.rangeM}</td>`).join("")}</tr><tr><th>hold</th>${rows.map((x) => `<td>${offChevron(x.corr)}</td>`).join("")}</tr></table>` +
+        `<div class="card-note">▼ hold that far below the chevron, ▲ above it.<br>With the drum on 1: its marks are cut for ${ROUNDS[ret.round].name} too.</div>`;
+    } else dope.innerHTML = `<div class="dope-head"><b>LOAD CARD</b> ${r.name}<span>flies as ${ROUNDS[ret.round].name}: every chevron holds</span></div>`;
+  }
+  dope.hidden = !dope.innerHTML;
 }
 
 /**
@@ -512,20 +560,26 @@ const flagIcon = (deg: number) => {
   );
 };
 function syncWindCard(): void {
-  const key = `${state.reticle}|${state.easy}`;
+  const ret = currentReticle();
+  const round = rig.rifle.round;
+  const key = `${state.reticle}|${state.easy}|${round}|${ret.name}`;
   if (key === windCardFor) return;
   windCardFor = key;
-  const ret = currentReticle();
-  const ranges = CARD_RANGES[state.reticle];
-  const drift = crossDriftPerMs(ROUNDS[ret.round], ranges);
-  const unit = ret.id === "tree" ? "mil" : "thousandths";
+  // Short loads (the subsonic ones) are on the VSS's ranges.
+  const ranges = ROUNDS[round].mv < 330 ? CARD_RANGES.vss : CARD_RANGES[state.reticle];
+  const drift = crossDriftPerMs(ROUNDS[round], ranges);
+  const unit = ret.unitName === "mrad" ? "mil" : "thousandths";
+  // The grid's wind dots: what one is worth for this load, on a few rows.
+  const dots = ret.name === "TReMoR3" ? dotValues(rig.rifle, TREMOR_ROWS.filter((k) => k % 2 === 0 && k <= 10)) : [];
   windCard.innerHTML =
-    `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[ret.round].name}<span>${unit} into the wind</span></div>` +
+    `<div class="dope-head"><b>WIND</b> ${RIFLES[RIFLE[state.reticle]].name} · ${ROUNDS[round].name}<span>${unit} into the wind</span></div>` +
     `<table><tr><th>flag</th>${CARD_FLAGS.map((d) => `<td>${flagIcon(d)}</td>`).join("")}</tr>` +
     // Easy: what the meter reads for each flag, to go from its number to a column.
     (state.easy ? `<tr class="card-sub"><th>m/s</th>${CARD_FLAGS.map((d) => `<td>${d >= 90 ? 10 : Math.round(d / FLAG_DEG_PER_MS)}</td>`).join("")}</tr>` : "") +
     ranges.map((r, i) => `<tr><th>${r} m</th>${CARD_FLAGS.map((d) => `<td>${quarters(((d >= 90 ? 10 : d / FLAG_DEG_PER_MS) * drift[i]!) / r / ret.unitRad)}</td>`).join("")}</tr>`).join("") +
-    `</table><div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
+    `</table>` +
+    (dots.length ? `<table><tr><th>grid row</th>${dots.map((d) => `<td>${d.row}</td>`).join("")}</tr><tr><th>1 dot, m/s</th>${dots.map((d) => `<td>${d.msPerDot.toFixed(1)}</td>`).join("")}</tr></table>` : "") +
+    `<div class="card-note">From 10–11 or 1–2 o'clock: half. From 12 or 6: none.<br>Read the near flags first: the first third of the way counts most.</div>`;
 }
 
 const windIn = $("wind") as HTMLInputElement;
@@ -569,7 +623,8 @@ function syncDrum(): void {
     drum.set(dialDetents(r.dial), state.dial[state.reticle]);
     rifle.setDrumMarks(r.dial);
   }
-  shooting.setTilt(dialTiltRad(r, state.dial[state.reticle]));
+  // The rifle as loaded: a range drum's marks are cut for the issued load, the 100 m zero is the load's own.
+  shooting.setTilt(dialTiltLoaded(rig.rifle, rig.issuedRound, state.dial[state.reticle]));
 }
 
 function syncUi(): void {
@@ -977,7 +1032,7 @@ addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyX" && !e.repeat) toggleKilo();
   if (e.code === "KeyV" && state.reticle === "tree" && !kitMode) {
-    state.treeStyle = state.treeStyle === "pr2" ? "ebr" : "pr2";
+    state.treeStyle = ({ pr2: "ebr", ebr: "tremor", tremor: "pr2" } as const)[state.treeStyle];
     syncUi();
   }
   if (e.code === "KeyG") {
@@ -1433,7 +1488,7 @@ function frame(t: number, dt: number): void {
     const tf = trueFovRad(SCOPE, state.mag);
     const par = parallaxShiftRad(SCOPE, state.mag, Math.hypot(eye.x, eye.y), Dr, state.parallax) / ret.unitRad;
     const fig = 1.7 / range.targets[watched]!.range / ret.unitRad;
-    const unit = ret.id === "tree" ? "mil" : "th";
+    const unit = unitShort(ret);
     const status = shooting.status(t);
     readout.innerHTML = [
       [

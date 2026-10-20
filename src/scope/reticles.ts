@@ -5,7 +5,7 @@
  */
 import { ROUNDS, holdRad, type RoundId } from "./ballistics";
 import { MRAD, THOUSANDTH } from "./optics";
-import { BATTLE_ZERO_M, RIFLES } from "./shot";
+import { BATTLE_ZERO_M, RIFLES, crossDriftPerMs } from "./shot";
 
 export type Prim =
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; w: number; dash?: number; lit?: boolean }
@@ -173,8 +173,67 @@ export function vssReticle(): Reticle {
   return { id: "vss", name: "VSS · PSO-1-1", unitRad: THOUSANDTH, unitName: "thousandth", prims: p, round: "sp5", illum: "rgb(255,46,24)" };
 }
 
-/** The bolt rifle's two reticles. Both are plain MRAD trees: nothing on them is cut for a load. */
-export type TreeStyle = "pr2" | "ebr";
+/**
+ * The VSS's ACSS-style scope (kit `acss`), after Primary Arms' Advanced Combined Sighting System, cut for the SP-5
+ * in mrad: a horseshoe round the aiming chevron for quick shots; below it a holdover chevron for every 50 m from 150
+ * to 400 m with the drum on 1 (numbered at the hundreds); under each a ranging bar as wide as a man's shoulders
+ * (46 cm) at that range, so a man whose shoulders fill the bar is at that range; and either side of each, wind dots
+ * for a full-value crosswind of 2 and 4 m/s. The SP-6 flies the SP-5's path, so it holds the same.
+ */
+export const ACSS_RANGES = [150, 200, 250, 300, 350, 400] as const;
+/** The ACSS cut: the round and the shoulder width its bars are for, and the winds its dots are for (m/s). */
+export const ACSS = { round: "sp5" as RoundId, shoulderM: 0.46, windMs: [2, 4] as const };
+export const acssChevronY = (rangeM: number) => holdRad(ROUNDS[ACSS.round], rangeM, BATTLE_ZERO_M, RIFLES.vss.sightM) / MRAD;
+/** Where the wind dot for `ms` m/s sits off the stem at `rangeM` (mrad). */
+export const acssWindX = (rangeM: number, ms: number) => (crossDriftPerMs(ROUNDS[ACSS.round], [rangeM])[0]! * ms) / rangeM / MRAD;
+
+export function acssReticle(): Reticle {
+  const p: Prim[] = [];
+  const w = 0.07;
+  // The horseshoe, open at the bottom, and the aiming chevron's tip at its centre.
+  const R = 2.6;
+  const arc: [number, number][] = [];
+  for (let a = -(Math.PI - 0.6); a <= Math.PI - 0.6 + 1e-9; a += 0.05) arc.push([R * Math.sin(a), -R * Math.cos(a)]);
+  p.push({ kind: "poly", pts: arc, w: w * 1.6, lit: true });
+  const chev = (y: number, hw: number, h: number, lit: boolean) =>
+    p.push({
+      kind: "poly",
+      pts: [
+        [-hw, y + h],
+        [0, y],
+        [hw, y + h],
+      ],
+      w: w * 1.3,
+      lit,
+    });
+  chev(0, 0.45, 0.45, true);
+  // The stem from under the chevron to the last bar, and on to the field stop.
+  let last = 0;
+  for (const range of ACSS_RANGES) {
+    const y = acssChevronY(range);
+    last = y;
+    const whole = range % 100 === 0;
+    chev(y, whole ? 0.32 : 0.22, whole ? 0.3 : 0.2, false);
+    // The shoulder bar under the chevron, with its ends turned down.
+    const half = ACSS.shoulderM / 2 / range / MRAD;
+    const by = y + 0.55;
+    p.push({ kind: "line", x1: -half, y1: by, x2: half, y2: by, w });
+    for (const s of [-1, 1]) p.push({ kind: "line", x1: s * half, y1: by - 0.12, x2: s * half, y2: by + 0.12, w });
+    for (const ms of ACSS.windMs) for (const s of [-1, 1]) p.push({ kind: "dot", x: s * acssWindX(range, ms), y, r: ms === ACSS.windMs[0] ? 0.07 : 0.1 });
+    if (whole) p.push({ kind: "text", x: -half - 0.5, y: by, size: 0.65, text: String(range / 100), align: "right" });
+  }
+  p.push({ kind: "line", x1: 0, y1: 0.6, x2: 0, y2: acssChevronY(ACSS_RANGES[0]) - 0.1, w });
+  p.push({ kind: "line", x1: 0, y1: last + 0.8, x2: 0, y2: EDGE, w });
+  // The horizontal, from outside the horseshoe to the field stop, marked at 5 and 10 mrad.
+  for (const s of [-1, 1]) {
+    p.push({ kind: "line", x1: s * (R + 0.6), y1: 0, x2: s * EDGE, y2: 0, w });
+    for (const v of [5, 10]) p.push({ kind: "line", x1: s * v, y1: -0.3, x2: s * v, y2: 0.3, w });
+  }
+  return { id: "vss", name: "VSS · ACSS", unitRad: MRAD, unitName: "mrad", prims: p, round: ACSS.round, illum: "rgb(255,46,24)" };
+}
+
+/** The bolt rifle's reticles. All are plain MRAD reticles: nothing on them is cut for a load. */
+export type TreeStyle = "pr2" | "ebr" | "tremor";
 
 /** Half-width of each tree row 1–10 (mil), read off the reference drawings. Rows widen in pairs. */
 export const PR2_ROWS = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5] as const;
@@ -347,8 +406,83 @@ function ebrReticle(): Reticle {
   return { id: "tree", name: "EBR-7D", unitRad: MRAD, unitName: "mrad", prims: p, round: "m118lr", illum: "rgb(255,52,30)" };
 }
 
-/** The bolt rifle's reticle, PR2-MIL or EBR-7D. */
-export const treeReticle = (style: TreeStyle = "pr2"): Reticle => (style === "ebr" ? ebrReticle() : pr2Reticle());
+/** Rows of the TReMoR3-style grid (mil down), and how wide each is either side of the stem. */
+export const TREMOR_ROWS = Array.from({ length: 12 }, (_, i) => i + 1);
+const tremorHalf = (row: number) => Math.min(8, 2 + 0.5 * row);
+/**
+ * The wind dots' spacing on each grid row (mil): the drift of 2 m/s of full-value crosswind for the M118LR at the
+ * range whose come-up is that row, as Horus spaces its time-of-flight dots. For another load the dots are a little
+ * off that value; the come-up card gives what a dot is worth for the load in the rifle, row by row.
+ */
+const dotMemo = new Map<number, number>();
+export const tremorDotMil = (row: number): number => {
+  const known = dotMemo.get(row);
+  if (known !== undefined) return known;
+  const r = ROUNDS.m118lr;
+  let lo = 100;
+  let hi = 2000;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (holdRad(r, mid, BATTLE_ZERO_M, RIFLES.bolt.sightM) / MRAD < row) lo = mid;
+    else hi = mid;
+  }
+  const range = (lo + hi) / 2;
+  const dx = (crossDriftPerMs(r, [range])[0]! * 2) / range / MRAD;
+  dotMemo.set(row, dx);
+  return dx;
+};
+
+/**
+ * TReMoR3-style grid (kit `tremor`), after Horus Vision's: a fine crosshair marked every 0.1 mil with small
+ * chevron-like hashes for measuring, open at the centre round a small dot; below it a grid of whole-mil rows, each
+ * scaled every 0.2 mil and widening down the tree, numbered every second mil; on each row, time-of-flight wind dots,
+ * four each side. Like the other mil reticles it is cut for no load: the shooter learns what its dots are worth.
+ */
+function tremorReticle(): Reticle {
+  const p: Prim[] = [];
+  const w = 0.035;
+  const fine = 0.07;
+  const half = 0.12;
+  const big = 0.2;
+  const centre = 0.15;
+  p.push({ kind: "dot", x: 0, y: 0, r: 0.035, lit: true });
+  for (const s of [-1, 1]) {
+    p.push({ kind: "line", x1: s * centre, y1: 0, x2: s * 10, y2: 0, w, lit: true });
+    p.push({ kind: "line", x1: s * 10, y1: 0, x2: s * EDGE, y2: 0, w: w * 2.5 });
+  }
+  p.push({ kind: "line", x1: 0, y1: -centre, x2: 0, y2: -5, w, lit: true });
+  p.push({ kind: "line", x1: 0, y1: -5, x2: 0, y2: -EDGE, w: w * 2.5 });
+  p.push({ kind: "line", x1: 0, y1: centre, x2: 0, y2: 12.4, w, lit: true });
+  for (const v of steps(0.1, 10, 0.1)) {
+    for (const s of [-1, 1]) {
+      const x = s * v;
+      if (isWhole(v)) tick(p, "x", 0, x, [-big, big], w, 0, true);
+      else if (isHalf(v)) tick(p, "x", 0, x, [-half, half], w, 0, true);
+      else tick(p, "x", 0, x, [0, fine], w, 0, true);
+    }
+    if (v <= 5) {
+      if (isWhole(v)) tick(p, "y", 0, -v, [-big, big], w, 0, true);
+      else if (isHalf(v)) tick(p, "y", 0, -v, [-half, half], w, 0, true);
+      else tick(p, "y", 0, -v, [-fine, 0], w, 0, true);
+    }
+  }
+  for (let v = 2; v <= 10; v += 2) for (const s of [-1, 1]) p.push({ kind: "text", x: s * v, y: -0.45, size: 0.3, text: String(v) });
+  // The grid below the centre.
+  for (const row of TREMOR_ROWS) {
+    const hw = tremorHalf(row);
+    p.push({ kind: "line", x1: -hw, y1: row, x2: hw, y2: row, w });
+    for (const v of steps(0.2, hw, 0.2)) for (const s of [-1, 1]) tick(p, "x", row, s * v, isWhole(v) ? [-0.14, 0.14] : [0, 0.07], w);
+    // The stem between rows, scaled every 0.2 mil.
+    for (const v of steps(row - 0.8, row - 0.2, 0.2)) tick(p, "y", 0, v, [-0.07, 0.07], w);
+    const dx = tremorDotMil(row);
+    for (let j = 1; j <= 4; j++) for (const s of [-1, 1]) if (j * dx < hw) p.push({ kind: "dot", x: s * j * dx, y: row - 0.15, r: 0.035 });
+    if (row % 2 === 0) p.push({ kind: "text", x: -hw - 0.35, y: row, size: 0.32, text: String(row), align: "right" });
+  }
+  return { id: "tree", name: "TReMoR3", unitRad: MRAD, unitName: "mrad", prims: p, round: "m118lr", illum: "rgb(255,52,30)" };
+}
+
+/** The bolt rifle's reticle: PR2-MIL, EBR-7D or the TReMoR3-style grid. */
+export const treeReticle = (style: TreeStyle = "pr2"): Reticle => (style === "ebr" ? ebrReticle() : style === "tremor" ? tremorReticle() : pr2Reticle());
 
 export const RETICLES = { pso: psoReticle, tree: treeReticle, vss: vssReticle } as const;
 

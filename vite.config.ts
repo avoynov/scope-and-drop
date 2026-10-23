@@ -12,8 +12,8 @@ export default defineConfig({
     outDir: "../dist",
     emptyOutDir: true,
     target: "es2022",
-    // Every page under demo/ ships: the mansion viewer at /demo/, the scope lab at /demo/reticle/ and the party lab at /demo/party/.
-    rollupOptions: { input: { main: page("demo/index.html"), reticle: page("demo/reticle/index.html"), party: page("demo/party/index.html") } },
+    // Every page under demo/ ships: the mansion viewer at /demo/, the scope lab at /demo/reticle/, the party lab at /demo/party/ and the armoury at /demo/armoury/.
+    rollupOptions: { input: { main: page("demo/index.html"), reticle: page("demo/reticle/index.html"), party: page("demo/party/index.html"), armoury: page("demo/armoury/index.html") } },
   },
   server: { host: "127.0.0.1", port: 5173 },
 });

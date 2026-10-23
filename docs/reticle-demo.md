@@ -318,7 +318,7 @@ The cues:
 | Muzzle velocity spread | SD 8 m/s (military ammunition) | SD 4 m/s (match) | SD 4 m/s. At subsonic speed every m/s is 1.5 cm of height at 183 m |
 | Spread at its mannequin | 412 m: ≈ 5 cm per axis, plus ≈ 3 cm vertical from velocity | 412 m: ≈ 3 cm per axis, plus ≈ 1.5 cm vertical | 183 m: ≈ 2.4 cm per axis, plus ≈ 6 cm vertical |
 | Lock and barrel time | 6 ms (hammer) + 1.3 ms | 3 ms (striker) + 1.3 ms | 5 ms (striker) + 1.9 ms (a 200 mm ported barrel and the suppressor ahead of it) |
-| Action | Semi-automatic, 10-round magazine, hammer fired. Held open after the last round | Bolt, 5-round detachable box, striker fired. After each shot B works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine, striker fired (the automatic mode is left out). Shuts on an empty chamber after the last round |
+| Action | Semi-automatic, 10-round magazine, hammer fired. Held open after the last round | Bolt, 10-round detachable box (the TRG 22's), striker fired. After each shot B works the bolt (about 1.4 s) | Semi-automatic, 10-round magazine, striker fired (the automatic mode is left out). Shuts on an empty chamber after the last round |
 | Working the action (B) | Rack the charging handle, about 1.2 s | About 1.4 s | Rack the charging handle, about 1.2 s |
 | Magazine change (R) | About 2.9 s | About 2.7 s | About 2.9 s |
 
@@ -338,7 +338,7 @@ Working the action (B) or changing the magazine (R) takes a hand off the rifle, 
 
 Each rifle is worked the way it really is:
 
-- **Bolt rifle** (M24 class, 5-round detachable box).
+- **Bolt rifle** (M24 class, 10-round detachable box as on the TRG 22).
   - Working the bolt: the right hand pinches the knob and lifts it 90°, which cocks the striker. It pulls the bolt 100 mm back: the extractor draws out the case (or an unfired round), and the ejector flicks it out of the port to the right, into the dirt. It pushes the bolt forward, and the bolt face strips the top round off the magazine lips and drives it up the feed ramp into the chamber, if there is a round. Then it turns the handle down. About 1.4 s.
   - Changing the magazine: the index finger presses the paddle catch in front of the trigger guard. The box drops into the hand and goes to the pouch, and the full one is pushed straight up the well until the catch clicks. The bolt isn't touched. About 2.7 s.
 - **SVD.**
@@ -453,18 +453,20 @@ A high-desert flat seen from a low rise: procedural terrain with hills beyond 1.
 | R | Change the magazine. Any time; the chamber stays as it was, and a fresh magazine chambers nothing. On the SVD and VSS the trigger still works during it |
 | C | Safety on or off (no visuals: the click, a locked trigger and a handle that stops short tell you) |
 | T | Switch rifle and reticle: SVD, bolt rifle, VSS |
-| V | Bolt rifle: switch its reticle, PR2-MIL or EBR-7D |
+| V | Bolt rifle: switch its reticle, PR2-MIL, EBR-7D or the TReMoR3-style grid |
 | M | Bolt rifle: Manual (Speed Drop card) or Pro (laser rangefinder). With the rangefinder up: its MODE button (hold 1 s for the menu, then tap to step) |
-| X | Pro: bring the rangefinder up to the eye, or put it down |
+| X | Pro, or a rangefinder in the kit: bring it up to the eye, or put it down |
 | Space (rangefinder up) | Its RANGE button: the first press wakes it, a tap ranges, holding scans. In the menu it changes the value. Space and M held 3 s: the wind keys |
 | F (rangefinder up) | Put the rangefinder down |
+| , / . | With the Kestrel in the kit: its target range down or up 25 m (with Shift, 100 m) |
+| ↑ / ↓ | With a squeeze bag in the kit: ease off it (muzzle up) or squeeze it (muzzle down), about 0.6 mrad a second at most (section 12) |
 | G | Glass in front of the mannequins: off, single, double, laminated, tempered (section 11) |
 | L | Illumination |
 | H | Hide the panel |
 
 The panel also has the parallax knob (50 m to ∞), eye sliders, the Pan shadow slider, wind speed and direction, toggles for sway, mirage, head wander, sound and Easy (the wind meter), Fire, Bolt and Reload buttons, and live readouts: true field, exit pupil, aim range, parallax error and the target's subtension in the current reticle's unit.
 
-URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `tree=pr2|ebr` (the bolt rifle's reticle), `aid=manual|lrf` (its Speed Drop card or rangefinder), `far=<m>,<deg>` and `near=<m>,<deg>` (where the mannequins stand, section 8), `kilo=up` (the rangefinder at the eye) or `kiloat=<s>` (that long into bringing it up), `ranged=<s>` (woken and ranged that long before the still, default 3), `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`, `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
+URL parameters: `reticle=pso|tree|vss` (`vss` starts on the 183 m mannequin with the parallax at 183 m), `mag`, `par`, `ex`, `ey`, `ez` (mm), `pupil`, `illum`, `nosway`, `nomirage`, `nodrift`, `noshadow`, `pan` (Pan shadow, 0–2), `hud=0`, and `shot=1&t=` for deterministic stills. Add `recoil=0.08` for a still 80 ms after the trigger, or `panrate=4,0` for one taken mid-swing (right and up, in °/s). Shooting: `wind=<m/s>,<clock>` (default `2.5,9.5`, the speed at 3 m), `nogust`, `flatwind` (the same wind at every height, no hills or shelter), `easy`, `mute`, `zero=<m>` (the SVD and VSS drums on that mark, e.g. `zero=300`), `mils=<mil>` (the bolt rifle's turret dialled up that far, e.g. `mils=2.7`), `tree=pr2|ebr|tremor` (the bolt rifle's reticle), `aid=manual|lrf` (its Speed Drop card or rangefinder), `far=<m>,<deg>` and `near=<m>,<deg>` (where the mannequins stand, section 8), `kilo=up` (the rangefinder at the eye) or `kiloat=<s>` (that long into bringing it up), `ranged=<s>` (woken and ranged that long before the still, default 3), `kilomode=first|best|last|xr|fog`, `kiloret=circle|duplex|box|h-grid|grid`, `kilowind=<mph>,<clock>`, `focus=<m>` (the eye focused that close, e.g. `out&focus=0.29` to read the drum), `hold=<up>[,<right>]` (start aimed that many reticle units high and right, so a chevron sits on the chest), `fire=<s>` for a still that long after a bullet left the muzzle, and `norecoil` to keep the rifle still for it. Glass: `glass=single|double|laminated|tempered` and `glassangle=<deg>`. Kit: `kit=<item>,<item>,…`, `canheat=<K>` and `kestrel=<m>` (the Kestrel's range) (section 12). To render the stills: `OUT=renders npx tsx scripts/reticle.ts "name=reticle=tree&mag=16&hud=0"`.
 
 ## 10. Hits on a person (`src/body/anatomy.ts`, `src/body/wound.ts`)
 
@@ -604,7 +606,49 @@ So for the game: **a VSS shot square-on through a window lands within a few cent
 
 URL parameters: `glass=single|double|laminated|tempered`, `glassangle=<deg>` (+ turns the pane's face to the shooter's right).
 
-## 12. Next steps (not built)
+## 12. The kit (`src/armoury/`, `src/scope/hold.ts`)
+
+`kit=atlas,bag,weight,fit` puts a loadout from the armoury on whichever rifle is up, as a mission would have it. Items that don't fit that rifle stay behind (switch rifles with T and the kit is fitted again), unknown names are ignored, and the panel shows what was packed and what it leaves of the pay ("Kit"). With a kit the Pro, EBR-7D and Easy buttons follow what was packed. Without `kit=` the lab is the lab: the rifle on its bipod, holding as it always has. `rigFor()` (`src/armoury/rig.ts`) turns a loadout into what the simulation reads: the rifle as loaded, its recoil, hold, rest and stock fit, the magazine, the aids.
+
+### The hold
+The rifle's own motion (`holdAt`): the breathing figure-eight, a slow postural wander, the heartbeat's twitch, a fine tremor of 8–12 Hz and, new, the wind buffeting the rifle and the shooter. The buffeting goes with the wind's dynamic pressure, ½ρv², at the rifle, so it grows with the square of the speed: about 0.15 mrad at 8 m/s on a bipod, a tenth of that at the lab's 2.5 m/s, and it rides the gusts. A rolled pack (the issued rest) moves half as much again as a bipod; a tripod a fifth more. A squeeze bag under the stock halves the vertical breathing. Mass at the muzzle damps the heartbeat and tremor (0.7× for the 0.4 kg weight). In the hide a fifth of the wind gets in, so a twenty-fifth of the push.
+
+### The rest
+How the rifle follows the hands when it is swung (`RestDynamics`), shown in the panel under "Rest":
+- **Pack** and the lab's bipod follow at once.
+- **Harris:** swing more than about 5° from where its legs stand and they lift and are set down again: a hop and a ringing settle over about 0.8 s.
+- **Atlas:** pans 15° each way on its head without a re-set, and the head trails the scope less (pan shadow 0.7×).
+- **Tripod:** the saddle drags: no faster than 12°/s, however hard the hands pull.
+- **Squeeze bag:** a quick swing unsettles the stock in it; it sags and settles back over about a second. Past 6° it has to be lifted and set down. ↑ and ↓ move the muzzle a hair at a time without touching the grip.
+- **Mass at the muzzle** (a weight or a can) gives the swing inertia: a quick swing overshoots and settles in about 0.4 s.
+- Recoil's lasting rise and the hands on the action move the whole rifle, rest and all, so they never count as a swing.
+
+### The stock
+The cheek riser and pad (`fit`): the first stroke of a scope-in lands half as far off the exit pupil and the move is quicker; the head wanders half as much on the weld and trails a swing less; the hold behind each shot is more even (the hidden hold draw's spread 0.6×), so recoil varies less from shot to shot. On the SVD the pad takes 17% off the scope's travel and 20% off the jolt.
+
+### The muzzle (`src/scope/can.ts`)
+- **Suppressor** (SVD and the Sako; the VSS has its own): recoil scaled from the momentum of the bullet and gas, with only about 0.4 of the gas jet's thrust reaching the shoulder (the SVD's open flash hider passes all of it), plus the can's half kilogram. The report is a deep boom some 25–30 dB down with the bullet's crack, which no can touches, sharp on top; with the subsonic 200 gr load in the Sako it is only a pop and the firing pin's click, and the hills no longer answer. Muzzle dust is a tenth.
+- **Cold can:** the first shot through a can at the air's temperature goes about 1 MOA high and a quarter right (shooters report 1–1.5 MOA, usually high, the next back on the group), and after 45 s idle the next shot pops a little louder (first-round pop). The panel's "Suppressor" line says when it is cold.
+- **Heat:** about 3.2 K per gram of powder, so some 10 K a round of 7N1 or M118LR and 2 K of the subsonic load, cooling over about 5 minutes. Once it is some 10 K warm its heat rises through the line of sight in front of the objective and waves the whole picture in broad, climbing swells (up to 0.08 mrad when hot, in still air). A breeze of 1.2 m/s halves it; in the hide the air is still, so it is worse. The **mirage sleeve** lets about an eighth of it through. `canheat=<K>` sets the can that hot for a still.
+- **Muzzle weight** (0.4 kg, in place of the brake or flash hider): about 8% less free-recoil energy on the SVD, less rise, a steadier heartbeat and tremor, and inertia in every swing.
+- Recordings for the can's reports go in `sounds/` as `<rifle>-shot-can` and `bolt-shot-sub`.
+
+### Rangefinders and the wind meter (`src/scope/kilo.ts`, `src/scope/aids.ts`)
+- **KILO8K-ABS** (`kilo`): on any rifle now, with a profile for the rifle as loaded ("P1 7N1", "P1 SUB200"…): its elevation and wind holds are always for the load in the magazine. Its holds are in mil; on the SVD and VSS set the drum or pick the chevron for the angle-modified range under its reticle, and read its wind hold as thousandths (a thousandth is 1.047 mil, a twentieth less than the number on the screen).
+- **Plain rangefinder** (`lrf`): the same two buttons (a tap ranges, a hold scans), but only the range and the angle, no menus and no solver. Its beam is wider (2 × 1 mrad), it reports the strongest return, so at 400 m a rock behind the man often wins; it reaches a person to about 640 m, answers in a third of a second and is good to about ±1 m. The Speed Drop card stays up on the bolt rifle.
+- **Kestrel** (`kestrel`, in place of the lab's Easy mast): on its vane mount a metre up beside the shooter, it reads the wind there, averaged over a few seconds, and gives its solver's wind hold for the loaded round at the range set on it (, and .), for the way the rifle points, spin drift included. The hold is exact for the wind it reads (tested to a centimetre); a metre up it reads less than the flags at 3 m, it knows nothing of the wind along the way, and inside the hide it reads the hide's still air.
+
+### Optics, magazines and loads (`src/scope/reticles.ts`, `src/scope/cards.ts`, `src/body/wound.ts`)
+- **ACSS-style scope** for the VSS (`acss`): mrad, cut for the SP-5. A horseshoe round the aiming chevron; a chevron for every 50 m from 150 to 400 m (drum on 1), numbered at the hundreds; under each a bar as wide as a man's shoulders (46 cm) at that range; either side, wind dots for a full-value 2 and 4 m/s.
+- **TReMoR3-style grid** for the bolt rifle (`tremor`, or V in the lab): a crosshair marked every 0.1 mil, and below it whole-mil rows scaled every 0.2 mil with four time-of-flight wind dots each side. The dots are spaced for 2 m/s with the M118LR; the wind card gives what one is worth for the load in the rifle, row by row. The **EBR-7D** is kit too (`ebr`).
+- **VSS 20-round magazine** (`mag20`): shown on the rifle and worked by the hands with its own geometry; the rifle sits a little higher on it (breathing and wander ×1.1).
+- **Loads** (`sp6`, `7n14`, `sb180sp`, `tbt168`, `sub200`): the rifle flies, drops, drifts and wounds with the load in the magazine. The expanding loads open in the first 2.5–3 cm of tissue if they strike fast enough (fully from 450 m/s for the soft point, 500 for the bonded round; not at all below 0.6 of that), stay nose-first instead of yawing, and shed what they lose as fragments into the channel: the soft point a quarter of itself, the bonded round a twentieth. Glass that strips the jacket or turns the bullet stops it opening.
+- **The cards follow the load.** The rifle is zeroed for the load at 100 m with the drum on 1; a range drum's other marks stay cut for the issued round. A reticle cut for another load than the one in the rifle (the PSO with 7N14 or the soft point) gets a **load card**: how far below (▼) or above (▲) each chevron to hold. The SP-6 flies as the SP-5, so the VSS's chevrons hold. The bolt rifle's **Speed Drop** card is worked out for the load (1.4 for the bonded round); the subsonic load has no useful band, so it gets a card of **come-ups** every 25 m. The **wind card** is for the load in the rifle, in the reticle's unit. `tests/aids-truth.test.ts` flies every card, mark and device for every load and checks that each puts the bullet on the aim point to a centimetre.
+
+### The hide
+Cloth walls and a low window round the shooter. The window lets the rifle (and a rangefinder) turn 12° either side of the line between the two mannequins and 6° up or down; the barrel meets the frame there ("at the frame"), and at the ends of the arc the scope sees the frame's edge.
+
+## 13. Next steps (not built)
 
 - The person reacting: falling, crumpling or staying up as the wound model says, in place of the mannequin.
 - Glass in the mansion: the same model on the house's real windows, and glass the shooter's own bullets have already broken.

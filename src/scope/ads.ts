@@ -85,12 +85,16 @@ const ZERO: Vec3 = { x: 0, y: 0, z: 0 };
  * Head down onto the weld from `from` (moving at `vel` mm/s if a scope-out is interrupted).
  * Primary stroke ~0.45 s, lands 0.5–1.7 mm high, ±1.2 mm sideways and 6–12 mm too far back; the
  * corrective stroke starts before it ends and takes the eye home in another ~0.25 s.
+ *
+ * `fit` is how well the stock fits the shooter (src/armoury/rig.ts): a cheek riser set to the eye halves how far
+ * off the first stroke lands (`error` 0.5), and with less to correct the move is quicker (`pace` < 1).
  */
-export function planScopeIn(start: number, from: Vec3, vel: Vec3, n: number): AdsMotion {
+export function planScopeIn(start: number, from: Vec3, vel: Vec3, n: number, fit: { adsError: number; adsPace: number } = { adsError: 1, adsPace: 1 }): AdsMotion {
   const r = (k: number) => rnd(n, k);
-  const Tp = 0.45 * (0.9 + 0.2 * r(1));
-  const land: Vec3 = { x: (r(2) - 0.5) * 2.4, y: 0.5 + 1.2 * r(3), z: 6 + 6 * r(4) };
-  const Tc = 0.26 * (0.9 + 0.2 * r(5));
+  const e = fit.adsError;
+  const Tp = 0.45 * (0.9 + 0.2 * r(1)) * (1 - 0.6 * (1 - fit.adsPace));
+  const land: Vec3 = { x: (r(2) - 0.5) * 2.4 * e, y: (0.5 + 1.2 * r(3)) * e, z: (6 + 6 * r(4)) * e };
+  const Tc = 0.26 * (0.9 + 0.2 * r(5)) * fit.adsPace;
   const tc = 0.8 * Tp;
   const strokes: Stroke[] = [
     // Down first, forward later: the head drops, then the cheek slides forward along the comb.

@@ -17,6 +17,8 @@ Each file is one sound, trimmed so it starts at its first transient (within 5 ms
 | Sound | What it is | bolt | svd | vss |
 | --- | --- | :-: | :-: | :-: |
 | `shot` | The report, heard from the shooter's own position (a microphone at the shooter's head, outdoors). Keep the first 2 s, with the echo. On the SVD and VSS the action cycling is part of it | ✓ | ✓ | ✓ |
+| `shot-can` | The report through a screw-on suppressor with the issued supersonic load: the muffled boom and the bullet's crack (kit `can`) | ✓ | ✓ | |
+| `shot-sub` | The report of the subsonic 200 gr load through a suppressor (kit `can,sub200`) | ✓ | | |
 | `bolt-up` | Bolt handle lifted 90°: the cocking cam's scrape and the cocking piece dropping into its notch | ✓ | | |
 | `bolt-back` | Bolt pulled fully back: the run along the raceways, the case ejected, the bolt stop | ✓ | | |
 | `bolt-forward` | Bolt pushed home: stripping the top round off the magazine, chambering it | ✓ | | |

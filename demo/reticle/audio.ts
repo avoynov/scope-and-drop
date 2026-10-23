@@ -13,6 +13,7 @@
  * are synthesised (synth.ts). The bullet's impacts are synthesised here.
  */
 import type { Cue, SoundEvent } from "../../src/scope/handling";
+import type { Report } from "../../src/scope/can";
 import type { RifleId } from "../../src/scope/shot";
 import { render, type Synth } from "./synth";
 
@@ -24,9 +25,10 @@ export interface Sound {
   unlock(): void;
   /**
    * The report, `delay` s from now. The SVD's lighter rifle and slotted flash hider make it sharper than the
-   * bolt rifle; the VSS is suppressed and subsonic.
+   * bolt rifle; the VSS is suppressed and subsonic. `report` is what is on the muzzle (a can makes a supersonic
+   * round a boom and a crack, a subsonic one a pop); `pop` is a can's first shot on fresh air, a little louder.
    */
-  shot(delay: number, rifle: RifleId): void;
+  shot(delay: number, rifle: RifleId, report?: Report, pop?: boolean): void;
   /** A bullet arriving `delay` s from now, `dist` m away. */
   impact(delay: number, dist: number, kind: ImpactSound): void;
   /** One of the rifle's mechanical sounds, `delay` s from now. */
@@ -71,6 +73,8 @@ const PAN: Partial<Record<Synth, number>> = {
  */
 const LEVEL: Record<Synth, number> = {
   shot: 1,
+  "shot-can": 0.62,
+  "shot-sub": 0.4,
   "bolt-up": 0.22,
   "bolt-back": 0.3,
   "bolt-forward": 0.3,
@@ -87,6 +91,8 @@ const LEVEL: Record<Synth, number> = {
   "safety-stop": 0.18,
 };
 const VSS_SHOT = 0.55;
+/** First-round pop: the oxygen in a can that has stood a while burns with the first shot's gas, some 3 dB louder. */
+const POP_GAIN = 1.4;
 const VARIANTS = 4;
 
 export function createSound(): Sound {
@@ -139,12 +145,12 @@ export function createSound(): Sound {
   }
 
   /** Plays a rifle sound at absolute context time `t`; returns its source so it can be stopped. */
-  function play(ev: Synth, rifle: RifleId, t: number): AudioBufferSourceNode {
+  function play(ev: Synth, rifle: RifleId, t: number, gain = 1): AudioBufferSourceNode {
     const c = ctx!;
     const src = c.createBufferSource();
     src.buffer = take(ev, rifle);
     const v = c.createGain();
-    v.gain.value = ev === "shot" && rifle === "vss" ? VSS_SHOT : LEVEL[ev];
+    v.gain.value = (ev === "shot" && rifle === "vss" ? VSS_SHOT : LEVEL[ev]) * gain;
     let node: AudioNode = src.connect(v);
     const pan = PAN[ev];
     if (pan && c.createStereoPanner) {
@@ -181,12 +187,14 @@ export function createSound(): Sound {
       }
       if (ctx.state === "suspended") void ctx.resume();
     },
-    shot(delay, rifle) {
+    shot(delay, rifle, report = rifle === "vss" ? "integral" : "open", pop = false) {
       if (!s.enabled || !ctx) return;
       const t = ctx.currentTime + delay;
-      play("shot", rifle, t);
-      // The hills answer much later; the suppressed VSS is too quiet to come back off them.
-      if (rifle !== "vss") burst(t + 9.2, 0.035, 0.25, 1.6, "lowpass", 320, 160, 1.2);
+      play(report === "can" ? "shot-can" : report === "can-sub" ? "shot-sub" : "shot", rifle, t, pop ? POP_GAIN : 1);
+      // The hills answer much later. A can on a supersonic round leaves the bullet's crack, which still comes
+      // back off them, fainter; a subsonic round through a can, like the VSS, is too quiet to come back.
+      if (report === "open") burst(t + 9.2, 0.035, 0.25, 1.6, "lowpass", 320, 160, 1.2);
+      else if (report === "can") burst(t + 9.2, 0.02, 0.25, 1.4, "lowpass", 420, 200, 1.2);
     },
     impact(delay, dist, kind) {
       if (!s.enabled || !ctx) return;

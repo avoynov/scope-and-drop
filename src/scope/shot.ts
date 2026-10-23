@@ -63,6 +63,19 @@ export function dialTiltRad(rf: Rifle, detent: number): number {
   return zeroTiltRad(r, BATTLE_ZERO_M, rf.sightM) + detent * d.clickMil * 0.001;
 }
 
+/**
+ * The bore's tilt for a rifle carrying another load than its range drum was cut for (`cutFor`): the armourer zeroes
+ * it for the load at 100 m with the drum on 1, and each mark above that tilts the bore as much more as it was cut to
+ * for its own load, so the drum's marks are only true for that load (the load card gives the difference). A mil
+ * turret's clicks are the same for any load.
+ */
+export function dialTiltLoaded(rf: Rifle, cutFor: RoundId, detent: number): number {
+  const d = rf.dial;
+  if (d.kind !== "range" || cutFor === rf.round) return dialTiltRad(rf, detent);
+  const cut = ROUNDS[cutFor];
+  return zeroTiltRad(ROUNDS[rf.round], BATTLE_ZERO_M, rf.sightM) + zeroTiltRad(cut, d.marksM[detent]!, rf.sightM) - zeroTiltRad(cut, BATTLE_ZERO_M, rf.sightM);
+}
+
 /** The dial's reading on `detent`, as its engraving gives it: metres on a range drum, mils on a turret. */
 export const dialReading = (d: Dial, detent: number): number => (d.kind === "range" ? d.marksM[detent]! : detent * d.clickMil);
 
@@ -105,7 +118,7 @@ export const RIFLES = {
   },
   /**
    * Bolt rifle (M24 class), M118LR: about 0.75 MOA for 5 shots, so σ ≈ 0.25 MOA; velocity SD about 4 m/s.
-   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Five-round detachable box magazine.
+   * Twist 1:11.25", striker lock time ≈ 3 ms, 610 mm barrel. Ten-round detachable box magazine, as the TRG 22 in .308 ships with.
    * Scope 58 mm over the bore, as modelled in the demo. Its scope is a modern FFP mil scope (Leupold Mark 5HD
    * class): an M5C3-style turret, 0.1 mil a click, 10 mil a turn over three turns (29 mil), zero stop at 0, the
    * 100 m zero. Nothing on it or on the reticle is cut for the load: the shooter dials from the DOPE card.
@@ -122,7 +135,7 @@ export const RIFLES = {
     lockS: 0.003,
     barrelS: 0.0013,
     action: "bolt",
-    magazine: 5,
+    magazine: 10,
     blastDust: 0.6,
     sightM: 0.058,
     dial: { kind: "mil", clickMil: 0.1, clicksPerRev: 100, clicks: 290 },

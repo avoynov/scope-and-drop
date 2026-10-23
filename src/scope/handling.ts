@@ -14,7 +14,7 @@
  *
  * Two things the shooter does, each on its own key: work the action ('cycle') and change the magazine
  * ('reload'). Neither does the other's job, so a fresh magazine still needs the action worked to chamber a round.
- *  - Bolt rifle (M24 class, detachable 5-round box). Cycle: lift the handle 90° (this cocks the striker), pull
+ *  - Bolt rifle (M24 class, detachable 10-round box as on the TRG 22). Cycle: lift the handle 90° (this cocks the striker), pull
  *    the bolt back (the extractor pulls whatever is in the chamber and the ejector flicks it out of the port to
  *    the right), push it forward (the bolt face strips the top round out of the magazine and pushes it into
  *    the chamber, if there is one) and turn it down. Reload: the box out and a full one in, bolt untouched.
@@ -289,14 +289,15 @@ export interface ActionGeom {
 const DEG = Math.PI / 180;
 const CART_308 = { caseLen: 51.2, dia: 11.9, oal: 71 };
 export const ACTIONS: Record<RifleId, ActionGeom> = {
-  // M24 class: round receiver, the bolt handle over the grip, a 5-round box ahead of the trigger guard. The
-  // handle closes 35° below level and lifts 90°, so the knob clears the eyepiece bell on its way back.
+  // M24 class: round receiver, the bolt handle over the grip, a 10-round box ahead of the trigger guard (the TRG
+  // 22's in .308: five more rounds in the staggered column make it 28 mm deeper than a 5-round box). The handle
+  // closes 35° below level and lifts 90°, so the knob clears the eyepiece bell on its way back.
   bolt: {
     boreY: -58,
     trigger: [0, -118, -255],
     grip: [0, -145, -198],
     release: [0, -128, -293],
-    mag: { pivot: [0, -84, -392], size: [24, 96, 92], tilt: 0, rounds: 5, cartridge: CART_308 },
+    mag: { pivot: [0, -84, -392], size: [24, 124, 92], tilt: 0, rounds: 10, cartridge: CART_308 },
     bolt: {
       axisY: -58,
       bodyR: 9.5,
@@ -331,6 +332,12 @@ export const ACTIONS: Record<RifleId, ActionGeom> = {
     carrier: { knob: [22, -66, -300], stroke: 85, holdOpen: false },
   },
 };
+
+/**
+ * The VSS's 20-round magazine, the 6L25 it shares with the AS Val: ten more 9×39 rounds in the staggered column make
+ * it about 49 mm deeper (5 × 11.3 mm × cos 30°), and it hangs a little further forward.
+ */
+export const MAG_VSS20: MagGeom = { ...ACTIONS.vss.mag, size: [25, 141, 64], tilt: 0.09, rounds: 20 };
 
 /** The bolt knob's centre for a lift (0…1) and travel (0…1). */
 export function knobAt(b: BoltGeom, lift: number, travel: number): V3 {
@@ -394,6 +401,8 @@ export interface Cue {
 
 export interface Plan {
   rifle: RifleId;
+  /** The rifle's action, with the magazine it has in it. */
+  geom: ActionGeom;
   kind: HandlingKind;
   dur: number;
   ch: Map<Channel, ChMove[]>;
@@ -453,6 +462,8 @@ export interface HandlingState {
   held?: boolean;
   /** Working the action with the safety on: the handle stops short (SVD, VSS) or will not lift (bolt rifle). */
   safe?: boolean;
+  /** The magazine in the rifle, when it isn't the issued one (the VSS's 20-round box). */
+  mag?: MagGeom;
 }
 
 /**
@@ -461,7 +472,7 @@ export interface HandlingState {
  * from one to the next.
  */
 export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number, seed = 0, state: HandlingState = {}): Plan {
-  const g = ACTIONS[rifle];
+  const g = state.mag ? { ...ACTIONS[rifle], mag: state.mag } : ACTIONS[rifle];
   const r = (k: number) => rnd(seed, k);
   // A practised shooter's pace varies by some ±6 % from one time to the next.
   const k = 0.94 + 0.12 * r(0);
@@ -662,7 +673,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     cues.sort((a, b) => a.t - b.t);
     // A magazine change: the old magazine off its catch when it is pressed, the new one on when it is home.
     const swap: Plan["swap"] = kind === "reload" ? [cues.find((c) => c.ev === "mag-release")!.t, mags[1].events.find((e) => e.mode === "well")!.t] : null;
-    return { rifle, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
+    return { rifle, geom: g, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
   }
 }
 
@@ -780,7 +791,7 @@ function handAt(plan: Plan, s: Side, t: number): HandState {
 
 /** The state of everything at `t` seconds into the plan. */
 export function poseAt(plan: Plan, t: number): HandlingPose {
-  const g = ACTIONS[plan.rifle];
+  const g = plan.geom;
   const c = (x: Channel) => channel(plan, x, t);
   const hands = { R: handAt(plan, "R", t), L: handAt(plan, "L", t) };
   const mags = plan.mags.map((track, i) => {
@@ -838,8 +849,8 @@ export function poseAt(plan: Plan, t: number): HandlingPose {
 }
 
 /** The rifle at rest, hands where they live: the firing hand on the grip, the support hand under the butt. */
-export function restPose(rifle: RifleId, rounds: number, carrierOpen = false): HandlingPose {
-  const plan = planHandling(rifle, rifle === "bolt" ? "cycle" : "reload", rounds);
+export function restPose(rifle: RifleId, rounds: number, carrierOpen = false, mag?: MagGeom): HandlingPose {
+  const plan = planHandling(rifle, rifle === "bolt" ? "cycle" : "reload", rounds, 0, mag ? { mag } : {});
   const p = poseAt(plan, 0);
   p.carrier = carrierOpen ? 1 : 0;
   p.mags[1].visible = false;

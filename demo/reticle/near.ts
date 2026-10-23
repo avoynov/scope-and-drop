@@ -18,7 +18,7 @@ import * as THREE from "three";
 import type { HandlingPose } from "../../src/scope/handling";
 import { SCOPE } from "../../src/scope/optics";
 import type { Dial, RifleId } from "../../src/scope/shot";
-import { buildActions } from "./actions";
+import { buildActions, type RifleKit } from "./actions";
 import { DRUM_R_MM, paintDrum } from "./drum";
 import { buildKilo, type KiloModel } from "./kilo";
 
@@ -100,6 +100,8 @@ export interface NearLayer {
   kilo: KiloModel;
   /** Which rifle is under the scope. */
   setRifle(id: RifleId): void;
+  /** What the kit puts on it that shows: a can, its sleeve or a weight on the muzzle, the magazine. */
+  setKit(k: RifleKit): void;
   /** Where its moving parts and the hands are. */
   pose(p: HandlingPose): void;
 }
@@ -305,6 +307,7 @@ export function buildRifle(): NearLayer {
     aciMm,
     kilo,
     setRifle: (id) => actions.setRifle(id),
+    setKit: (k) => actions.setKit(k),
     pose: (p) => actions.apply(p),
   };
 }

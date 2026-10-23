@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Armoury</title>
+    <link rel="icon" href="data:," />
+    <style>
+      /* Functional, not finished: the look comes later. */
+      :root {
+        --ink: #e9e4d8;
+        --muted: #9a9486;
+        --line: rgba(233, 228, 216, 0.14);
+        --panel: rgba(20, 22, 28, 0.9);
+        --accent: #e0b56a;
+        --bad: #ff7a6a;
+        --good: #8fd08a;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #07080c;
+        color: var(--ink);
+        font:
+          13px/1.45 ui-monospace,
+          "SF Mono",
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        align-items: baseline;
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1 {
+        font-size: 15px;
+        letter-spacing: 0.2em;
+        color: var(--accent);
+        margin: 0;
+      }
+      h2 {
+        font-size: 12px;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      #balance {
+        font-size: 20px;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr) minmax(280px, 1fr);
+        gap: 16px;
+        padding: 16px;
+      }
+      @media (max-width: 1000px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        min-width: 0;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 5px 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      select {
+        max-width: 100%;
+        min-width: 0;
+      }
+      .slot select {
+        width: 100%;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .slot {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .good {
+        color: var(--good);
+      }
+      .meter {
+        height: 10px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.07);
+        overflow: hidden;
+        margin: 6px 0;
+      }
+      .meter i {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .item {
+        border-top: 1px solid var(--line);
+        padding: 8px 0;
+      }
+      .item b {
+        color: var(--ink);
+      }
+      .lines div {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        animation: in 0.3s both;
+      }
+      .lines .total {
+        border-top: 1px solid var(--line);
+        margin-top: 4px;
+        padding-top: 4px;
+        font-weight: 600;
+      }
+      @keyframes in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+      }
+      a {
+        color: var(--accent);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .meter i {
+          transition: none;
+        }
+        .lines div {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>ARMOURY</h1>
+      <span>Balance <b id="balance"></b></span>
+      <span id="storage" class="muted"></span>
+      <a id="lab" href="../reticle/">Try this loadout in the scope lab</a>
+      <a href="../">Mansion</a>
+      <button id="reset" title="Forget the career and start again with the opening balance">Reset career</button>
+    </header>
+    <main>
+      <section>
+        <h2>Loadout</h2>
+        <div class="row" id="rifles"></div>
+        <div id="issued" class="muted"></div>
+        <div id="slots"></div>
+        <h2 style="margin-top: 14px">Spotters</h2>
+        <div id="spotters"></div>
+        <h2 style="margin-top: 14px">Pay</h2>
+        <div id="pay"></div>
+        <div id="problems" class="bad"></div>
+      </section>
+      <section>
+        <h2>Catalogue</h2>
+        <div class="row" id="filter"></div>
+        <div id="catalogue"></div>
+      </section>
+      <section>
+        <h2>Contract (stand-in)</h2>
+        <div id="contract"></div>
+        <div id="receipt" class="lines"></div>
+        <h2 style="margin-top: 14px">Past contracts</h2>
+        <div id="history"></div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

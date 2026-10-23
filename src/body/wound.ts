@@ -35,6 +35,12 @@ export interface Terminal {
   /** Above this striking speed part of the bullet breaks up (m/s), and how much of it at most. */
   fragmentAbove: number;
   fragmentFrac: number;
+  /**
+   * An expanding bullet (soft point, bonded): from this striking speed up its nose opens to `ratio` × its calibre over
+   * the first `overM` of tissue and it keeps `retain` of its mass, the rest shed as fragments into the channel. Opened,
+   * it travels nose-first instead of yawing. Slower, it opens less, and not at all below 0.6 × `minV`.
+   */
+  expand?: { minV: number; ratio: number; overM: number; retain: number };
 }
 
 /**
@@ -52,6 +58,19 @@ export const TERMINAL = {
   "7n1": { massKg: 0.0098, diaM: 0.00792, lenM: 0.0323, neckM: 0.11, fragmentAbove: Infinity, fragmentFrac: 0 },
   m118lr: { massKg: 0.01134, diaM: 0.00782, lenM: 0.0315, neckM: 0.07, fragmentAbove: 580, fragmentFrac: 0.3 },
   sp5: { massKg: 0.0162, diaM: 0.00925, lenM: 0.036, neckM: 0.12, fragmentAbove: Infinity, fragmentFrac: 0 },
+  /**
+   * The armoury's rounds.
+   *  - SP-6, 7N14: hardened steel penetrators with no air space in the nose: they hold point-forward longer
+   *    (≈ 18 and 15 cm) and go through with a narrower track. Built to pierce, not to wound.
+   *  - S&B 180 gr soft point: cup-and-core, opens to ≈ 1.8 calibres and keeps ≈ 75 % of its weight.
+   *  - Bonded 168 gr: the core is bonded to the jacket: opens to ≈ 1.7 calibres and keeps ≈ 95 %.
+   *  - Subsonic 200 gr FMJ: long and slow; it yaws late (≈ 16 cm) and its cavity stays small, like the SP-5's.
+   */
+  sp6: { massKg: 0.016, diaM: 0.00925, lenM: 0.039, neckM: 0.18, fragmentAbove: Infinity, fragmentFrac: 0 },
+  "7n14": { massKg: 0.0098, diaM: 0.00792, lenM: 0.0325, neckM: 0.15, fragmentAbove: Infinity, fragmentFrac: 0 },
+  sb180sp: { massKg: 0.01166, diaM: 0.00792, lenM: 0.03, neckM: 0.15, fragmentAbove: Infinity, fragmentFrac: 0, expand: { minV: 450, ratio: 1.8, overM: 0.025, retain: 0.75 } },
+  tbt168: { massKg: 0.01089, diaM: 0.00782, lenM: 0.031, neckM: 0.12, fragmentAbove: Infinity, fragmentFrac: 0, expand: { minV: 500, ratio: 1.7, overM: 0.03, retain: 0.95 } },
+  sub200: { massKg: 0.01296, diaM: 0.00782, lenM: 0.0345, neckM: 0.16, fragmentAbove: Infinity, fragmentFrac: 0 },
 } as const satisfies Record<string, Terminal>;
 export type TerminalId = keyof typeof TERMINAL;
 
@@ -70,6 +89,8 @@ const cavityRadius = (dEds: number) => 0.11 * Math.pow(Math.max(0, dEds) / 31000
 const CD_NOSE = 0.3,
   CD_SIDE = 0.6,
   CD_BASE = 0.45;
+/** An opened nose is blunt: drag on its mushroom's frontal area, as for a flat-nosed or expanded handgun bullet. */
+const CD_OPEN = 0.5;
 /** Yaw from point-forward to sideways over this much travel, and then on to base-forward over this much. */
 const YAW_TO_SIDE_M = 0.07,
   SIDE_TO_BASE_M = 0.08;
@@ -249,10 +270,18 @@ export function woundTrack(w: WoundInput): Pick<Wound, "damage" | "energyJ" | "e
   // Arriving yawed, the overturning moment in tissue takes over at once: by ~20° there is no neck left.
   const yaw0 = Math.min(Math.PI / 2, Math.max(0, w.yawRad ?? 0));
   let neck = b.neckM * (0.65 + 0.7 * rnd(w.seed, 1)) * Math.max(0.08, 1 - yaw0 / 0.35);
-  const frontA = (Math.PI * b.diaM * b.diaM) / 4;
   const sideA = b.lenM * b.diaM * 0.8;
   const fragments = w.speed > b.fragmentAbove ? b.fragmentFrac * Math.min(1, (w.speed - b.fragmentAbove) / 150) : 0;
   const mass0 = Math.min(b.massKg, w.massKg ?? b.massKg);
+  // An expanding bullet opens if it strikes fast enough, point first and with its jacket: fully from `minV`, not
+  // at all below 0.6 of it. Opening, it stays nose-first and does not yaw; it sheds what it loses as fragments.
+  const ex = b.expand;
+  const opens = ex && yaw0 < 0.2 && mass0 > 0.9 * b.massKg ? Math.max(0, Math.min(1, (w.speed - 0.6 * ex.minV) / (0.4 * ex.minV))) : 0;
+  if (opens > 0.15) neck = Infinity;
+  const openLoss = ex ? mass0 * (1 - ex.retain) * opens : 0;
+  /** How far open the nose is `s` into the body (0 … 1), and the calibre it presents. */
+  const openAt = (s: number) => (ex && opens > 0 ? opens * Math.min(1, Math.max(0, s) / ex.overM) : 0);
+  const diaAt = (s: number) => b.diaM * (1 + ((ex?.ratio ?? 1) - 1) * openAt(s));
   let mass = mass0;
   let v = w.speed;
   // Back up a little so the walk starts outside the skin.
@@ -285,7 +314,11 @@ export function woundTrack(w: WoundInput): Pick<Wound, "damage" | "energyJ" | "e
     const turn = s < neck ? 0 : Math.min(Math.PI, (Math.PI / 2) * Math.min(1, (s - neck) / YAW_TO_SIDE_M) + (Math.PI / 2) * Math.max(0, Math.min(1, (s - neck - YAW_TO_SIDE_M) / SIDE_TO_BASE_M)));
     const yaw = Math.max(yaw0, turn);
     const sideways = Math.abs(Math.sin(yaw));
-    const cdA = (sideways > 0 ? CD_SIDE * sideA * sideways : 0) + (yaw > Math.PI / 2 ? CD_BASE : CD_NOSE) * frontA * Math.abs(Math.cos(yaw));
+    const open = openAt(s);
+    const dia = diaAt(s);
+    const frontA = (Math.PI * dia * dia) / 4;
+    const cdNose = CD_NOSE + (CD_OPEN - CD_NOSE) * Math.min(1, open / 0.5);
+    const cdA = (sideways > 0 ? CD_SIDE * sideA * sideways : 0) + (yaw > Math.PI / 2 ? CD_BASE : cdNose) * frontA * Math.abs(Math.cos(yaw));
     // What the point is in.
     const here = classify(p);
     const rib = !here || here.tissue === "lung" ? onRib(p) : false;
@@ -309,6 +342,12 @@ export function woundTrack(w: WoundInput): Pick<Wound, "damage" | "energyJ" | "e
       fragDE = 0.5 * lose * v * v;
       mass -= lose;
     }
+    // An opening nose sheds its petals and lead over the distance it opens in.
+    if (openLoss > 0 && ex && s < ex.overM) {
+      const lose = Math.min(mass - 0.5 * mass0, (openLoss * STEP) / ex.overM);
+      fragDE += 0.5 * lose * v * v;
+      mass -= lose;
+    }
     const e = 0.5 * mass * v * v;
     dE = Math.min(dE, e);
     v = Math.sqrt(Math.max(0, (2 * (e - dE)) / mass));
@@ -316,8 +355,12 @@ export function woundTrack(w: WoundInput): Pick<Wound, "damage" | "energyJ" | "e
     // shards are counted in the channel).
     const dEds = (Math.min(dE, 0.5 * TISSUE_RHO * cdA * v * v * STEP) + fragDE) / STEP;
     // Channels: the crushed width (the bullet's presented size, fragments and bone shards widen it) and the cavity.
-    const presented = b.diaM * Math.abs(Math.cos(yaw)) + b.lenM * sideways;
-    const perm = presented / 2 + (fragDE > 0 || (fragments > 0 && s >= neck && s < neck + 0.12) ? 0.025 * (fragments / 0.3) : 0) + (shards > 0 ? 0.008 : 0) + 0.002;
+    const presented = dia * Math.abs(Math.cos(yaw)) + b.lenM * sideways;
+    // Fragments widen the crushed channel for a while after they are shed: the bullet's breaking up at its yaw, or
+    // an expanding nose's petals in its first few centimetres.
+    const breakup = fragments > 0 && s >= neck && s < neck + 0.12 ? 0.025 * (fragments / 0.3) : 0;
+    const petals = openLoss > 0 && ex && s < ex.overM + 0.08 ? 0.025 * Math.min(1, openLoss / mass0 / 0.3) : 0;
+    const perm = presented / 2 + breakup + petals + (shards > 0 ? 0.008 : 0) + 0.002;
     const cavity = Math.max(perm, cavityRadius(dEds));
     shards = Math.max(0, shards - STEP);
     if (i % 5 === 0) track.push({ p: [p[0], p[1], p[2]], perm, cavity });

@@ -15,7 +15,8 @@
 import type { SoundEvent } from "../../src/scope/handling";
 import type { RifleId } from "../../src/scope/shot";
 
-export type Synth = SoundEvent | "shot";
+/** The report: open (or the VSS's own), through a can on a supersonic round, through a can on a subsonic one. */
+export type Synth = SoundEvent | "shot" | "shot-can" | "shot-sub";
 
 /** Mulberry32: a small seeded generator, so each variant is repeatable. */
 function rng(seed: number): () => number {
@@ -132,6 +133,15 @@ class Buf {
     }
   }
   /**
+   * A shock wave's N-wave: a jump up, a straight fall through zero to as far below, a jump back, all within `dur`
+   * (a quarter of a millisecond for a rifle bullet's crack). Nothing else sounds that sharp.
+   */
+  crack(t0: number, amp: number, dur: number): void {
+    const i0 = Math.round(t0 * this.sr);
+    const n = Math.min(this.d.length - i0, Math.max(2, Math.round(dur * this.sr)));
+    for (let i = 0; i < n; i++) this.d[i0 + i]! += amp * (1 - (2 * i) / (n - 1));
+  }
+  /**
    * A blast wave: Friedlander pulse p(t) = P (1 − t/T) e^(−b t/T), positive for T, then the shallower negative
    * phase; its ground reflection `refl` later; then low, decaying noise for the terrain's roll.
    */
@@ -159,6 +169,8 @@ class Buf {
 /** Seconds of buffer each sound needs. */
 const LENGTH: Record<Synth, number> = {
   shot: 2.2,
+  "shot-can": 1.6,
+  "shot-sub": 0.9,
   "bolt-up": 0.2,
   "bolt-back": 0.32,
   "bolt-forward": 0.32,
@@ -262,6 +274,68 @@ export function render(ev: Synth, rifle: RifleId, seed: number, sr: number): Flo
           );
         }
       }
+      break;
+    case "shot-can": {
+      // A can on a supersonic round: the blast bleeds out of the baffles over a few milliseconds, so a deep boom
+      // some 25–30 dB down instead of the crack-boom; the bullet's own crack, which no can touches, sharp on top;
+      // the gas easing out of the can; and the crack's hiss coming back off the ground along the bullet's path.
+      b.blast(0, 0.5, 0.0026, 1.5, 0.0005, 0.3, 0.12, 1500);
+      b.thump(0, 0.45, 70, 0.06);
+      b.crack(0.0015, 0.6, 0.00028);
+      b.scrape(0.001, 0.05, 0.12, 1100, 600, 0.3, 0.9);
+      b.scrape(0.006, 0.3, 0.05, 5200, 2600, 0.15, 0.8);
+      if (rifle === "svd") {
+        // The carrier still slams back and home under it, now as loud as the rest.
+        b.modes(
+          0.012,
+          0.26,
+          [
+            [1150, 0.04, 1],
+            [1950, 0.03, 0.7],
+            [3100, 0.018, 0.45],
+          ],
+          p,
+        );
+        b.modes(
+          0.07,
+          0.34,
+          [
+            [1250, 0.05, 1],
+            [2100, 0.035, 0.7],
+            [3300, 0.02, 0.45],
+          ],
+          p,
+        );
+      } else {
+        // The can's tube rings dull and short where the brake rang bright.
+        b.modes(
+          0.001,
+          0.06,
+          [
+            [1700, 0.03, 1],
+            [3100, 0.02, 0.5],
+          ],
+          1,
+        );
+      }
+      break;
+    }
+    case "shot-sub":
+      // Subsonic through a can: no crack at all. A soft, deep pop, the gas sighing out of the can, the firing pin's
+      // click and the tube's dull ring; the bullet arriving downrange is the loudest thing left.
+      b.blast(0, 0.3, 0.0035, 1.7, 0.0004, 0.45, 0.05, 1100);
+      b.thump(0.002, 0.3, 120, 0.04);
+      b.click(0, 0.3, 0.0003);
+      b.scrape(0.002, 0.07, 0.15, 1000, 450, 0.3, 0.9);
+      b.modes(
+        0.001,
+        0.12,
+        [
+          [1700, 0.03, 1],
+          [3100, 0.02, 0.5],
+        ],
+        p,
+      );
       break;
     case "bolt-up":
       // The cocking cam lifts the striker: a rough rising scrape, then the cocking piece drops into its notch.

@@ -15,7 +15,7 @@ describe("the trigger, the action and the magazine, each on its own", () => {
 
   it("bolt rifle: worked over an empty box, the striker clicks once on the empty chamber, then nothing", () => {
     const g = loaded("bolt");
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
       expect(pull(g, "bolt")).toBe("fire");
       cycle(g, "bolt");
     }
@@ -114,7 +114,7 @@ describe("the safety", () => {
     cycle(g, "bolt");
     expect(setSafe(g, "bolt", true)).toBe(true);
     expect(cycle(g, "bolt")).toBe(false);
-    expect(g.mag).toBe(3);
+    expect(g.mag).toBe(8);
   });
 });
 

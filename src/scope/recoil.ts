@@ -23,6 +23,9 @@
  * the shooter keeps the target in a 4–8× field and can watch the slow bullet arrive.
  */
 
+import { ROUNDS, type RoundId } from "./ballistics";
+import type { RifleId } from "./shot";
+
 const DEG = Math.PI / 180;
 
 export interface RecoilSpec {
@@ -115,6 +118,59 @@ export const RECOIL = {
   },
 } as const satisfies Record<string, RecoilSpec>;
 
+/** Powder charge of each load (g), for its recoil impulse (SAAMI: the gas leaves at 1.75 × the bullet's speed). */
+export const CHARGE_G: Record<RoundId, number> = { "7n1": 3.1, m118lr: 2.9, sp5: 0.6, sp6: 0.6, "7n14": 3.1, sb180sp: 3.0, tbt168: 2.9, sub200: 0.65 };
+/** How much of the gas jet's thrust reaches the shoulder through each rifle's own muzzle: the SVD's open flash hider all of it, the bolt rifle's brake about 0.6, the VSS's integral suppressor about 0.55. A suppressor screwed on lets through about 0.4. */
+export const GAS_THROUGH = { svd: 1, bolt: 0.6, vss: 0.55, can: 0.4 } as const;
+/** The rifle about the shoulder: its moment of inertia per kilogram (m²), and how far ahead of the shoulder the muzzle is (m). */
+const ROT_PER_KG = 0.29;
+const MUZZLE_ARM_M = 1.05;
+
+export interface RecoilKit {
+  /** The load fired, and the muzzle device's share of the gas thrust that reaches the shoulder. */
+  round: RoundId;
+  gas: number;
+  /** Mass added to the rifle (kg), and how much of it is out at the muzzle. */
+  addedKg: number;
+  muzzleKg: number;
+  /** A soft butt pad: the scope comes back a sixth less and the cheek is slapped less. */
+  pad?: boolean;
+}
+
+/** Free recoil impulse (N·s) of a load through a muzzle that passes `gas` of the jet's thrust. */
+export function recoilImpulse(round: RoundId, gas: number): number {
+  const r = ROUNDS[round];
+  return r.bulletGr * 6.479891e-5 * r.mv + CHARGE_G[round] * 1e-3 * 1.75 * r.mv * gas;
+}
+
+/**
+ * A rifle's recoil with kit on it: the motions scale with free-recoil speed (impulse ÷ mass), as the VSS's were
+ * scaled from the others, and mass out at the muzzle also slows the muzzle's rise about the shoulder. With the
+ * issued round and muzzle and nothing added, the spec comes back unchanged.
+ */
+export function scaleRecoil(rifle: RifleId, kit: RecoilKit): RecoilSpec {
+  const base = RECOIL[rifle];
+  const issued = ({ svd: "7n1", bolt: "m118lr", vss: "sp5" } as const)[rifle];
+  const v0 = recoilImpulse(issued, GAS_THROUGH[rifle]) / base.rifleKg;
+  const impulse = recoilImpulse(kit.round, kit.gas);
+  const mass = base.rifleKg + kit.addedKg;
+  const s = impulse / mass / v0;
+  const rot0 = base.rifleKg * ROT_PER_KG;
+  const rot = rot0 / (rot0 + kit.muzzleKg * MUZZLE_ARM_M * MUZZLE_ARM_M);
+  const pad = kit.pad ? 1 : 0;
+  return {
+    ...base,
+    impulseNs: impulse,
+    rifleKg: mass,
+    rise: base.rise * s * rot,
+    drift: base.drift * s * rot,
+    kick: base.kick * s * rot,
+    travelMm: base.travelMm * s * (1 - 0.17 * pad),
+    shake: base.shake * s,
+    jolt: base.jolt * s * (1 - 0.2 * pad),
+  };
+}
+
 /**
  * Shot-to-shot spread: no two shots kick the same way. Every field is a factor on the spec except
  * `shakePhase` (radians) and `joltMm`, how far the stock's slap knocks the cheek sideways (+ right).
@@ -139,8 +195,9 @@ export interface ShotVariation {
  * Deterministic variation for the n-th shot. One hidden "hold" draw ties the shoulder and cheek together,
  * as in a real shooter: a loose hold lets the scope come further back, recover more slowly, peak later and
  * jolt the head longer. Drift is mostly right (a right-handed shooter) but now and then goes a little left.
+ * `holdSpread` narrows that hold draw: a stock that fits (src/armoury/rig.ts) gives a more even hold, 0.6.
  */
-export function shotVariation(n: number): ShotVariation {
+export function shotVariation(n: number, holdSpread = 1): ShotVariation {
   const r = (k: number) => {
     let h = Math.imul(n + 1, 0x27d4eb2d) ^ Math.imul(k + 7, 0x165667b1);
     h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
@@ -150,7 +207,7 @@ export function shotVariation(n: number): ShotVariation {
   // Roughly normal, standard deviation 1, never beyond ±3.
   const g = (k: number) => (r(k) + r(k + 100) + r(k + 200) + r(k + 300) - 2) * Math.sqrt(3);
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
-  const hold = g(10); // + loose, − firm
+  const hold = g(10) * holdSpread; // + loose, − firm
   const own = (k: number) => 0.6 * hold + 0.8 * g(k);
   return {
     rise: 0.8 + 0.4 * r(1),

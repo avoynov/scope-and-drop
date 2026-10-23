@@ -267,6 +267,8 @@ describe("the safety", () => {
 describe("synthesised action sounds", () => {
   const EVENTS: Synth[] = [
     "shot",
+    "shot-can",
+    "shot-sub",
     "bolt-up",
     "bolt-back",
     "bolt-forward",

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
 import { Rng } from "../src/mansion/core/rng";
 import { PARTY_LENGTH, type Phase } from "../src/party/clock";
-import { COMPARE, EXPECT, FAIL_AT, FAILED, HOUSE, LOOKED, PASSED, SLIP_SKILLS, SURE, TEST, TIE_WEIGHT, type TestOutcome } from "../src/party/ident";
+import { COMPARE, DOUBLE_TAKE, doubtHalfLife, EXPECT, FAIL_AT, FAILED, HOUSE, LOOKED, NAME, PASSED, SLIP_SKILLS, STRIKING, SURE, TEST, TIE_WEIGHT, type TestOutcome } from "../src/party/ident";
 import { DETAIL_RANGE } from "../src/party/senses";
 import { FAKE_DELAY, Prompts, REAL_DELAY, type PromptsHost } from "../src/party/prompts";
 import { FIND_LIGHT, GARMENT_DOUBT, Party } from "../src/party/sim";
@@ -160,6 +160,86 @@ describe("the friendly test", () => {
   });
 });
 
+// ------------------------------------------------------------------ the fade
+
+describe("doubt fades", () => {
+  const party = new Party(bp, { seed: "seen-fade" });
+  const id = party.ident;
+  const n = party.people.length;
+  const guests = party.people.filter((p) => !p.staff);
+  const pairs: Array<[number, number]> = [];
+  for (const a of guests) for (const b of guests) if (a !== b && id.tieOf(a.id, b.id) >= 3) pairs.push([a.id, b.id]);
+  let next = 0;
+  /** A pair of friends, past a test so doubt can go anywhere, at doubt v at t. */
+  const at = (v: number, t: number): [number, number] => {
+    const [i, j] = pairs[next++]!;
+    id.stage[i * n + j] = PASSED;
+    id.addDoubt(i, j, v, t);
+    return [i, j];
+  };
+
+  it("the slower the surer they've been: 15 minutes at a double take, an hour at 0.6, about an hour and 40 at a failed test's, over two hours once sure", () => {
+    expect(doubtHalfLife(DOUBLE_TAKE)).toBeCloseTo(15 * 60, 5);
+    expect(doubtHalfLife(COMPARE)).toBeCloseTo(60 * 60, 5);
+    expect(doubtHalfLife(FAIL_AT) / 60).toBeGreaterThan(95);
+    expect(doubtHalfLife(FAIL_AT) / 60).toBeLessThan(105);
+    expect(doubtHalfLife(SURE)).toBeGreaterThan(2 * 3600);
+    // A double take is mostly gone within half an hour; a failed test's doubt is still past the test's an hour on.
+    const [i, j] = at(DOUBLE_TAKE, 1000);
+    expect(id.doubtOf(i, j, 1000 + 900)).toBeCloseTo(DOUBLE_TAKE / 2, 4);
+    expect(id.doubtOf(i, j, 1000 + 1800)).toBeLessThan(DOUBLE_TAKE / 3);
+    const [a, b] = at(FAIL_AT, 1000);
+    expect(id.doubtOf(a, b, 1000 + doubtHalfLife(FAIL_AT))).toBeCloseTo(FAIL_AT / 2, 4);
+    expect(id.doubtOf(a, b, 1000 + 3600)).toBeGreaterThan(TEST);
+    // Set by the surest they've been: a little more doubt once it has half faded doesn't hurry the fade.
+    const t = 1000 + doubtHalfLife(FAIL_AT);
+    id.addDoubt(a, b, 0.05, t);
+    expect(id.halfLifeOf(a, b)).toBeCloseTo(doubtHalfLife(FAIL_AT), 0);
+    // Seen again with nothing new, the fade goes on as it was.
+    const before = id.doubtOf(a, b, t + 600);
+    for (let k = 0; k < 300; k++) id.check(a, b, t + 2 * k, 2, 1, true, 1, 0, false);
+    expect(id.doubtOf(a, b, t + 600)).toBeCloseTo(before, 4);
+  });
+
+  it("three times slower once something striking has happened: a name they should have known, a scene, a word from someone sure, the garment", () => {
+    const [i, j] = at(0.5, 2000);
+    const [a, b] = at(0.5, 2000);
+    id.noName(a, b, 2000);
+    const v = 0.5 + NAME * TIE_WEIGHT[id.tieOf(a, b)]!;
+    expect(id.doubtOf(a, b, 2000)).toBeCloseTo(v, 5);
+    expect(id.halfLifeOf(i, j)).toBeCloseTo(doubtHalfLife(0.5), 0);
+    expect(id.halfLifeOf(a, b)).toBeCloseTo(STRIKING * doubtHalfLife(v), 0);
+    expect(id.doubtOf(a, b, 2000 + 3600)).toBeCloseTo(v * 0.5 ** (3600 / (STRIKING * doubtHalfLife(v))), 4);
+    expect(id.doubtOf(a, b, 2000 + 3600) - id.doubtOf(i, j, 2000 + 3600)).toBeGreaterThan(0.15);
+    // Striking even when it adds nothing more: the doubt already there now fades three times slower.
+    const [c, d] = at(0.5, 2000);
+    id.addDoubt(c, d, 0, 2000, Infinity, true);
+    expect(id.halfLifeOf(c, d)).toBeCloseTo(STRIKING * doubtHalfLife(0.5), 0);
+  });
+
+  it("a pass settles it, whatever struck them: what's left fades as a small doubt does; a bluff halves it and the shock stays", () => {
+    const p = new Party(bp, { seed: "seen-fade" });
+    const x = p.ident;
+    const [i, j] = pairs[0]!;
+    p.people[j]!.tipsy = 0.2;
+    x.stage[i * n + j] = LOOKED;
+    x.addDoubt(i, j, 0.5, 3000, Infinity, true);
+    expect(x.test(i, j, 3000)).toBe("passed");
+    expect(x.halfLifeOf(i, j)).toBeCloseTo(doubtHalfLife(x.doubtOf(i, j, 3000)), 0);
+    // The impostor: a name it didn't know, then a bluff.
+    const q = new Party(bp, { seed: "seen-fade" });
+    const y = q.ident;
+    y.impostor(j, () => "bluffed");
+    y.stage[i * n + j] = LOOKED;
+    y.addDoubt(i, j, 0.4, 3000);
+    y.noName(i, j, 3000);
+    const v = y.doubtOf(i, j, 3000);
+    expect(y.test(i, j, 3000)).toBe("bluffed");
+    expect(y.doubtOf(i, j, 3000)).toBeCloseTo(v * 0.5, 5);
+    expect(y.halfLifeOf(i, j)).toBeCloseTo(STRIKING * doubtHalfLife(v * 0.5), 0);
+  });
+});
+
 // ------------------------------------------------------------------ slips
 
 describe("skill slips", () => {
@@ -285,6 +365,11 @@ describe("comparing notes and sure", () => {
       if (answer!.note === "silent") expect(party.people[a]!.avoid.has(`person:${b}`)).toBe(true);
       // Backing away ends in a word with someone.
       if (answer!.note === "backed-away") expect(ev.some((e) => e.note === "told" && e.actors[0] === a && e.actors[2] === b && e.t >= answer!.t)).toBe(true);
+    }
+    // Told by someone sure is striking: whoever knew the one it plays doubts it three times slower from then on.
+    for (const e of ev.filter((x) => x.note === "told" && x.actors[2] === j)) {
+      const to = e.actors[1]!;
+      if (party.ident.tieOf(to, j)) expect(party.ident.halfLifeOf(to, j)).toBeGreaterThanOrEqual(STRIKING * doubtHalfLife(0));
     }
   });
 
@@ -455,6 +540,8 @@ describe("the garment", () => {
     for (let k = 0; k < 20000 && !found(); k++) p.looked(finder);
     expect(found()?.actors).toEqual([finder.id, spy.id]);
     expect(p.ident.doubtOf(finder.id, spy.id, p.t)).toBeCloseTo(Math.max(before, Math.min(cap, before + GARMENT_DOUBT * TIE_WEIGHT[tie]!)), 5);
+    // A striking find: that doubt fades three times slower.
+    expect(p.ident.halfLifeOf(finder.id, spy.id)).toBeGreaterThanOrEqual(STRIKING * doubtHalfLife(p.ident.doubtOf(finder.id, spy.id, p.t)) * (1 - 1e-6));
     expect(p.memory.knowsAbout(finder.id, "garment", spy.id)).toBe(true);
     // Once found, they don't find it again.
     const n0 = p.events.length;

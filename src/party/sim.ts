@@ -247,7 +247,8 @@ const WATCH: readonly [number, number] = [20, 40];
  * Doubt from seeing someone challenged (× tie weight), from notes compared (the listener's × tie
  * weight × (0.5 + trust in the teller); the teller's own), and from being told by someone sure.
  * Comparing notes with someone who had doubts of their own (past the test's 0.45), each of the two
- * takes CORROBORATED more: someone else noticed too.
+ * takes CORROBORATED more: someone else noticed too. A scene and a word from someone sure are
+ * striking: that doubt fades three times slower (ident.ts STRIKING).
  */
 const CHALLENGED = 0.1;
 const COMPARED = 0.15;
@@ -261,7 +262,7 @@ const SURE_DROPS: ReadonlySet<ActionId> = new Set(["mingle", "sit", "art", "wand
  * look's chance is FIND_CHANCE × its attention × the light × how near it lies (in full underfoot,
  * none at the cone's edge). By a garden door the light through it is DOORWAY_LIGHT, or the garden
  * lamps' when brighter. A finder who knew whose it is doubts the one who came as them by
- * GARMENT_DOUBT × tie weight.
+ * GARMENT_DOUBT × tie weight, a striking find.
  */
 export const FIND_LIGHT = 0.25;
 const FIND_CHANCE = 0.02;
@@ -3217,7 +3218,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       if (!this.canSee(o, p)) continue;
       this.memory.observe(o.id, "confronted", q.id, p.id, p.room);
       const tie = this.ident.tieOf(o.id, q.id);
-      if (tie) this.ident.addDoubt(o.id, q.id, CHALLENGED * TIE_WEIGHT[tie]!, this.t);
+      if (tie) this.ident.addDoubt(o.id, q.id, CHALLENGED * TIE_WEIGHT[tie]!, this.t, Infinity, true);
     }
     if (q.id === this.spyId) this.spy!.answers.confronted(p.id);
     else this.gesture(q, "shrug", 2);
@@ -3230,7 +3231,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.log("challenge", [p.id, to.id, j], p.room, "told");
     this.memory.learn(to.id, this.memory.fact("not-themselves", j, -1, q.room), PASS_ON, p.id, 1);
     const tie = this.ident.tieOf(to.id, j);
-    if (tie) this.ident.addDoubt(to.id, j, TOLD_SURE * TIE_WEIGHT[tie]! * (0.5 + this.memory.trustIn(to.id, p.id)), this.t);
+    if (tie) this.ident.addDoubt(to.id, j, TOLD_SURE * TIE_WEIGHT[tie]! * (0.5 + this.memory.trustIn(to.id, p.id)), this.t, Infinity, true);
     this.lookFor.set(p.id, j);
   }
 
@@ -3398,7 +3399,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const owner = items.owner[g.item]!;
     const tie = owner >= 0 ? this.ident.tieOf(a.id, owner) : 0;
     this.memory.observe(a.id, "garment", tie >= 2 ? owner : -1, g.item, a.room);
-    if (tie >= 2) this.ident.addDoubt(a.id, this.spyId, GARMENT_DOUBT * TIE_WEIGHT[tie]!, this.t);
+    if (tie >= 2) this.ident.addDoubt(a.id, this.spyId, GARMENT_DOUBT * TIE_WEIGHT[tie]!, this.t, Infinity, true);
     this.glance(a, at.x, at.z, 2);
     this.log("react", tie >= 2 ? [a.id, owner] : [a.id], a.room, "garment");
     // Picked up and handed in at the cloakroom (else to the butler), when they're free to.

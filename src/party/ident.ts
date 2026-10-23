@@ -24,8 +24,17 @@ const F_STATE = 7;
 export type Tie = 0 | 1 | 2 | 3 | 4 | 5;
 export const TIE_WEIGHT: readonly number[] = [0, 0.2, 0.5, 0.7, 0.9, 1];
 
-/** Doubt halves over this long (in-game s). */
-const DOUBT_HALF = 20 * 60;
+/**
+ * Doubt fades, the slower the surer they've been since last reassured: it halves over DOUBT_HALF
+ * at a double take and twice as long for every DOUBT_DOUBLES more (about 35 minutes at a test's
+ * 0.45, an hour at 0.6, an hour and 40 minutes at a failed test's 0.75, nearly two and a half
+ * hours once sure). Something striking about them (a name they should have known, a scene, a word
+ * from someone sure, the garment found) makes it fade STRIKING times slower still: an odd moment
+ * is explained away within the hour, a shock stays with them all evening.
+ */
+const DOUBT_HALF = 15 * 60;
+const DOUBT_DOUBLES = 0.2;
+export const STRIKING = 3;
 /** Getting used to a known change: half-way over this long (in-game s). */
 const USED_TO = 15 * 60;
 export const DOUBLE_TAKE = 0.2;
@@ -84,6 +93,9 @@ export class Ident {
   /** How strongly i feels j is "not themselves", and when it was last brought up to date. */
   readonly doubt: Float32Array;
   private readonly doubtT: Float32Array;
+  /** How long i's doubt about j takes to halve now (in-game s), and whether something striking about j has happened to i. */
+  private readonly half: Float32Array;
+  private readonly struck: Uint8Array;
   /** Where i stands with j: NONE, LOOKED (a double take), PASSED (a test passed or bluffed), FAILED, SURE_OF. */
   readonly stage: Uint8Array;
   /** Each person's own voice, before drink raises it. */
@@ -130,6 +142,8 @@ export class Ident {
     this.memLook = new Float32Array(n * n * FEATURES);
     this.doubt = new Float32Array(n * n);
     this.doubtT = new Float32Array(n * n);
+    this.half = new Float32Array(n * n).fill(doubtHalfLife(0));
+    this.struck = new Uint8Array(n * n);
     this.stage = new Uint8Array(n * n);
     this.voice = new Float32Array(n);
     this.wantTest = new Int16Array(n).fill(-1);
@@ -269,20 +283,46 @@ export class Ident {
   /** Doubt now, faded since it was last brought up to date. */
   doubtOf(i: number, j: number, t: number): number {
     const k = i * this.n + j;
-    return this.doubt[k]! * 0.5 ** ((t - this.doubtT[k]!) / DOUBT_HALF);
+    return this.doubt[k]! * 0.5 ** ((t - this.doubtT[k]!) / this.half[k]!);
+  }
+
+  /** How long i's doubt about j takes to halve now (in-game s). */
+  halfLifeOf(i: number, j: number): number {
+    return this.half[i * this.n + j]!;
+  }
+
+  /** Doubt is now v (brought up to date at t): it fades as slowly as the surest they've been since last reassured, and STRIKING times slower once something striking has happened. */
+  private setDoubt(k: number, v: number, t: number, striking = false): void {
+    if (striking && !this.struck[k]) {
+      this.struck[k] = 1;
+      this.half[k] = this.half[k]! * STRIKING;
+    }
+    this.doubt[k] = v;
+    this.doubtT[k] = t;
+    this.half[k] = Math.max(this.half[k]!, doubtHalfLife(v) * (this.struck[k] ? STRIKING : 1));
+  }
+
+  /** Reassured by a test (passed or bluffed): doubt is now v, fading as its level calls for. A pass settles it, whatever struck them before. */
+  private reassure(k: number, v: number, t: number, settled: boolean): void {
+    if (settled) this.struck[k] = 0;
+    this.doubt[k] = v;
+    this.doubtT[k] = t;
+    this.half[k] = doubtHalfLife(v) * (this.struck[k] ? STRIKING : 1);
   }
 
   /**
    * More doubt for i about j from something besides a look: told something that doesn't fit (the
    * register's two places at once), a cool greeting, a slip, notes compared. Until they've tested
-   * j it stops short of comparing notes (or of `cap`, when lower), as a look's does.
+   * j it stops short of comparing notes (or of `cap`, when lower), as a look's does. Something
+   * `striking` (a name not known, a scene, a word from someone sure, the garment) makes it fade
+   * STRIKING times slower.
    */
-  addDoubt(i: number, j: number, v: number, t: number, cap = Infinity): void {
+  addDoubt(i: number, j: number, v: number, t: number, cap = Infinity, striking = false): void {
     const k = i * this.n + j;
-    let d = this.doubtOf(i, j, t) + v;
+    const now = this.doubtOf(i, j, t);
+    let d = now + v;
     if (this.stage[k]! < PASSED) d = Math.min(d, COMPARE - 0.01);
-    this.doubt[k] = Math.max(this.doubtOf(i, j, t), Math.min(d, cap, MAX_DOUBT));
-    this.doubtT[k] = t;
+    this.setDoubt(k, Math.max(now, Math.min(d, cap, MAX_DOUBT)), t, striking);
   }
 
   /** i expected warmth from j (a wave back, a kiss) and got a stranger's greeting: a sulk, or someone who doesn't know them. */
@@ -298,7 +338,7 @@ export class Ident {
     const tie = this.tie[i * this.n + j]!;
     if (!tie) return;
     this.stats.names++;
-    this.addDoubt(i, j, NAME * TIE_WEIGHT[tie]!, t);
+    this.addDoubt(i, j, NAME * TIE_WEIGHT[tie]!, t, Infinity, true);
   }
 
   // ------------------------------------------------------------------ skill
@@ -382,8 +422,7 @@ export class Ident {
     // Doubt about someone not yet tested stops short of comparing notes: the test settles it first.
     if (stage < PASSED) v = Math.min(v, COMPARE - 0.01);
     v = Math.min(v, MAX_DOUBT);
-    this.doubt[k] = v;
-    this.doubtT[k] = t;
+    this.setDoubt(k, v, t);
     if (stage === NONE && v >= DOUBLE_TAKE) {
       this.stage[k] = LOOKED;
       this.stats.doubleTakes++;
@@ -428,25 +467,25 @@ export class Ident {
     const v = this.doubtOf(i, j, t);
     if (out === "passed") {
       this.stats.passed++;
-      this.doubt[k] = v * 0.2;
+      this.reassure(k, v * 0.2, t, true);
       this.stage[k] = PASSED;
       this.remember(i, j);
     } else if (out === "fumbled") {
       this.stats.fumbled++;
       this.fumbled[k] = 1;
-      this.doubt[k] = Math.min(COMPARE - 0.01, v + 0.1);
+      this.setDoubt(k, Math.min(COMPARE - 0.01, v + 0.1), t);
     } else if (out === "bluffed") {
       this.stats.bluffed++;
-      this.doubt[k] = v * 0.5;
+      this.reassure(k, v * 0.5, t, false);
       this.stage[k] = PASSED;
     } else {
       this.stats.failed++;
       // The test settles what the look raised: whatever it had built up, a blank look leaves doubt at
-      // FAIL_AT, past comparing notes and short of sure, which needs something more.
-      this.doubt[k] = Math.max(v, FAIL_AT);
+      // FAIL_AT, past comparing notes and short of sure, which needs something more. A blank look is odd,
+      // not a shock: it fades as its level calls for, so a second witness has to come within the hour or so.
+      this.setDoubt(k, Math.max(v, FAIL_AT), t);
       if (this.stage[k]! < FAILED) this.stage[k] = FAILED;
     }
-    this.doubtT[k] = t;
     this.onTest?.(i, j, out);
     return out;
   }
@@ -470,6 +509,11 @@ export class Ident {
     if (this.wantCompare[i] === about) this.wantCompare[i] = -1;
     this.nextCompare[i * this.n + about] = t + RECOMPARE;
   }
+}
+
+/** How long doubt at d takes to halve (in-game s): DOUBT_HALF at a double take, twice as long for every DOUBT_DOUBLES more. */
+export function doubtHalfLife(d: number): number {
+  return DOUBT_HALF * 2 ** ((d - DOUBLE_TAKE) / DOUBT_DOUBLES);
 }
 
 function popcount(x: number): number {

@@ -219,14 +219,15 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
     for (let k = q.pathIndex; k < q.path.length && walked < reach; k++) {
       const w = q.path[k]!;
       const seg = Math.hypot(w.x - px, w.z - pz);
+      // A waypoint where they already stand (or the foot of a stair): no way to face yet.
+      if (seg <= 1e-6) continue;
       const yaw = Math.atan2(w.x - px, w.z - pz);
       for (let s = Math.min(ROUTE_STEP, seg); s <= seg + 1e-6 && walked + s <= reach; s += ROUTE_STEP) {
-        const f = seg > 1e-6 ? Math.min(1, s / seg) : 1;
+        const f = Math.min(1, s / seg);
         const x = px + (w.x - px) * f;
         const z = pz + (w.z - pz) * f;
         const room = h.pf.roomAt(w.level, x, z);
         if (watch.has(room) && !beyond(ask, w.level, x, z) && h.senses.visibleAt(ghost(h, w.level, x, z, room, yaw), at, fov, self)) return "coming";
-        if (seg <= 1e-6) break;
       }
       walked += seg;
       px = w.x;

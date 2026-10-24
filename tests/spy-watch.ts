@@ -3,7 +3,7 @@
  * itself: the spy tests and the sweep share it. `watch()` runs an evening one step at a time and
  * asks each check after every step, so a failure names the moment to open in the lab. Each pull
  * request adds the checks for its part; PR 1 has the exit, the programme and staying sober, PR 2
- * the tests.
+ * the tests, PR 3 the plan's privacy and steps.
  * `watchSpy()` runs an evening under them all and measures it, for the tests and the sweep alike.
  */
 import { PARTY_LENGTH, phaseIndexAt } from "../src/party/clock";
@@ -11,7 +11,10 @@ import { LAST_TOAST } from "../src/party/mind";
 import { HURRY_OUT, type Party } from "../src/party/sim";
 import type { CueHow, GoalKind, SpySetup } from "../src/party/spy";
 import { DELAY_TOLD } from "../src/party/spy/cues";
-import type { TellId } from "../src/party/spy/measure";
+import { ACTS, type ActId } from "../src/party/spy/goals";
+import { ranks, TELLS, type TellId } from "../src/party/spy/measure";
+import { ACTION_BY_ID, F, factNames, type PlanActionId } from "../src/party/spy/planner";
+import { held } from "../src/party/spy/privacy";
 
 /** What broke, which check saw it, and when (in-game s after 19:00). */
 export interface Broken {
@@ -153,13 +156,117 @@ export function testsCheck(): Check {
   };
 }
 
-/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests), fresh for one evening. */
-export function spyChecks(): { exit: Check; programme: ReturnType<typeof programmeCheck>; sober: Check; tests: Check; all: Check[] } {
+/**
+ * The spy's notes as it makes them: the party's `log` wrapped, so a check hears each `spy` event in
+ * the call that logs it, with the world exactly as the spy saw it then. By the end of the step a
+ * glance at a sound can have turned a head.
+ */
+function onSpyNote(party: Party, fn: (note: string) => void): void {
+  const log = party.log.bind(party);
+  party.log = (kind, actors, room, note) => {
+    log(kind, actors, room, note);
+    if (kind === "spy" && note) fn(note);
+  };
+}
+
+/** A check that listens to the spy's notes from its first step on (nothing it does before 19:20 needs one). */
+function noteCheck(name: string, hear: (party: Party, note: string, out: string[]) => void): Check {
+  let hooked: Party | null = null;
+  const out: string[] = [];
+  return {
+    name,
+    step(party) {
+      if (!party.spy) return null;
+      if (hooked !== party) {
+        hooked = party;
+        onSpyNote(party, (note) => hear(party, note, out));
+      }
+      return out.length ? out.splice(0).join("; ") : null;
+    },
+  };
+}
+
+/**
+ * Privacy (PR 3): the moment an act that waits for its moment begins, nobody who counts can see
+ * it by the senses' own answer (`canSee`), apart from the privacy check's geometry. Who counts is
+ * the plan's: for an act done alone, anyone present (but a kill's target, whose spot it is);
+ * unwatched, anyone not held by the toast, the speech, the piano or the floor, the owner of the
+ * things always, for a bag or a coat only those who'd know whose it is, and for a hand at a pocket
+ * or the mantel only those within the detail of a look.
+ */
+export function privacyCheck(): Check {
+  return noteCheck("privacy", (party, note, out) => {
+    const alone = note.startsWith("alone:");
+    if (!alone && !note.startsWith("risky:")) return;
+    const spy = party.spy!;
+    const act = alone ? null : (note.slice(6) as ActId);
+    const spec = act ? ACTS[act] : null;
+    const mode = spec ? spec.mode : "alone";
+    if (!mode) return;
+    const p = spy.record;
+    // The spot asked about: where the act is done, or where the target stands.
+    const at = alone ? party.people[spy.goal.target]! : p;
+    const owner = act === "bag" || act === "coat" ? spy.goal.target : -1;
+    const knows = owner >= 0 ? spy.things.knowsWhose(owner) : null;
+    for (const q of party.people) {
+      if (q === p || q === at || !q.present || q.gone) continue;
+      if (knows && !knows(q)) continue;
+      if (mode === "unwatched" && q.id !== owner && held(party, q)) continue;
+      if (spec?.within !== undefined && (q.level !== at.level || Math.hypot(q.x - at.x, q.z - at.z) > spec.within)) continue;
+      if (party.senses.canSee(q, at)) out.push(`${q.id} could see it as it began ${act ?? "alone with its target"}`);
+    }
+  });
+}
+
+/** What the plan's moves that fold into the step they lead to bring: there, the moment, the target close. */
+const FOLDED = F.there | F.unwatched | F.close;
+
+/**
+ * Steps (PR 3): each step of the plan starts with its needs holding, by the facts as the spy sees
+ * them then (goals.ts): a step as it sets off, but for what the moves folded into it bring (going
+ * there, the room looking away, coming close to the target); an act as it begins, but for the
+ * moment the privacy check has just found. A kill's target is never followed while its theft
+ * first is on, and a goal is done only with its facts holding.
+ */
+export function stepsCheck(): Check {
+  return noteCheck("steps", (party, note, out) => {
+    const spy = party.spy!;
+    const p = spy.record;
+    const things = spy.things;
+    const ctx = things.context(p);
+    const needs = (a: PlanActionId) => ctx.needs[a] ?? ACTION_BY_ID.get(a)!.needs;
+    const lacking = (want: number) => factNames(want & ~things.facts(p, ctx)).join(", ");
+    const [kind, what, end] = note.split(":");
+    if (kind === "task" && end === undefined && ACTION_BY_ID.has(what as PlanActionId)) {
+      const a = what as PlanActionId;
+      if (a === "follow" && things.firstOn(p)) out.push("followed its target with the theft first still on");
+      const m = lacking(needs(a) & ~FOLDED);
+      if (m) out.push(`set off on ${a} without ${m}`);
+    } else if (kind === "risky") {
+      const a = spy.plans.current?.action;
+      const m = a ? lacking(needs(a) & ~F.unwatched) : "";
+      if (!a) out.push(`began ${what} with no step under way`);
+      else if (m) out.push(`began ${a} without ${m}`);
+    } else if (kind === "alone") {
+      if (things.firstOn(p)) out.push("alone with its target with the theft first still on");
+      const m = lacking(needs("wait-alone"));
+      if (m) out.push(`alone with its target without ${m}`);
+    } else if (kind === "done") {
+      const m = lacking(ctx.goal);
+      if (m) out.push(`goal done without ${m}`);
+    }
+  });
+}
+
+/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps), fresh for one evening. */
+export function spyChecks(): { exit: Check; programme: ReturnType<typeof programmeCheck>; sober: Check; tests: Check; privacy: Check; steps: Check; all: Check[] } {
   const exit = exitCheck();
   const programme = programmeCheck();
   const sober = soberCheck();
   const tests = testsCheck();
-  return { exit, programme, sober, tests, all: [exit, programme, sober, tests] };
+  const privacy = privacyCheck();
+  const steps = stepsCheck();
+  return { exit, programme, sober, tests, privacy, steps, all: [exit, programme, sober, tests, privacy, steps] };
 }
 
 /** The reactions to someone out of step (PR 1): brought a flute, beckoned in, pointed the way. */
@@ -223,9 +330,34 @@ export interface SpyEvening {
   tourAsks: number;
   toursRefused: number;
   finds: number;
+  /**
+   * Its plan (PR 3): when it first tried and when its goal was done (-1 not), whether a kill's plan
+   * got its target alone, and its steps started, done, broken off and failed, and the tries that
+   * found no moment.
+   */
+  triedAt: number;
+  doneAt: number;
+  alone: boolean;
+  plan: { started: number; done: number; broken: number; failed: number; tries: number };
+  /** When what it took first went into its coat, when a kill's theft first was dropped, and when it first set off after a kill's target (-1 never). */
+  stashedAt: number;
+  droppedAt: number;
+  followedAt: number;
+  /** The cases the crowd opened over its work (something missed, a bug found), and its place among the ten most suspected as it set off home (0: not among them). */
+  traces: number;
+  rankAtGo: number;
   /** Wall time of the evening (ms), monitors included. */
   ms: number;
 }
+
+/** What the crowd says on finding the spy's work, each opening a case: the papers or the phone gone, the statuette missed, a bug. */
+const TRACES: ReadonlySet<string> = new Set(["gone:papers", "gone:phone", "statuette-gone", "bug"]);
+
+/** When the spy first noted something (-1 never). */
+const spyNote = (ev: Party["events"], note: string): number => ev.find((e) => e.kind === "spy" && e.note === note)?.t ?? -1;
+
+/** A tell only the spy gives (PR 3's acts). */
+export const isHard = (what: TellId): boolean => TELLS[what].kind === "hard";
 
 /** Run an evening with a spy to the end under every monitor (and `also`), and measure it. */
 export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening {
@@ -237,6 +369,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
   let tipsyMax = 0;
   let goingAt = -1;
   let goingShare = -1;
+  let rankAtGo = 0;
   let leftAt = -1;
   let leftShare = -1;
   let before = 0;
@@ -259,6 +392,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
         if (me.gone || me.action?.id === "leave" || p.tasks.of(me)?.kind === "leave") {
           goingAt = p.t;
           goingShare = before;
+          rankAtGo = ranks(p.people, p.memory, p.ident, p.t).findIndex((r) => r.id === me.id) + 1;
         } else if (spy.setup !== "host") before = p.farewellGoing();
         else {
           const f = stayers ?? [];
@@ -327,6 +461,15 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
     tourAsks: party.stats.tourAsks,
     toursRefused: ev.filter((e) => e.kind === "react" && e.note === "later").length,
     finds: party.stats.finds,
+    triedAt: spy.goal.triedAt ?? -1,
+    doneAt: spy.goal.doneAt ?? -1,
+    alone: ev.some((e) => e.kind === "spy" && e.note?.startsWith("alone:")),
+    plan: { ...spy.plans.stats },
+    stashedAt: spyNote(ev, "stashed"),
+    droppedAt: spyNote(ev, "drop-first"),
+    followedAt: spyNote(ev, "task:follow"),
+    traces: ev.filter((e) => e.kind === "react" && TRACES.has(e.note ?? "")).length,
+    rankAtGo,
     ms,
   };
 }

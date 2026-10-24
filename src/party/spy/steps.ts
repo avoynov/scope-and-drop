@@ -730,7 +730,7 @@ export class Plans {
         things.copiedAt = h.t;
         break;
     }
-    this.note(`done:${run.act}`);
+    this.note(`did:${run.act}`);
   }
 
   /** Into its own coat: no longer on it, and nobody who saw it at the cloakroom saw anything. */

@@ -77,8 +77,11 @@ export const ACT_OF: Partial<Record<PlanActionId, ActId>> = {
   ledger: "ledger",
 };
 
+/** The parts a goal is planned in: its own, or a kill's and the theft before it. */
+export type GoalPart = "statuette" | "safe" | "bag" | "coat" | "pocket" | "bug-room" | "bug-host" | "ledger" | "kill";
+
 /** The actions each part of a goal can use (the tactics' own are left out unless switched on). */
-const USE: Record<"statuette" | "safe" | "bag" | "coat" | "pocket" | "bug-room" | "bug-host" | "ledger" | "kill", readonly PlanActionId[]> = {
+export const GOAL_ACTIONS: Record<GoalPart, readonly PlanActionId[]> = {
   statuette: ["learn", "tour-alone", "go", "look-away", "commotion", "palm", "stash"],
   safe: ["learn", "tour-alone", "go", "pick-lock", "slip-in", "host-place", "open-safe", "papers", "stash"],
   bag: ["find-bag", "wait-owner", "spill", "bag", "stash"],
@@ -256,8 +259,8 @@ export class GoalThings {
     const needs: Partial<Record<PlanActionId, number>> = {};
     let goal = 0;
     let room = -1;
-    const add = (k: keyof typeof USE) => {
-      for (const a of USE[k]) use.add(a);
+    const add = (k: GoalPart) => {
+      for (const a of GOAL_ACTIONS[k]) use.add(a);
     };
     const theft = (from: TheftFrom) => {
       add(from);

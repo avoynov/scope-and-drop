@@ -104,11 +104,11 @@ export class Finds {
   /** The owner's drawn checks still to come, and their trip to the coat (-1 none). */
   private readonly checks: number[] = [];
   private coatTrip = -1;
-  /** The statuette: when each person last saw it on its stand (-1 never), and who has missed it. */
-  private readonly knewAt: Float32Array;
+  /** The statuette: when each person last saw it on its stand (-1 never; 0 for those who knew it from before), and who has missed it. */
+  readonly knewAt: Float32Array;
   private readonly missed: Uint8Array;
   /** When the host looks into the study (-1 not tonight, or done). */
-  private studyAt = -1;
+  studyAt = -1;
   private readonly farewell: number;
   private ticks = 0;
 

@@ -13,6 +13,7 @@ import type { Rng } from "../../mansion/core/rng";
 import { KNOWN, type Memory, type Verb } from "../memory";
 import type { Pathfinder } from "../path";
 import { frontOf, type Places } from "../places";
+import { actionIndex, DETAIL_RANGE, FOV, type Senses } from "../senses";
 import type { Tasks } from "../tasks";
 import type { Person, Pose, Spot } from "../types";
 import type { Door, World } from "../world";
@@ -38,13 +39,16 @@ export interface ActSpec {
   /** What a witness makes of it (the notable while it lasts), and the tell it counts as. */
   verb: Verb | null;
   tell: TellId | null;
+  /** A small act: only those within this can make it out (m). */
+  within?: number;
 }
 
 /**
  * On one knee at the door, crouched at the safe, going through a bag or a coat as if its own, a
  * hand in a pocket, the statuette under the jacket, under the desk or the table, a camera to the
  * eye at the console. Palming the statuette reads as carrying it (milestone 2's `carrying`, the
- * thing the object), the bug and the ledger as `snooping`, as the plan has it.
+ * thing the object), the bug and the ledger as `snooping`, as the plan has it. A hand at a pocket or
+ * at the mantel is made out only from as close as the detail of a look reaches.
  */
 export const ACTS: Record<ActId, ActSpec> = {
   lock: { mode: "alone", secs: [40, 90], knack: "lock", pose: "crouch", verb: "picking-lock", tell: "lock" },
@@ -52,8 +56,8 @@ export const ACTS: Record<ActId, ActSpec> = {
   papers: { mode: "alone", secs: [4, 8], pose: "crouch", verb: "at-safe", tell: "safe" },
   bag: { mode: "unwatched", secs: [30, 60], pose: "serve", verb: "in-bag", tell: "bag" },
   coat: { mode: "unwatched", secs: [20, 40], pose: "serve", verb: "in-bag", tell: "bag" },
-  pocket: { mode: "unwatched", secs: [2, 2], knack: "palm", pose: "stand", verb: "pocket", tell: "pocket" },
-  palm: { mode: "unwatched", secs: [2, 2], knack: "palm", pose: "serve", verb: "carrying", tell: "palm" },
+  pocket: { mode: "unwatched", secs: [2, 2], knack: "palm", pose: "stand", verb: "pocket", tell: "pocket", within: DETAIL_RANGE },
+  palm: { mode: "unwatched", secs: [2, 2], knack: "palm", pose: "serve", verb: "carrying", tell: "palm", within: DETAIL_RANGE },
   plant: { mode: "alone", secs: [20, 40], pose: "crouch", verb: "snooping", tell: "plant" },
   brush: { mode: null, secs: [2, 2], pose: "stand", verb: null, tell: null },
   ledger: { mode: "alone", secs: [60, 120], pose: "camera", verb: "snooping", tell: "ledger" },
@@ -86,8 +90,10 @@ const USE: Record<"statuette" | "safe" | "bag" | "coat" | "pocket" | "bug-room" 
   kill: ["follow", "wait-alone"],
 };
 
-/** Someone was seen within this long (in-game s) for the spy to know where they and their bag are. */
+/** Someone was seen within this long (in-game s) for the spy to know where they and their bag are, and dancing or at the games this recently for it to know the bag is down. */
 const FOUND_FOR = 300;
+const DOWN_FOR = 60;
+const PUT_DOWN = new Set([actionIndex("dance"), actionIndex("games")]);
 /** Close to the target: the same room, within this (m). */
 const CLOSE = 6;
 /** At a locked door: within this of the spot outside it (m). */
@@ -104,6 +110,7 @@ export interface GoalHost {
   readonly memory: Memory;
   readonly tasks: Tasks;
   readonly host: Person;
+  readonly senses: Senses;
 }
 
 /** The goal as the plan sees it: the facts wanted, the actions it can use, their needs where they differ, and the room it is about. */
@@ -332,8 +339,14 @@ export class GoalThings {
     if (this.safeOpen) m |= F.safe;
     const target = g.target >= 0 ? h.people[g.target]! : null;
     if (target && memory.lastT[spy.id * n + target.id]! > h.t - FOUND_FOR) m |= F.found;
+    // The bag down where they left it, as far as the spy knows: in its view, or its owner seen dancing or at the games just now.
     const bag = target ? this.bagOf(target) : -1;
-    if (bag >= 0 && items.holder[bag] === -1 && items.stateOf(bag) === "down") m |= F.free;
+    if (bag >= 0 && items.holder[bag] === -1 && items.stateOf(bag) === "down") {
+      const k = spy.id * n + target!.id;
+      const room = items.room[bag]!;
+      const at = { level: items.level[bag]!, x: items.x[bag]!, z: items.z[bag]!, y: room >= 0 ? h.bp.rooms[room]!.floorY : spy.y, room };
+      if ((memory.lastT[k]! > h.t - DOWN_FOR && PUT_DOWN.has(memory.lastAct[k]!)) || h.senses.visibleAt(spy, at, FOV)) m |= F.free;
+    }
     const thing = c.thing;
     if (thing >= 0 && items.holder[thing] === spy.id) m |= F.holding;
     if (thing >= 0 && this.stashed(thing, spy)) m |= F.stashed | F.holding;

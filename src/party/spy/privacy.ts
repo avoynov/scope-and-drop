@@ -5,13 +5,14 @@
  * as it helps them. It never reads the perch's grid: the spy doesn't know a sniper is there.
  *
  * Two modes. Alone (the lock, the safe, the bug, the ledger): anyone present, whichever way they
- * face. Unwatched (the statuette, a bag or a coat, a pocket): only those facing the spot and not
- * held by something else (the toast, the speech, the piano, the floor), and for someone's things,
- * only those who would know they aren't the spy's.
+ * face. Unwatched (the statuette, a bag or a coat, a pocket): only those facing the spot, and not
+ * held by something else (the toast, the speech, the piano, the floor); for someone's things, only
+ * those who would know they aren't the spy's, and their owner held or not, since nobody misses a
+ * stranger at their own bag from the dance floor.
  *
  * Now and soon: nobody counted sees the spot now, and within the step's length plus SOON nobody's
  * route or errand brings them where they would see it, nobody free to step in waits next door by an
- * open doorway, and nobody held now who could see it is let go. A route is followed as far as they walk in that
+ * open doorway (for the alone mode), and nobody held now who could see it is let go. A route is followed as far as they walk in that
  * time, a point every ROUTE_STEP metres, and each point in a room that sees into the spot's is put
  * to the same sight rules as a guest standing there, facing the way they walk (whichever way, for
  * the alone mode). Only those within NEAR_GRAPH metres of the spot by the room graph are checked,
@@ -42,8 +43,9 @@ export const NEAR_GRAPH = 25;
 export const CLOSE_BY = 3;
 /** A doorway passes sight at this much open (sight.ts). */
 const OPEN = 0.5;
-/** A route is looked along at a point this often (m). */
+/** A route is looked along at a point this often (m); one shorter than SETTLING is someone settling into place, who will face where they mean to. */
 const ROUTE_STEP = 1.5;
+const SETTLING = 2;
 
 export interface PrivacyHost {
   readonly t: number;
@@ -77,8 +79,17 @@ export interface PrivacyAsk {
   self: Person;
   /** Who counts at all: everyone (null), or those who would know the thing isn't the spy's. */
   who: ((q: Person) => boolean) | null;
+  /** Whose things they are (a bag, a coat): they count even while something else holds them. */
+  owner?: number;
   /** Left out besides the spy: a kill's target. */
   skip?: number;
+  /** Only those within this of the spot can make the act out (m): a hand at a pocket or a mantel. */
+  within?: number;
+}
+
+/** Too far from the spot to make out a small act. */
+function beyond(ask: PrivacyAsk, level: number, x: number, z: number): boolean {
+  return ask.within !== undefined && (level !== ask.at.level || Math.hypot(x - ask.at.x, z - ask.at.z) > ask.within);
 }
 
 export type InTheWay = "sees" | "coming" | "doorway" | "due" | "let-go";
@@ -87,6 +98,11 @@ export interface PrivacyResult {
   ok: boolean;
   /** Who is in the way and why, for the lab's card (the first few found). */
   by: Array<{ who: number; why: InTheWay }>;
+}
+
+/** Held by something else and so not looking at the act: never the owner of the things it goes through. */
+export function absorbed(h: PrivacyHost, ask: Pick<PrivacyAsk, "mode" | "owner">, q: Person): boolean {
+  return ask.mode === "unwatched" && q.id !== ask.owner && held(h, q);
 }
 
 /** Whether something else holds someone's eyes: the toast, the speech in its room, the piano, the floor. */
@@ -148,9 +164,9 @@ export function check(h: PrivacyHost, ask: PrivacyAsk, near = nearRooms(h, ask.a
   for (const q of h.people) {
     if (q === self || q.id === ask.skip || !q.present || q.gone || !near.has(q.room)) continue;
     if (ask.who && !ask.who(q)) continue;
-    const busy = ask.mode === "unwatched" && held(h, q);
+    const busy = absorbed(h, ask, q);
     // Now.
-    if (!busy && h.senses.visibleAt(q, at, fov, self)) {
+    if (!busy && !beyond(ask, q.level, q.x, q.z) && h.senses.visibleAt(q, at, fov, self)) {
       by.push({ who: q.id, why: "sees" });
       if (by.length >= 4) break;
       continue;
@@ -170,6 +186,20 @@ function ghost(h: PrivacyHost, level: number, x: number, z: number, room: number
   return { level, x, z, y, room, yaw, lookUntil: -1e9, lookX: x, lookZ: z } as unknown as Person;
 }
 
+/** How far someone still has to walk (m). */
+function routeLeft(q: Person): number {
+  let d = 0;
+  let px = q.x;
+  let pz = q.z;
+  for (let k = q.pathIndex; k < q.path.length && d < SETTLING; k++) {
+    const w = q.path[k]!;
+    d += Math.hypot(w.x - px, w.z - pz);
+    px = w.x;
+    pz = w.z;
+  }
+  return d;
+}
+
 /** What would bring someone into view of the spot within the window, or null. */
 function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: ReadonlySet<number>, edges: World["graph"][number], window: number, busy: boolean): InTheWay | null {
   const { at, self } = ask;
@@ -178,11 +208,11 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
   if (busy) {
     if (!a || a.startedAt === null || !watch.has(q.room)) return null;
     const ends = a.duration < 9e4 ? a.startedAt + a.duration : h.programme[phaseIndexAt(h.programme, h.t)]!.end;
-    return ends - h.t < window && h.senses.visibleAt(q, at, Math.PI, self) ? "let-go" : null;
+    return ends - h.t < window && !beyond(ask, q.level, q.x, q.z) && h.senses.visibleAt(q, at, Math.PI, self) ? "let-go" : null;
   }
   // Their route, as far as they walk in the window: would they see the spot from any point of it, looking the way they go?
   const reach = (window * q.speed) / TIME_SCALE;
-  if (q.path.length && q.pathIndex < q.path.length) {
+  if (q.path.length && q.pathIndex < q.path.length && routeLeft(q) >= SETTLING) {
     let px = q.x;
     let pz = q.z;
     let walked = 0;
@@ -195,7 +225,7 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
         const x = px + (w.x - px) * f;
         const z = pz + (w.z - pz) * f;
         const room = h.pf.roomAt(w.level, x, z);
-        if (watch.has(room) && h.senses.visibleAt(ghost(h, w.level, x, z, room, yaw), at, fov, self)) return "coming";
+        if (watch.has(room) && !beyond(ask, w.level, x, z) && h.senses.visibleAt(ghost(h, w.level, x, z, room, yaw), at, fov, self)) return "coming";
         if (seg <= 1e-6) break;
       }
       walked += seg;
@@ -204,8 +234,9 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
     }
   }
   // Next door, by an open doorway into the room, and free to step in: not staff at a post (the bar, the cloakroom, the band).
+  // Only for the alone mode: whoever steps in on an act done as if it were the spy's own still has to look its way.
   const post = q.staff && a?.id === "staff" && a.startedAt !== null && a.note !== "serve";
-  if (q.room !== at.room && !post) {
+  if (ask.mode === "alone" && q.room !== at.room && !post) {
     for (const e of edges) {
       if (e.to !== q.room || e.level !== q.level) continue;
       if (e.door >= 0 && h.world.doors[e.door]!.open < OPEN) continue;
@@ -217,7 +248,7 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
   if (t && t.owner === q.id) {
     for (let k = t.i; k < Math.min(t.steps.length, t.i + 3); k++) {
       const st = t.steps[k]!;
-      if (st.do === "goto" && watch.has(st.to.room) && h.senses.visibleAt(ghost(h, st.to.level, st.to.x, st.to.z, st.to.room, st.to.yaw), at, Math.PI, self)) return "due";
+      if (st.do === "goto" && watch.has(st.to.room) && !beyond(ask, st.to.level, st.to.x, st.to.z) && h.senses.visibleAt(ghost(h, st.to.level, st.to.x, st.to.z, st.to.room, st.to.yaw), at, Math.PI, self)) return "due";
     }
   }
   return null;
@@ -234,9 +265,9 @@ export function noticed(h: PrivacyHost, ask: PrivacyAsk, shut: Float32Array): nu
   for (const q of h.people) {
     if (q === self || q.id === ask.skip || !q.present || q.gone) continue;
     if (ask.who && !ask.who(q)) continue;
-    if (ask.mode === "unwatched" && held(h, q)) continue;
+    if (absorbed(h, ask, q)) continue;
     if (q.level === self.level && Math.hypot(q.x - self.x, q.z - self.z) <= CLOSE_BY) return q.id;
-    if (h.senses.visibleAt(self, { level: q.level, x: q.x, z: q.z, y: q.y, room: q.room }, FOV, q)) return q.id;
+    if (!beyond(ask, q.level, q.x, q.z) && h.senses.visibleAt(self, { level: q.level, x: q.x, z: q.z, y: q.y, room: q.room }, FOV, q)) return q.id;
   }
   // A door into the room opening from shut: whoever is at it.
   for (const d of h.world.doors) {

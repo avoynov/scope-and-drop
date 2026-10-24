@@ -50,6 +50,8 @@ export interface Tell {
   /** Until when it shows; the guests whose sighting picked it up meanwhile, first sight first. */
   until: number;
   seenBy: number[];
+  /** Whose bag or coat it was going through (-1 none): only those who know it isn't the spy's read it. */
+  whose: number;
 }
 
 export class Measure {
@@ -58,7 +60,7 @@ export class Measure {
   readonly twins: Array<{ t: number; who: number; verb: Verb }> = [];
 
   /** The spy gives a tell; the same one again while it still shows only keeps it showing. */
-  tell(what: TellId, t: number, until: number, room: number, view: number): Tell {
+  tell(what: TellId, t: number, until: number, room: number, view: number, whose = -1): Tell {
     let last: Tell | undefined;
     for (let i = this.tells.length - 1; i >= 0 && !last; i--) if (this.tells[i]!.what === what) last = this.tells[i];
     if (last && last.until >= t && last.room === room) {
@@ -67,7 +69,7 @@ export class Measure {
       return last;
     }
     const spec = TELLS[what];
-    const x: Tell = { t, what, kind: spec.kind, room, view, zoom: spec.zoom, until, seenBy: [] };
+    const x: Tell = { t, what, kind: spec.kind, room, view, zoom: spec.zoom, until, seenBy: [], whose };
     this.tells.push(x);
     return x;
   }
@@ -82,12 +84,13 @@ export class Measure {
     }
   }
 
-  /** A guest's sighting of the spy picked up whatever tell shows on it now. */
-  seen(by: number, t: number): void {
+  /** A guest's sighting of the spy picked up whatever tell shows on it now, that `reads` says they read (whose bag it is, what holds their eyes). */
+  seen(by: number, t: number, reads?: (x: Tell) => boolean): void {
     // Only the last few can still show.
     for (let i = this.tells.length - 1; i >= Math.max(0, this.tells.length - 8); i--) {
       const x = this.tells[i]!;
-      if (x.kind !== "trace" && x.t <= t && t <= x.until && !x.seenBy.includes(by)) x.seenBy.push(by);
+      if (x.kind === "trace" || x.t > t || t > x.until || x.seenBy.includes(by) || (reads && !reads(x))) continue;
+      x.seenBy.push(by);
     }
   }
 

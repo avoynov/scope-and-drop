@@ -28,7 +28,7 @@ import { Reactions, type ReactionsHost } from "./reactions";
 import { CASES, Register, type CaseTalk, type RegisterHost } from "./register";
 import { DETAIL_RANGE, Senses, type Sound, type SoundKind, type SensesHost } from "./senses";
 import { Sight } from "./sight";
-import { AGREE_TOUR, castSpy, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
+import { AGREE_TOUR, castSpy, Finds, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
 import { asItself, dress } from "./spy/swap";
 import { Tasks, type Step, type Task, type TaskHost, type TaskKind } from "./tasks";
 import {
@@ -308,6 +308,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   readonly prompts: Prompts;
   /** The spy (milestone 3), or null on an evening without one. */
   readonly spy: Spy | null;
+  /** What the crowd finds of the spy's work (spy/finds.ts): with a spy only. */
+  readonly finding: Finds | null;
   /** When the farewell's first goodbye was said (-1 not yet): the spy never goes before it. */
   byeAt = -1;
   /** How many guests had gone home or set off by then (the household aside), counting the first goodbye. */
@@ -476,6 +478,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       );
     }
     this.spy = spy;
+    this.finding = spy ? new Finds(this, spy, root.fork("missed")) : null;
     if (spy?.garment) this.garmentLight = Math.max(DOORWAY_LIGHT, this.gardenLight(this.world.items.x[spy.garment.item]!, this.world.items.z[spy.garment.item]!));
     this.reactions = new Reactions(this, root.fork("react"));
     // The real host's rare late announcement is drawn whatever plays the host, so it comes the same with the spy off.
@@ -645,6 +648,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     lap("talk");
     // The spy's cues, then people reacting to anyone out of step, just before everyone looks.
     this.spy?.step();
+    this.finding?.step();
     if (this.stepNo % 20 === 0) this.reactions.step();
     lap("spy");
     this.senses.step(this.stepNo);
@@ -756,6 +760,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       // The spy playing the host offers nobody a tour (it turns most requests down).
       if (p.id !== this.spyId && this.maybeTour(p)) return;
     }
+    // Back for a bag left on a chair to dance or play (with a spy only: spy/finds.ts).
+    if (this.finding?.fetch(p)) return;
     // The spy's plan takes its next step when one can start; otherwise it lives the evening like anyone.
     if (p.id === this.spyId && this.spy!.think(p)) return;
     // Someone who didn't seem quite themselves: go and say hello, and settle it.
@@ -1504,8 +1510,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       }
     } else if (a.target) p.yaw = a.target.yaw;
     // A stop on a waiter's round: empties onto the tray (glasses are offered while they stand there).
-    if (a.id === "staff" && a.note === "serve") this.body.clearGlasses(p, 3);
+    if (a.id === "staff" && a.note === "serve") {
+      const n = this.body.clearGlasses(p, 3);
+      this.finding?.served(p, n);
+    }
     a.startedAt = this.t;
+    this.finding?.begun(p, a);
   }
 
   /** Walk to a spot as part of the current action (it starts when they get there); false when there is no way. */
@@ -1846,6 +1856,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.y = seat.y;
     p.yaw = seat.yaw;
     if (a.note === "stand-wait") a.note = undefined;
+    this.finding?.sat(p, seat);
     if (a.id !== "dinner") return;
     this.log("seated", [p.id], p.room);
     if (p.role === "host") {
@@ -2162,7 +2173,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       partner = q;
     }
     const attendant = this.people.find((x) => x.role === "cloakroom" && x.present) ?? null;
-    const t = this.tasks.leave(p, partner, attendant, hurry);
+    const t = this.tasks.leave(p, partner, attendant, hurry, this.finding?.goingHome(partner ? [p, partner] : [p]));
     if (this.byeAt < 0 && this.phase.id === "farewell") {
       this.byeAt = this.t;
       this.byeGoing = this.going().going;
@@ -2181,6 +2192,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** Out of the front door for good, coat on. */
   depart(p: Person): void {
     this.release(p);
+    this.finding?.departed(p);
     this.leaveWithThings(p);
     p.action = null;
     p.path = [];
@@ -2196,6 +2208,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (t.kind === "check" && st.label === "look-in") this.lookInCabinet(p, t.item);
     else if (st.do === "pick" && st.item === this.spy?.garment?.item) this.spy.garmentFound();
     else if (st.label === "dinner-ready") this.log("beat", [p.id, this.host.id], p.room, "dinner-cue");
+    this.finding?.stepDone(t, p, st);
     this.dramas.stepDone(t, p, st);
   }
 
@@ -2847,6 +2860,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.spy?.saw(a, b);
   }
 
+  reads(a: Person, b: Person): boolean {
+    return !this.spy || b.id !== this.spy.id || this.spy.reads(a, b);
+  }
+
   bumped(fast: Person, hit: Person, slop: boolean): void {
     this.bonds.bumped(fast, hit, slop);
   }
@@ -3406,6 +3423,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   /** A look outside may take in the garment on the ground: in the look's detail, lit well enough, the more likely the nearer it lies and the keener the look. */
   looked(a: Person): void {
+    this.finding?.looked(a);
     const g = this.spy?.garment;
     if (!g || (a.room !== -1 && a.room !== -2) || this.foundIt[a.id] || this.garmentLight < FIND_LIGHT) return;
     const items = this.world.items;
@@ -3546,9 +3564,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   }
 
   private openGone(w: Person, owner: Person, obj: number, room: number): void {
+    this.openCase("gone", w, owner, obj, room, this.t - CASES.gone.lookBack);
+  }
+
+  /** w finds something of owner's gone (or a bug planted) in a room, over a window: a case with nobody to blame yet, said out loud. */
+  openCase(kind: "gone" | "planted", w: Person, owner: Person, obj: number, room: number, from: number, to = this.t): void {
     if (room === -1) return;
-    const f = this.memory.observe(w.id, "gone", owner.id, obj, room);
-    const c = this.register.open(w.id, "gone", owner.id, obj, room, this.t - CASES.gone.lookBack, this.t, f);
+    const f = this.memory.observe(w.id, kind, owner.id, obj, room);
+    const c = this.register.open(w.id, kind, owner.id, obj, room, from, to, f);
     // Said out loud: whoever is close by hears of it at once.
     const near = this.people.filter((q) => q !== w && q.present && q.level === w.level && q.room === w.room && Math.hypot(q.x - w.x, q.z - w.z) < 6);
     this.register.raise(
@@ -3557,7 +3580,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       near.map((q) => q.id),
     );
     for (const q of near) this.memory.learn(q.id, f, PASS_ON, w.id, 1);
-    this.log("case", [w.id, owner.id], room, "gone");
+    this.log("case", [w.id, owner.id], room, kind);
   }
 
   /** The witness saw someone poking round a room, with their own eyes: something to pass on, and a sighting in the register. */
@@ -3747,6 +3770,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const i = this.ident.stats;
     mix(`i${i.tests},${i.fumbled},${i.compared},${i.sure},${i.slips},${i.cool},${i.names}:${this.prompts.log.length}`);
     if (this.spy) mix(this.spy.digest());
+    if (this.finding) mix(this.finding.digest());
     return `${this.t}:${(h >>> 0).toString(16)}`;
   }
 

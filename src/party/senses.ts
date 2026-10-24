@@ -147,6 +147,8 @@ export interface SensesHost {
   sawSlip?(a: Person, b: Person, skill: number): void;
   /** A look ended: anything else worth a glance (the garden's lost things). */
   looked?(a: Person): void;
+  /** Whether a can read what b's notable shows (someone going through a bag looks wrong only to whoever knows whose it is); absent, always. */
+  reads?(a: Person, b: Person): boolean;
 }
 
 const ACTIONS: readonly ActionId[] = [
@@ -355,7 +357,7 @@ export class Senses {
     if (detail && b.tipsy > 0.6) memory.observe(a.id, "tipsy", b.id);
     // Something worth remembering: a wrong turn, a rattled door, coming out of a bedroom. Somewhere
     // private, or doing something notable, they go in the register too.
-    if (b.notable && h.t < b.notableUntil) {
+    if (b.notable && h.t < b.notableUntil && (!h.reads || h.reads(a, b))) {
       const f = memory.observe(a.id, b.notable, b.id, b.notableObj, b.room);
       h.register.see(a.id, b, b.notable, b.notableRoom >= 0 ? b.notableRoom : b.room, b.notableObj, f);
     } else if (h.register.watching(a.id, b.room)) h.register.see(a.id, b, "was-in", b.room);

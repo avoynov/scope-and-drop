@@ -367,9 +367,9 @@ export class Tasks {
     if (t.outcome === null) this.advance(t);
   }
 
-  /** A short job of the staff's own (the butler looking over the table, then a word with the host), or anyone's errand with an item in hand. */
-  chore(p: Person, steps: Step[], item = -1): Task {
-    return this.make("chore", p, [], steps, { item });
+  /** A short job of the staff's own (the butler looking over the table, then a word with the host), or anyone's errand with an item in hand; `what` names it. */
+  chore(p: Person, steps: Step[], item = -1, what?: string): Task {
+    return this.make("chore", p, [], steps, what ? { item, what } : { item });
   }
 
   // ---------------------------------------------------------------- searches
@@ -510,11 +510,12 @@ export class Tasks {
   /**
    * Going home: find the host and say goodbye, then the cloakroom (the attendant hands the coat
    * over), then out of the front door. A partner comes along. In a hurry, straight to the coats.
+   * `first` goes before all of it (back for a bag left on a chair: spy/finds.ts).
    */
-  leave(p: Person, partner: Person | null, attendant: Person | null, hurry: boolean): Task {
+  leave(p: Person, partner: Person | null, attendant: Person | null, hurry: boolean, first: readonly Step[] = []): Task {
     const h = this.host;
     const host = h.host;
-    const steps: Step[] = [];
+    const steps: Step[] = [...first];
     if (!hurry && host.present && !host.gone && host !== p)
       steps.push({ do: "meet", who: host.id, label: "to-host" }, { do: "say", who: host.id, s: this.rng.range(4, 6), pose: "shake", label: "goodbye" });
     const coat = h.places.chains.coats.spots[0];

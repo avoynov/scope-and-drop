@@ -21,6 +21,7 @@ import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH, phaseIndexAt } from "../clock";
 import { EXPECT, SLIP_SKILLS, type Ident, type Tie } from "../ident";
 import type { Verb } from "../memory";
+import { DETAIL_RANGE } from "../senses";
 import type { Step, Task } from "../tasks";
 import { SKILLS, type PartyEvent, type Person, type Skill } from "../types";
 import { Answers, type AnswersHost } from "./answers";
@@ -29,6 +30,7 @@ import { Cues, type CuesHost } from "./cues";
 import { GoalThings } from "./goals";
 import { Measure, TWIN_VERBS } from "./measure";
 import { Posing } from "./posing";
+import { held } from "./privacy";
 import { Plans, type StepsHost } from "./steps";
 
 export { castSpy, goalOdds, goalRooms, houseHolds, studied, GOALS, GOAL_SHARES, SETUPS, STEAL, type GoalKind, type SpyBody, type SpyCast, type SpyGoal, type SpyOptions, type SpySetup } from "./cast";
@@ -40,6 +42,7 @@ export { ACTS, BUG_PLACES, GoalThings, type ActId, type BugPlace } from "./goals
 export { ACTIONS, FACTS, factNames, plan, type Fact, type PlanActionId } from "./planner";
 export { check, held, type InTheWay, type PrivacyMode, type PrivacyResult } from "./privacy";
 export { Plans, type PlanRecord, type StepsHost } from "./steps";
+export { Finds, type FindsHost } from "./finds";
 
 /** What the spy needs from the party. */
 export interface SpyHost extends CuesHost, AnswersHost, StepsHost {
@@ -217,7 +220,24 @@ export class Spy {
       if (!this.knows[b.id]) this.knows[b.id] = 1;
       if (this.byCues) this.cues.saw(b);
       this.answers.saw(b);
-    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t);
+    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t, (x) => this.readsAct(a, b, x.whose, x.what === "pocket" || x.what === "palm"));
+  }
+
+  /**
+   * Whether a reads what the spy's notable shows, by the privacy check's own rules: going through a
+   * bag or a coat looks wrong only to whoever knows it isn't the spy's, and to them only when nothing
+   * else holds their eyes (its owner always); a hand in a pocket or the statuette palmed only to
+   * someone close by and not held by the toast, the speech, the piano or the floor.
+   */
+  reads(a: Person, b: Person): boolean {
+    const v = b.notable;
+    if (v === "in-bag") return this.readsAct(a, b, b.notableObj >= 0 ? this.host.world.items.owner[b.notableObj]! : -1, false);
+    return v === "pocket" || (v === "carrying" && b.notableObj >= 0 && b.notableObj === this.things.statuette) ? this.readsAct(a, b, -1, true) : true;
+  }
+
+  private readsAct(a: Person, b: Person, whose: number, small: boolean): boolean {
+    if (whose >= 0) return this.things.knowsWhose(whose)(a) && (a.id === whose || !held(this.host, a));
+    return !small || (a.level === b.level && Math.hypot(a.x - b.x, a.z - b.z) <= DETAIL_RANGE && !held(this.host, a));
   }
 
   /** The garment picked up: the trace is gone. */

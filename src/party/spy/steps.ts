@@ -29,7 +29,7 @@ import type { Step, Task } from "../tasks";
 import type { PartyEvent, Person } from "../types";
 import { ACT_OF, ACTS, type ActId, type ActSite, type GoalContext, type GoalHost, type GoalThings } from "./goals";
 import type { Spy } from "./index";
-import { BLOCK_FOR, plan, type PlanActionId } from "./planner";
+import { BLOCK_FOR, F, plan, type PlanActionId } from "./planner";
 import { check, doorsNow, held, nearRooms, noticed, type PrivacyHost, type PrivacyResult, type Spot3 } from "./privacy";
 
 /** What running the plan needs from the party, besides the goal's and the privacy check's. */
@@ -70,10 +70,14 @@ const BRUSH_GAP = 0.9;
 const REACH = 1.5;
 /** Close to the target while following: the same room, within this (m), as goals.ts has it. */
 const CLOSE = 6;
-/** A bag whose owner never puts it down for this long is a failure. */
+/** A bag whose owner never puts it down for this long is a failure; meanwhile an eye on them a few minutes at a time. */
 const FREE_MAX = 30 * 60;
+const WATCH: readonly [number, number] = [120, 240];
 /** With no plan, or nothing it can do yet, it looks again after this. */
 const LATER = 300;
+/** Looking for the bag's owner: a room looked round isn't looked in again for this long, and the next look waits a little (in-game s). */
+const SEARCHED = 10 * 60;
+const AFTER_LOOK: readonly [number, number] = [20, 40];
 /** Putting what it took into its own coat (in-game s). */
 const STASH: readonly [number, number] = [6, 10];
 /** How long a kill would take, for the alone check while following (PR 5 sets the methods' own). */
@@ -144,6 +148,8 @@ export class Plans {
   private upAt = -1;
   /** How far each door was open on the last step, for hearing one open from shut. */
   private readonly shut: Float32Array;
+  /** Rooms it looked round for the bag's owner, and when. */
+  private readonly searched = new Map<number, number>();
 
   constructor(
     private readonly h: StepsHost,
@@ -268,12 +274,13 @@ export class Plans {
     const p = this.spy.record;
     const st = t.steps[t.i];
     if (!st) return;
-    const waiting = st.label.startsWith("await:") || st.label === "trail";
+    const waiting = st.label.startsWith("await:") || st.label === "trail" || st.label === "watch-bag";
     // The farewell's first goodbye: whatever it still waits for is given up (an act under way it finishes).
     if (h.byeAt >= 0 && waiting) return this.stop(t, "given-up");
     if (st.label.startsWith("await:")) this.await(run, t, p);
     else if (st.label.startsWith("risky:")) this.watch(run, t, p);
     else if (st.label === "trail") this.trail(run, t, p);
+    else if (st.label === "watch-bag") this.watchBag(run, t, p);
   }
 
   /** A step of one of its tasks finished: what the act leaves behind. */
@@ -300,6 +307,11 @@ export class Plans {
       this.stats.done++;
       this.waited.delete(run.action);
       this.breaks.delete(run.action);
+      // A look round for the bag's owner: that room not again for a while, and a moment before the next.
+      if (run.action === "find-bag") {
+        this.searched.set(run.room, h.t);
+        this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(AFTER_LOOK[0], AFTER_LOOK[1]));
+      }
       this.checkGoal();
       return;
     }
@@ -333,7 +345,7 @@ export class Plans {
       case "find-bag":
         return this.startFind(p);
       case "wait-owner":
-        return this.waitFree();
+        return this.startWatch(p);
       case "learn":
       case "tour-alone":
       case "go":
@@ -401,13 +413,15 @@ export class Plans {
     return this.launch(p, "follow", "wander", [{ do: "shadow", who: q.id, gap: TRAIL_GAP, label: "trail" }]);
   }
 
-  /** Looking for the one whose bag it wants: where it last saw them, else a party room. */
+  /** Looking for the one whose bag it wants: where it last saw them, else a party room it hasn't just looked round. */
   private startFind(p: Person): boolean {
     const h = this.h;
     const n = h.people.length;
     const last = h.memory.lastRoom[p.id * n + this.spy.goal.target]!;
-    const rooms = h.places.partyRooms;
-    const room = last >= 0 ? last : rooms.length ? this.rng.pick(rooms).index : -1;
+    const fresh = (r: number) => (this.searched.get(r) ?? -1e9) < h.t - SEARCHED;
+    const rooms = h.places.partyRooms.filter((r) => fresh(r.index));
+    const pool = rooms.length ? rooms : h.places.partyRooms;
+    const room = last >= 0 && fresh(last) ? last : pool.length ? this.rng.pick(pool).index : -1;
     const s = room >= 0 ? h.cells.random(room, this.rng, 0.8) : null;
     if (!s) {
       this.retryAt = h.t + LATER;
@@ -420,15 +434,26 @@ export class Plans {
     ]);
   }
 
-  /** Waiting for a bag's owner to put it down: the spy lives the evening meanwhile, and gives that way up after half an hour. */
-  private waitFree(): boolean {
+  /** Waiting for a bag's owner to put it down: about the room they're in, an eye on them; half an hour of it in all and that way is given up. */
+  private startWatch(p: Person): boolean {
     const h = this.h;
     if (this.freeSince < 0) this.freeSince = h.t;
     else if (h.t - this.freeSince >= FREE_MAX) {
       this.freeSince = -1;
       this.fail("wait-owner", "kept");
+      return false;
     }
-    return false;
+    const room = h.memory.lastRoom[p.id * h.people.length + this.spy.goal.target]!;
+    const s = room !== -1 ? h.cells.random(room, this.rng, 0.8) : null;
+    if (!s) {
+      this.retryAt = h.t + LATER;
+      return false;
+    }
+    this.run = { ...this.walk("wait-owner", room), tryFor: this.rng.range(WATCH[0], WATCH[1]) };
+    return this.launch(p, "wait-owner", "mingle", [
+      { do: "goto", to: s, label: "to:watch" },
+      { do: "wait", s: 99999, pose: "stand", label: "watch-bag" },
+    ]);
   }
 
   /** Learning the way to the goal's room: a look in, or at its door when it is locked. */
@@ -549,13 +574,18 @@ export class Plans {
     if (act === "pocket" && !held(h, h.people[site.owner]!)) return false;
     const at = act === "pocket" ? spotOf(p) : site.at;
     if (!run.near || act === "pocket") run.near = nearRooms(h, at);
-    this.check = check(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site) }, run.near);
+    this.check = check(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: ACTS[act].within }, run.near);
     return this.check.ok;
   }
 
   /** For someone's bag or coat, only those who would know it isn't the spy's; for the rest, everyone. */
   private whoCounts(act: ActId, site: ActSite): ((q: Person) => boolean) | null {
     return (act === "bag" || act === "coat") && site.owner >= 0 ? this.things.knowsWhose(site.owner) : null;
+  }
+
+  /** Whose bag or coat it goes through, who watches it whatever else holds them (-1 none). */
+  private ownerOf(act: ActId, site: ActSite): number {
+    return act === "bag" || act === "coat" ? site.owner : -1;
   }
 
   /** The moment has come: the act starts, showing from this step on. */
@@ -575,7 +605,7 @@ export class Plans {
       const obj = VERBS[spec.verb].thing ? site.obj : act === "pocket" ? site.owner : -1;
       h.notable(p, spec.verb, obj, run.secs, run.room >= 0 ? run.room : p.room);
     }
-    if (spec.tell) spy.measure.tell(spec.tell, h.t, h.t + run.secs, p.room, h.visibility(p));
+    if (spec.tell) spy.measure.tell(spec.tell, h.t, h.t + run.secs, p.room, h.visibility(p), act === "bag" || act === "coat" ? site.owner : -1);
     // A faint rattle as the pick goes in.
     if (act === "lock" && run.door >= 0) {
       const d = h.world.doors[run.door]!;
@@ -598,7 +628,7 @@ export class Plans {
     const mode = ACTS[act].mode;
     if (!mode) return;
     const at = act === "pocket" ? spotOf(p) : site.at;
-    const by = noticed(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site) }, this.shut);
+    const by = noticed(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: ACTS[act].within }, this.shut);
     doorsNow(h, this.shut);
     if (by >= 0) this.breakOff(run, t, p, by);
   }
@@ -620,6 +650,17 @@ export class Plans {
     run.end = "broken";
     h.tasks.finish(t, "broken");
     this.launch(p, "cover", "art", [{ do: "wait", s: this.rng.range(COVER_LOOK[0], COVER_LOOK[1]), pose: "look", label: "cover" }]);
+  }
+
+  /** An eye on the bag's owner: the bag set down, as far as it can tell, ends the wait so it can plan the act; a few minutes of nothing and it goes back to the party. */
+  private watchBag(run: Running, t: Task, p: Person): void {
+    const h = this.h;
+    if (run.awaitFrom < 0) run.awaitFrom = h.t;
+    if (this.ticks % 2 === 0 && this.things.facts(p, this.things.context(p)) & F.free) return this.stop(t, "done");
+    if (h.t - run.awaitFrom >= run.tryFor) {
+      this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(BETWEEN[0], BETWEEN[1]));
+      this.stop(t, "not-yet");
+    }
   }
 
   /** A step a step behind the target: alone somewhere, nobody seeing and nobody coming, is where PR 5's kill would be. */

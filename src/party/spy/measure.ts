@@ -7,16 +7,32 @@ import type { Ident } from "../ident";
 import type { Memory, Verb } from "../memory";
 import type { Person } from "../types";
 
-/** The tells PR 1 can give: being out of step with the programme, and the garment left outside. Later PRs add the rest of the plan's catalogue. */
-export type TellId = "out-of-step" | "garment";
+/**
+ * The tells so far: being out of step with the programme and the garment left outside (PR 1), and
+ * the hard tells of the plan's acts (PR 3): on one knee at a locked door, crouched at the safe,
+ * going through a bag or a coat, a hand in a pocket, the statuette palmed, the bug planted, the
+ * ledger photographed. Later PRs add the rest of the plan's catalogue.
+ */
+export type TellId = "out-of-step" | "garment" | "lock" | "safe" | "bag" | "pocket" | "palm" | "plant" | "ledger";
 
 /** A cover is a soft tell an innocent can give too, a trace is something left behind, a hard tell is an act only the spy does. */
 export type TellKind = "cover" | "trace" | "hard";
 
-/** The plan's catalogue: each tell's kind and the zoom that reads it. */
+/**
+ * The plan's catalogue: each tell's kind and the zoom that reads it. The hard tells' zooms are ours
+ * (the spec gives none): a figure kneeling or crouched reads at 6×, someone at a bag or the console
+ * with a camera at 8×, a hand under a table or at a mantel at 10×, a hand in a pocket at 12×.
+ */
 export const TELLS: Record<TellId, { kind: TellKind; zoom: number }> = {
   "out-of-step": { kind: "cover", zoom: 4 },
   garment: { kind: "trace", zoom: 10 },
+  lock: { kind: "hard", zoom: 6 },
+  safe: { kind: "hard", zoom: 6 },
+  bag: { kind: "hard", zoom: 8 },
+  pocket: { kind: "hard", zoom: 12 },
+  palm: { kind: "hard", zoom: 10 },
+  plant: { kind: "hard", zoom: 10 },
+  ledger: { kind: "hard", zoom: 8 },
 };
 
 /** The verbs of innocents' notables that look like a tell: the innocent twins. */
@@ -54,6 +70,16 @@ export class Measure {
     const x: Tell = { t, what, kind: spec.kind, room, view, zoom: spec.zoom, until, seenBy: [] };
     this.tells.push(x);
     return x;
+  }
+
+  /** A tell broken off: the last of its kind stops showing now. */
+  end(what: TellId, t: number): void {
+    for (let i = this.tells.length - 1; i >= 0; i--) {
+      const x = this.tells[i]!;
+      if (x.what !== what) continue;
+      if (x.until > t) x.until = t;
+      return;
+    }
   }
 
   /** A guest's sighting of the spy picked up whatever tell shows on it now. */

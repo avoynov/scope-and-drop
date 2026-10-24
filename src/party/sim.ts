@@ -488,8 +488,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.place(p, at);
       p.present = true;
     }
-    // Playing the host or a waiter, the spy is here from the start.
+    // Playing the host or a waiter, the spy is here from the start; so is a host it means to rob of a phone.
     if (spy?.record.present) spy.arrived();
+    if (spy) for (const p of this.people) if (p.present) spy.things.arrived(p);
   }
 
   get host(): Person {
@@ -755,6 +756,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       // The spy playing the host offers nobody a tour (it turns most requests down).
       if (p.id !== this.spyId && this.maybeTour(p)) return;
     }
+    // The spy's plan takes its next step when one can start; otherwise it lives the evening like anyone.
+    if (p.id === this.spyId && this.spy!.think(p)) return;
     // Someone who didn't seem quite themselves: go and say hello, and settle it.
     const j = this.ident.wantTest[p.id]!;
     if (j >= 0) {
@@ -1583,6 +1586,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     // The spy's mark for a bag has one whatever the draw says (the draw is made all the same).
     if (this.things.chance(p.look.sex === "f" ? 0.6 : 0.08) || p.id === (this.spy?.bagFor ?? -1)) items.add("bag", "carried", p.id, p.id, p, this.t);
     if (p.quirks.includes("glasses")) items.add("spectacles", "worn", p.id, p.id, p, this.t);
+    // What the spy is after may come in with them: papers in the bag, a phone in the coat or a pocket.
+    this.spy?.things.arrived(p);
   }
 
   /** Out of the door: the coat goes back on, and whatever they carry goes with them. */
@@ -1824,7 +1829,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     for (const p of this.people) {
       if (p.staff || p.role === "host" || !p.present || p.phaseSeen !== this.phaseIdx) continue;
       const a = p.action;
-      if (a && !["toast", "dinner", "champagne", "toilet", "leave", "task"].includes(a.id)) this.notable(p, "out-of-step", -1, 12);
+      // The spy away on a step of its plan is out of step too, unless the act itself is what shows.
+      const spy = p.id === this.spyId;
+      if (spy && p.notable && this.t < p.notableUntil) continue;
+      if (a && (!["toast", "dinner", "champagne", "toilet", "leave", "task"].includes(a.id) || (spy && this.tasks.of(p)?.kind === "spy"))) this.notable(p, "out-of-step", -1, 12);
     }
   }
 
@@ -1874,6 +1882,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (ph.id === "dinner") {
       this.seatWaiting();
       if (this.spy && this.spy.id === this.host.id) this.leaveTable(this.host, pr);
+      else if (this.spy) this.upForPlan(this.spy, pr);
     }
     this.thingsTurnUp();
     // The band stops and starts with the programme.
@@ -2183,6 +2192,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   /** A task step the party acts on. */
   stepDone(t: Task, p: Person, st: Step): void {
+    if (t.kind === "spy") this.spy?.stepDone(t, st);
     if (t.kind === "check" && st.label === "look-in") this.lookInCabinet(p, t.item);
     else if (st.do === "pick" && st.item === this.spy?.garment?.item) this.spy.garmentFound();
     else if (st.label === "dinner-ready") this.log("beat", [p.id, this.host.id], p.room, "dinner-cue");
@@ -2811,6 +2821,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   /** A task ended: a couple coming out of the bedroom. */
   finished(t: Task): void {
+    if (t.kind === "spy") this.spy?.finished(t);
     this.dramas.finished(t);
     if (t.kind !== "elope" || t.outcome !== "done") return;
     const b = t.steps.find((s) => s.do === "bolt");
@@ -3331,6 +3342,15 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
         if (this.fumbles.chance(DANCE_FUMBLE * (1 - p.fluency.dance) ** 2 * (1 + p.tipsy))) this.slipped(p, DANCE, 3);
       } else if (p.pose === "play" && a.note === "piano" && this.fumbles.chance(PIANO_FUMBLE * (1 - p.fluency.piano) ** 2)) this.slipped(p, PIANO, 3);
     }
+  }
+
+  /** The spy gets up mid-course, once a dinner, for a step that wants the house empty while everyone is at the table. */
+  private upForPlan(spy: Spy, progress: number): void {
+    const p = spy.record;
+    const a = p.action;
+    if (a?.id !== "dinner" || a.startedAt === null || !spy.plans.upFromDinner(p, progress)) return;
+    this.end(p, false);
+    p.thinkAt = this.t;
   }
 
   /** The spy playing the host leaves the table before dessert: a call in the hall until dinner is over, or the bathroom. */

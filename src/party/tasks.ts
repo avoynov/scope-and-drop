@@ -38,7 +38,9 @@ export type Step =
   | { do: "bolt" | "unbolt"; door: number; room: number; label: string }
   | { do: "pick"; item: number; label: string }
   | { do: "give"; item: number; who: number; label: string }
-  | { do: "wait"; s: number; pose: Pose; label: string };
+  | { do: "wait"; s: number; pose: Pose; label: string }
+  /** Keep within `gap` of someone as they move, until whoever runs the task moves it on (the spy at its target's side, or a step behind them). */
+  | { do: "shadow"; who: number; gap: number; label: string };
 
 export interface Task {
   id: number;
@@ -232,7 +234,9 @@ export class Tasks {
       h.end(q, false);
       h.start(q, { id: "task", target: null, duration: 99999, pose: "stand", gain: {}, ref: t.id, note: q === owner ? (steps[0]?.label ?? kind) : "follow" });
     }
-    h.log("task", [owner.id, ...t.party], owner.room, kind);
+    // The spy's steps are its own business: the lab shows them once it is revealed.
+    if (kind === "spy") h.log("spy", [owner.id], owner.room, `task:${t.what}`);
+    else h.log("task", [owner.id, ...t.party], owner.room, kind);
     this.begin(t);
     return t;
   }
@@ -551,6 +555,11 @@ export class Tasks {
       const q = h.people[st.who]!;
       const s = q.present && !q.gone ? this.toMeet(q, p) : null;
       if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
+    } else if (st.do === "shadow") {
+      const q = h.people[st.who]!;
+      const s = q.present && !q.gone ? (h.beside(q, p, st.gap, p) ?? this.toMeet(q, p)) : null;
+      if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
+      t.aimed.set(p.id, h.t);
     } else {
       a.target = null;
       a.startedAt = h.t;
@@ -656,6 +665,7 @@ export class Tasks {
       }
       return true;
     }
+    if (st.do === "shadow") return this.shadow(t, p, a, st);
     if (st.do === "goto") return a.startedAt === null;
     // Timed steps. A lock waits at the door while anyone in the party is still inside; a bolt, until they're all in.
     if (st.do === "lock" && h.t - t.stepAt < LOCK_WAIT && this.inside(t, st.room)) return false;
@@ -666,6 +676,39 @@ export class Tasks {
       this.advance(t);
     }
     return false;
+  }
+
+  /** Keeping within a gap of someone: stand facing them while they're close, walk after them when they move off. */
+  private shadow(t: Task, p: Person, a: ActionState, st: Step & { do: "shadow" }): boolean {
+    const h = this.host;
+    const q = h.people[st.who]!;
+    if (!q.present || q.gone) {
+      this.finish(t, "gave-up");
+      return false;
+    }
+    const d = q.level === p.level ? Math.hypot(q.x - p.x, q.z - p.z) : Infinity;
+    if (d <= st.gap + 0.6) {
+      if (a.startedAt === null && !p.path[p.pathIndex]?.climb) {
+        a.startedAt = h.t;
+        p.path = [];
+        p.pathIndex = 0;
+      }
+      if (a.startedAt !== null && d > 0.3) p.yaw = yawTo(p.x, p.z, q.x, q.z);
+      return a.startedAt === null;
+    }
+    // Re-aim when they have moved on from where it was heading, or it stopped short (never halfway up a stair).
+    const tgt = a.target;
+    const stale = a.startedAt !== null || !tgt || tgt.level !== q.level || Math.hypot(q.x - tgt.x, q.z - tgt.z) > st.gap + 1.5 || p.pathIndex >= p.path.length;
+    if (stale && !p.path[p.pathIndex]?.climb && h.t - (t.aimed.get(p.id) ?? -1e9) >= 1) {
+      t.aimed.set(p.id, h.t);
+      const s = h.beside(q, p, st.gap, p) ?? this.toMeet(q, p);
+      if (!s || !h.goTo(p, s)) {
+        // Nowhere to stand by them just now: wait where it is.
+        a.startedAt ??= h.t;
+        return false;
+      }
+    }
+    return a.startedAt === null;
   }
 
   /** Where to go to meet someone: beside them, or where they'll step off the stair they're on. */
@@ -935,7 +978,8 @@ export class Tasks {
       this.stats.stalled++;
     }
     if (outcome === "found") this.stats.found++;
-    h.log("task", [t.owner, ...t.party], owner.room, `${t.kind}:${outcome}`);
+    if (t.kind === "spy") h.log("spy", [t.owner], owner.room, `task:${t.what}:${outcome}`);
+    else h.log("task", [t.owner, ...t.party], owner.room, `${t.kind}:${outcome}`);
     h.finished?.(t);
     for (const m of [t.owner, ...t.party]) {
       const q = h.people[m]!;

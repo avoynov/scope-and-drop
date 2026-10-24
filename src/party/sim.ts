@@ -226,7 +226,7 @@ const POINTED = 0.4;
 /** A pause to look round after a wrong turn (in-game s). */
 const LOOK_ROUND = 2;
 /** Tasks seen through whatever the programme says: leaving, the photo, slipping away, a mishap, a drama, a habit. */
-const COMMITTED: ReadonlySet<TaskKind> = new Set(["leave", "photo", "elope", "mishap", "drama", "habit"]);
+const COMMITTED: ReadonlySet<TaskKind> = new Set(["leave", "photo", "elope", "mishap", "drama", "habit", "spy"]);
 /** A first-time guest in the host's circle asks to be shown round: from 19:30, the curious, at this chance a speaker's turn. */
 const TOUR_ASK_FROM = 30 * 60;
 const TOUR_CURIOUS = 0.6;

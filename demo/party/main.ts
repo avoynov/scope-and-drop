@@ -209,6 +209,7 @@ const TASK_LABEL: Record<TaskKind, string> = {
   mishap: "after a mishap",
   drama: "caught up in a drama",
   habit: "up to something",
+  spy: "working at its plan",
 };
 /** What a mishap, a drama or an oddball's outing is, for the people list and the log. */
 const DRAMA_LABEL: Record<MishapId | CardId | Habit, string> = {
@@ -765,6 +766,7 @@ const CASE_LABEL: Record<CaseKind, string> = {
   noise: "a crash",
   cheating: "cheating?",
   "not-themselves": "not themselves",
+  planted: "a bug found",
 };
 /** How long a sound or a piece of gossip stays drawn (in-game s). */
 const SOUND_FADE = 20;

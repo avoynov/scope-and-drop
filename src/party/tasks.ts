@@ -20,9 +20,9 @@ import type { SoundKind } from "./senses";
 import { SKILLS, type ActionState, type DrinkId, type Gesture, type Needs, type PartyEvent, type Person, type Pose, type Spot } from "./types";
 import type { Door, World } from "./world";
 
-/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which). */
-export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit";
-export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit"];
+/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which), and so does each step of the spy's plan (spy/steps.ts). */
+export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit" | "spy";
+export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit", "spy"];
 
 /** What an errand fetches: the good whisky to the bar, a coat to its owner, clean glasses for the bar, a drink for someone. */
 export type ErrandKind = "whisky" | "coat" | "glasses" | "drink";
@@ -72,8 +72,10 @@ export interface Task {
   gap?: number;
   /** A search meant to have it out with the one it finds (bonds.ts), or for the real one behind a face someone is sure isn't theirs (sim.ts): no sighting of that face ends it. */
   intent?: "confront" | "real";
-  /** Which mishap, drama or habit a dramas.ts task belongs to. */
+  /** Which mishap, drama or habit a dramas.ts task belongs to, or which of the spy's actions. */
   what?: string;
+  /** What a spy's task looks like to anyone watching (the lab shows it before the reveal): to the bathroom, a look at the paintings. */
+  cover?: string;
   /** The drink an errand brings, when not the asker's favourite (water for one who's had too much). */
   drink?: DrinkId;
 }
@@ -349,6 +351,11 @@ export class Tasks {
   /** A mishap's, a drama's or a habit's steps (dramas.ts). */
   run(kind: "mishap" | "drama" | "habit", what: string, owner: Person, party: Person[], steps: Step[], gap?: number): Task {
     return this.make(kind, owner, party, steps, { what, gap });
+  }
+
+  /** One action of the spy's plan, alone (spy/steps.ts): `what` the action, `cover` what it looks like. */
+  spy(owner: Person, what: string, cover: string, steps: Step[]): Task {
+    return this.make("spy", owner, [], steps, { what, cover });
   }
 
   /** On to the next step now (a long wait that dramas.ts ends when what it waits for has happened). */

@@ -58,7 +58,12 @@ export type Verb =
   | "garment"
   | "prompted"
   | "refused-tour"
-  | "confronted";
+  | "confronted"
+  | "picking-lock"
+  | "at-safe"
+  | "in-bag"
+  | "pocket"
+  | "planted";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -133,6 +138,14 @@ export const VERBS: Record<Verb, VerbSpec> = {
   prompted: { kind: "odd", juicy: 0.3, odd: 0.05, halfLife: 45 * MIN },
   "refused-tour": { kind: "odd", juicy: 0.5, odd: 0.1, halfLife: 45 * MIN },
   confronted: { kind: "odd", juicy: 1, odd: 0.3, halfLife: 45 * MIN },
+  // The spy's hard tells (milestone 3, PR 3), acts only it does, seen only by someone who walks in on it: on one knee at a locked
+  // door working at it, crouched at an open safe, going through a bag or a coat that isn't theirs (the object is the thing), a
+  // hand in someone else's pocket (the object is whose); and a bug found, a case of its own with nobody to blame yet.
+  "picking-lock": { kind: "odd", juicy: 0.9, odd: 0.4, halfLife: 45 * MIN },
+  "at-safe": { kind: "odd", juicy: 1, odd: 0.5, halfLife: 45 * MIN },
+  "in-bag": { kind: "odd", juicy: 0.8, odd: 0.3, halfLife: 45 * MIN, thing: true },
+  pocket: { kind: "odd", juicy: 0.8, odd: 0.3, halfLife: 45 * MIN },
+  planted: { kind: "case", juicy: 1, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

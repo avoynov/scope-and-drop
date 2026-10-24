@@ -141,13 +141,16 @@ Sounds carry through the room graph by the loudest way (a Dijkstra): 0.5 dB a me
 
 | Sound | dB | | Sound | dB |
 |---|---|---|---|---|
-| knock | 58 | | dropped tray | 65 |
+| a camera's shutter | 45 | | last orders, or the call for the photo | 72 |
 | bolt | 50 | | breaking glass | 80 |
 | clink | 50 | | slap | 80 |
-| laugh | 65 | | door slam | 80 |
+| a locked door's handle tried | 55 | | door slam | 80 |
+| knock | 58 | | a vase smashing | 88 |
+| laugh | 65 | | the host's announcement | 90 |
 | raised voice | 65 | | scream | 95 |
+| dropped tray | 65 | | | |
 
-This part only makes knocks, the bolt and laughter; the rest are for the mishaps and rows to come.
+Nothing makes a door slam or a scream yet. The announcement is only ever asked of the model (`wouldHear`), for the spy's cues, and a rifle shot isn't one of these sounds at all (see Entry points).
 
 ### Facts and gossip (`memory.ts`)
 
@@ -568,6 +571,17 @@ The spy, over the sweep's 60 evenings (`npx tsx scripts/spy-sweep.ts 60`: 20 com
   - Milestone 2's checks on the rumour's spread and the late wrong turns judged five evenings one at a time, and failed on an unlucky draw once this part reshuffled the evenings. Over 30 to 40 more evenings neither had moved (the rumour reached 83% of the guests at 45 minutes against 82% on main; the last hour's wrong turns ran at 0.25 of the first hour's against main's 0.39), so they now run ten evenings and judge them together.
   - Milestone 2's ties check wanted two friendships made every evening; over 72 evenings main itself had two that made fewer, so one of the eight may now. Over those 72 evenings all three ties run a little under main's: couples made tonight 0.92 an evening against 1.21, friendships 6.3 against 6.8, rows 2.9 against 3.5 (1.2 to 1.6 standard errors each; couples were 0.83 before doubt's fade changed). Switching off the floor fumbles, partner waves, the real host's late announcement, cool greetings and the reactions to slips didn't bring couples back, so if this part costs a little mingling, the cause is still to find.
   - Playing the host, the moment it sets off is counted against the leavers it has seen off rather than those on their way, since nobody gets past it without its goodbye: in one test evening a cut hand it was dressing at the first goodbye left every leaver on their way, waiting for it.
+
+## Entry points for tasks 7, 8 and milestone 4
+
+The armoury's tasks 7 and 8 (the spotters' observers, the shot heard) and milestone 4 plug in here, so these stay as they are while milestone 3 lands.
+
+- **Hearing a shot (task 8).** `Senses.levels(sound)` carries a sound from its room through the room graph with the losses under Hearing; `levelAt()` gives its level where someone stands, and `hears()` sets that against their room's `senses.noise` (one entry per room, the terrace last) plus `MASK`, 6 dB. A kind's loudness is `SOUNDS[kind].db`; a sound's `level` is its storey. `sound()` queues a sound people react to (heads turn, tension, a fact filed, the nosy go to look at 80 dB and up), so a shot must not go through it before milestone 4. `wouldHear()` is the query that queues nothing: `hearShot(party, shot)` belongs beside it, with an optional dB on `levels()` for the strike, and milestone 4's reactions read its answer guest by guest.
+- **The sight tick (task 7's observers).** `Party.step()` calls `senses.step(stepNo)` once a step (0.5 s), the one place anyone looks: a quarter of the party each step, by `(id + stepNo) % 4`. An observer's `SightlineTracer` runs on the same step, right after it, from each person's `x`, `z`, `level` and `present`. The `SensesHost` hooks (`saw`, `seenThrough`, `sawSlip`, `looked`) are how other modules learn of a look; a spotter's radio call never reaches anyone's mind.
+- **Looks as a description (task 7).** `describe(p, out, o)` at the end of `register.ts` writes sex, height in cm, build, the outfit's colour (RGB, 0 to 1) and the quirks one can see (glasses, limp, cane, as bits), the layout `likeness()` matches against. Export it as `describeLooks()` unchanged and add a spotter's noise to the copy. A spy playing someone carries their looks (`p.look`), so a sighting of it describes the disguise.
+- **The spy (the shot's hit and the mission report).** `party.spy` is null unless `PartyOptions.spy` is on; `party.spyId` is the record it lives in (its victim's, once it has moved in). Its place is the record's `x`, `y`, `z`, `level` and `room`, its pose `pose`, its facing `senses.facing(p)` (the head during a glance). What a bullet hit is the person nearest the aim, set against `spyId`. Its goal is `spy.goal`; milestone 3's plans and kill (PRs 3 and 5) add one log event when it tries it, and the time on the spy, for the report's `spyTriedGoal`.
+- **Wounds acted out (milestone 4).** The pattern is the mishaps in `dramas.ts`: `ankle()` (a limp, three quarters speed, `ident.hurt`, a notable, sat down), `faint()` (sat down, a friend fanning) and the cut (the first-aid kit, a bandage), each an episode (`ep()`) with helpers' scripted tasks (`task()`), `start()` setting what the hurt one does, and `hold()` keeping other dramas off them. A guest struck by a bullet is a new episode there, staged by the card in `src/body/wound.ts`; that is where the report's `confirmedDown` comes from. `Pose` (`types.ts`) has no lying down yet, so milestone 4 adds it, with its look in `render/crowd.ts`.
+- **Nothing moves by default.** With no shot, no spotters and the spy off, `tests/golden/party-digests.json` stays as it is. Each module draws from its own fork of the evening's seed (`root.fork("senses")` and so on); a fork comes from the seed's key, not from what was drawn, so a new module with its own (`root.fork("shot")`) moves nothing else, and a query that draws nothing changes nothing.
 
 ## Files
 

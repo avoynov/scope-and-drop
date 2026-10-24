@@ -55,8 +55,12 @@ export interface GroupsHost {
   shuns(p: Person, j: number): boolean;
   /** How much more p wants to join a circle with j in it for the bonds (noticing, flirting). */
   joinPull(i: number, j: number): number;
-  /** The tie i greets j by: the ident's, or for the spy its own idea of it (what it studied of its victim's people). */
+  /** The tie i greets j by: the ident's, or for the spy its own idea of it (what it studied of its victim's people); one sulking greets nobody warmly. */
   tieFor(i: number, j: number): Tie;
+  /** p waved to q: q, seeing it, waves back or doesn't (manner). */
+  waved?(p: Person, q: Person): void;
+  /** p came over and greeted q with a kiss or a handshake: either may have expected warmer. */
+  greetedAs?(p: Person, q: Person, pose: Pose): void;
 }
 
 /** Room kept between one conversation's ring and the next one started (m). */
@@ -427,6 +431,7 @@ export class Groups {
       this.markGreeted(p.id, j);
       h.gesture(p, "wave", 2);
       h.glance(p, q.x, q.z, 2);
+      h.waved?.(p, q);
       // Close friends and family, or anyone they're fond of, come over; acquaintances just wave.
       if (free && d > 1.6 && (h.tieFor(p.id, j) >= 3 || this.rng.chance(0.3)) && q.action?.id !== "toilet" && q.action?.id !== "leave") return j;
       this.stats.greetings++;
@@ -447,5 +452,12 @@ export class Groups {
   greeted(p: Person, q: Person, pose: Pose): void {
     this.stats.greetings++;
     this.host.log("greet", [p.id, q.id], p.room, pose);
+    this.host.greetedAs?.(p, q, pose);
+  }
+
+  /** The greeting someone who knows them as `i` does expects of `j`: a kiss from a friend (two men shake), else a handshake. */
+  expects(i: Person, j: Person): Pose {
+    const twoMen = i.look.sex === "m" && j.look.sex === "m";
+    return this.host.ident.tieOf(i.id, j.id) >= 3 && !twoMen ? "kiss" : "shake";
   }
 }

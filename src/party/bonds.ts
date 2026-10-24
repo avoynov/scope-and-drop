@@ -19,7 +19,7 @@ import { SLOTS, VERBS, type Memory, type Verb } from "./memory";
 import type { Mood } from "./mood";
 import type { Sight } from "./sight";
 import type { SoundKind } from "./senses";
-import type { Gesture, PartyEvent, Person, Spot } from "./types";
+import { SKILLS, type Gesture, type PartyEvent, type Person, type Spot } from "./types";
 
 const MIN = 60;
 
@@ -142,6 +142,8 @@ const PULL_FOR = 120;
 export const PULL_BOOST = 3;
 /** A dancer waves a close friend standing this near the floor over (m). */
 const WAVE_NEAR = 6;
+/** The skill a lost frame is (ident.ts SLIP_SKILLS). */
+const BILLIARDS = SKILLS.indexOf("billiards");
 /** Slipping away: every 10 minutes, a tipsy couple close together. */
 export const SLIP_EVERY = 10 * MIN;
 const SLIP_TIPSY = 0.4;
@@ -187,6 +189,10 @@ export interface BondsHost {
   seekOut(p: Person, q: Person): boolean;
   /** Go and find one's partner, meaning to have it out. */
   confrontSearch(h: Person, f: Person): boolean;
+  /** Someone fumbled a skill (an index into ident.ts SLIP_SKILLS), showing for this long. */
+  slipped?(p: Person, skill: number, secs: number): void;
+  /** A dancer waved someone standing by the floor over (they may turn it down). */
+  wavedOver?(a: Person, b: Person): void;
 }
 
 export interface BondStats {
@@ -788,19 +794,20 @@ export class Bonds {
     }
     // A stray spots the one they have an eye on, with the partner away: they drift over.
     if (this.eye[a.id] === b.id && this.lover[a.id] < 0 && d < EYE_SEEN) this.drift(a, b);
-    // A dancer waves a close friend standing by the floor over.
+    // A dancer waves a close friend, or their partner, standing by the floor over.
     if (
       a.action?.id === "dance" &&
       a.action.startedAt !== null &&
       b.action?.id !== "dance" &&
       !b.staff &&
       d < WAVE_NEAR &&
-      this.friendOf(a.id, b.id) >= CLOSE_FRIEND &&
+      (this.friendOf(a.id, b.id) >= CLOSE_FRIEND || a.partner === b.id) &&
       h.t - this.wavedAt[b.id]! > PULL_GAP
     ) {
       this.wavedAt[b.id] = h.t;
       this.stats.waves++;
       h.gesture(a, "wave", 2);
+      h.wavedOver?.(a, b);
     }
     // A couple just together tonight: the news.
     if (b.partner !== null && this.coupledAt[b.id]! >= 0 && h.t - this.coupledAt[b.id]! < 30 * MIN) {
@@ -1146,6 +1153,8 @@ export class Bonds {
     if (Math.abs(margin) > 0.35) g += HEAVY;
     this.addGrudge(lost.id, won.id, g);
     h.log("won", [won.id, lost.id], won.room, kind);
+    // A frame lost by someone known for their game shows to those who know them.
+    if (kind === "billiards") h.slipped?.(lost, BILLIARDS, 5);
     // A bad loser at cards cries foul.
     if (kind === "cards" && this.heatOf(lost, won) >= ROW && h.free(lost) && h.free(won)) {
       this.stats.accusations++;

@@ -104,11 +104,15 @@ describe("mishaps", () => {
     for (let k = 0; k < 60 && !ep.done; k++) party.advance(30);
     expect(ep.done).toBe(true);
     expect(p.bandage).toBe(true);
-    // Once it's over the kit is back on its shelf, and the glass swept up.
+    // Once it's over the kit is back on its shelf, and the glass swept up soon after (when nobody was free at first).
     for (let i = 0; i < items.n; i++) if (items.kindOf(i) === "kit") expect(items.stateOf(i)).toBe("shelved");
-    let still = 0;
-    for (let i = 0; i < items.n; i++) if (items.kindOf(i) === "glass" && items.stateOf(i) === "broken") still++;
-    expect(still).toBeLessThan(broken);
+    const still = () => {
+      let n = 0;
+      for (let i = 0; i < items.n; i++) if (items.kindOf(i) === "glass" && items.stateOf(i) === "broken") n++;
+      return n;
+    };
+    for (let k = 0; k < 20 && still() >= broken; k++) party.advance(30);
+    expect(still()).toBeLessThan(broken);
     while (!party.over) party.advance(10 * MIN);
     expect(p.bandage).toBe(true);
   });
@@ -171,7 +175,10 @@ describe("small dramas", () => {
     const party = new Party(generateMansion({ seed: "match-42" }), { seed: "quarrel" });
     const mingle2 = party.programme[4]!;
     party.advance(mingle2.start + 3 * MIN);
-    const a = guestsOf(party).find((p) => p.partner !== null && party.free(p) && party.free(party.people[p.partner]!) && party.people[p.partner]!.role !== "host");
+    const couple = () => guestsOf(party).find((p) => p.partner !== null && party.free(p) && party.free(party.people[p.partner]!) && party.people[p.partner]!.role !== "host");
+    // A couple both free (not lined up for a photograph, say).
+    while (!couple() && party.t < mingle2.end - 5 * MIN) party.advance(30);
+    const a = couple();
     expect(a).toBeDefined();
     expect(party.dramas.play("quarrel", a)).toBe(true);
     const b = party.people[a!.partner!]!;

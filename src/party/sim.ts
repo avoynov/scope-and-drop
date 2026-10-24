@@ -16,21 +16,38 @@ import { makeProgramme, PARTY_LENGTH, phaseIndexAt, phaseProgress, TIME_SCALE, t
 import { generateCast, type CastOptions } from "./cast";
 import { castDramas, DRAMA_EVERY, Dramas, type CardId, type DramasHost, type MishapId } from "./dramas";
 import { Groups, type GroupsHost } from "./groups";
-import { Ident, type Tie } from "./ident";
+import { HOUSE, Ident, PASSED, SLIP_SKILLS, TEST, TIE_WEIGHT, type IdentEvent, type TestOutcome, type Tie } from "./ident";
 import { Memory, KNOWN, PASS_ON, SUSPICIOUS, VERBS, type MemoryHost, type Verb } from "./memory";
 import { beside, choose, decay, destination, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from "./mind";
 import { Mood, type MoodOverride } from "./mood";
 import { Pathfinder } from "./path";
 import { facing, resolvePlaces, RoomCells, yawTo, type Places } from "./places";
 import { Practices, type PracticesHost } from "./practices";
+import { Prompts, type PromptsHost } from "./prompts";
 import { Reactions, type ReactionsHost } from "./reactions";
 import { CASES, Register, type CaseTalk, type RegisterHost } from "./register";
-import { Senses, type Sound, type SoundKind, type SensesHost } from "./senses";
+import { DETAIL_RANGE, Senses, type Sound, type SoundKind, type SensesHost } from "./senses";
 import { Sight } from "./sight";
-import { castSpy, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
+import { AGREE_TOUR, castSpy, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
 import { asItself, dress } from "./spy/swap";
 import { Tasks, type Step, type Task, type TaskHost, type TaskKind } from "./tasks";
-import { DRINKS, type ActionId, type ActionState, type DrinkId, type Gesture, type Group, type Held, type PartyEvent, type Person, type Pose, type Seat, type Spot, type Waypoint } from "./types";
+import {
+  DRINKS,
+  SKILLS,
+  type ActionId,
+  type ActionState,
+  type DrinkId,
+  type Gesture,
+  type Group,
+  type Held,
+  type PartyEvent,
+  type Person,
+  type Pose,
+  type Seat,
+  type Skill,
+  type Spot,
+  type Waypoint,
+} from "./types";
 import { DRINK_IDS, World } from "./world";
 
 /**
@@ -39,12 +56,13 @@ import { DRINK_IDS, World } from "./world";
  * was, -1 the house's) and opens a case. A sighting puts the subject in a room, seen by the
  * witness with their own eyes; it moves nobody. A spark draws the subject and the witness to
  * each other (they flirt when next together); a grudge is one the witness holds against the subject.
- * A mishap befalls the subject there and then; a drama is a card played now (dramas.ts).
+ * A mishap befalls the subject there and then; a drama is a card played now (dramas.ts). A test
+ * sends the subject's closest tie who is here over to test them now (milestone 3).
  */
 export interface Provocation {
   /** It lands on the first step after this time, as one planted live at this time does. */
   t: number;
-  kind?: "fact" | "gone" | "seen" | "spark" | "grudge" | "mishap" | "drama";
+  kind?: "fact" | "gone" | "seen" | "spark" | "grudge" | "mishap" | "drama" | "test";
   /** The mishap that befalls the subject, or the card played (with the subject, if one fits, else whoever the card picks; -1 lets it pick). */
   what?: MishapId | CardId;
   /** Defaults to a rumour (juicy, a little odd). */
@@ -130,6 +148,21 @@ export interface PartyStats {
   beckons: number;
   points: number;
   flutes: number;
+  /**
+   * Seen through (milestone 3): fumbles that added doubt, greetings cooler than a tie, notes compared, people sure someone isn't who they
+   * seem and challenges out loud; fumbles frowned at, helped with and requests turned down; the host prompted, tours asked for, the garden's finds.
+   */
+  slips: number;
+  cool: number;
+  compared: number;
+  sure: number;
+  challenges: number;
+  frowns: number;
+  helps: number;
+  shrugs: number;
+  prompts: number;
+  tourAsks: number;
+  finds: number;
 }
 
 /** In-game seconds per sim step (a sixth of a real second). */
@@ -194,11 +227,52 @@ const POINTED = 0.4;
 const LOOK_ROUND = 2;
 /** Tasks seen through whatever the programme says: leaving, the photo, slipping away, a mishap, a drama, a habit. */
 const COMMITTED: ReadonlySet<TaskKind> = new Set(["leave", "photo", "elope", "mishap", "drama", "habit"]);
+/** A first-time guest in the host's circle asks to be shown round: from 19:30, the curious, at this chance a speaker's turn. */
+const TOUR_ASK_FROM = 30 * 60;
+const TOUR_CURIOUS = 0.6;
+const TOUR_ASK = 0.01;
+/** Fumbles on the floor and at the piano, checked every half minute: these × (1 − skill)², dancing × (1 + tipsiness) too. */
+const DANCE_FUMBLE = 0.25;
+const PIANO_FUMBLE = 0.3;
+/** The skills a fumble is of (ident.ts SLIP_SKILLS). */
+const DANCE = SKILLS.indexOf("dance");
+const PIANO = SKILLS.indexOf("piano");
+/** Sure at last (milestone 3): too nervous or too tipsy for anything but keeping away. */
+const TIMID_NERVES = 0.6;
+const TIMID_TIPSY = 0.5;
+/** Out loud: only in company (someone else within this of the one challenged, m); free onlookers this close turn to watch for a while. */
+const OUT_LOUD_NEAR = 6;
+const WATCH: readonly [number, number] = [20, 40];
+/**
+ * Doubt from seeing someone challenged (× tie weight), from notes compared (the listener's × tie
+ * weight × (0.5 + trust in the teller); the teller's own), and from being told by someone sure.
+ * Comparing notes with someone who had doubts of their own (past the test's 0.45), each of the two
+ * takes CORROBORATED more: someone else noticed too. A scene and a word from someone sure are
+ * striking: that doubt fades three times slower (ident.ts STRIKING).
+ */
+const CHALLENGED = 0.1;
+const COMPARED = 0.15;
+const COMPARED_SELF = 0.05;
+const CORROBORATED = 0.25;
+const TOLD_SURE = 0.3;
+/** What can be dropped to act on being sure. */
+const SURE_DROPS: ReadonlySet<ActionId> = new Set(["mingle", "sit", "art", "wander", "terrace", "use", "snack", "dance", "games", "greet", "drink"]);
+/**
+ * Something lying outside, in this much light or more, can be spotted in a look's detail cone: a
+ * look's chance is FIND_CHANCE × its attention × the light × how near it lies (in full underfoot,
+ * none at the cone's edge). By a garden door the light through it is DOORWAY_LIGHT, or the garden
+ * lamps' when brighter. A finder who knew whose it is doubts the one who came as them by
+ * GARMENT_DOUBT × tie weight, a striking find.
+ */
+export const FIND_LIGHT = 0.25;
+const FIND_CHANCE = 0.02;
+const DOORWAY_LIGHT = 0.5;
+export const GARMENT_DOUBT = 0.25;
 
 /** Which drinks the waiters carry: champagne before the toast, wine at dinner, a mix after. */
 const bandOf = (id: PhaseId): Body["band"] => (id === "dinner" ? "dinner" : id === "dancing" || id === "games" || id === "farewell" ? "after" : "before");
 
-export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, RegisterHost, GroupsHost, TaskHost, PracticesHost, BondsHost, DramasHost, ReactionsHost, SpyHost {
+export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, RegisterHost, GroupsHost, TaskHost, PracticesHost, BondsHost, DramasHost, ReactionsHost, SpyHost, PromptsHost {
   readonly bp: MansionBlueprint;
   readonly pf: Pathfinder;
   readonly cells: RoomCells;
@@ -228,8 +302,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   readonly bonds: Bonds;
   /** Mishaps, the oddballs' habits and the evening's small dramas. */
   readonly dramas: Dramas;
-  /** People reacting to someone out of step with the programme, spy or not. */
+  /** People reacting to someone out of step with the programme, or fumbling what they do well, spy or not. */
   readonly reactions: Reactions;
+  /** The household keeping the host to the programme: the real host's rare late announcement, and every one of a fake host's. */
+  readonly prompts: Prompts;
   /** The spy (milestone 3), or null on an evening without one. */
   readonly spy: Spy | null;
   /** When the farewell's first goodbye was said (-1 not yet): the spy never goes before it. */
@@ -279,7 +355,23 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   private readonly crowd: Uint8Array;
   /** When each person last took a wrong turn: once lost, they mind the way for the rest of the trip. */
   private readonly lostAt: Float64Array;
-  private counts = { wrongTurns: 0, asks: 0, hushes: 0, heard: 0 };
+  private counts = { wrongTurns: 0, asks: 0, hushes: 0, heard: 0, challenges: 0, tourAsks: 0, finds: 0 };
+  /** Draws for tours asked of the host, fumbles on the floor and at the piano, a confrontation's onlookers and the garden's finds, kept apart from the minds'. */
+  private readonly tourAsks: Rng;
+  private readonly fumbles: Rng;
+  private readonly through: Rng;
+  private readonly finds: Rng;
+  /** Who has asked the host for a tour tonight, and who has found the garment. */
+  private readonly askedTour: Uint8Array;
+  private readonly foundIt: Uint8Array;
+  /** How well the garden's lamps light the garment (0 when there is none). */
+  readonly garmentLight: number = 0;
+  /** Sure someone isn't who they seem, and meaning to do something about it when next free: whom (-1 none), until it's done; and whether they have backed away to tell someone yet. */
+  private readonly sureOf: Int16Array;
+  private readonly backedAway: Uint8Array;
+  /** Whom someone walking over to compare notes, or to tell, is talking about; and whom someone told goes to look for the real one of. */
+  private readonly about = new Map<number, number>();
+  private readonly lookFor = new Map<number, number>();
   /** Draws for staff routines, errands, tours, searches and departures, kept apart from the minds'. */
   private readonly life: Rng;
   /** Guests who go home tonight (all but staff and the host). */
@@ -327,7 +419,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (impostor) {
       dress(impostor, spyCast!.own, true);
       this.ident.recast(impostor, spyCast!.own.voice);
+      this.ident.impostor(impostor.id, (i) => this.spy!.answers.answer(i));
     }
+    this.ident.onTest = (i, j, out) => this.tested(i, j, out);
     this.register = new Register(this, bp.rooms.length, (r) => SNOOP.has(bp.rooms[r]!.type), root.fork("register"));
     this.memory.onTold = (i, f, from) => {
       this.register.told(i, f, from);
@@ -350,6 +444,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.profile = opts.profile ? {} : null;
     this.crowd = new Uint8Array(this.people.length);
     this.lostAt = new Float64Array(this.people.length).fill(-1e9);
+    this.askedTour = new Uint8Array(this.people.length);
+    this.foundIt = new Uint8Array(this.people.length);
+    this.sureOf = new Int16Array(this.people.length).fill(-1);
+    this.backedAway = new Uint8Array(this.people.length);
+    this.tourAsks = root.fork("tour-asks");
+    this.fumbles = root.fork("fumbles");
+    this.through = root.fork("through");
+    this.finds = root.fork("finds");
     this.things = root.fork("things");
     this.doorIn = new Int32Array(this.people.length).fill(-1);
     this.offeredAt = new Float64Array(this.people.length).fill(-1e9);
@@ -374,7 +476,11 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       );
     }
     this.spy = spy;
+    if (spy?.garment) this.garmentLight = Math.max(DOORWAY_LIGHT, this.gardenLight(this.world.items.x[spy.garment.item]!, this.world.items.z[spy.garment.item]!));
     this.reactions = new Reactions(this, root.fork("react"));
+    // The real host's rare late announcement is drawn whatever plays the host, so it comes the same with the spy off.
+    this.prompts = new Prompts(this, root.fork("host"));
+    this.prompts.fake = spy?.setup === "host";
     // Staff and the host are in place before the first guest arrives.
     for (const p of this.people) {
       if (!p.staff && p.role !== "host") continue;
@@ -453,6 +559,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     };
     this.t += dt;
     this.stepNo++;
+    // A change the host is late for is held while the household prompts them (prompts.ts).
+    this.prompts.step();
     const idx = phaseIndexAt(this.programme, this.t);
     if (idx !== this.phaseIdx) {
       this.phaseIdx = idx;
@@ -475,6 +583,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.log("phase", [], undefined, this.phase.label);
       this.announceUntil = this.t + 15;
       this.log("announce", [this.host.id], this.host.room, this.phase.label);
+      // Playing the host, the spy acts on what it has just announced in a few seconds.
+      if (this.spy && this.spy.id === this.host.id) this.spy.told();
       // The band strikes up: everyone can find the dance floor by ear. The host says where the games are, and how to get there.
       const pl = this.places;
       const to = this.phase.id === "dancing" ? pl.danceSpots.slice(0, 1) : this.phase.id === "games" ? pl.games.map((g) => g.spots[0]!) : [];
@@ -528,6 +638,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (this.stepNo % 4 === 0) this.sideTalk();
     if (this.stepNo % 60 === 0) this.circles.sample();
     if (this.stepNo % 10 === 0) this.everyday();
+    if (this.stepNo % 60 === 0) this.floorFumbles();
     // Out of step with the programme: doing something else through the toast or dinner.
     if ((ph.id === "toast" || ph.id === "dinner") && this.stepNo % 20 === 0) this.outOfStep();
     lap("talk");
@@ -635,11 +746,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       const w = this.pf.snap(p.level, p.x, p.z, 6);
       if (w) this.place(p, w);
     }
+    // Sure someone isn't who they seem: have it out, or go and tell someone.
+    if (this.sureOf[p.id]! >= 0 && this.actOnSure(p)) return;
     if (p.staff) return this.staffThink(p);
     if (p.role === "host") {
       const c = this.hostPlan(p);
       if (c) return void this.start(p, c);
-      if (this.maybeTour(p)) return;
+      // The spy playing the host offers nobody a tour (it turns most requests down).
+      if (p.id !== this.spyId && this.maybeTour(p)) return;
     }
     // Someone who didn't seem quite themselves: go and say hello, and settle it.
     const j = this.ident.wantTest[p.id]!;
@@ -651,6 +765,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
         if (s) return void this.start(p, { id: "ask", target: s, duration: 5, pose: "talk", gain: { social: 0.1 }, ref: j, note: "test" });
       }
     }
+    // Doubts that outlived a test: a word with someone else who knows them well.
+    const k = this.ident.wantCompare[p.id]!;
+    if (k >= 0 && this.walkToCompare(p, k)) return;
     // Worked out who took something of the house's: go and tell the host, when they're about.
     if (this.register.tellFor(p.id) >= 0) {
       const h = this.host;
@@ -668,9 +785,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.start(p, c);
   }
 
-  /** The host keeps the programme: greets at the door, leads toasts, heads the table, sees guests off. */
+  /** The host keeps the programme: greets at the door, leads toasts, heads the table, sees guests off. The spy playing the host keeps the one its cues gave it. */
   private hostPlan(p: Person): Candidate | null {
-    const ph = this.phase;
+    const ph = p.id === this.spyId ? this.programme[p.phaseSeen]! : this.phase;
     const pr = phaseProgress(ph, this.t);
     const door = this.doorPost();
     if (ph.id === "arrival" || (ph.id === "farewell" && pr >= LAST_TOAST)) return door ? { id: "staff", target: door, duration: 90, pose: "greet", gain: { social: 0.2 }, note: "door" } : null;
@@ -1628,6 +1745,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       if (here.length > 1) {
         const r = this.register.talk(here, sp.id);
         if (r) this.caseTalk(sp, g.room, r, g.speakerUntil - this.t);
+        // Doubts that outlived a test: a word in the ear of another who knows them well.
+        this.compareInCircle(sp, here);
+        // A first-timer in the host's circle asks to be shown round.
+        this.tourAsk(g, here);
+        // The spy may not know the name of someone the one it plays knew.
+        this.spy?.answers.turn(here, sp.id);
       }
       if (this.chat.chance(sp.quirks.includes("big-laugh") ? 0.2 : 0.05)) this.senses.sound("laugh", sp, sp.id);
     }
@@ -1686,6 +1809,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       g.speaker = -1;
     }
     const wary = others.filter((m) => this.memory.suspects(m, p.id) >= SUSPICIOUS);
+    // A circle going quiet as it joins, whatever the reason: the spy lies low a while.
+    if (p.id === this.spyId && (hush > 0 || wary.length)) this.spy!.answers.hushed();
     if (!wary.length) return;
     g.quietUntil = this.t + this.chat.range(10, 25);
     g.speaker = -1;
@@ -1746,7 +1871,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.done.add("cabinet");
       this.toTheCabinet();
     }
-    if (ph.id === "dinner") this.seatWaiting();
+    if (ph.id === "dinner") {
+      this.seatWaiting();
+      if (this.spy && this.spy.id === this.host.id) this.leaveTable(this.host, pr);
+    }
     this.thingsTurnUp();
     // The band stops and starts with the programme.
     const band = this.bandWants();
@@ -1799,7 +1927,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const who = partner?.present && !partner.gone ? partner : host;
     const a = who.action;
     if (this.bottle < 0 || !from || this.places.chains.spirits.link === "bar" || a?.id === "toilet" || a?.id === "task") return;
-    this.tasks.check(who, from, this.bottle);
+    this.tasks.check(who, from, this.bottle, this.askWhere(who));
   }
 
   /** At the cabinet: the bottle's there, or it's gone and they know why (the butler said), or it's gone and nobody said: a case. */
@@ -1952,14 +2080,22 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
    * The spy goes home by its own rule (spy/index.ts), never before the farewell's first goodbye,
    * and in the last hurry whatever it meant to do. When its moment comes it drops whatever it is
    * busy with (dabbing a spill, an errand) rather than miss the first leavers, but it waits out
-   * the bathroom and a row. Playing the host or a waiter, it walks out with the leavers and doesn't
-   * come back.
+   * the bathroom and a row. Playing the host, it walks out with a leaving guest and doesn't come
+   * back; as a waiter, or in the last hurry, it walks out alone.
    */
   private spyDeparture(p: Person, spy: Spy): void {
     const a = p.action;
     const hurry = this.t >= PARTY_LENGTH - HURRY_OUT;
     if (!spy.mayGo()) return;
     if (!hurry && ((a?.id === "toilet" && a.note !== "door") || a?.id === "row" || !spy.wantsToGo())) return;
+    if (p.role === "host" && !p.staff && !hurry) {
+      // A host never goes home: it walks out with a guest already past their goodbye, and waits for one.
+      const t = this.tasks.running("leave").find((x) => x.owner !== p.id && x.i > x.steps.findIndex((st) => st.label === "goodbye"));
+      if (!t) return;
+      this.log("spy", [p.id], p.room, "leave");
+      this.tasks.join(t, p);
+      return;
+    }
     this.log("spy", [p.id], p.room, "leave");
     if (p.staff || p.role === "host") {
       this.end(p, false);
@@ -2048,6 +2184,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** A task step the party acts on. */
   stepDone(t: Task, p: Person, st: Step): void {
     if (t.kind === "check" && st.label === "look-in") this.lookInCabinet(p, t.item);
+    else if (st.do === "pick" && st.item === this.spy?.garment?.item) this.spy.garmentFound();
     else if (st.label === "dinner-ready") this.log("beat", [p.id, this.host.id], p.room, "dinner-cue");
     this.dramas.stepDone(t, p, st);
   }
@@ -2204,6 +2341,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.path = route;
     p.pathIndex = 1;
     this.notable(p, "wrong-turn", -1, 20);
+    this.slipped(p, HOUSE, 20);
     this.counts.wrongTurns++;
     this.log("wrong-turn", [p.id], p.room, locked ? "door" : undefined);
   }
@@ -2239,6 +2377,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       const bath = this.answers.get(p.id) ?? -1;
       this.answers.delete(p.id);
       this.end(p, true);
+      // Told someone they're sure of: off to look for the real one.
+      const real = this.lookFor.get(p.id);
+      if (real !== undefined) {
+        this.lookFor.delete(p.id);
+        const r = this.people[real]!;
+        if (r.present && !r.gone) this.tasks.search(p, r, "real");
+        return;
+      }
       const b = this.places.bathrooms[bath];
       if (b && this.worthTrying(p, bath)) this.start(p, { id: "toilet", target: b.door, duration: this.rng.range(120, 240), pose: "wait", gain: { bladder: 1 }, ref: bath, note: "door" });
       return;
@@ -2291,12 +2437,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     a.startedAt = this.t;
     p.yaw = yawTo(p.x, p.z, q.x, q.z);
     this.glance(q, p.x, p.z, a.duration);
-    this.gesture(p, a.note === "tell" ? "lean" : "ask", 2);
-    if (a.note === "test") {
-      this.ident.test(p.id, q.id, this.t);
-      this.log("test", [p.id, q.id], p.room, "passed");
-      return;
-    }
+    // Standing by someone who fumbled, to help: nothing to say.
+    if (a.note === "help") return;
+    const quiet = a.note === "tell" || a.note === "compare" || a.note === "tell-sure";
+    this.gesture(p, quiet ? "lean" : a.note === "confront" ? "point" : "ask", 2);
+    // The test logs itself, with what it came to (tested()).
+    if (a.note === "test") return void this.ident.test(p.id, q.id, this.t);
     // A stray's word with the one they have an eye on: just talk.
     if (a.note === "eye") return;
     if (a.note === "tell") {
@@ -2304,6 +2450,15 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.log("tell", [p.id, q.id], p.room);
       return;
     }
+    if (a.note === "compare" || a.note === "tell-sure") {
+      const j = this.about.get(p.id);
+      this.about.delete(p.id);
+      if (j === undefined) return;
+      if (a.note === "compare") this.compareNotes(p, q, j);
+      else this.toldSure(p, q, j);
+      return;
+    }
+    if (a.note === "confront") return this.confront(p, q);
     this.counts.asks++;
     // The bathroom they know nearest the one asking.
     let best = -1;
@@ -2550,8 +2705,21 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     return !a || !["toilet", "task", "leave", "dinner", "toast", "champagne", "row", "ask", "arrive"].includes(a.id);
   }
 
-  /** Asked to dance: both onto the floor, face to face. */
+  /** Asked to dance: both onto the floor, face to face. The spy turns down anyone it keeps away from, and the floor when it can't dance as the one it plays did. */
   danceWith(a: Person, b: Person): boolean {
+    const spy = this.spy;
+    if (spy && (a.id === spy.id || b.id === spy.id)) {
+      const other = a.id === spy.id ? b : a;
+      const dodge = spy.dodges("dance");
+      if (dodge || spy.answers.avoids(other.id)) {
+        if (b.id === spy.id && dodge) this.begOff(a, b, DANCE);
+        else if (b.id === spy.id) {
+          this.gesture(b, "shrug", 2);
+          this.log("spy", [b.id, a.id], b.room, "decline:dance");
+        }
+        return false;
+      }
+    }
     const free = this.places.danceSpots.filter((s) => !this.taken(spotKey(s)) && this.memory.familiarity(a.id, s.room) >= KNOWN);
     if (!free.length) return false;
     const s = free.sort((x, y) => Math.hypot(x.x - a.x, x.z - a.z) - Math.hypot(y.x - a.x, y.z - a.z))[0]!;
@@ -2678,9 +2846,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   // ------------------------------------------------------- the spy, the programme
 
-  /** The tie i greets j by: the ident's, or for the spy its own idea of it. */
+  /** The tie i greets j by: the ident's, or for the spy its own idea of it; someone sulking after a falling-out greets nobody warmly. */
   tieFor(i: number, j: number): Tie {
-    return this.spy ? this.spy.tieFor(i, j) : this.ident.tieOf(i, j);
+    const tie = this.spy ? this.spy.tieFor(i, j) : this.ident.tieOf(i, j);
+    return this.bonds.sulk[i] && tie > 1 ? 1 : tie;
   }
 
   /** The announcement being made now: the phase it calls and where the host stands, or null. */
@@ -2784,6 +2953,472 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     return this.pf.cellOf(at.level, at.x, at.z) >= 0 ? this.pf.visAt(at.level, at.x, at.z) : 0.5;
   }
 
+  // ------------------------------------------------------------- seen through (milestone 3)
+
+  /** A test put and answered, however it came about: a pass or a fumble ends in a laugh, a failure in a pause and a look to someone else. */
+  private tested(i: number, j: number, out: TestOutcome): void {
+    const a = this.people[i]!;
+    const b = this.people[j]!;
+    this.log("test", [i, j], a.room, out);
+    if (out === "failed") {
+      this.gesture(a, "frown", 3);
+      const other = this.people.find((q) => q !== a && q !== b && q.present && !q.gone && q.level === a.level && Math.hypot(q.x - a.x, q.z - a.z) < 4);
+      if (other) this.glance(a, other.x, other.z, 1.5);
+      const g = this.circleOf(a);
+      if (g) {
+        g.quietUntil = Math.max(g.quietUntil, this.t + 3);
+        g.speaker = -1;
+      }
+    } else if (out !== "bluffed") this.senses.sound("laugh", b, b.id);
+    if (j === this.spyId) this.spy!.answers.tested(i);
+  }
+
+  /** What a look at someone they know brought about past the double take: the spy may catch the double take; sure, they mean to do something about it. */
+  seenThrough(a: Person, b: Person, e: IdentEvent): void {
+    if (e === "double-take" && b.id === this.spyId) this.spy!.answers.signal(a.id, "double-take");
+    else if (e === "sure") this.becameSure(a, b);
+  }
+
+  /** a caught b fumbling a skill in a look's detail: doubt when they expected better and can't explain it, and a reaction either way. */
+  sawSlip(a: Person, b: Person, skill: number): void {
+    const explained = this.slipExplained(a, b, skill);
+    this.ident.slipDoubt(a.id, b.id, skill, this.t, explained);
+    this.reactions.slip(a, b, skill, explained);
+  }
+
+  /** A fumble they can explain: drink they know of, a bandaged hand (keys, a tray, the piano, billiards), a turned ankle (dancing, the way round). */
+  private slipExplained(a: Person, b: Person, skill: number): boolean {
+    if (this.memory.knowsAbout(a.id, "tipsy", b.id)) return true;
+    const s = SLIP_SKILLS[skill];
+    if (b.bandage && (s === "keys" || s === "tray" || s === "piano" || s === "billiards")) return true;
+    return this.ident.hurt[b.id] === 1 && (s === "dance" || s === "house");
+  }
+
+  /** Someone fumbled a skill (an index into SLIP_SKILLS), showing for this long: whoever catches it may make something of it. */
+  slipped(p: Person, skill: number, secs: number): void {
+    this.ident.slip(p.id, skill, this.t, secs);
+  }
+
+  /** p waved to q: q, seeing it, waves back if they know p well enough; someone who expected a wave back and got none minds a little. */
+  waved(p: Person, q: Person): void {
+    if (!this.canSee(q, p)) return;
+    if (this.tieFor(q.id, p.id) >= 2) {
+      this.gesture(q, "wave", 2);
+      this.glance(q, p.x, p.z, 2);
+    } else if (this.ident.tieOf(p.id, q.id) >= 2) {
+      this.ident.cool(p.id, q.id, this.t);
+      this.gesture(p, "frown", 1.5);
+      this.log("react", [p.id, q.id], p.room, "cool");
+    }
+    if (q.id === this.spyId) this.spy!.answers.greeted(p.id, "wave");
+  }
+
+  /**
+   * The kiss or the handshake given: whoever expected a kiss and got a handshake because the other
+   * gave one (a sulk, or a stranger in a friend's face) minds a little. The spy learns who greets
+   * it like an old friend.
+   */
+  greetedAs(p: Person, q: Person, pose: Pose): void {
+    if (pose === "shake") {
+      for (const [x, y] of [
+        [p, q],
+        [q, p],
+      ] as const) {
+        if (this.circles.expects(x, y) !== "kiss" || this.tieFor(y.id, x.id) >= 3) continue;
+        this.ident.cool(x.id, y.id, this.t);
+        this.gesture(x, "frown", 1.5);
+        this.log("react", [x.id, y.id], x.room, "cool");
+      }
+    }
+    if (q.id === this.spyId) this.spy!.answers.greeted(p.id, pose === "kiss" ? "kiss" : "came");
+    else if (p.id === this.spyId && pose === "kiss") this.spy!.answers.greeted(q.id, "kiss");
+  }
+
+  /** a steps over beside b for a few seconds, to help with a fumble. */
+  helpOut(a: Person, b: Person, secs: number): boolean {
+    const s = this.beside(b, a, 0.8, a);
+    if (!s) return false;
+    this.end(a, false);
+    this.start(a, { id: "ask", target: s, duration: secs, pose: "stand", gain: { social: 0.05 }, ref: b.id, note: "help" });
+    return a.action?.note === "help";
+  }
+
+  /** Asked again for what they were known for: the spy begs off again if it still can't do it as they did. */
+  askAgain(a: Person, b: Person, skill: number): void {
+    this.gesture(a, "ask", 2);
+    this.glance(a, b.x, b.z, 2);
+    this.log("react", [a.id, b.id], a.room, "ask-again");
+    const s = SLIP_SKILLS[skill]!;
+    if (b.id === this.spyId && s !== "house" && this.spy!.dodges(s)) this.begOff(a, b, skill);
+  }
+
+  /** The spy turns down what the one it plays was known for: a wave of the hand at the piano, a shrug at the floor. Whoever asked, and anyone who knew them and sees it, takes half a slip's doubt. */
+  begOff(asker: Person, b: Person, skill: number): void {
+    const t = this.t;
+    this.gesture(b, skill === PIANO ? "wave" : "shrug", 2);
+    this.glance(b, asker.x, asker.z, 2);
+    this.log("spy", [b.id, asker.id], b.room, `beg-off:${SLIP_SKILLS[skill]}`);
+    const by = this.people.filter((q) => q !== asker && q !== b && q.present && !q.gone && this.ident.tieOf(q.id, b.id) > 0 && this.canSee(q, b));
+    for (const q of [asker, ...by]) this.ident.slipDoubt(q.id, b.id, skill, t, this.slipExplained(q, b, skill), 0.5);
+    this.reactions.beggedOff(asker, b, skill, by);
+  }
+
+  /** A dancer waved someone by the floor over: the spy, seeing it, begs off if it can't dance as the one it plays did. */
+  wavedOver(a: Person, b: Person): void {
+    if (b.id === this.spyId && this.spy!.dodges("dance") && this.canSee(b, a)) this.begOff(a, b, DANCE);
+  }
+
+  /** Whether this person stays off a skill they'd be expected to do well: only the spy, playing someone known for it. */
+  dodges(p: Person, skill: Skill): boolean {
+    return p.id === this.spyId && this.spy!.dodges(skill);
+  }
+
+  /** Steps to ask the butler where something is kept first, for the spy playing the host (it doesn't know the house); none for anyone else, or with no butler about. */
+  askWhere(p: Person): Step[] {
+    if (p.id !== this.spyId || p.role !== "host") return [];
+    const b = this.people.find((q) => q.role === "butler" && q.present && !q.gone);
+    if (!b) return [];
+    this.spy!.posing.asks();
+    return [
+      { do: "meet", who: b.id, label: "to-butler" },
+      { do: "say", who: b.id, s: 3, pose: "talk", label: "ask-where" },
+    ];
+  }
+
+  /** A laugh where someone stands. */
+  laugh(p: Person): void {
+    this.senses.sound("laugh", p, p.id);
+  }
+
+  /** Out of the circle they're in, to think again. */
+  leaveCircle(p: Person): void {
+    this.end(p, false);
+    p.thinkAt = this.t;
+  }
+
+  /** Off to another room for a while. */
+  walkAway(p: Person, rng: Rng): void {
+    this.end(p, false);
+    const rooms = this.places.mingleRooms.filter((r) => r !== p.room);
+    const s = this.cells.random(rooms.length ? rng.pick(rooms) : this.places.toastRoom.index, rng, 0.9);
+    if (s) this.start(p, { id: "wander", target: s, duration: rng.range(30, 90), pose: "look", gain: { curiosity: 0.1 } });
+    else p.thinkAt = this.t;
+  }
+
+  /** The circle someone stands in, or undefined. */
+  circleOf(p: Person): Group | undefined {
+    const a = p.action;
+    return a?.id === "mingle" && a.note === "in" ? this.groups.get(a.ref ?? -1) : undefined;
+  }
+
+  /** Someone of the household free to prompt the host: the butler unless out on an errand, else the nearest waiter. */
+  prompter(): Person | null {
+    const host = this.host;
+    const free = (q: Person) => q.present && !q.gone && q !== host && this.tasks.of(q)?.kind !== "errand" && q.action?.id !== "toilet";
+    const butler = this.people.find((q) => q.role === "butler" && free(q));
+    if (butler) return butler;
+    let best: Person | null = null;
+    let bd = Infinity;
+    for (const q of this.people) {
+      if (q.role !== "waiter" || !free(q)) continue;
+      const d = Math.hypot(q.x - host.x, q.z - host.z) + 15 * Math.abs(q.level - host.level);
+      if (d < bd) {
+        bd = d;
+        best = q;
+      }
+    }
+    return best;
+  }
+
+  /** Over to the host with a word in their ear (tasks.ts shows it). */
+  prompt(by: Person, host: Person): boolean {
+    const t = this.tasks.chore(by, [
+      { do: "meet", who: host.id, label: "to-host" },
+      { do: "say", who: host.id, s: 3, pose: "talk", label: "prompt" },
+    ]);
+    return t.outcome === null || t.outcome === "done";
+  }
+
+  /** Sure at last that b isn't who they seem: the timid and the tipsy say nothing and keep away; anyone else does something about it as soon as they're free. */
+  private becameSure(a: Person, b: Person): void {
+    this.log("challenge", [a.id, b.id], a.room, "sure");
+    if (a.traits.nerves >= TIMID_NERVES || a.tipsy >= TIMID_TIPSY) {
+      a.avoid.set(`person:${b.id}`, PARTY_LENGTH + 1);
+      this.log("challenge", [a.id, b.id], a.room, "silent");
+      return;
+    }
+    this.sureOf[a.id] = b.id;
+    const x = a.action;
+    if (!a.staff && x && SURE_DROPS.has(x.id) && !(x.id === "drink" && x.note === "bar-wait")) {
+      this.end(a, false);
+      a.thinkAt = this.t;
+    }
+  }
+
+  /**
+   * Acting on being sure. A partner, family or a close friend in company has it out with them,
+   * out loud. Anyone else, or alone with them, backs away and goes to tell someone: the host,
+   * else the nearest of the staff, else a close friend. False while there's nobody to go to. Kept
+   * in mind until it's done: called away on the way (the programme, a call in), they set off again
+   * when next free.
+   */
+  private actOnSure(p: Person): boolean {
+    const j = this.sureOf[p.id]!;
+    const q = this.people[j]!;
+    if (!q.present || q.gone) {
+      this.sureOf[p.id] = -1;
+      return false;
+    }
+    const n = this.people.length;
+    const inView = q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 15 && this.memory.lastT[p.id * n + j]! > this.t - 60;
+    const company = inView && this.people.some((o) => o !== p && o !== q && o.present && !o.gone && !o.staff && o.level === q.level && Math.hypot(o.x - q.x, o.z - q.z) < OUT_LOUD_NEAR);
+    if (this.ident.tieOf(p.id, j) >= 4 && company) {
+      const s = beside(q, p, this.pf);
+      if (s) {
+        this.start(p, { id: "ask", target: s, duration: 4, pose: "talk", gain: {}, ref: j, note: "confront" });
+        return p.action?.note === "confront";
+      }
+    }
+    const to = this.confidant(p, q);
+    const s = to ? beside(to, p, this.pf) : null;
+    if (!to || !s) return false;
+    if (!this.backedAway[p.id]) {
+      this.backedAway[p.id] = 1;
+      this.log("challenge", [p.id, j], p.room, "backed-away");
+      if (inView) this.glance(p, q.x, q.z, 1.5);
+    }
+    this.about.set(p.id, j);
+    this.start(p, { id: "ask", target: s, duration: 6, pose: "talk", gain: {}, ref: to.id, note: "tell-sure" });
+    return p.action?.note === "tell-sure";
+  }
+
+  /** Whom someone sure goes to: the host, else the nearest of the staff, else their partner or a friend, if seen lately on their floor (never the one they're sure of). */
+  private confidant(p: Person, about: Person): Person | null {
+    const n = this.people.length;
+    const ok = (q: Person) => q !== p && q !== about && q.present && !q.gone && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 25 && this.memory.lastT[p.id * n + q.id]! > this.t - 120;
+    if (ok(this.host)) return this.host;
+    const nearest = (qs: Person[]) => qs.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0] ?? null;
+    return nearest(this.people.filter((q) => q.staff && ok(q))) ?? nearest(this.people.filter((q) => (q.id === p.partner || p.friends.includes(q.id)) && ok(q)));
+  }
+
+  /** "Who are you? Where is she?", out loud and to their face. Heads turn, those free close by turn to watch, and everyone who sees it remembers. */
+  private confront(p: Person, q: Person): void {
+    this.sureOf[p.id] = -1;
+    this.counts.challenges++;
+    this.gesture(p, "point", 3);
+    this.senses.sound("raised-voice", p, p.id);
+    this.log("challenge", [p.id, q.id], p.room, "out-loud");
+    for (const o of this.people) {
+      if (o === p || o === q || !o.present || o.gone || o.level !== p.level) continue;
+      if (Math.hypot(o.x - p.x, o.z - p.z) < OUT_LOUD_NEAR) {
+        const free = this.free(o);
+        this.glance(o, q.x, q.z, free ? this.through.range(WATCH[0], WATCH[1]) : 2);
+        if (free) this.gesture(o, "watch", 4);
+      }
+      if (!this.canSee(o, p)) continue;
+      this.memory.observe(o.id, "confronted", q.id, p.id, p.room);
+      const tie = this.ident.tieOf(o.id, q.id);
+      if (tie) this.ident.addDoubt(o.id, q.id, CHALLENGED * TIE_WEIGHT[tie]!, this.t, Infinity, true);
+    }
+    if (q.id === this.spyId) this.spy!.answers.confronted(p.id);
+    else this.gesture(q, "shrug", 2);
+  }
+
+  /** Told by someone sure: the fact, and doubt by the listener's tie and trust in the teller. Then the teller goes looking for the real one. */
+  private toldSure(p: Person, to: Person, j: number): void {
+    const q = this.people[j]!;
+    this.sureOf[p.id] = -1;
+    this.log("challenge", [p.id, to.id, j], p.room, "told");
+    this.memory.learn(to.id, this.memory.fact("not-themselves", j, -1, q.room), PASS_ON, p.id, 1);
+    const tie = this.ident.tieOf(to.id, j);
+    if (tie) this.ident.addDoubt(to.id, j, TOLD_SURE * TIE_WEIGHT[tie]! * (0.5 + this.memory.trustIn(to.id, p.id)), this.t, Infinity, true);
+    this.lookFor.set(p.id, j);
+  }
+
+  /** A speaker's turn: one wanting to compare notes about someone not in the circle whispers to another in it who knows them well. */
+  private compareInCircle(sp: Person, here: readonly number[]): void {
+    const j = this.ident.wantCompare[sp.id]!;
+    if (j < 0 || here.includes(j)) return;
+    const m = here.find((x) => x !== sp.id && this.ident.tieOf(x, j) >= 3 && !this.ident.hasCompared(sp.id, x));
+    if (m !== undefined) this.compareNotes(sp, this.people[m]!, j);
+  }
+
+  /** Thinking what to do with doubts about j: walk over to someone in view who knows them well, not yet asked; with nobody, look again later. */
+  private walkToCompare(p: Person, j: number): boolean {
+    const n = this.people.length;
+    let best: Person | null = null;
+    let bd = 15;
+    for (const m of this.people) {
+      if (m === p || m.id === j || !m.present || m.gone || m.level !== p.level || this.ident.tieOf(m.id, j) < 3 || this.ident.hasCompared(p.id, m.id)) continue;
+      if (m.action?.id === "toilet" || m.action?.id === "leave" || this.memory.lastT[p.id * n + m.id]! < this.t - 60) continue;
+      const d = Math.hypot(m.x - p.x, m.z - p.z);
+      if (d < bd) {
+        bd = d;
+        best = m;
+      }
+    }
+    const s = best ? beside(best, p, this.pf) : null;
+    if (!best || !s) {
+      this.ident.noneToCompare(p.id, j, this.t);
+      return false;
+    }
+    this.about.set(p.id, j);
+    this.start(p, { id: "ask", target: s, duration: 6, pose: "talk", gain: { social: 0.1 }, ref: best.id, note: "compare" });
+    return p.action?.note === "compare";
+  }
+
+  /**
+   * Notes compared about j: a whisper, the fact passed on, the listener's doubt rising with their
+   * trust in the teller (and wanting to test j themselves), both glancing j's way. When the
+   * listener had doubts of their own, both are surer for it: someone else noticed too.
+   */
+  private compareNotes(sp: Person, m: Person, j: number): void {
+    const q = this.people[j]!;
+    const t = this.t;
+    this.gesture(sp, "lean", 3);
+    this.log("challenge", [sp.id, m.id, j], sp.room, "compare");
+    this.memory.learn(m.id, this.memory.fact("not-themselves", j, -1, q.room), PASS_ON, sp.id, 1);
+    const tie = this.ident.tieOf(m.id, j);
+    const both = this.ident.doubtOf(m.id, j, t) >= TEST && this.ident.doubtOf(sp.id, j, t) >= TEST;
+    if (tie) this.ident.addDoubt(m.id, j, COMPARED * TIE_WEIGHT[tie]! * (0.5 + this.memory.trustIn(m.id, sp.id)) + (both ? CORROBORATED : 0), t);
+    this.ident.addDoubt(sp.id, j, both ? CORROBORATED : COMPARED_SELF, t);
+    this.ident.comparedWith(sp.id, m.id, j, t);
+    if (tie && this.ident.stage[m.id * this.people.length + j]! < PASSED && this.ident.wantTest[m.id]! < 0) this.ident.wantTest[m.id] = j;
+    if (!q.present || q.gone || q.room !== sp.room) return;
+    for (const x of [sp, m]) {
+      this.glance(x, q.x, q.z, 1.5);
+      if (j === this.spyId) this.spy!.answers.signal(x.id, "whisper");
+    }
+  }
+
+  /**
+   * A first-time guest in the host's circle asks to be shown round (from 19:30, the curious, once
+   * each). The real host nearly always agrees; the spy playing the host mostly says later, and
+   * otherwise leads it by its own map. A refusal is noticed whoever makes it.
+   */
+  private tourAsk(g: Group, here: readonly number[]): void {
+    const host = this.host;
+    const ph = this.phase.id;
+    if (this.t < TOUR_ASK_FROM || !here.includes(host.id) || (ph !== "mingle" && ph !== "dancing" && ph !== "games") || this.practices.opening) return;
+    const asker = here
+      .map((m) => this.people[m]!)
+      .find((q) => q !== host && !q.staff && !q.regular && q.id !== this.spyId && !this.memory.household[q.id] && !this.askedTour[q.id] && q.traits.curiosity > TOUR_CURIOUS);
+    if (!asker || !this.tourAsks.chance(TOUR_ASK)) return;
+    this.askedTour[asker.id] = 1;
+    this.counts.tourAsks++;
+    this.gesture(asker, "ask", 2);
+    this.glance(asker, host.x, host.z, 2);
+    this.log("ask", [asker.id, host.id], g.room, "tour");
+    const fake = host.id === this.spyId;
+    const no = fake ? this.spy!.posing.refusesTour() : !this.tourAsks.chance(AGREE_TOUR) || this.tasks.count("tour") >= TOURS;
+    if (!no && this.tasks.tour(host, [asker])) {
+      this.lastTour = this.t;
+      return;
+    }
+    // "Later": a smile and a shrug, and anyone who sees it notices.
+    this.gesture(host, "shrug", 2);
+    this.notable(host, "refused-tour", asker.id, 10);
+    this.memory.observe(asker.id, "refused-tour", host.id, asker.id, host.room);
+    this.log("react", [host.id, asker.id], g.room, "later");
+  }
+
+  /** Every half minute: a missed step on the floor, a wrong note at the piano, the more often the lower the skill (and on the floor, the more drink). */
+  private floorFumbles(): void {
+    for (const p of this.people) {
+      const a = p.action;
+      if (!p.present || p.gone || !a || a.startedAt === null) continue;
+      if (a.id === "dance") {
+        if (this.fumbles.chance(DANCE_FUMBLE * (1 - p.fluency.dance) ** 2 * (1 + p.tipsy))) this.slipped(p, DANCE, 3);
+      } else if (p.pose === "play" && a.note === "piano" && this.fumbles.chance(PIANO_FUMBLE * (1 - p.fluency.piano) ** 2)) this.slipped(p, PIANO, 3);
+    }
+  }
+
+  /** The spy playing the host leaves the table before dessert: a call in the hall until dinner is over, or the bathroom. */
+  private leaveTable(p: Person, progress: number): void {
+    const a = p.action;
+    if (a?.id !== "dinner" || a.startedAt === null) return;
+    const how = this.spy!.posing.leaveDinner(progress);
+    if (!how) return;
+    this.log("spy", [p.id], p.room, `leave-table:${how}`);
+    this.end(p, false);
+    const b = how === "bathroom" ? this.bathFor(p) : -1;
+    const bath = this.places.bathrooms[b];
+    if (bath) return void this.start(p, { id: "toilet", target: bath.door, duration: this.rng.range(120, 240), pose: "wait", gain: { bladder: 1 }, ref: b, note: "door" });
+    const hall = this.cells.random(this.places.entranceRoom?.index ?? this.places.entrance.room, this.rng, 0.8);
+    const left = Math.max(30, this.phase.end - this.t + 10);
+    if (hall)
+      this.tasks.chore(p, [
+        { do: "goto", to: hall, label: "away" },
+        { do: "wait", s: left, pose: "phone", label: "call" },
+      ]);
+  }
+
+  /** The lab's test button: their closest tie who is here walks over and tests them now. */
+  private forceTest(q: Person): void {
+    let best: Person | null = null;
+    let bt = 0;
+    let bd = Infinity;
+    for (const p of this.people) {
+      if (p === q || !p.present || p.gone) continue;
+      const tie = this.ident.tieOf(p.id, q.id);
+      const d = Math.hypot(p.x - q.x, p.z - q.z) + 15 * Math.abs(p.level - q.level);
+      if (tie > bt || (tie === bt && tie > 0 && d < bd)) {
+        best = p;
+        bt = tie;
+        bd = d;
+      }
+    }
+    const s = best ? beside(q, best, this.pf) : null;
+    if (!best || !s) return;
+    this.end(best, false);
+    this.start(best, { id: "ask", target: s, duration: 5, pose: "talk", gain: { social: 0.1 }, ref: q.id, note: "test" });
+  }
+
+  /** How well the garden's lamps light a spot, 0 to 1: the nearest lamppost, lantern or uplight's reach. */
+  private gardenLight(x: number, z: number): number {
+    let v = 0;
+    for (const l of this.bp.lights) {
+      if (l.scope !== "exterior" || (l.kind !== "lamppost" && l.kind !== "lantern" && l.kind !== "uplight")) continue;
+      v = Math.max(v, 1 - Math.hypot(l.x - x, l.z - z) / l.range);
+    }
+    return v;
+  }
+
+  /** A look outside may take in the garment on the ground: in the look's detail, lit well enough, the more likely the nearer it lies and the keener the look. */
+  looked(a: Person): void {
+    const g = this.spy?.garment;
+    if (!g || (a.room !== -1 && a.room !== -2) || this.foundIt[a.id] || this.garmentLight < FIND_LIGHT) return;
+    const items = this.world.items;
+    const at = { level: items.level[g.item]!, x: items.x[g.item]!, z: items.z[g.item]! };
+    if (items.stateOf(g.item) !== "lost" || !this.senses.inDetail(a, at)) return;
+    const near = 1 - Math.hypot(at.x - a.x, at.z - a.z) / DETAIL_RANGE;
+    if (!this.finds.chance(FIND_CHANCE * near * this.senses.attention(a) * this.garmentLight)) return;
+    this.foundIt[a.id] = 1;
+    this.counts.finds++;
+    // Whose it is, if they knew them: and the one who came as them tonight wore nothing like it.
+    const owner = items.owner[g.item]!;
+    const tie = owner >= 0 ? this.ident.tieOf(a.id, owner) : 0;
+    this.memory.observe(a.id, "garment", tie >= 2 ? owner : -1, g.item, a.room);
+    if (tie >= 2) this.ident.addDoubt(a.id, this.spyId, GARMENT_DOUBT * TIE_WEIGHT[tie]!, this.t, Infinity, true);
+    this.glance(a, at.x, at.z, 2);
+    this.log("react", tie >= 2 ? [a.id, owner] : [a.id], a.room, "garment");
+    // Picked up and handed in at the cloakroom (else to the butler), when they're free to.
+    const to = this.people.find((q) => q.role === "cloakroom" && q.present && !q.gone) ?? this.people.find((q) => q.role === "butler" && q.present && !q.gone);
+    const spot = this.pf.snap(at.level, at.x, at.z, 1.2);
+    if (!to || !spot || !this.free(a)) return;
+    const room = this.pf.roomAt(spot.level, spot.x, spot.z);
+    this.tasks.chore(
+      a,
+      [
+        { do: "goto", to: { level: spot.level, x: spot.x, z: spot.z, yaw: a.yaw, room }, label: "to-garment" },
+        { do: "pick", item: g.item, label: "pick" },
+        { do: "meet", who: to.id, label: "hand-in" },
+        { do: "give", item: g.item, who: to.id, label: "give" },
+      ],
+      g.item,
+    );
+  }
+
   // ------------------------------------------------------------- mood and senses
 
   /** Pairs within 3 m in the same room, sitters too, and how many each has round them. */
@@ -2849,6 +3484,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
         continue;
       }
       const sub = this.people[v.subject];
+      if (v.kind === "test") {
+        if (sub?.present && !sub.gone) this.forceTest(sub);
+        continue;
+      }
       if (v.kind === "mishap") {
         if (sub?.present && !sub.gone && v.what) this.dramas.mishap(v.what as MishapId, sub, undefined, true);
         continue;
@@ -3047,6 +3686,17 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       beckons: this.reactions.stats.beckons,
       points: this.reactions.stats.points,
       flutes: this.reactions.stats.glasses,
+      slips: this.ident.stats.slips,
+      cool: this.ident.stats.cool,
+      compared: this.ident.stats.compared,
+      sure: this.ident.stats.sure,
+      challenges: this.counts.challenges,
+      frowns: this.reactions.stats.frowns,
+      helps: this.reactions.stats.helps,
+      shrugs: this.reactions.stats.shrugs,
+      prompts: this.prompts.log.length,
+      tourAsks: this.counts.tourAsks,
+      finds: this.counts.finds,
     };
   }
 
@@ -3073,7 +3723,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     mix(`d${d.rolls},${d.mishaps},${d.outings},${d.dramas}`);
     for (const p of this.people) if (p.stain || p.bandage) mix(`s${p.id}${p.stain ?? ""}${p.bandage ? 1 : 0}`);
     const r = this.reactions.stats;
-    mix(`r${r.late},${r.beckons},${r.points},${r.glasses}`);
+    mix(`r${r.late},${r.beckons},${r.points},${r.glasses},${r.frowns},${r.helps},${r.puzzled},${r.shrugs}`);
+    const i = this.ident.stats;
+    mix(`i${i.tests},${i.fumbled},${i.compared},${i.sure},${i.slips},${i.cool},${i.names}:${this.prompts.log.length}`);
     if (this.spy) mix(this.spy.digest());
     return `${this.t}:${(h >>> 0).toString(16)}`;
   }

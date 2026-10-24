@@ -11,12 +11,13 @@
  */
 import type { MansionBlueprint, RoomType } from "../mansion/core/types";
 import type { Rng } from "../mansion/core/rng";
+import { HOUSE } from "./ident";
 import type { Memory, Verb } from "./memory";
 import type { Pathfinder } from "./path";
 import { yawTo, type Places, type RoomCells } from "./places";
 import type { Register } from "./register";
 import type { SoundKind } from "./senses";
-import type { ActionState, DrinkId, Gesture, Needs, PartyEvent, Person, Pose, Spot } from "./types";
+import { SKILLS, type ActionState, type DrinkId, type Gesture, type Needs, type PartyEvent, type Person, type Pose, type Spot } from "./types";
 import type { Door, World } from "./world";
 
 /** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which). */
@@ -69,8 +70,8 @@ export interface Task {
   speed: number;
   /** How close the party follows (m); FOLLOW_GAP when not set. */
   gap?: number;
-  /** A search meant to have it out with the one it finds (bonds.ts). */
-  intent?: "confront";
+  /** A search meant to have it out with the one it finds (bonds.ts), or for the real one behind a face someone is sure isn't theirs (sim.ts): no sighting of that face ends it. */
+  intent?: "confront" | "real";
   /** Which mishap, drama or habit a dramas.ts task belongs to. */
   what?: string;
   /** The drink an errand brings, when not the asker's favourite (water for one who's had too much). */
@@ -117,6 +118,8 @@ export interface TaskHost {
   found?(t: Task, p: Person): void;
   /** A task ended, however it went. */
   finished?(t: Task): void;
+  /** Someone fumbled a skill (an index into ident.ts SLIP_SKILLS), showing for this long: whoever catches it may make something of it. */
+  slipped?(p: Person, skill: number, secs: number): void;
 }
 
 /** A follower re-aims at the one ahead when this far behind (m). */
@@ -130,6 +133,9 @@ const NEAR = 1.6;
 const LOCK_WAIT = 20;
 /** Things carried in view once picked up. */
 const CARRIED: ReadonlySet<string> = new Set(["bottle", "coat", "bag", "kit"]);
+/** The skills a task's fumbles are of (ident.ts SLIP_SKILLS). */
+const KEYS = SKILLS.indexOf("keys");
+const ERRAND = SKILLS.indexOf("errand");
 /** Rooms worth showing on a tour. */
 const SHOW: ReadonlySet<RoomType> = new Set([
   "library",
@@ -269,9 +275,16 @@ export class Tasks {
       at = centre(best);
     }
     const steps: Step[] = [];
+    // A guide who doesn't know the house (the spy playing the host) tries the wrong room now and then.
+    const lost = h.memory.ownMap[guide.id] === 1;
     for (const r of pick) {
       const s = h.cells.random(r, this.rng, 0.9);
       if (!s) continue;
+      if (lost && this.rng.chance((1 - h.memory.familiarity(guide.id, r)) * 0.5)) {
+        const near = (world.graph[r] ?? []).filter((e) => e.to >= 0 && e.kind !== "stair" && !pick.includes(e.to)).map((e) => e.to);
+        const wrong = near.length ? h.cells.random(this.rng.pick(near), this.rng, 0.8) : null;
+        if (wrong) steps.push({ do: "goto", to: wrong, label: "wrong-room" }, { do: "wait", s: 4, pose: "look", label: "look-round" });
+      }
       // A key-locked door into it: unlock on the way in, lock on the way out.
       const door = world.doors.find((d) => d.rooms.includes(r) && d.locked && d.lock === "key");
       const outside = door ? this.outside(door, r) : null;
@@ -327,19 +340,10 @@ export class Tasks {
     return this.make("errand", carrier, [], steps, { item, errand: kind, other: asker.id, drink });
   }
 
-  /** Go and look for something (the household at the spirits cabinet); the party acts on what's there when the look ends. */
-  check(p: Person, at: Spot, item: number): Task {
+  /** Go and look for something (the household at the spirits cabinet); the party acts on what's there when the look ends. `before`: steps first (asking where it is). */
+  check(p: Person, at: Spot, item: number, before: Step[] = []): Task {
     this.stats.checks++;
-    return this.make(
-      "check",
-      p,
-      [],
-      [
-        { do: "goto", to: at, label: "to-cabinet" },
-        { do: "wait", s: 5, pose: "look", label: "look-in" },
-      ],
-      { item },
-    );
+    return this.make("check", p, [], [...before, { do: "goto", to: at, label: "to-cabinet" }, { do: "wait", s: 5, pose: "look", label: "look-in" }], { item });
   }
 
   /** A mishap's, a drama's or a habit's steps (dramas.ts). */
@@ -352,15 +356,15 @@ export class Tasks {
     if (t.outcome === null) this.advance(t);
   }
 
-  /** A short job of the staff's own (the butler looking over the table, then a word with the host). */
-  chore(p: Person, steps: Step[]): Task {
-    return this.make("chore", p, [], steps);
+  /** A short job of the staff's own (the butler looking over the table, then a word with the host), or anyone's errand with an item in hand. */
+  chore(p: Person, steps: Step[], item = -1): Task {
+    return this.make("chore", p, [], steps, { item });
   }
 
   // ---------------------------------------------------------------- searches
 
-  /** Looking for a partner not seen for a while: where they were last seen, then asking round (with `intent`, to have it out). */
-  search(p: Person, q: Person, intent?: "confront"): Task | null {
+  /** Looking for a partner not seen for a while: where they were last seen, then asking round (with `intent`, to have it out, or for the real one). */
+  search(p: Person, q: Person, intent?: "confront" | "real"): Task | null {
     const h = this.host;
     const room = h.memory.lastRoom[p.id * h.people.length + q.id]!;
     const s = room !== -1 ? h.cells.random(room, this.rng, 0.8) : null;
@@ -513,6 +517,16 @@ export class Tasks {
     return this.make("leave", p, partner ? [partner] : [], steps);
   }
 
+  /** Someone walks out with a party already on its way, at the back (the spy playing the host sees a guest out and doesn't come back). */
+  join(t: Task, p: Person): void {
+    const h = this.host;
+    if (t.outcome !== null || t.party.includes(p.id) || t.owner === p.id) return;
+    h.end(p, false);
+    t.party.push(p.id);
+    h.start(p, { id: "task", target: null, duration: 99999, pose: "stand", gain: {}, ref: t.id, note: "follow" });
+    h.log("task", [t.owner, p.id], p.room, `${t.kind}:join`);
+  }
+
   // -------------------------------------------------------------------- steps
 
   private begin(t: Task): void {
@@ -553,6 +567,7 @@ export class Tasks {
         this.stats.fumbles++;
         t.stepAt += 5;
         h.notable(p, "fumbled", -1, 8);
+        h.slipped?.(p, KEYS, 8);
       }
     } else if (st.do === "pick") {
       items.holder[st.item] = p.id;
@@ -574,6 +589,21 @@ export class Tasks {
         h.gesture(q, "wave", 2);
       }
       if (st.label === "agree") h.gesture(q, "point", 2);
+      // The household's word with the host at a change in the programme: a lean, and anyone who sees it notices.
+      if (st.label === "prompt") {
+        h.gesture(p, "lean", st.s);
+        h.notable(q, "prompted", p.id, 10);
+        h.log("react", [p.id, q.id], p.room, "prompt");
+      }
+      // Asking the butler where something is kept: the way pointed, and a slip of the house to anyone who knows better.
+      if (st.label === "ask-where") {
+        h.gesture(p, "ask", 2);
+        h.gesture(q, "point", 2);
+        h.slipped?.(p, HOUSE, st.s);
+      }
+    } else if (st.do === "wait" && st.label === "look-round" && (t.kind === "errand" || t.kind === "tour")) {
+      // The wrong room first on an errand, or on a tour by someone who doesn't know the house.
+      h.slipped?.(p, t.kind === "errand" ? ERRAND : HOUSE, st.s);
     } else if (st.do === "give") {
       const q = h.people[st.who]!;
       p.yaw = yawTo(p.x, p.z, q.x, q.z);
@@ -714,6 +744,11 @@ export class Tasks {
       if (kind === "coat" || kind === "spectacles" || kind === "earring") {
         items.holder[item] = q.id;
         items.set(item, "worn", h.t);
+      } else if (kind === "garment") {
+        // Something found in the garden, handed in at the cloakroom and hung with the coats.
+        items.holder[item] = -1;
+        items.set(item, "hung", h.t);
+        items.place(item, h.places.chains.coats.spots[0] ?? q);
       } else if (kind === "bag") {
         // A lost bag back with its owner.
         items.holder[item] = q.id;
@@ -750,7 +785,8 @@ export class Tasks {
       this.finish(t, "gave-up");
       return true;
     }
-    const seen = h.memory.lastT[p.id * h.people.length + q.id]! > t.startedAt && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 10;
+    // Looking for the real one behind a face: seeing that face again finds nobody.
+    const seen = t.intent !== "real" && h.memory.lastT[p.id * h.people.length + q.id]! > t.startedAt && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 10;
     if (!seen) {
       // In a hurry after a while.
       if (h.t - t.startedAt > HURRY && p.speed === t.speed) p.speed = t.speed * 1.3;

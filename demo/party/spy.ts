@@ -1,5 +1,6 @@
 /**
- * The party lab's spy (milestone 3): its options, the goal odds, the reveal and its card.
+ * The party lab's spy (milestone 3): its options, the goal odds, the reveal and its card, and the
+ * ten people the crowd suspects most.
  *
  *   /party/?seed=gala-night&setup=victim&goal=safe&odds=kill:50,bug:0&steal=80&reveal=1
  *
@@ -12,9 +13,27 @@
  * it: its own events stay out of the log and its card stays shut. With someone picked, the
  * button first asks "is it them?", so a tester can score a guess. The goal odds show from the
  * start, since they are chances, not the draw; a change builds the evening afresh from 19:00 with
- * the same house, guests and provocations, and only the spy cast anew.
+ * the same house, guests and provocations, and only the spy cast anew. Tests show in the log
+ * without their outcome until the reveal, since only an impostor bluffs or fails one; the ranks
+ * show from the start, and mark the spy's record once it is revealed.
  */
-import { clockLabel, GOAL_SHARES, goalOdds, GOALS, phaseIndexAt, SETUPS, STEAL, type CueHow, type GoalKind, type Party, type PartyEvent, type SpyOptions, type SpySetup } from "../../src/party";
+import {
+  clockLabel,
+  GOAL_SHARES,
+  goalOdds,
+  GOALS,
+  phaseIndexAt,
+  ranks,
+  SETUPS,
+  STEAL,
+  type CueHow,
+  type DangerWhy,
+  type GoalKind,
+  type Party,
+  type PartyEvent,
+  type SpyOptions,
+  type SpySetup,
+} from "../../src/party";
 
 const GOAL_LABEL: Record<GoalKind, string> = {
   kill: "kill",
@@ -27,6 +46,23 @@ const GOAL_LABEL: Record<GoalKind, string> = {
 const SETUP_LABEL: Record<SpySetup, string> = { self: "as itself", victim: "as a guest", host: "as the host", waiter: "as a waiter" };
 const HOW_LABEL: Record<CueHow, string> = { start: "came in on it", heard: "heard the host", seen: "saw the room move", told: "was beckoned in", late: "noticed at last" };
 const FROM_LABEL = { bag: "bag", coat: "coat in the cloakroom", pocket: "pocket" } as const;
+const WHY_LABEL: Record<DangerWhy, string> = {
+  study: "its study",
+  with: "seen with its victim",
+  wave: "a wave",
+  came: "came over",
+  kiss: "a kiss",
+  "double-take": "a double take",
+  test: "a test",
+  whisper: "a whisper",
+  challenge: "a challenge",
+  name: "a name it didn't know",
+};
+/** What a test came to, in the log once the spy is revealed. */
+const TEST_LABEL: Record<string, string> = { passed: "it's them", fumbled: "too drunk to get it, and laughs it off", bluffed: "they laugh along", failed: "a blank look" };
+const SURE_LABEL: Record<string, string> = { "out-loud": "had it out", "backed-away": "backed away to tell someone", silent: "kept silent" };
+/** The ranks list shows this many. */
+const RANKS = 10;
 
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 const mins = (s: number): string => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -82,6 +118,9 @@ export class SpyLab {
   private readonly weights = new Map<GoalKind, HTMLInputElement>();
   private readonly switches = new Map<GoalKind, HTMLInputElement>();
   private stealInput: HTMLInputElement | null = null;
+  /** The ten most suspected: their rows are kept, so a click on one isn't lost to a refresh. */
+  private readonly rankHead: HTMLElement;
+  private readonly rankRows: HTMLButtonElement[] = [];
 
   constructor(
     private readonly params: URLSearchParams,
@@ -104,6 +143,15 @@ export class SpyLab {
     this.button = document.createElement("button");
     this.verdict = document.createElement("span");
     this.verdict.className = "label";
+    this.rankHead = document.createElement("div");
+    this.rankHead.className = "label";
+    for (let k = 0; k < RANKS; k++) {
+      const b = document.createElement("button");
+      b.className = "rank";
+      b.title = "Pick them";
+      b.onclick = () => b.dataset.id && this.host.select(Number(b.dataset.id));
+      this.rankRows.push(b);
+    }
     this.build();
   }
 
@@ -116,12 +164,18 @@ export class SpyLab {
     return o;
   }
 
-  /** The reveal row and the goal odds, in the left panel. */
+  /** The reveal row, the goal odds and the ranks, in the left panel. */
   private build(): void {
     const box = this.box;
     box.replaceChildren();
+    const ranked = document.createElement("div");
+    ranked.className = "ranks";
+    ranked.title = "The ten the crowd suspects most: each one's score is the mean, over the guests here, of the larger of their suspicion and their doubt about them";
+    ranked.append(this.rankHead, ...this.rankRows);
     if (!this.option0) {
-      box.textContent = "no spy tonight (spy=0)";
+      const none = document.createElement("div");
+      none.textContent = "no spy tonight (spy=0)";
+      box.append(none, ranked);
       return;
     }
     const row = document.createElement("div");
@@ -193,7 +247,7 @@ export class SpyLab {
         grid.append(document.createElement("span"), a, s, b);
       }
     }
-    box.appendChild(grid);
+    box.append(grid, ranked);
   }
 
   private setOdds(g: GoalKind, v: number): void {
@@ -244,14 +298,39 @@ export class SpyLab {
     return this.revealed || !this.party?.spy;
   }
 
-  /** The log's lines for the spy's doings and for people reacting to someone out of step. */
+  /** The log's lines for the spy's doings, for tests and seeing through someone, and for people reacting to someone. */
   eventText(e: PartyEvent, n: (i: number | undefined) => string): string | null {
     const party = this.party;
+    if (e.kind === "test") {
+      // The outcome waits for the reveal: only an impostor bluffs or fails one.
+      const out = this.revealed || !party?.spy ? TEST_LABEL[e.note ?? ""] : undefined;
+      return `${n(e.actors[0])} tries a shared joke on ${n(e.actors[1])}${out ? `: ${out}` : ""}`;
+    }
+    if (e.kind === "challenge") {
+      const [a, b, c] = [n(e.actors[0]), n(e.actors[1]), n(e.actors[2])];
+      if (e.note === "sure") return `${a} is sure ${b} isn't who they seem`;
+      if (e.note === "out-loud") return `${a} has it out with ${b}, out loud: who are you?`;
+      if (e.note === "backed-away") return `${a} backs away from ${b}, to tell someone`;
+      if (e.note === "silent") return `${a} says nothing, and keeps away from ${b}`;
+      if (e.note === "told") return `${a} tells ${b} that ${c} isn't who they seem`;
+      if (e.note === "compare") return `${a} has a quiet word with ${b} about ${c}`;
+      return `${a} and ${b}: ${e.note}`;
+    }
     if (e.kind === "react") {
       const [a, b] = [n(e.actors[0]), n(e.actors[1])];
       if (e.note === "beckon") return `${a} beckons ${b} in`;
       if (e.note === "point") return `${a} points ${b} the way in`;
       if (e.note === "glass") return `${a} brings ${b} a flute`;
+      if (e.note === "frown") return `${a} frowns at ${b}'s fumble`;
+      if (e.note === "help") return `${a} steps over to help ${b}`;
+      if (e.note === "puzzled") return `${a} looks at ${b} again, puzzled`;
+      if (e.note === "shrug") return `${a} shrugs as ${b} turns it down`;
+      if (e.note === "ask-again") return `${a} asks ${b} again`;
+      if (e.note === "cool") return `${a} expected a warmer hello from ${b}`;
+      if (e.note === "name") return `${b} doesn't know ${a}'s name`;
+      if (e.note === "later") return `${a} puts ${b}'s tour off till later`;
+      if (e.note === "prompt") return `${a} has a word in ${b}'s ear about the programme`;
+      if (e.note === "garment") return e.actors.length > 1 ? `${a} finds something of ${b}'s by a garden door` : `${a} finds something lying by a garden door`;
       return `${a} reacts to ${b}: ${e.note}`;
     }
     if (e.kind !== "spy" || !party) return null;
@@ -262,6 +341,12 @@ export class SpyLab {
     if (what === "give-up") return `the spy (${who}) gives its goal up for tonight`;
     if (what === "done") return `the spy (${who}) has done it: ${GOAL_LABEL[a as GoalKind] ?? a}`;
     if (what === "leave") return `the spy (${who}) makes for the door`;
+    if (what === "tested") return `the spy (${who}) is tested by ${n(e.actors[1])}, and changes the subject`;
+    if (what === "laughed-off") return `the spy (${who}) laughs off ${n(e.actors[1])}'s challenge and walks away`;
+    if (what === "lie-low") return `the spy (${who}) lies low a while: talk stopped as it joined`;
+    if (what === "beg-off") return `the spy (${who}) begs off ${a === "piano" ? "the piano" : a === "dance" ? "a dance" : a}, asked by ${n(e.actors[1])}`;
+    if (what === "decline") return `the spy (${who}) turns down a dance with ${n(e.actors[1])}`;
+    if (what === "leave-table") return `the spy (${who}) leaves the table: ${a === "bathroom" ? "the bathroom" : "a call in the hall"}`;
     return `the spy (${who}): ${e.note}`;
   }
 
@@ -282,6 +367,7 @@ export class SpyLab {
     }
     this.picked = selected;
     this.lastRefresh = redraw;
+    this.renderRanks(party);
     const spy = party.spy;
     if (!spy) {
       this.card.classList.remove("on");
@@ -308,6 +394,21 @@ export class SpyLab {
       this.verdict.textContent = g ? `${g.who === spy.id || spy.selves.includes(g.who) ? "right" : "wrong"}: guessed ${name(g.who)} at ${clockLabel(g.t)}` : "";
     }
     this.renderCard(party, selected);
+  }
+
+  /** The ten the crowd suspects most, as it believes them to be; the spy's record marked once revealed. */
+  private renderRanks(party: Party): void {
+    const top = ranks(party.people, party.memory, party.ident, party.t, RANKS).filter((r) => r.score >= 0.005);
+    const spy = this.revealed ? (party.spy?.id ?? -1) : -1;
+    this.rankHead.textContent = top.length ? "most suspected" : "most suspected: nobody yet";
+    this.rankRows.forEach((b, k) => {
+      const r = top[k];
+      b.hidden = !r;
+      if (!r) return void delete b.dataset.id;
+      b.dataset.id = String(r.id);
+      b.textContent = `${k + 1}. ${party.people[r.id]!.name} ${pct(r.score)}`;
+      b.classList.toggle("spy", r.id === spy);
+    });
   }
 
   /** The spy's card under the picked person's panel, in its plain lines, once revealed. */
@@ -356,11 +457,36 @@ export class SpyLab {
       const behind = cur > c.phase ? ` · behind: the room has been on ${party.programme[cur]!.label.toLowerCase()} for ${mins(t - party.programme[cur]!.start)}` : "";
       const pend = c.pending ? ` · caught ${party.programme[c.pending.phase]!.label.toLowerCase()}, moves in ${mins(Math.max(0, c.pending.at - t))}` : "";
       lines.push(`acts on ${on.label.toLowerCase()} (${HOW_LABEL[c.how]}${c.since > 0 ? ` at ${clockLabel(c.since)}` : ""})${pend}${behind}`);
-    } else lines.push(`keeps the house's programme (the household's prompts come in PR 2)`);
+    } else lines.push(`keeps to the staff's routine`);
+    if (spy.setup === "host") {
+      const late = party.prompts.log.filter((r) => !r.ahead);
+      lines.push(
+        `prompted by the household at ${party.prompts.log.length} change${party.prompts.log.length === 1 ? "" : "s"}${late.length ? `, ${mins(late.reduce((s, r) => s + r.delay, 0))} late in all` : ""}`,
+      );
+    }
     // What it knows of people, its drink and its exit.
     const studied: number[] = [];
     for (let j = 0; j < spy.knows.length; j++) if (spy.knows[j] === 2) studied.push(j);
     lines.push(spy.setup === "self" ? "studied nobody" : `studied ${studied.length ? studied.map((j) => `${name(j)} ${pct(spy.close[j]!)}`).join(", ") : "none of their people"}`);
+    // Seen through: the tests put to it, who is sure it isn't who it seems and what they did, and whom it thinks dangerous.
+    const ev = party.events;
+    const tests = ev.filter((e) => e.kind === "test" && e.actors[1] === spy.id);
+    const sure = ev.filter((e) => e.kind === "challenge" && e.actors[1] === spy.id && e.note === "sure");
+    if (spy.victim >= 0) {
+      const by = (note: string) => tests.filter((e) => e.note === note).length;
+      const did = (i: number) => SURE_LABEL[ev.find((e) => e.kind === "challenge" && e.actors[0] === i && e.actors[1] === spy.id && SURE_LABEL[e.note ?? ""])?.note ?? ""];
+      const begged = ev.filter((e) => e.kind === "spy" && e.note?.startsWith("beg-off")).length;
+      lines.push(`tested ${tests.length} time${tests.length === 1 ? "" : "s"}: bluffed ${by("bluffed")}, failed ${by("failed")}${begged ? ` · begged off ${begged}` : ""}`);
+      lines.push(
+        sure.length ? `sure it isn't ${name(spy.victim)}: ${sure.map((e) => `${name(e.actors[0])}${did(e.actors[0]!) ? ` (${did(e.actors[0]!)})` : ""}`).join(", ")}` : "nobody sure of it yet",
+      );
+    }
+    const top = spy.answers.top(5);
+    lines.push(top.length ? `most dangerous to it: ${top.map((x) => `${name(x.id)} ${pct(x.danger)} (${x.why.map((w) => WHY_LABEL[w]).join(", ")})`).join(" · ")}` : "thinks nobody dangerous yet");
+    if (spy.victim >= 0) {
+      const unseen = party.people.filter((q) => q.id !== spy.id && q.present && !q.gone && party.ident.tieOf(q.id, spy.id) >= 3 && spy.answers.danger[q.id] === 0);
+      lines.push(unseen.length ? `close to ${name(spy.victim)}, not spotted yet: ${unseen.map((q) => q.name).join(", ")}` : `has spotted every close tie of ${name(spy.victim)}'s here`);
+    }
     lines.push(`tipsy ${pct(p.tipsy)} · ${p.drinkLog.length} drink${p.drinkLog.length === 1 ? "" : "s"}`);
     const exit = spy.exit;
     const when = `goes once ${pct(exit.at)} of the farewell's leavers are on their way`;
@@ -373,7 +499,7 @@ export class SpyLab {
       sw.className = "swatch";
       sw.style.background = g.color;
       const left = party.world.items.stateOf(g.item) === "lost";
-      row.append(`left ${name(spy.victim)}'s `, sw, ` ${g.what} in the garden${left ? "" : " (picked up)"}`);
+      row.append(`dropped ${name(spy.victim)}'s `, sw, ` ${g.what} by a garden door${left ? "" : " (picked up)"}`);
       lines.push(row);
     }
     const m = spy.measure;

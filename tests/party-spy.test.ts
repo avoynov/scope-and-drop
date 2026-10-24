@@ -251,6 +251,9 @@ interface Run {
   digests: string[];
   /** The spy's ties as the evening began: a greeting to anyone else needs a tie made tonight. */
   ties0: Uint8Array;
+  /** Whom it knew from its study as it came, and how close it believed them: tonight it only learns more (a name it hadn't, someone greeting it like an old friend). */
+  knows0: Uint8Array;
+  close0: Float32Array;
 }
 
 describe("evenings with a spy", () => {
@@ -261,6 +264,8 @@ describe("evenings with a spy", () => {
       const party = new Party(house, { seed, spy });
       const s = party.spy!;
       const ties0 = new Uint8Array(party.people.length).map((_, j) => party.ident.tieOf(s.id, j));
+      const knows0 = new Uint8Array(s.knows);
+      const close0 = new Float32Array(s.close);
       const digests: string[] = [];
       const at: Check = {
         name: "digests",
@@ -269,7 +274,7 @@ describe("evenings with a spy", () => {
           return null;
         },
       };
-      runs.push({ name, party, ev: watchSpy(party, [at]), digests, ties0 });
+      runs.push({ name, party, ev: watchSpy(party, [at]), digests, ties0, knows0, close0 });
     };
     for (const [name, setup, goal] of GOLDEN) evening(name, bp, SEED, { setup, goal });
     for (const [house, seed] of MORE) evening(`${house}/${seed}`, generateMansion({ seed: house }), seed, {});
@@ -315,8 +320,10 @@ describe("evenings with a spy", () => {
     for (const r of runs) {
       shares.push(...r.ev.shares);
       for (const c of r.ev.cues) if (c.how !== "late") waits[c.how as keyof typeof waits].push(c.wait);
-      // Playing the host or a waiter, the household keeps it to the programme for now (PR 2).
-      if (r.ev.setup === "host" || r.ev.setup === "waiter") expect(r.ev.cues, r.name).toEqual([]);
+      // Playing a waiter, the household keeps it to the programme for now (PR 5). Playing the host, it is prompted at each
+      // change and goes by its own announcement, a few seconds after making it.
+      if (r.ev.setup === "waiter") expect(r.ev.cues, r.name).toEqual([]);
+      if (r.ev.setup === "host") for (const c of r.ev.cues) expect(c.how, r.name).toBe("told");
     }
     expect(waits.heard.length).toBeGreaterThan(20);
     expect(waits.seen.length).toBeGreaterThan(5);
@@ -331,8 +338,12 @@ describe("evenings with a spy", () => {
     for (const r of runs) {
       const spy = r.party.spy!;
       expect(r.ev.tipsyMax, r.name).toBeLessThan(SOBER);
-      // As itself it studied nobody; playing someone, those it studied are the victim's people, as close as their tie.
-      for (let j = 0; j < spy.knows.length; j++) if (spy.knows[j] === 2) expect(spy.close[j]).toBeCloseTo(TIE_WEIGHT[r.ties0[j]!]!, 5);
+      // As itself it studied nobody; playing someone, those it studied are the victim's people, as close as their tie. It
+      // believes them no less close by the end.
+      for (let j = 0; j < spy.knows.length; j++) {
+        if (r.knows0[j] === 2) expect(r.close0[j]).toBeCloseTo(TIE_WEIGHT[r.ties0[j]!]!, 5);
+        expect(spy.close[j]).toBeGreaterThanOrEqual(r.close0[j]!);
+      }
       if (spy.setup === "self") expect(spy.knows.includes(2)).toBe(false);
       const believes = (j: number) => spy.close[j]! >= 0.5 || r.party.ident.tieOf(spy.id, j) > r.ties0[j]!;
       for (const e of r.party.events) {
@@ -399,25 +410,40 @@ describe("people reacting to someone out of step", () => {
       const flutes = party.events.filter((e) => e.kind === "react" && e.note === "glass");
       expect(flutes.length).toBeGreaterThan(0);
       for (const e of flutes) expect(party.people[e.actors[1]!]!.drinkLog.some((d) => d.drink === "champagne" && d.t >= e.t)).toBe(true);
-      // Three and a half minutes into dinner, a seated guest is sent on an errand while a partner or friend at the table can see them.
+      // From three and a half minutes into dinner, a seated guest is sent on an errand while a partner or friend at the table can see them.
       party.advance(dinner.start + 210 - party.t);
       const seated = (q: Person) => q.present && q.action?.id === "dinner" && q.action.startedAt !== null;
-      const p = party.people.find(
-        (q) =>
-          !q.staff &&
-          q.role === "guest" &&
-          q.id !== party.spyId &&
-          seated(q) &&
-          [...(q.partner !== null ? [q.partner] : []), ...q.friends].some((j) => seated(party.people[j]!) && party.canSee(party.people[j]!, q)),
-      )!;
-      expect(p).toBeDefined();
+      // (Called in once a phase: not someone already called in to the table.)
+      const called = (q: Person) => party.events.some((e) => e.kind === "react" && e.actors[1] === q.id && e.t >= dinner.start && /beckon|point/.test(e.note ?? ""));
+      const watched = (skip: ReadonlySet<number>) =>
+        party.people.find(
+          (q) =>
+            !q.staff &&
+            q.role === "guest" &&
+            q.id !== party.spyId &&
+            !skip.has(q.id) &&
+            seated(q) &&
+            !called(q) &&
+            [...(q.partner !== null ? [q.partner] : []), ...q.friends].some((j) => seated(party.people[j]!) && party.canSee(party.people[j]!, q)),
+        );
+      // Walking to the bar they can pass out of everyone's sight before anyone looks round (every 10 s), so up to five try.
       const bar = party.places.bars[0]!;
-      party.end(p, false);
-      expect(party.tasks.errand("drink", p, p, -1, bar, p)).not.toBeNull();
-      const from = party.events.length;
-      party.advance(15);
-      const called = party.events.slice(from).find((e) => e.kind === "react" && e.actors[1] === p.id);
-      expect(called?.note).toMatch(/beckon|point/);
+      const tried = new Set<number>();
+      let p: Person | undefined;
+      let call: (typeof party.events)[number] | undefined;
+      for (let k = 0; k < 5 && !call; k++) {
+        while (!watched(tried) && party.t < dinner.start + 10 * MIN) party.advance(15);
+        p = watched(tried);
+        if (!p) break;
+        tried.add(p.id);
+        party.end(p, false);
+        expect(party.tasks.errand("drink", p, p, -1, bar, p)).not.toBeNull();
+        const from = party.events.length;
+        party.advance(15);
+        call = party.events.slice(from).find((e) => e.kind === "react" && e.actors[1] === p!.id && /beckon|point/.test(e.note ?? ""));
+      }
+      expect(call?.note).toMatch(/beckon|point/);
+      p = party.people[call!.actors[1]!]!;
       // Called in, they drop the errand and go back to the table.
       party.advance(30);
       expect(party.tasks.of(p)?.kind).not.toBe("errand");

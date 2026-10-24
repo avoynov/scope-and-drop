@@ -13,7 +13,7 @@
 import type { Rng } from "../mansion/core/rng";
 import type { Body } from "./body";
 import type { PhaseId } from "./clock";
-import type { Ident } from "./ident";
+import { SURE_OF, type Ident, type IdentEvent } from "./ident";
 import { WARY, type Memory, type Verb } from "./memory";
 import type { Mood } from "./mood";
 import type { Places } from "./places";
@@ -141,6 +141,12 @@ export interface SensesHost {
   together(a: Person, b: Person): boolean;
   /** What a bond makes of a sighting (bonds.ts), after its own notes. */
   saw?(a: Person, b: Person, d: number): void;
+  /** What a look at someone they know brought about past the double take (a test, wanting to compare notes, sure). */
+  seenThrough?(a: Person, b: Person, e: IdentEvent): void;
+  /** a caught b fumbling something, in the detail of a look (an index into SLIP_SKILLS). */
+  sawSlip?(a: Person, b: Person, skill: number): void;
+  /** A look ended: anything else worth a glance (the garden's lost things). */
+  looked?(a: Person): void;
 }
 
 const ACTIONS: readonly ActionId[] = [
@@ -278,6 +284,14 @@ export class Senses {
     return this.host.t < p.lookUntil ? Math.atan2(p.lookX - p.x, p.lookZ - p.z) : p.yaw;
   }
 
+  /** Whether a point lies in the detail of someone's view: within DETAIL_RANGE, and DETAIL_FOV of where they look (a thing on the ground, nothing in the way checked). */
+  inDetail(a: Person, at: { level: number; x: number; z: number }): boolean {
+    if (a.level !== at.level) return false;
+    const dx = at.x - a.x;
+    const dz = at.z - a.z;
+    return dx * dx + dz * dz <= DETAIL_RANGE * DETAIL_RANGE && Math.abs(wrap(Math.atan2(dx, dz) - this.facing(a))) <= DETAIL_FOV;
+  }
+
   /** Two or more people standing on the line between them hide one from the other. */
   private crowded(a: Person, b: Person, dx: number, dz: number, d: number): boolean {
     if (!this.lookStep || !this.byRoom) return this.blockers(this.host.people, a, b, dx, dz, d, 0, true) >= 2;
@@ -312,6 +326,7 @@ export class Senses {
       seen.push(b.id);
       this.sighting(a, b, v.d, v.off);
     }
+    h.looked?.(a);
     // The bathroom doors in view: shut or ajar.
     this.doors(a);
     // Rooms seen into through doorways and glass.
@@ -348,10 +363,17 @@ export class Senses {
         h.glance(a, b.x, b.z, 1.5);
         memory.observe(a.id, "not-themselves", b.id, -1, b.room);
         h.log("double-take", [a.id, b.id], a.room);
-      } else if (e === "test") h.log("test", [a.id, b.id], a.room, "passed");
+      }
+      // The test logs itself, by whichever way it came about (ident.onTest).
+      if (e) h.seenThrough?.(a, b, e);
     }
-    // Wary of them: a glance when they're close.
-    if (d < 5 && memory.suspects(a.id, b.id) >= WARY && a.pose !== "walk" && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
+    // A fumble shows only up close and in the middle of their view.
+    if (detail && h.sawSlip) {
+      const s = ident.catchSlip(a.id, b.id, h.t);
+      if (s >= 0) h.sawSlip(a, b, s);
+    }
+    // Wary of them, or sure they aren't who they seem: a glance when they're close.
+    if (d < 5 && (memory.suspects(a.id, b.id) >= WARY || ident.stage[a.id * n + b.id] === SURE_OF) && a.pose !== "walk" && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
     h.saw?.(a, b, d);
   }
 

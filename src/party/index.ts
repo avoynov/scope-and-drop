@@ -10,6 +10,10 @@ export { Body, DRINK_LIFE } from "./body";
 export { Reactions, LATE } from "./reactions";
 export {
   Spy,
+  ACTS,
+  check as checkPrivacy,
+  factNames,
+  nearRooms,
   castSpy,
   goalOdds,
   goalRooms,
@@ -26,9 +30,12 @@ export {
   DELAY_SEEN,
   DELAY_TOLD,
   NOTICE,
+  type ActId,
   type CueHow,
   type CueRecord,
   type DangerWhy,
+  type InTheWay,
+  type PlanActionId,
   type GoalKind,
   type SpyBody,
   type SpyCast,

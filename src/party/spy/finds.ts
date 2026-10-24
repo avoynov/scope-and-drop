@@ -482,7 +482,7 @@ export class Finds {
       h.tasks.chore(
         q,
         [
-          { do: "goto", to: { level: w.level, x: w.x, z: w.z, yaw: yawTo(w.x, w.z, stand.x, stand.z), room: r }, label: "to-look" },
+          { do: "goto", to: { level: w.level, x: w.x, z: w.z, yaw: yawTo(w.x, w.z, stand.x, stand.z), room: r }, label: "to-stand" },
           { do: "wait", s: this.rng.range(LOOK_FOR[0], LOOK_FOR[1]), pose: "look", label: "gone-look" },
         ],
         this.spy.things.statuette,

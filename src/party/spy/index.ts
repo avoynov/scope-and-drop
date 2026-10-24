@@ -40,7 +40,7 @@ export { AVOID, BLUFF, BLUFF_KNOWN, DANGER_WHY, type DangerWhy } from "./answers
 export { AGREE_TOUR, DINNER_LEAVE, REFUSE_TOUR } from "./posing";
 export { ACTS, BUG_PLACES, GoalThings, type ActId, type BugPlace } from "./goals";
 export { ACTIONS, FACTS, factNames, plan, type Fact, type PlanActionId } from "./planner";
-export { check, held, type InTheWay, type PrivacyMode, type PrivacyResult } from "./privacy";
+export { check, held, nearRooms, type InTheWay, type PrivacyMode, type PrivacyResult } from "./privacy";
 export { Plans, type PlanRecord, type StepsHost } from "./steps";
 export { Finds, type FindsHost } from "./finds";
 

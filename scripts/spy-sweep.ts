@@ -18,7 +18,7 @@ import { generateMansion } from "../src/mansion";
 import type { MansionSize } from "../src/mansion/core/types";
 import { PARTY_LENGTH, TIME_SCALE } from "../src/party/clock";
 import { Party } from "../src/party/sim";
-import type { SpyOptions } from "../src/party/spy";
+import { COVERS, TELLS, type Cover, type SpyOptions, type TellId } from "../src/party/spy";
 import { GOALS, SETUPS } from "../src/party/spy/cast";
 import { isHard, watchSpy, type SpyEvening } from "../tests/spy-watch";
 
@@ -79,6 +79,22 @@ export async function runEvenings(specs: readonly EveningSpec[], jobs = Math.min
 
 // ------------------------------------------------------------------ the report
 
+/** The tells each cover gives (poison and murder give theirs in PR 5). */
+const COVER_TELLS: Record<Cover, readonly TellId[]> = {
+  "out-of-step": ["out-of-step"],
+  returns: ["returns"],
+  "odd-places": ["followed", "odd-place"],
+  startles: ["startled"],
+  tours: ["touring"],
+  "out-of-picture": ["camera-shy"],
+  drops: ["abandoned"],
+  alibi: ["cut-off", "bare-hand", "spill-off", "clean-shirt", "lost-off", "call"],
+  "others-things": ["their-bag"],
+  commotion: ["dark"],
+  poison: [],
+  murder: [],
+};
+
 const pct = (a: number, b: number): string => (b ? `${Math.round((100 * a) / b)}%` : "–");
 const mean = (xs: readonly number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const median = (xs: readonly number[]): number => {
@@ -129,7 +145,7 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     .filter((xs) => xs.length)
     .map((xs) => real(Math.min(...xs)));
   const twinsRate = mean(rs.map((r) => r.twins / (real(PARTY_LENGTH) / 5)));
-  const soft = mean(rs.map((r) => r.tells.filter((x) => x.what === "out-of-step").length));
+  const soft = mean(rs.map((r) => r.tells.filter((x) => TELLS[x.what].kind === "cover").length));
   // Its plan (PR 3): a waiter keeps the staff's routine and a kill ends at the target alone until PR 5, so the goals done count the rest.
   const planning = rs.filter((r) => r.setup !== "waiter");
   const goals = planning.filter((r) => r.goal !== "kill");
@@ -211,8 +227,31 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     `tells: out of step ${mean(steps.map((s) => s.length)).toFixed(1)} a night (seen by someone ${pct(steps.flat().filter((x) => x.seen).length, steps.flat().length)}) · the garment in ${garment.length} of ${playing.length} pre-party evenings`,
   );
 
-  // Seen through.
+  // Its covers (PR 4).
   const night = (f: (r: EveningResult) => number, of: readonly EveningResult[] = playing) => mean(of.map(f)).toFixed(1);
+  L.push("");
+  L.push("covers: the evenings each came on, its minutes on a night when it did, and its tells a night (seen by a guest)");
+  for (const c of COVERS) {
+    const on = rs.filter((r) => r.covers[c].spells > 0);
+    const tells = rs.map((r) => r.tells.filter((x) => COVER_TELLS[c].includes(x.what)));
+    const seen = tells.flat();
+    const said = COVER_TELLS[c].length ? `tells ${mean(tells.map((x) => x.length)).toFixed(1)} (${pct(seen.filter((x) => x.seen).length, seen.length)})` : "its tells in PR 5";
+    L.push(`  ${c.padEnd(15)} on in ${String(on.length).padStart(2)} of ${n} · ${on.length ? mean(on.map((r) => r.covers[c].mins)).toFixed(0) : "–"} min · ${said}`);
+  }
+  const hb = (k: keyof EveningResult["habits"]) => night((r) => r.habits[k], rs);
+  const tc = (k: keyof EveningResult["tactics"]) => night((r) => r.tactics[k], rs);
+  L.push(
+    `  habits a night: returns ${hb("returns")} · tours ${hb("tours")} (doors tried ${hb("rattles")}, peeks ${hb("peeks")}) · startles ${hb("startles")} · followed close ${hb("followed")} · out of the picture ${hb("slipped")} (stayed in ${hb("stayed")}) · errands dropped ${hb("drops")} (came looking ${hb("asked")})`,
+  );
+  L.push(
+    `  tactics a night: alibis ${tc("alibis")} (cut ${tc("cut")}, spill ${tc("spill")}, lost ${tc("lost")}, call ${tc("call")}) · washes ${tc("washes")} · bandages off ${tc("bandageOff")} · claims ${tc("claims")} · kept quiet ${tc("quiet")} · spills on an owner ${tc("spills")} · bags carried ${tc("carried")} · lights ${tc("lights")}`,
+  );
+  const self = rs.filter((r) => r.setup === "self");
+  L.push(
+    `  felt watched a night: wary glances ${night((r) => r.watched.glances, rs)} · tests failed ${night((r) => r.watched.tests, rs)} · circles hushed ${night((r) => r.watched.hushes, rs)} · lying low ${(100 * mean(playing.map((r) => r.lowShare))).toFixed(0)}% of its evening playing someone, ${(100 * mean(self.map((r) => r.lowShare))).toFixed(0)}% as itself`,
+  );
+
+  // Seen through.
   L.push("");
   L.push(`seen through, a night playing someone (${playing.length} evenings):`);
   L.push(

@@ -189,6 +189,8 @@ export interface DramasHost {
   /** Hand someone a drink they asked for, poured (the whiskies at the bar). */
   pour(p: Person, d: DrinkId): void;
   setDown(p: Person): void;
+  /** Off to change after a spill: a bag they carry may go down first (bags.ts). */
+  spilledOn?(v: Person): void;
   /** Someone fumbled a skill (an index into ident.ts SLIP_SKILLS), showing for this long. */
   slipped?(p: Person, skill: number, secs: number): void;
   /** Steps to ask where something is kept first, for someone sent for it who doesn't know the house (the spy playing the host); none for anyone else. */
@@ -695,11 +697,31 @@ export class Dramas {
       );
     }
     if (!v) return false;
-    const from = by.item >= 0 && items.kindOf(by.item) === "glass" ? by.item : -1;
+    return this.spillDown(by, v, by.item >= 0 && items.kindOf(by.item) === "glass" ? by.item : -1, by);
+  }
+
+  /**
+   * The spy's other people's things (spy/tactics.ts): its drink knocked down someone, or their own
+   * jogged when its hand is empty, as anyone's spill. False when there's nothing in a glass to spill.
+   */
+  spillOn(v: Person, by: Person): boolean {
+    const items = this.host.world.items;
+    const full = (q: Person) => (q.item >= 0 && items.kindOf(q.item) === "glass" && items.fill[q.item]! > 0.2 ? q.item : -1);
+    if (!v.present || v.gone || v.staff || v.stain) return false;
+    const mine = full(by);
+    const theirs = mine < 0 ? full(v) : -1;
+    if (mine < 0 && theirs < 0) return false;
+    return this.spillDown(by, v, mine >= 0 ? mine : theirs, mine >= 0 ? by : v);
+  }
+
+  /** A drink from `from` (in `holder`'s hand, -1: red wine from nowhere) down v, by's doing. */
+  private spillDown(by: Person, v: Person, from: number, holder: Person): boolean {
+    const h = this.host;
+    const items = h.world.items;
     const drink: DrinkId = from >= 0 ? items.drinkOf(from) : "red";
     if (from >= 0) {
       items.fill[from] = Math.max(0, items.fill[from]! - 0.5);
-      if (items.fill[from]! <= 0) h.setDown(by);
+      if (items.fill[from]! <= 0) h.setDown(holder);
     }
     v.stain = drink;
     h.ident.refresh(v);
@@ -738,6 +760,8 @@ export class Dramas {
       steps.push({ do: "goto", to: room, label: "to-change" }, { do: "wait", s: this.rng.range(90, 150), pose: "stand", label: "change" });
       if (this.task(e, v, [], steps)) {
         e.stage = "change";
+        // Up to change, a bag is left on a chair more often than not (bags.ts).
+        h.spilledOn?.(v);
         return;
       }
     }
@@ -820,6 +844,68 @@ export class Dramas {
     );
     this.task(e, carrier, [], steps);
     return true;
+  }
+
+  /**
+   * The spy's false alibi (spy/tactics.ts): all anyone sees of a cut or of a spill down itself (the
+   * crash and the held hand, the stain) and nothing after: it waves the help off and its own task
+   * takes it away, the broken glass swept up as ever. The episode, for whoever saw it and for the
+   * bandage later (dressNow()), or -1 when it can't be (no glass in hand, a bandage or a stain already).
+   */
+  staged(m: "cut" | "spill", p: Person): number {
+    const h = this.host;
+    const items = h.world.items;
+    const g = p.item >= 0 && items.kindOf(p.item) === "glass" ? p.item : -1;
+    if (g < 0) return -1;
+    if (m === "cut") {
+      if (p.bandage) return -1;
+      items.holder[g] = -1;
+      items.set(g, "broken", h.t);
+      items.place(g, p);
+      p.item = -1;
+      p.held = null;
+      h.sound("breaking-glass", p, p.id);
+      h.gesture(p, "startle", 1.5);
+      h.notable(p, "cut", -1, 90);
+      h.memory.observe(p.id, "cut", p.id, -1, p.room);
+      const e = this.ep("mishap", "cut", [p], "staged", h.t + 60 * MIN, p.room);
+      e.item = g;
+      h.log("mishap", [p.id], p.room, "cut:staged");
+      this.sweep(e, p, [g], "sweep");
+      return e.id;
+    }
+    if (p.stain || items.fill[g]! <= 0.2) return -1;
+    const drink = items.drinkOf(g);
+    items.fill[g] = Math.max(0, items.fill[g]! - 0.5);
+    if (items.fill[g]! <= 0) h.setDown(p);
+    p.stain = drink;
+    h.ident.refresh(p);
+    h.gesture(p, "startle", 1);
+    h.notable(p, "spill", p.id, 40);
+    h.memory.observe(p.id, "spill", p.id, p.id, p.room);
+    const e = this.ep("mishap", "spill", [p], "staged", h.t + 20 * MIN, p.room);
+    h.log("mishap", [p.id], p.room, "spill:staged");
+    return e.id;
+  }
+
+  /** Back from the wash after its staged cut (spy/tactics.ts): the kit fetched and the bandage on, as for anyone's, waiting where it stands. */
+  dressNow(p: Person, ep: number): void {
+    const e = this.episodes[ep];
+    if (!e || e.done || e.what !== "cut" || p.bandage || !p.present || p.gone) return;
+    e.stage = "await";
+    const h = this.host;
+    const carrier = this.carrierFor(p);
+    if (!carrier) return this.selfDress(e, p);
+    const steps: Step[] = [];
+    const kit = this.kit();
+    const at = kit >= 0 ? this.kitSpot(kit) : null;
+    if (at) steps.push(...(h.askWhere?.(carrier) ?? []), { do: "goto", to: at, label: "to-kit" }, { do: "pick", item: kit, label: "pick" });
+    steps.push(
+      { do: "meet", who: p.id, label: "to-patient" },
+      { do: "say", who: p.id, s: carrier.role === "doctor" ? DRESS.doctor : carrier.role === "host" ? DRESS.host : DRESS.other, pose: "serve", label: "dress" },
+    );
+    if (!this.task(e, carrier, [], steps)) return this.selfDress(e, p);
+    this.task(e, p, [], [{ do: "wait", s: 4 * MIN, pose: "wait", label: "await-kit" }]);
   }
 
   /** Who dresses a cut: the doctor, else the host, else the butler. */
@@ -974,6 +1060,7 @@ export class Dramas {
     if (k === "spectacles" && !owner.quirks.includes("glasses")) {
       owner.quirks.push("glasses");
       h.ident.refresh(owner);
+      h.ident.glassesBack(owner.id);
     }
     h.turnedUp(e.item, items.room[e.item]!);
     this.stats.returned++;
@@ -2029,6 +2116,8 @@ export class Dramas {
           e.n = 0;
           e.at = h.t + 30 * MIN;
           h.gesture(p, "shrug", 2);
+          // Anyone who sees them looking knows they've lost something (milestone 3 PR 4: the twin of the spy's lost thing).
+          h.notable(p, "lost-thing", e.item, 60);
           h.log("mishap", [p.id], p.room, "lost:search");
           return;
         }
@@ -2293,8 +2382,8 @@ export class Dramas {
       e.stage = "given-up";
     }
     if ((e.what === "spill" && e.cast[0] === p.id) || (e.what === "ankle" && t.what === "ankle") || e.what === "photo") this.close(e);
-    if (e.what === "cut" && p.id !== e.cast[0] && t.outcome !== "done") {
-      // The kit never came: they see to it themselves.
+    if (e.what === "cut" && p.id !== e.cast[0] && t.outcome !== "done" && t.steps.some((st) => st.label === "dress")) {
+      // The kit never came (not the sweeping up): they see to it themselves.
       const v = h.people[e.cast[0]!]!;
       if (v.present && !v.bandage) this.selfDress(e, v);
     }
@@ -2413,6 +2502,7 @@ export class Dramas {
     if (a) {
       h.gesture(p, "ask", 2);
       h.glance(a, p.x, p.z, 2);
+      h.memory.observe(a.id, "lost-thing", p.id, e.item, p.room);
       // Someone who was there points the way.
       const n = h.people.length;
       if (h.memory.lastRoom[a.id * n + p.id] === room || a.room === room) {

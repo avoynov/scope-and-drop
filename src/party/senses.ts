@@ -145,6 +145,8 @@ export interface SensesHost {
   seenThrough?(a: Person, b: Person, e: IdentEvent): void;
   /** a caught b fumbling something, in the detail of a look (an index into SLIP_SKILLS). */
   sawSlip?(a: Person, b: Person, skill: number): void;
+  /** a, wary of b (or sure of them), glanced at them close by: b may see it. */
+  waryLook?(a: Person, b: Person): void;
   /** A look ended: anything else worth a glance (the garden's lost things). */
   looked?(a: Person): void;
   /** Whether a can read what b's notable shows (someone going through a bag looks wrong only to whoever knows whose it is); absent, always. */
@@ -386,7 +388,10 @@ export class Senses {
       if (s >= 0) h.sawSlip(a, b, s);
     }
     // Wary of them, or sure they aren't who they seem: a glance when they're close.
-    if (d < 5 && (memory.suspects(a.id, b.id) >= WARY || ident.stage[a.id * n + b.id] === SURE_OF) && a.pose !== "walk" && h.t >= a.lookUntil) h.glance(a, b.x, b.z, 1.5);
+    if (d < 5 && (memory.suspects(a.id, b.id) >= WARY || ident.stage[a.id * n + b.id] === SURE_OF) && a.pose !== "walk" && h.t >= a.lookUntil) {
+      h.glance(a, b.x, b.z, 1.5);
+      h.waryLook?.(a, b);
+    }
     h.saw?.(a, b, d);
   }
 

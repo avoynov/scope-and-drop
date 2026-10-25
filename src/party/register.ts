@@ -154,6 +154,12 @@ export interface RegisterHost {
   readonly ident: Ident;
   readonly world: World;
   log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
+  /**
+   * What someone joining a circle says they've been doing, when it isn't simply where they were
+   * (the spy, milestone 3 PR 4): a room and a time of its own choosing, or nothing (null); undefined
+   * for the everyday claim.
+   */
+  tells?(p: Person, room: number, from: number): { room: number; from: number; to: number } | null | undefined;
 }
 
 /** A case as the lab shows it. */
@@ -1270,7 +1276,14 @@ export class Register {
   /** Someone joins a conversation and may say where they've just been. */
   joinsGroup(p: Person, others: readonly number[]): void {
     const i = p.id;
-    if (!others.length || this.prevRoom[i] === -1 || this.host.t - this.prevTo[i]! > CLAIM_RECENT) return;
+    if (!others.length) return;
+    const said = this.host.tells?.(p, this.prevRoom[i]!, this.prevFrom[i]!);
+    if (said === null) return;
+    if (said) {
+      for (const o of others) this.claim(o, i, said.room, said.from, said.to);
+      return;
+    }
+    if (this.prevRoom[i] === -1 || this.host.t - this.prevTo[i]! > CLAIM_RECENT) return;
     if (!this.rng.chance(CLAIM_TALK * (0.4 + p.traits.talk))) return;
     for (const o of others) this.claim(o, i, this.prevRoom[i]!, this.prevFrom[i]!, this.prevTo[i]!);
   }

@@ -16,18 +16,18 @@
  *   table (one clearing in ten). A `planted` case over the last two hours.
  * - The ledger copied leaves no gap, and nobody searches the host's jacket.
  *
- * Guests set a bag down on a chair or a table while they dance or play billiards, and fetch it
- * when they're done or a while after, only with a spy (PR 4 makes it every evening's), so
- * milestone 2's evenings come out as they always have. Every draw comes from its own fork.
+ * Guests set their bags down on a chair or a table and take them back every evening (bags.ts);
+ * the finds hear of the target's. Every draw comes from its own fork.
  */
 import type { Rng } from "../../mansion/core/rng";
 import type { Prop } from "../../mansion/core/types";
+import { standBy, type Bags, type BagsListener } from "../bags";
 import type { Memory } from "../memory";
 import { facing, frontOf, yawTo } from "../places";
 import { CASES, type Register } from "../register";
 import { DETAIL_RANGE, DETAIL_FOV } from "../senses";
 import type { Step, Task } from "../tasks";
-import type { ActionState, Gesture, PartyEvent, Person, Seat, Spot } from "../types";
+import type { Gesture, PartyEvent, Person, Seat, Spot } from "../types";
 import type { TheftFrom } from "./cast";
 import type { Spy } from "./index";
 import { held, type PrivacyHost, type Spot3 } from "./privacy";
@@ -39,6 +39,7 @@ export interface FindsHost extends PrivacyHost {
   readonly register: Register;
   readonly host: Person;
   readonly dramas: { busy(p: Person): boolean };
+  readonly bags: Bags;
   /** Whether a guest could be drawn into something now (outside the rituals, not busy). */
   free(p: Person): boolean;
   gesture(p: Person, g: Gesture, secs: number): void;
@@ -48,12 +49,6 @@ export interface FindsHost extends PrivacyHost {
   openCase(kind: "gone" | "planted", w: Person, owner: Person, obj: number, room: number, from: number, to?: number): void;
 }
 
-/** A carried bag goes down on a chair or a table within this (m) for a dance or a frame of billiards, this often. */
-const BAG_REACH = 6;
-const BAG_DOWN = { dance: 0.85, billiards: 0.95 } as const;
-/** Done dancing or playing, a bag is fetched at once more often than not; otherwise it stays on its chair a while (they'll come back for it). */
-const LEAVE_IT = 0.4;
-const LEFT_FOR: readonly [number, number] = [5 * 60, 20 * 60];
 /** Taking a bag back, a glance inside: one in two. */
 const BAG_LOOK = 0.5;
 /** Opening the bag or reaching for the phone: once or twice in the evening, between 19:20 and the farewell. */
@@ -79,8 +74,6 @@ const SAFE_LOOK = 10;
 const SOFA = 1 / 20;
 const TABLE = 1 / 10;
 const AT_TABLE = 1;
-/** Taking back a bag: anything of theirs and their party's within this (m). */
-const REACH = 2.5;
 /** What holds someone too busy to open a bag or reach for a phone just now, or to be drawn away. */
 const BUSY: ReadonlySet<string> = new Set(["toast", "dinner", "champagne", "task", "toilet", "leave", "row", "ask", "arrive", "greet", "staff", "dance"]);
 
@@ -91,10 +84,8 @@ interface Where {
   to: number;
 }
 
-export class Finds {
-  readonly stats = { down: 0, back: 0, checks: 0, gone: 0, missed: 0, lookers: 0, study: 0, bugs: 0 };
-  /** Bags set down to dance or play, by item: whose, since when, and not to be fetched before when (-1 not settled yet). */
-  private readonly down = new Map<number, { owner: number; since: number; until: number }>();
+export class Finds implements BagsListener {
+  readonly stats = { checks: 0, gone: 0, missed: 0, lookers: 0, study: 0, bugs: 0 };
   /** What the spy is after in someone's things: whose, and where it is kept (null: nothing of anyone's). */
   private readonly mark: { owner: number; from: TheftFrom } | null;
   /** When its owner last had it, and where it could have gone since; whether it has been missed. */
@@ -138,7 +129,7 @@ export class Finds {
   /** Its line in the party's digest. */
   digest(): string {
     const s = this.stats;
-    return `f${s.down},${s.back},${s.checks},${s.gone},${s.missed},${s.lookers},${s.study},${s.bugs}`;
+    return `f${s.checks},${s.gone},${s.missed},${s.lookers},${s.study},${s.bugs}`;
   }
 
   /** Every step: the owner's checks and crowds, and the host's look into the study, every other second. */
@@ -164,140 +155,31 @@ export class Finds {
 
   // ---------------------------------------------------------------------- bags
 
-  /** An action has begun at its spot: to dance or play billiards, a bag goes down on the nearest chair or table. */
-  begun(p: Person, a: ActionState): void {
-    const what = a.id === "dance" ? "dance" : a.id === "games" && a.note === "billiards" ? "billiards" : null;
-    if (!what || p.staff || p.id === this.spy.id || p.room === -1) return;
-    const h = this.h;
-    const items = h.world.items;
-    const bag = this.spy.things.bagOf(p);
-    if (bag < 0 || items.holder[bag] !== p.id || items.stateOf(bag) !== "carried" || !this.rng.chance(BAG_DOWN[what])) return;
-    const s = this.restingSpot(p);
-    if (!s) return;
-    items.holder[bag] = -1;
-    items.set(bag, "down", h.t);
-    items.place(bag, s);
-    this.down.set(bag, { owner: p.id, since: h.t, until: -1 });
-    this.stats.down++;
-    if (this.mark?.owner === p.id && this.mark.from === "bag") this.where(s.room, h.t);
+  /** Its target's bag set down on a chair or a table (bags.ts): a place it could go from, from now. */
+  down(p: Person, _bag: number, at: Spot): void {
+    if (this.mark?.owner === p.id && this.mark.from === "bag") this.where(at.room, this.h.t);
   }
 
-  /** Free again with a bag left down: back for it first (true: on the way), or later. */
-  fetch(p: Person): boolean {
-    const bag = this.downOf(p.id);
-    if (bag < 0) return false;
-    const d = this.down.get(bag)!;
-    if (d.until < 0) d.until = this.rng.chance(LEAVE_IT) ? this.h.t + this.rng.range(LEFT_FOR[0], LEFT_FOR[1]) : this.h.t;
-    if (this.h.t < d.until) return false;
-    const s = this.by(bag);
-    if (!s) {
-      this.pickUp(bag, p, false);
-      return false;
-    }
-    const t = this.h.tasks.chore(
-      p,
-      [
-        { do: "goto", to: s, label: "to-bag" },
-        { do: "wait", s: 2, pose: "serve", label: "bag-back" },
-      ],
-      bag,
-      "bag-back",
-    );
-    if (t.outcome === null) return true;
-    // No way back to it: it comes along all the same.
-    this.pickUp(bag, p, false);
-    return false;
-  }
-
-  /**
-   * Setting off home: the steps back for any bag of theirs still down, to go first; and on the way
-   * out, a hand into the bag already on their arm or the pocket for the phone.
-   */
-  goingHome(party: readonly Person[]): Step[] {
-    const steps: Step[] = [];
-    for (const q of party) {
-      const bag = this.downOf(q.id);
-      if (bag < 0) continue;
-      const s = this.by(bag);
-      if (s) steps.push({ do: "goto", to: s, label: "to-bag" }, { do: "wait", s: 2, pose: "serve", label: "bag-back" });
-      else this.pickUp(bag, q, false);
-    }
+  /** Its target's bag back on the arm: a glance inside one time in two, and always on the way out. */
+  back(owner: Person, _bag: number, how: "taken" | "leaving" | "carried"): void {
     const mark = this.mark;
-    for (const q of party) if (mark && q.id === mark.owner && (mark.from === "pocket" || (mark.from === "bag" && this.downOf(q.id) < 0))) this.check(q, mark.from);
-    return steps;
+    if (mark?.owner !== owner.id || mark.from !== "bag") return;
+    const w = this.since[this.since.length - 1];
+    if (w) w.to = this.h.t;
+    if (how === "leaving" || (how === "taken" && this.rng.chance(BAG_LOOK))) this.check(owner, "bag");
   }
 
-  /** Out of the door: a bag still down (no way back to it) goes with them. */
-  departed(p: Person): void {
-    const bag = this.downOf(p.id);
-    if (bag >= 0) this.pickUp(bag, p, false);
+  /** Setting off home: a hand into the bag already on their arm, or the pocket for the phone. */
+  goingHome(party: readonly Person[]): void {
+    const mark = this.mark;
+    for (const q of party) if (mark && q.id === mark.owner && (mark.from === "pocket" || (mark.from === "bag" && this.h.bags.downOf(q.id) < 0))) this.check(q, mark.from);
   }
 
-  /** A task step done: a bag taken back, a hand in a coat's pocket at the hook, the host at the safe. */
+  /** A task step done: a hand in a coat's pocket at the hook, the host at the safe. */
   stepDone(t: Task, p: Person, st: Step): void {
-    if (st.label === "bag-back") {
-      const leaving = t.kind === "leave";
-      const party = [t.owner, ...t.party];
-      const items = this.h.world.items;
-      for (const [bag, d] of [...this.down]) {
-        if (!party.includes(d.owner) || items.level[bag] !== p.level || Math.hypot(items.x[bag]! - p.x, items.z[bag]! - p.z) > REACH) continue;
-        this.pickUp(bag, this.h.people[d.owner]!, leaving || this.rng.chance(BAG_LOOK));
-      }
-    } else if (st.label === "coat-check" || (t.kind === "leave" && st.label === "coat")) {
+    if (st.label === "coat-check" || (t.kind === "leave" && st.label === "coat")) {
       for (const id of [t.owner, ...t.party]) this.check(this.h.people[id]!, "coat");
     } else if (st.label === "safe-check") this.atSafe(p);
-  }
-
-  private downOf(owner: number): number {
-    for (const [bag, d] of this.down) if (d.owner === owner) return bag;
-    return -1;
-  }
-
-  /** Back on the arm (with a look inside, perhaps). */
-  private pickUp(bag: number, owner: Person, look: boolean): void {
-    const h = this.h;
-    const items = h.world.items;
-    this.down.delete(bag);
-    if (items.stateOf(bag) !== "down" || items.holder[bag] !== -1) return;
-    items.holder[bag] = owner.id;
-    items.set(bag, "carried", h.t);
-    items.place(bag, owner);
-    this.stats.back++;
-    const mark = this.mark;
-    if (mark?.owner === owner.id && mark.from === "bag") {
-      const w = this.since[this.since.length - 1];
-      if (w) w.to = h.t;
-      if (look) this.check(owner, "bag");
-    }
-  }
-
-  /** The nearest seat or surface in their room within BAG_REACH. */
-  private restingSpot(p: Person): Spot | null {
-    const pl = this.h.places;
-    let best: Spot | null = null;
-    let bd = BAG_REACH;
-    const near = (s: Spot) => {
-      if (s.level !== p.level || s.room !== p.room) return;
-      const d = Math.hypot(s.x - p.x, s.z - p.z);
-      if (d < bd) {
-        bd = d;
-        best = s;
-      }
-    };
-    for (const s of pl.surfaces) near(s);
-    for (const s of pl.seats) near(s.approach);
-    return best;
-  }
-
-  /** Where to stand to take something from where it lies, facing it. */
-  private by(item: number): Spot | null {
-    const h = this.h;
-    const items = h.world.items;
-    const x = items.x[item]!;
-    const z = items.z[item]!;
-    const w = h.pf.snap(items.level[item]!, x, z, 1.2);
-    const room = w ? h.pf.roomAt(w.level, w.x, w.z) : -1;
-    return w && room !== -1 ? { level: w.level, x: w.x, z: w.z, yaw: yawTo(w.x, w.z, x, z), room } : null;
   }
 
   // ----------------------------------------------------------- owners' checks
@@ -357,7 +239,7 @@ export class Finds {
       this.coatTrip = -1;
       return;
     }
-    const s = q.coat >= 0 && h.world.items.stateOf(q.coat) === "hung" ? this.by(q.coat) : null;
+    const s = q.coat >= 0 && h.world.items.stateOf(q.coat) === "hung" ? standBy(h, q.coat) : null;
     if (!s) {
       this.coatTrip = -1;
       return;

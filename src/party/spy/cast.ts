@@ -15,6 +15,7 @@ import type { DramaCast } from "../dramas";
 import { TIE_WEIGHT, type Tie } from "../ident";
 import type { Places } from "../places";
 import { SKILLS, type Archetype, type DrinkId, type Person, type Quirk, type Sex, type Skill, type Traits } from "../types";
+import type { Cover } from "./scheduler";
 
 /** How it comes: as itself, or as someone killed before the party (a guest, the host, a waiter). */
 export type SpySetup = "self" | "victim" | "host" | "waiter";
@@ -38,6 +39,8 @@ export interface SpyOptions {
   steal?: number;
   /** A person id: whom to kill, whose bag, or (with a victim setup) whom to play. */
   target?: number;
+  /** Covers held on all evening, past the caps (scheduler.ts). */
+  on?: readonly Cover[];
 }
 
 /** As itself in 55% of evenings; otherwise as someone killed before the party. */

@@ -5,7 +5,8 @@
  * follows with the crowd's tail: 60 to 150 s after an announcement it heard, 1.5 to 3 minutes
  * after it saw the room move. Someone beckoning it in is a cue too. Its phase only ever steps to
  * the one running and only on a cue, so it is never ahead of the room; out of earshot and out of
- * sight of everyone, it notices anyway after 20 minutes.
+ * sight of everyone, it notices anyway after 20 minutes. Out of step (PR 4's habit), a change it
+ * heard or saw waits 5 to 20 minutes, from the same one draw.
  */
 import type { Rng } from "../../mansion/core/rng";
 import { phaseIndexAt, type Phase, type PhaseId } from "../clock";
@@ -18,6 +19,8 @@ export type CueHow = "start" | "heard" | "seen" | "told" | "late";
 export const DELAY_HEARD: readonly [number, number] = [60, 150];
 /** After the room seen moving, having missed the announcement. */
 export const DELAY_SEEN: readonly [number, number] = [90, 180];
+/** Out of step: a change heard or seen (beckoned in, it still comes in DELAY_TOLD). */
+export const DELAY_OUT: readonly [number, number] = [5 * 60, 20 * 60];
 /** Beckoned in by someone, or the way pointed. */
 export const DELAY_TOLD: readonly [number, number] = [5, 15];
 /** People seen acting on the new phase that make the room seen moving. */
@@ -70,6 +73,8 @@ export interface CueRecord {
   /** When it caught the change, and when it acted on it (in-game s). */
   caught: number;
   acted: number;
+  /** Caught out of step: the longer wait. */
+  out: boolean;
 }
 
 /** A change caught and not yet acted on: the phase, when it will act on it, how and when it caught it. */
@@ -78,6 +83,7 @@ export interface Pending {
   at: number;
   how: CueHow;
   caught: number;
+  out: boolean;
 }
 
 export class Cues {
@@ -94,9 +100,11 @@ export class Cues {
   private readonly seen = new Set<number>();
   private seenFor = -1;
 
+  /** `slow`: whether it is out of step just now (the habit, scheduler.ts). */
   constructor(
     private readonly host: CuesHost,
     private readonly rng: Rng,
+    private readonly slow: () => boolean = () => false,
   ) {}
 
   /** In at the door: it knows what anyone coming in would, the phase running for the slowest guest. */
@@ -116,6 +124,13 @@ export class Cues {
   step(p: Person): void {
     const h = this.host;
     const t = h.t;
+    // The newer change caught is acted on at its own time, even before the older one still waiting (out of step, that one waits
+    // long): the room has moved on twice, and it goes straight to the newer.
+    if (this.next && t >= this.next.at) {
+      const c = this.next;
+      this.pending = this.next = null;
+      this.act(c);
+    }
     while (this.pending && t >= this.pending.at) {
       const c = this.pending;
       this.pending = this.next;
@@ -128,7 +143,7 @@ export class Cues {
     if (a && a.phase === cur && h.wouldHear(a.at, p)) return this.caught(cur, "heard");
     if (t - h.programme[cur]!.start >= NOTICE) {
       this.pending = this.next = null;
-      this.act({ phase: cur, at: t, how: "late", caught: t });
+      this.act({ phase: cur, at: t, how: "late", caught: t, out: false });
     }
   }
 
@@ -152,15 +167,16 @@ export class Cues {
     if (cur <= this.phase) return;
     let at = h.t + this.rng.range(DELAY_TOLD[0], DELAY_TOLD[1]);
     for (const c of [this.pending, this.next]) if (c && c.phase >= cur) at = Math.min(at, c.at);
-    this.pending = { phase: cur, at, how: "told", caught: h.t };
+    this.pending = { phase: cur, at, how: "told", caught: h.t, out: false };
     this.next = null;
   }
 
-  /** A change caught: the delay it waits before acting on it, by how it was caught. One caught while another waits is acted on after its own delay, once the first is. */
+  /** A change caught: the delay it waits before acting on it, by how it was caught (out of step, longer). One caught while another waits is acted on after its own delay: once the first is, or first if it comes due first. */
   private caught(k: number, how: "heard" | "seen"): void {
     const t = this.host.t;
-    const [lo, hi] = how === "heard" ? DELAY_HEARD : DELAY_SEEN;
-    const c: Pending = { phase: k, at: t + this.rng.range(lo, hi), how, caught: t };
+    const out = this.slow();
+    const [lo, hi] = out ? DELAY_OUT : how === "heard" ? DELAY_HEARD : DELAY_SEEN;
+    const c: Pending = { phase: k, at: t + this.rng.range(lo, hi), how, caught: t, out };
     if (this.pending) this.next = c;
     else this.pending = c;
   }
@@ -171,7 +187,7 @@ export class Cues {
     this.phase = c.phase;
     this.since = t;
     this.how = c.how;
-    this.log.push({ phase: c.phase, how: c.how, caught: c.caught, acted: t });
+    this.log.push({ phase: c.phase, how: c.how, caught: c.caught, acted: t, out: c.out });
     this.host.cued(c.phase, c.how);
   }
 }

@@ -3,18 +3,21 @@
  * itself: the spy tests and the sweep share it. `watch()` runs an evening one step at a time and
  * asks each check after every step, so a failure names the moment to open in the lab. Each pull
  * request adds the checks for its part; PR 1 has the exit, the programme and staying sober, PR 2
- * the tests, PR 3 the plan's privacy and steps.
+ * the tests, PR 3 the plan's privacy and steps, PR 4 the covers.
  * `watchSpy()` runs an evening under them all and measures it, for the tests and the sweep alike.
  */
 import { PARTY_LENGTH, phaseIndexAt } from "../src/party/clock";
 import { LAST_TOAST } from "../src/party/mind";
-import { HURRY_OUT, type Party } from "../src/party/sim";
+import { HURRY_OUT, STEP, type Party } from "../src/party/sim";
 import type { CueHow, GoalKind, SpySetup } from "../src/party/spy";
 import { DELAY_TOLD } from "../src/party/spy/cues";
 import type { ActId } from "../src/party/spy/goals";
+import type { Habits } from "../src/party/spy/habits";
 import { ranks, TELLS, type TellId } from "../src/party/spy/measure";
 import { ACTION_BY_ID, F, factNames, type PlanActionId } from "../src/party/spy/planner";
 import { held } from "../src/party/spy/privacy";
+import { COVERS, MAX_ON, MAX_TOTAL, OFF, ON, PICTURE_OFF, type Cover } from "../src/party/spy/scheduler";
+import type { Tactics } from "../src/party/spy/tactics";
 
 /** What broke, which check saw it, and when (in-game s after 19:00). */
 export interface Broken {
@@ -258,15 +261,81 @@ export function stepsCheck(): Check {
   });
 }
 
-/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps), fresh for one evening. */
-export function spyChecks(): { exit: Check; programme: ReturnType<typeof programmeCheck>; sober: Check; tests: Check; privacy: Check; steps: Check; all: Check[] } {
+/** Whether a cover counts against the caps: not one the options hold on, nor keeping out of the picture while the spy plays someone. */
+const capped = (spy: NonNullable<Party["spy"]>, c: Cover): boolean => !spy.covers.state[COVERS.indexOf(c)]!.forced && !(c === "out-of-picture" && spy.playing);
+
+/**
+ * Covers (PR 4): each comes on for 10 to 40 minutes, less only when its 90 minutes in all run out
+ * or the spy goes home, and then stays off at least 15 (keeping out of the picture while it plays
+ * someone, at least 5); never more than three are on at once, none before it arrives, and none for
+ * more than 90 minutes in all. A cover the options hold on is on from its arrival until it goes,
+ * and keeping out of the picture while it plays someone is outside the caps.
+ */
+export function coversCheck(): Check {
+  let told = false;
+  return {
+    name: "covers",
+    step(party) {
+      const spy = party.spy;
+      if (!spy || told) return null;
+      const on = spy.covers.list.filter((c) => capped(spy, c));
+      if (on.length <= MAX_ON) return null;
+      told = true;
+      return `${on.length} on at once: ${on.join(", ")}`;
+    },
+    end(party) {
+      const spy = party.spy;
+      if (!spy) return null;
+      const ev = party.events;
+      const arrived = ev.find((e) => e.kind === "spy" && e.note?.startsWith("arrive"))?.t ?? -1;
+      const left = ev.find((e) => e.kind === "leave" && e.actors[0] === spy.id)?.t ?? party.t;
+      const mins = (s: number) => (s / 60).toFixed(1);
+      const out: string[] = [];
+      for (const c of COVERS) {
+        const spells = spy.covers.spells.filter((x) => x.cover === c).map((x) => ({ from: x.from, to: x.to < 0 ? party.t : x.to }));
+        if (spy.covers.state[COVERS.indexOf(c)]!.forced) {
+          const x = spells[0];
+          if (spells.length !== 1 || x!.from !== arrived || x!.to !== left) out.push(`${c}, held on, on ${spells.map((y) => `${mins(y.from)} to ${mins(y.to)}`).join(", ")} min`);
+          continue;
+        }
+        const caps = capped(spy, c);
+        let total = 0;
+        let last = -1;
+        for (const x of spells) {
+          const len = x.to - x.from;
+          total += len;
+          if (x.from < arrived) out.push(`${c} on at ${mins(x.from)} min, before it arrived`);
+          if (last >= 0 && x.from - last < (caps ? OFF[0] : PICTURE_OFF[0]) - STEP) out.push(`${c} off only ${mins(x.from - last)} min at ${mins(last)}`);
+          if (len > ON[1] + STEP) out.push(`${c} on ${mins(len)} min from ${mins(x.from)}`);
+          else if (len < ON[0] - STEP && x.to !== left && !(caps && total >= MAX_TOTAL - STEP)) out.push(`${c} on only ${mins(len)} min from ${mins(x.from)}`);
+          last = x.to;
+        }
+        if (caps && total > MAX_TOTAL + STEP) out.push(`${c} on ${mins(total)} min in all`);
+      }
+      return out.length ? out.join("; ") : null;
+    },
+  };
+}
+
+/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps; PR 4: covers), fresh for one evening. */
+export function spyChecks(): {
+  exit: Check;
+  programme: ReturnType<typeof programmeCheck>;
+  sober: Check;
+  tests: Check;
+  privacy: Check;
+  steps: Check;
+  covers: Check;
+  all: Check[];
+} {
   const exit = exitCheck();
   const programme = programmeCheck();
   const sober = soberCheck();
   const tests = testsCheck();
   const privacy = privacyCheck();
   const steps = stepsCheck();
-  return { exit, programme, sober, tests, privacy, steps, all: [exit, programme, sober, tests, privacy, steps] };
+  const covers = coversCheck();
+  return { exit, programme, sober, tests, privacy, steps, covers, all: [exit, programme, sober, tests, privacy, steps, covers] };
 }
 
 /** The reactions to someone out of step (PR 1): brought a flute, beckoned in, pointed the way. */
@@ -279,8 +348,8 @@ export interface SpyEvening {
   theft: boolean;
   garment: boolean;
   broken: Broken[];
-  /** Each change it acted on: the phase, how it caught it, the wait from catching to acting, and how long after the phase began it acted. */
-  cues: Array<{ phase: string; how: CueHow; wait: number; after: number }>;
+  /** Each change it acted on: the phase, how it caught it (and whether out of step), the wait from catching to acting, and how long after the phase began it acted. */
+  cues: Array<{ phase: string; how: CueHow; out: boolean; wait: number; after: number }>;
   /** Share of the other guests in its room already on each phase it moved on to. */
   shares: number[];
   arrivedAt: number;
@@ -346,6 +415,16 @@ export interface SpyEvening {
   /** The cases the crowd opened over its work (something missed, a bug found), and its place among the ten most suspected as it set off home (0: not among them). */
   traces: number;
   rankAtGo: number;
+  /**
+   * Its covers (PR 4): each one's spells and minutes on in all, the habits' and tactics' doings,
+   * and how often it felt watched (a wary glance, a test it failed, a circle hushed as it joined).
+   */
+  covers: Record<Cover, { spells: number; mins: number }>;
+  habits: Habits["stats"];
+  tactics: Tactics["stats"];
+  watched: { glances: number; tests: number; hushes: number };
+  /** The share of its time at the party it spent lying low (its habits paused, no risky step started). */
+  lowShare: number;
   /** Wall time of the evening (ms), monitors included. */
   ms: number;
 }
@@ -378,11 +457,17 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
   /** Playing the host, those it has said goodbye to since then. */
   const seenOff = new Set<number>();
   let read = 0;
+  let here = 0;
+  let low = 0;
   const notes: Check = {
     name: "notes",
     step(p) {
       const me = spy.record;
       tipsyMax = Math.max(tipsyMax, me.tipsy);
+      if (me.present && !me.gone) {
+        here++;
+        if (p.t < spy.answers.lowUntil) low++;
+      }
       if (!stayers && p.byeAt >= 0) stayers = p.people.filter((q) => q.id !== spy.id && !q.staff && q.role !== "host" && !p.memory.household[q.id] && !q.gone).map((q) => q.id);
       if (goingAt < 0 && p.byeAt >= 0) {
         for (; read < p.events.length; read++) {
@@ -422,7 +507,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
     theft: !!spy.goal.first,
     garment: !!spy.garment,
     broken,
-    cues: spy.cues.log.filter((c) => c.how !== "start").map((c) => ({ phase: prog[c.phase]!.id, how: c.how, wait: c.acted - c.caught, after: c.acted - prog[c.phase]!.start })),
+    cues: spy.cues.log.filter((c) => c.how !== "start").map((c) => ({ phase: prog[c.phase]!.id, how: c.how, out: c.out, wait: c.acted - c.caught, after: c.acted - prog[c.phase]!.start })),
     shares: checks.programme.shares,
     arrivedAt: ev.find((e) => e.kind === "spy" && e.note?.startsWith("arrive"))?.t ?? 0,
     byeAt: party.byeAt,
@@ -470,6 +555,16 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
     followedAt: spyNote(ev, "task:follow"),
     traces: ev.filter((e) => e.kind === "react" && TRACES.has(e.note ?? "")).length,
     rankAtGo,
+    covers: Object.fromEntries(
+      COVERS.map((c) => {
+        const spells = spy.covers.spells.filter((x) => x.cover === c);
+        return [c, { spells: spells.length, mins: spells.reduce((s, x) => s + (x.to < 0 ? party.t : x.to) - x.from, 0) / 60 }];
+      }),
+    ) as SpyEvening["covers"],
+    habits: { ...spy.habits.stats },
+    tactics: { ...spy.tactics.stats },
+    watched: { glances: spy.covers.stats.glances, tests: spy.covers.stats.tests, hushes: spy.answers.stats.hushes },
+    lowShare: here ? low / here : 0,
     ms,
   };
 }

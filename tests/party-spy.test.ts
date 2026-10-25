@@ -14,7 +14,7 @@ import { FEATURES, Ident, TIE_WEIGHT, type Tie } from "../src/party/ident";
 import type { Places } from "../src/party/places";
 import { Party } from "../src/party/sim";
 import { castSpy, goalOdds, GOALS, selfCandidates, studied, type GoalKind, type SpyCast, type SpyOptions, type SpySetup } from "../src/party/spy/cast";
-import { DELAY_HEARD, DELAY_SEEN, DELAY_TOLD } from "../src/party/spy/cues";
+import { DELAY_HEARD, DELAY_OUT, DELAY_SEEN, DELAY_TOLD } from "../src/party/spy/cues";
 import type { Person } from "../src/party/types";
 import { SOBER, watchSpy, type Check, type SpyEvening } from "./spy-watch";
 
@@ -315,11 +315,12 @@ describe("evenings with a spy", () => {
   }, 60_000);
 
   it("follows the programme by its cues: behind the room, never ahead, on the plan's delays", () => {
-    const waits = { heard: [] as number[], seen: [] as number[], told: [] as number[] };
+    const waits = { heard: [] as number[], seen: [] as number[], told: [] as number[], out: [] as number[] };
     const shares: number[] = [];
     for (const r of runs) {
       shares.push(...r.ev.shares);
-      for (const c of r.ev.cues) if (c.how !== "late") waits[c.how as keyof typeof waits].push(c.wait);
+      // Out of step (the habit), a change heard or seen waits longer; beckoned in, it still comes at once.
+      for (const c of r.ev.cues) if (c.how !== "late") waits[c.out ? "out" : (c.how as "heard" | "seen" | "told")].push(c.wait);
       // Playing a waiter, the household keeps it to the programme for now (PR 5). Playing the host, it is prompted at each
       // change and goes by its own announcement, a few seconds after making it.
       if (r.ev.setup === "waiter") expect(r.ev.cues, r.name).toEqual([]);
@@ -330,6 +331,7 @@ describe("evenings with a spy", () => {
     for (const w of waits.heard) (expect(w).toBeGreaterThanOrEqual(DELAY_HEARD[0]), expect(w).toBeLessThanOrEqual(DELAY_HEARD[1] + 0.5));
     for (const w of waits.seen) (expect(w).toBeGreaterThanOrEqual(DELAY_SEEN[0]), expect(w).toBeLessThanOrEqual(DELAY_SEEN[1] + 0.5));
     for (const w of waits.told) expect(w).toBeLessThanOrEqual(DELAY_TOLD[1] + 0.5);
+    for (const w of waits.out) (expect(w).toBeGreaterThanOrEqual(DELAY_OUT[0]), expect(w).toBeLessThanOrEqual(DELAY_OUT[1] + 0.5));
     // After most of the guests in its room, on average.
     expect(shares.reduce((a, b) => a + b, 0) / shares.length).toBeGreaterThan(0.5);
   });

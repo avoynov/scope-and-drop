@@ -2,7 +2,8 @@
  * The spy, milestone 3 PR 5 "Killing and faces" (technical plan: Killing, bodies and poison):
  * each way of killing set up by hand in a quiet room during dinner, from the moment to the body
  * hidden, and a witness at a strangling, who backs away to tell while the victim, let go out
- * cold, comes to.
+ * cold, comes to. Then someone gone without a word, looked for and said to be missing, and the
+ * spy silencing someone sure of it, once.
  */
 import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
@@ -173,5 +174,111 @@ describe("killing", () => {
     expect(spy.bodies).toHaveLength(0);
     expect(spy.goal.doneAt).toBeNull();
     expect(spy.kill.stats.survived).toBe(1);
+  });
+});
+
+describe("someone missing, and silencing a doubter", () => {
+  it("someone gone without a word is looked for, never found, and said to be missing; whoever settles it on someone keeps them in view", () => {
+    const party = new Party(bp, { seed: "miss-1" });
+    party.advance(100 * MIN);
+    const n = party.people.length;
+    const q = party.people[18]!;
+    const r = party.people[q.partner!]!;
+    const l = party.people[20]!;
+    expect(q.present && r.present && l.present).toBe(true);
+    // The last r sees of q: in the study with l.
+    const room = bp.rooms.find((x) => x.type === "study")!.index;
+    const a = spotIn(party, room, -0.6, 0);
+    const b = spotIn(party, room, 0.6, 0);
+    const c = spotIn(party, room, 0, -2.5);
+    put(party, q, a, Math.PI / 2, 2 * MIN);
+    put(party, l, b, -Math.PI / 2, 2 * MIN);
+    put(party, r, c, 0, 30);
+    party.advance(80);
+    expect(party.memory.lastRoom[r.id * n + q.id]).toBe(room);
+    party.leavePlay(q);
+    l.thinkAt = party.t;
+    const t0 = party.t;
+    while (party.t < t0 + 60 * MIN && !party.events.some((e) => e.note === "keep-in-view")) party.step();
+    // They looked as long as they would, found nobody, and said so: missing, last seen in the study.
+    const searches = party.tasks.list.filter((t) => t.kind === "search" && t.owner === r.id);
+    expect(searches.some((t) => t.looked && t.outcome === "gave-up")).toBe(true);
+    expect(searches.some((t) => t.outcome === "found")).toBe(false);
+    const cs = party.register.casesOf(r.id).filter((x) => x.kind === "person-gone" && x.subject === q.id);
+    expect(cs).toHaveLength(1);
+    expect(cs[0]).toMatchObject({ room, state: "settled", firstHand: true });
+    expect(cs[0]!.candidates[0]!.who).toBe(l.id);
+    // Their partner keeps whoever they blame in view: wherever they last saw them scores higher.
+    expect(party.events.find((e) => e.note === "keep-in-view")?.actors).toEqual([r.id, l.id, q.id]);
+    expect(party.keepInView(r)).toBe(party.memory.lastRoom[r.id * n + l.id]);
+    // A stranger settling it keeps nobody in view.
+    const x = party.people.find((o) => o.present && !o.staff && o !== r && o.partner !== q.id && !q.friends.includes(o.id))!;
+    party.settled(x.id, "person-gone", q.id, l.id);
+    expect(party.keepInView(x)).toBe(-1);
+  });
+
+  it("follows its one doubter off somewhere quiet, strangles them alone and hides them, and never does it twice", () => {
+    /** At 20:50 with murder on: the spy, and the first two guests it could be after. */
+    const evening = () => {
+      const party = new Party(bp, { seed: "silence-1", spy: { setup: "self", goal: "statuette", on: ["murder"] } });
+      party.advance(110 * MIN);
+      const spy = party.spy!;
+      expect(party.programme[spy.phase]!.id).toBe("dancing");
+      const [q, q2] = party.people.filter((o) => !o.staff && o.role === "guest" && o.present && o.id !== spy.id) as [Person, Person];
+      return { party, spy, p: spy.record, q, q2 };
+    };
+    /** Off on a wander through an empty bedroom upstairs, the spy idling a few metres behind, seeing them go. */
+    const offAlone = (party: Party, p: Person, who: Person) => {
+      const room = quietBedroom(party);
+      const a = spotIn(party, room, 0, 1);
+      const b = spotIn(party, room, 0, -2.5);
+      put(party, who, a, 0);
+      party.start(who, { id: "wander", target: { ...spotIn(party, room, 1, 1.5), yaw: 0 }, duration: 120, pose: "look", gain: {} });
+      put(party, p, b, yawTo(b.x, b.z, a.x, a.z), 0);
+    };
+    {
+      // Two who saw it kill: silencing one would only leave another body.
+      const { party, spy, p, q, q2 } = evening();
+      spy.answers.sawKill(q.id);
+      spy.answers.sawKill(q2.id);
+      offAlone(party, p, q);
+      party.advance(3 * MIN);
+      expect(spy.silence.stats.trails).toBe(0);
+      expect(q.down).toBeNull();
+    }
+    const { party, spy, p, q, q2 } = evening();
+    spy.answers.sawKill(q.id);
+    expect(spy.answers.sureOfIt(q.id)).toBe(true);
+    // Meaning to silence them, it keeps them in view: the room it last saw them in.
+    party.advance(2);
+    expect(spy.silence.watching).toBe(q.id);
+    expect(party.keepInView(p)).toBe(party.memory.lastRoom[p.id * party.people.length + q.id]);
+    const tried = spy.goal.triedAt;
+    const done = spy.goal.doneAt;
+    const bodies = spy.bodies.length;
+    offAlone(party, p, q);
+    let followed = -1;
+    const stages = run(party, 10 * MIN, () => {
+      if (followed < 0 && spy.silence.trailing >= 0) followed = spy.silence.trailing;
+    });
+    expect(followed).toBe(q.id);
+    expect(stages.filter((s) => s !== "out")).toEqual(["close", "struggle", "drag", "finish", "hide"]);
+    expect(q.down).toBe("dead");
+    expect(q.present).toBe(false);
+    expect(spy.bodies).toHaveLength(bodies + 1);
+    expect(spy.bodies[bodies]).toMatchObject({ who: q.id, how: "strangled" });
+    expect(spy.silence.done).toBe(true);
+    // Its goal is its own business: a doubter silenced neither tries nor does it.
+    expect(spy.goal.triedAt).toBe(tried);
+    expect(spy.goal.doneAt).toBe(done);
+    // Someone else sure of it, alone in the same way: once was its one time tonight.
+    spy.answers.sawKill(q2.id);
+    offAlone(party, p, q2);
+    const t0 = party.t;
+    while (party.t < t0 + 5 * MIN) {
+      party.step();
+      expect(spy.silence.busy || spy.kill.busy).toBe(false);
+    }
+    expect(q2.down).toBeNull();
   });
 });

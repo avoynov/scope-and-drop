@@ -92,6 +92,7 @@ const WHY_LABEL: Record<DangerWhy, string> = {
   challenge: "a challenge",
   name: "a name it didn't know",
   witness: "saw it kill",
+  failed: "a test it failed",
 };
 /** What a test came to, in the log once the spy is revealed. */
 const TEST_LABEL: Record<string, string> = { passed: "it's them", fumbled: "too drunk to get it, and laughs it off", bluffed: "they laugh along", failed: "a blank look" };
@@ -1389,6 +1390,14 @@ export class SpyLab {
     }
     const top = spy.answers.top(5);
     lines.push(top.length ? `most dangerous to it: ${top.map((x) => `${name(x.id)} ${pct(x.danger)} (${x.why.map((w) => WHY_LABEL[w]).join(", ")})`).join(" · ")}` : "thinks nobody dangerous yet");
+    // Silencing someone sure of it: whom it follows now, or whom it silenced.
+    const sil = spy.silence;
+    const silenced = ev.find((e) => e.kind === "spy" && /^silence:(dead|survived):/.test(e.note ?? ""));
+    if (sil.trailing >= 0) lines.push(`following ${name(sil.trailing)}, sure of it, to silence them`);
+    else if (silenced) {
+      const [, out, who] = silenced.note!.split(":");
+      lines.push(`${out === "dead" ? "silenced" : "tried to silence"} ${name(Number(who))} at ${clockLabel(silenced.t)}${out === "dead" ? "" : ", who lived"}`);
+    }
     if (spy.victim >= 0) {
       const unseen = party.people.filter((q) => q.id !== spy.id && q.present && !q.gone && party.ident.tieOf(q.id, spy.id) >= 3 && spy.answers.danger[q.id] === 0);
       lines.push(unseen.length ? `close to ${name(spy.victim)}, not spotted yet: ${unseen.map((q) => q.name).join(", ")}` : `has spotted every close tie of ${name(spy.victim)}'s here`);

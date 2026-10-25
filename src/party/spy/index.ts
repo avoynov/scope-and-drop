@@ -22,7 +22,8 @@
  * things, the lights.
  *
  * PR 5 has it kill (kill.ts): strangling or the injection, whichever moment comes, the body
- * hidden, and whoever sees it sure at once.
+ * hidden, and whoever sees it sure at once; and, once at most, silence someone it has seen to be
+ * sure of it (silence.ts).
  */
 import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH, phaseIndexAt } from "../clock";
@@ -41,6 +42,7 @@ import { Measure, TWIN_VERBS, type TellId } from "./measure";
 import { Posing } from "./posing";
 import { held } from "./privacy";
 import { Covers, type Cover, type CoversHost } from "./scheduler";
+import { Silencing } from "./silence";
 import { Plans } from "./steps";
 import { Tactics, type TacticsHost } from "./tactics";
 
@@ -58,6 +60,7 @@ export { COVERS, Covers, HABIT_COVERS, MAX_ON, MAX_TOTAL, RISKY, type Cover, typ
 export { Habits, outOfStep, type Deed, type HabitsHost } from "./habits";
 export { ALIBI_KINDS, Tactics, type Alibi, type AlibiKind, type TacticsHost } from "./tactics";
 export { DRAG_SPEED, DYING, EMBRACE, FINISH, Killing, STRUGGLE, WALK_OFF_SPEED, type Hide, type HidePlace, type KillHost, type KillHow, type KillOutcome, type KillStage, type KillWhy } from "./kill";
+export { Silencing } from "./silence";
 
 /** What the spy needs from the party. */
 export interface SpyHost extends CuesHost, AnswersHost, TacticsHost, CoversHost, KillHost {
@@ -123,6 +126,8 @@ export class Spy {
   readonly tactics: Tactics;
   /** Its kills (kill.ts): one at a time, for the goal, a doubter or a face. */
   readonly kill: Killing;
+  /** Going after someone sure of it, once at most (silence.ts). */
+  readonly silence: Silencing;
   /** Leaving: the share of the leavers it goes at, why (its goal done, or given up at the first goodbye), and how long a late deed keeps it. */
   readonly exit: { at: number; why: "done" | "gave-up" | null; stay: number } = { at: 0, why: null, stay: 0 };
   /** The record's ties as the evening began: a tie raised tonight is one it saw made. */
@@ -167,6 +172,7 @@ export class Spy {
     this.habits = new Habits(host, this, rng.fork("habits"));
     this.tactics = new Tactics(host, this, rng.fork("tactics"));
     this.kill = new Killing(host, this, rng.fork("kill"));
+    this.silence = new Silencing(host, this, rng.fork("silence"));
     this.exit.at = this.own.leaveAt;
     // Left behind before the party: a trace from the start, until someone picks it up (PR 2).
     if (this.garment) this.measure.tell("garment", cast.body?.t ?? 0, PARTY_LENGTH, -1, garment!.view);
@@ -218,7 +224,7 @@ export class Spy {
     return e >= EXPECT && this.record.fluency[skill] < e - DODGE_GAP;
   }
 
-  /** Once a step: its covers, its cues, its answers, the step of its plan under way, a kill under way, its tactics and its habits. */
+  /** Once a step: its covers, its cues, its answers, the step of its plan under way, a doubter it follows, a kill under way, its tactics and its habits. */
   step(): void {
     const p = this.record;
     if (!p.present || p.gone) return;
@@ -226,6 +232,7 @@ export class Spy {
     if (this.byCues) this.cues.step(p);
     this.answers.step();
     this.plans.step();
+    this.silence.step();
     this.kill.step();
     this.tactics.step();
     this.habits.step();
@@ -261,12 +268,20 @@ export class Spy {
 
   finished(t: Task): void {
     this.plans.finished(t);
+    this.silence.finished(t);
     this.kill.finished(t);
   }
 
-  /** A kill ended: for its goal, the plan takes it from there. */
+  /** A kill ended: for its goal, the plan takes it from there; for a doubter, the silencing. */
   killEnded(why: KillWhy, out: KillOutcome, how: KillHow): void {
     if (why === "goal") this.plans.killEnded(out, how);
+    else if (why === "silence") this.silence.killEnded(out);
+  }
+
+  /** Whom it follows a step behind (-1 nobody): its kill's target, or someone sure of it. */
+  get trailing(): number {
+    const j = this.plans.trailing;
+    return j >= 0 ? j : this.silence.trailing;
   }
 
   /** Whom a kill holds now, besides the spy (-1 nobody): their pose is the kill's. */
@@ -410,11 +425,11 @@ export class Spy {
     h.log("spy", [this.id], this.record.room, `done:${this.goal.kind}`);
   }
 
-  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps, its tactics and its kills. */
+  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps, its tactics, its kills and its silencing. */
   digest(): string {
     let k = 0;
     for (let j = 0; j < this.knows.length; j++) k += this.knows[j]!;
     const c = this.cues;
-    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}:${this.kill.digest()}`;
+    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}:${this.kill.digest()}:${this.silence.digest()}`;
   }
 }

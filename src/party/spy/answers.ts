@@ -19,9 +19,11 @@ import { PARTY_LENGTH } from "../clock";
 import type { Ident } from "../ident";
 import type { Gesture, Group, PartyEvent, Person } from "../types";
 
-/** Why it thinks someone dangerous: its study, seen with its victim (PR 5), a wave, coming over, a kiss, a double take, a test, a whisper, a challenge, a name, and seeing it kill (PR 5). */
-export type DangerWhy = "study" | "with" | "wave" | "came" | "kiss" | "double-take" | "test" | "whisper" | "challenge" | "name" | "witness";
-export const DANGER_WHY: readonly DangerWhy[] = ["study", "with", "wave", "came", "kiss", "double-take", "test", "whisper", "challenge", "name", "witness"];
+/** Why it thinks someone dangerous: its study, seen with its victim (PR 5), a wave, coming over, a kiss, a double take, a test, a whisper, a challenge, a name, seeing it kill, and a test it failed (PR 5). */
+export type DangerWhy = "study" | "with" | "wave" | "came" | "kiss" | "double-take" | "test" | "whisper" | "challenge" | "name" | "witness" | "failed";
+export const DANGER_WHY: readonly DangerWhy[] = ["study", "with", "wave", "came", "kiss", "double-take", "test", "whisper", "challenge", "name", "witness", "failed"];
+/** What it has seen for itself that says someone is sure of it: a challenge to its face, a kill they saw (or came to after), a test it failed them on. */
+const SURE_WHY = (1 << DANGER_WHY.indexOf("challenge")) | (1 << DANGER_WHY.indexOf("witness")) | (1 << DANGER_WHY.indexOf("failed"));
 
 /** Bluffing a test: having studied its victim and knowing the tester from that study, else anyone. */
 export const BLUFF_KNOWN = 0.4;
@@ -164,11 +166,12 @@ export class Answers {
     return out;
   }
 
-  /** Tested by i, however it went: a laugh, the subject changed, and out of the circle within a minute. */
-  tested(i: number): void {
+  /** Tested by i, however it went (`failed`: it had no answer): a laugh, the subject changed, and out of the circle within a minute. */
+  tested(i: number, failed = false): void {
     const h = this.host;
     const me = h.people[this.spy.id]!;
     this.raise(i, 0, "test", TESTED);
+    if (failed) this.why[i]! |= 1 << DANGER_WHY.indexOf("failed");
     h.laugh(me);
     this.leaveAt = h.t + this.rng.range(EXCUSE[0], EXCUSE[1]);
     h.log("spy", [me.id, i], me.room, "tested");
@@ -235,6 +238,11 @@ export class Answers {
     if (!g || g.id === this.excusedFrom || !g.members.some((m) => this.avoided[m] && m !== me.id)) return;
     this.excusedFrom = g.id;
     this.leaveAt = h.t + this.rng.range(EXCUSE[0], EXCUSE[1]);
+  }
+
+  /** Whether it has seen for itself that j is sure of it (silence.ts): a challenge, a kill seen, a test it failed. */
+  sureOfIt(j: number): boolean {
+    return (this.why[j]! & SURE_WHY) !== 0;
   }
 
   /** Its five most dangerous and why, for the lab's card. */

@@ -160,6 +160,8 @@ export interface RegisterHost {
    * for the everyday claim.
    */
   tells?(p: Person, room: number, from: number): { room: number; from: number; to: number } | null | undefined;
+  /** i settled a case on lead (milestone 3: someone missing, and whoever blamed for it). */
+  settled?(i: number, kind: CaseKind, subject: number, lead: number): void;
 }
 
 /** A case as the lab shows it. */
@@ -1080,6 +1082,7 @@ export class Register {
       this.wantTell[i] = c;
       this.wantTellUntil[i] = this.host.t + TELL_FOR;
     }
+    this.host.settled?.(i, kind, x, lead);
   }
 
   /** A case i wants to tell the host about, or -1 (and forget it once it's stale). */

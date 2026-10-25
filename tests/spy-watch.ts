@@ -325,7 +325,26 @@ export function coversCheck(): Check {
   };
 }
 
-/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps; PR 4: covers), fresh for one evening. */
+/**
+ * Silencing (PR 5): it sets off after someone to silence them only with murder on and while they
+ * are the one person about it has seen to be sure of it, and goes past the grip on a doubter at
+ * most once an evening.
+ */
+export function silenceCheck(): Check {
+  let past = 0;
+  return noteCheck("silence", (party, note, out) => {
+    const spy = party.spy!;
+    const [k, what, who] = note.split(":");
+    if (k !== "silence") return;
+    if (what === "follow") {
+      const sure = party.people.filter((o) => o !== spy.record && o.present && !o.gone && !o.down && spy.answers.sureOfIt(o.id));
+      if (sure.length !== 1 || sure[0]!.id !== Number(who)) out.push(`followed ${who} to silence them with ${sure.map((o) => o.id).join(", ") || "nobody"} sure of it`);
+      if (!spy.covers.active("murder")) out.push(`followed ${who} to silence them with murder off`);
+    } else if ((what === "dead" || what === "survived") && ++past > 1) out.push(`silenced a second doubter, ${who}`);
+  });
+}
+
+/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps; PR 4: covers; PR 5: silencing), fresh for one evening. */
 export function spyChecks(): {
   exit: Check;
   programme: ReturnType<typeof programmeCheck>;
@@ -334,6 +353,7 @@ export function spyChecks(): {
   privacy: Check;
   steps: Check;
   covers: Check;
+  silence: Check;
   all: Check[];
 } {
   const exit = exitCheck();
@@ -343,7 +363,8 @@ export function spyChecks(): {
   const privacy = privacyCheck();
   const steps = stepsCheck();
   const covers = coversCheck();
-  return { exit, programme, sober, tests, privacy, steps, covers, all: [exit, programme, sober, tests, privacy, steps, covers] };
+  const silence = silenceCheck();
+  return { exit, programme, sober, tests, privacy, steps, covers, silence, all: [exit, programme, sober, tests, privacy, steps, covers, silence] };
 }
 
 /** The reactions to someone out of step (PR 1): brought a flute, beckoned in, pointed the way. */

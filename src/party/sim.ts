@@ -26,7 +26,7 @@ import { facing, resolvePlaces, RoomCells, yawTo, type Places } from "./places";
 import { Practices, type PracticesHost } from "./practices";
 import { Prompts, type PromptsHost } from "./prompts";
 import { Reactions, type ReactionsHost } from "./reactions";
-import { CASES, Register, type CaseTalk, type RegisterHost } from "./register";
+import { CASES, Register, type CaseKind, type CaseTalk, type RegisterHost } from "./register";
 import { DETAIL_RANGE, Senses, type Sound, type SoundKind, type SensesHost } from "./senses";
 import { Sight } from "./sight";
 import { AGREE_TOUR, castSpy, Finds, goalRooms, Spy, studied, type CueHow, type SpyHost, type SpyOptions } from "./spy";
@@ -252,6 +252,8 @@ const TIMID_TIPSY = 0.5;
 /** Out loud: only in company (someone else within this of the one challenged, m); free onlookers this close turn to watch for a while. */
 const OUT_LOUD_NEAR = 6;
 const WATCH: readonly [number, number] = [20, 40];
+/** Someone missing (milestone 3): the case's window opens this long before they were last seen (in-game s). */
+const MISSING_BEFORE = 2 * 60;
 /**
  * Doubt from seeing someone challenged (× tie weight), from notes compared (the listener's × tie
  * weight × (0.5 + trust in the teller); the teller's own), and from being told by someone sure.
@@ -385,6 +387,9 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** Saw the spy at a kill (milestone 3, PR 5): the fact of it (-1 none), until they have told someone; and each witness's victims, so each is told of once. */
   private readonly alarmOf: Int32Array;
   private readonly alarms = new Set<number>();
+  /** Gone without a goodbye (milestone 3, PR 5): out of play where they lie; and whom each person keeps in view, the one they blame for their partner or friend going missing (-1 none). */
+  private readonly leftPlay: Uint8Array;
+  private readonly watching: Int16Array;
   /** Whom someone walking over to compare notes, or to tell, is talking about; and whom someone told goes to look for the real one of. */
   private readonly about = new Map<number, number>();
   private readonly lookFor = new Map<number, number>();
@@ -468,6 +473,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.sureOf = new Int16Array(this.people.length).fill(-1);
     this.backedAway = new Uint8Array(this.people.length);
     this.alarmOf = new Int32Array(this.people.length).fill(-1);
+    this.leftPlay = new Uint8Array(this.people.length);
+    this.watching = new Int16Array(this.people.length).fill(-1);
     this.tourAsks = root.fork("tour-asks");
     this.fumbles = root.fork("fumbles");
     this.through = root.fork("through");
@@ -2134,7 +2141,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (p.partner === null || this.bonds.apart[p.id]) return false;
     const q = this.people[p.partner]!;
     const ph = this.phase.id;
-    if (!q.present || q.gone || q.role === "host" || ph === "toast" || ph === "dinner" || ph === "champagne") return false;
+    // Gone without a word (milestone 3) is looked for like anyone not seen for a while.
+    if ((!this.vanished(q) && (!q.present || q.gone)) || q.role === "host" || ph === "toast" || ph === "dinner" || ph === "champagne") return false;
     const since = this.t - this.memory.lastT[p.id * this.people.length + q.id]!;
     if (this.bonds.wantsConfront(p)) {
       // In sight and close: straight over. Otherwise a search, meaning it.
@@ -2323,6 +2331,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.pathIndex = 0;
     p.present = false;
     p.gone = true;
+    this.leftPlay[p.id] = 1;
+  }
+
+  /** Gone without a goodbye: whoever looks for them never finds them. */
+  vanished(q: Person): boolean {
+    return this.leftPlay[q.id] === 1;
   }
 
   /** A task step the party acts on. */
@@ -2977,6 +2991,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** A task ended: a couple coming out of the bedroom. */
   finished(t: Task): void {
     if (t.kind === "spy") this.spy?.finished(t);
+    if (t.kind === "search" && t.looked) this.notFound(t);
     this.dramas.finished(t);
     if (t.kind !== "elope" || t.outcome !== "done") return;
     const b = t.steps.find((s) => s.do === "bolt");
@@ -3005,6 +3020,24 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** The spy joining a circle: where its alibi puts it, or nothing of where it has just done something (spy/tactics.ts). */
   tells(p: Person, room: number, from: number): { room: number; from: number; to: number } | null | undefined {
     return p.id === this.spyId ? this.spy!.tactics.tells(p, room, from) : undefined;
+  }
+
+  /** i settled a case: whoever they blame for their partner or friend going missing, they keep in view from now on. */
+  settled(i: number, kind: CaseKind, subject: number, lead: number): void {
+    if (kind !== "person-gone" || subject < 0) return;
+    const x = this.people[subject]!;
+    if (x.partner !== i && !x.friends.includes(i)) return;
+    this.watching[i] = lead;
+    const p = this.people[i]!;
+    this.log("react", [i, lead, subject], p.room, "keep-in-view");
+  }
+
+  /** The room where someone last saw whoever they keep in view (the spy: the lone doubter it means to silence), or -1. */
+  keepInView(p: Person): number {
+    const j = p.id === this.spyId ? this.spy!.silence.watching : this.watching[p.id]!;
+    if (j < 0) return -1;
+    const q = this.people[j]!;
+    return q.present && !q.gone ? this.memory.lastRoom[p.id * this.people.length + j]! : -1;
   }
 
   reads(a: Person, b: Person): boolean {
@@ -3146,7 +3179,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       }
     } else if (out !== "bluffed") this.senses.sound("laugh", b, b.id);
     if (j === this.spyId) {
-      this.spy!.answers.tested(i);
+      this.spy!.answers.tested(i, out === "failed");
       // A test it failed: it feels watched, and lies low a while.
       if (out === "failed") this.spy!.covers.watched("test");
     }
@@ -3777,10 +3810,27 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.openCase("gone", w, owner, obj, room, this.t - CASES.gone.lookBack);
   }
 
-  /** w finds something of owner's gone (or a bug planted) in a room, over a window: a case with nobody to blame yet, said out loud. */
-  openCase(kind: "gone" | "planted", w: Person, owner: Person, obj: number, room: number, from: number, to = this.t): void {
+  /**
+   * A search that looked everywhere it would and gave up (milestone 3, PR 5): looking for someone
+   * gone without a word, they say so out loud. Missing, last seen where they last saw them, and
+   * whoever was there then is who people think of. A search for the real one behind a face files
+   * nothing: its sightings are of the face, and what they would say they are sure of already.
+   */
+  private notFound(t: Task): void {
+    const p = this.people[t.owner]!;
+    const q = this.people[t.other];
+    if (!q || !p.present || p.gone || p.down || !this.vanished(q)) return;
+    const k = p.id * this.people.length + q.id;
+    const room = this.memory.lastRoom[k]!;
+    const at = this.memory.lastT[k]!;
+    if (room === -1 || at < -1e8) return;
+    this.openCase("person-gone", p, q, -1, room, at - MISSING_BEFORE, Math.min(this.t, at + CASES["person-gone"].lookBack));
+  }
+
+  /** w finds something of owner's gone (or a bug planted, or owner themselves missing) in a room, over a window: a case with nobody to blame yet, said out loud. */
+  openCase(kind: "gone" | "planted" | "person-gone", w: Person, owner: Person, obj: number, room: number, from: number, to = this.t): void {
     if (room === -1) return;
-    const f = this.memory.observe(w.id, kind, owner.id, obj, room);
+    const f = this.memory.observe(w.id, CASES[kind].verb, owner.id, obj, room);
     const c = this.register.open(w.id, kind, owner.id, obj, room, from, to, f);
     // Said out loud: whoever is close by hears of it at once.
     const near = this.people.filter((q) => q !== w && q.present && q.level === w.level && q.room === w.room && Math.hypot(q.x - w.x, q.z - w.z) < 6);

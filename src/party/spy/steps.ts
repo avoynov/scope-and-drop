@@ -75,10 +75,10 @@ const COVER_LOOK: readonly [number, number] = [6, 10];
 /** Caught at it, it takes about a real second to stand and turn away (in-game s): whoever looks meanwhile sees what it was doing. */
 export const CAUGHT = 3;
 /** Following the target: one try, and the wait before the next. */
-const TRAIL_TRY: readonly [number, number] = [180, 360];
-const TRAIL_BETWEEN: readonly [number, number] = [300, 600];
+export const TRAIL_TRY: readonly [number, number] = [180, 360];
+export const TRAIL_BETWEEN: readonly [number, number] = [300, 600];
 /** How far behind it follows, and how close it comes for a pocket or the host's jacket (m). */
-const TRAIL_GAP = 4;
+export const TRAIL_GAP = 4;
 const BRUSH_GAP = 0.9;
 /** Close enough for a hand to reach (m). */
 const REACH = 1.5;
@@ -97,8 +97,8 @@ const INTERRUPTED: readonly [number, number] = [60, 120];
 /** Its time back at the party over, within this it gets up from whatever it idly does for the next step (in-game s). */
 const RESUME = 30;
 /** What it drops to follow the target, and where the target going suggests a moment alone. */
-const LOOSE: ReadonlySet<string> = new Set(["mingle", "drink", "art", "wander", "sit", "snack", "use", "terrace"]);
-const OFF_ALONE: ReadonlySet<string> = new Set(["toilet", "terrace", "wander"]);
+export const LOOSE: ReadonlySet<string> = new Set(["mingle", "drink", "art", "wander", "sit", "snack", "use", "terrace"]);
+export const OFF_ALONE: ReadonlySet<string> = new Set(["toilet", "terrace", "wander"]);
 /** At dinner it gets up for a step only between these shares of the dinner: once everyone is seated, before the dessert. */
 const UP: readonly [number, number] = [0.15, 0.8];
 /** The plan's moves that fold into the step they lead to. */
@@ -195,6 +195,22 @@ export class Plans {
     return this.task >= 0;
   }
 
+  /** Whether the step under way only waits for its moment (at the spot, a step behind the target, an eye on a bag): nothing begun that it can't leave. */
+  get waiting(): boolean {
+    const t = this.task >= 0 ? this.h.tasks.get(this.task) : undefined;
+    const st = t?.steps[t.i];
+    return !!this.run && !!st && (st.label.startsWith("await:") || st.label === "trail" || st.label === "watch-bag");
+  }
+
+  /** Something more pressing (silence.ts): a step that only waits is given up for now, and taken up again a minute or two later. */
+  yieldStep(): boolean {
+    const t = this.task >= 0 ? this.h.tasks.get(this.task) : undefined;
+    if (!t || !this.waiting) return false;
+    this.retryAt = Math.max(this.retryAt, this.h.t + this.rng.range(INTERRUPTED[0], INTERRUPTED[1]));
+    this.stop(t, "yielded");
+    return true;
+  }
+
   /** Whom it follows now, a step behind (-1 nobody). */
   get trailing(): number {
     const t = this.task >= 0 ? this.h.tasks.get(this.task) : undefined;
@@ -252,11 +268,11 @@ export class Plans {
     return true;
   }
 
-  /** Nothing in the way of a step starting: not parked, not done, not given up, not between tries, not lying low, not killing. */
+  /** Nothing in the way of a step starting: not parked, not done, not given up, not between tries, not lying low, not killing, not after a doubter. */
   private free(): boolean {
     const h = this.h;
     const spy = this.spy;
-    if (this.parked || spy.goal.doneAt !== null || h.byeAt >= 0 || this.task >= 0 || spy.kill.busy) return false;
+    if (this.parked || spy.goal.doneAt !== null || h.byeAt >= 0 || this.task >= 0 || spy.kill.busy || spy.silence.busy) return false;
     return h.t >= FIRST_STEP && h.t >= this.retryAt && h.t >= spy.answers.lowUntil;
   }
 
@@ -350,9 +366,8 @@ export class Plans {
     const p = this.spy.record;
     const st = t.steps[t.i];
     if (!st) return;
-    const waiting = st.label.startsWith("await:") || st.label === "trail" || st.label === "watch-bag";
     // The farewell's first goodbye: whatever it still waits for is given up (an act under way it finishes).
-    if (h.byeAt >= 0 && waiting) return this.stop(t, "given-up");
+    if (h.byeAt >= 0 && this.waiting) return this.stop(t, "given-up");
     if (st.label.startsWith("await:")) this.await(run, t, p);
     else if (st.label.startsWith("risky:")) this.watch(run, t, p);
     else if (st.label === "trail") this.trail(run, t, p);

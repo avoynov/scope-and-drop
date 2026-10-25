@@ -65,6 +65,8 @@ export interface Task {
   other: number;
   /** A search has them in sight. */
   found: boolean;
+  /** A search that gave up having looked as long as it would (not broken off from outside). */
+  looked?: boolean;
   /** Doors a tour unlocked, to lock again on the way out. */
   unlocked: number[];
   /** The group photo's spots, by participant. */
@@ -131,6 +133,8 @@ export interface TaskHost {
   finished?(t: Task): void;
   /** Someone fumbled a skill (an index into ident.ts SLIP_SKILLS), showing for this long: whoever catches it may make something of it. */
   slipped?(p: Person, skill: number, secs: number): void;
+  /** Gone without a goodbye (milestone 3: killed and hidden, or the spy's old self after a swap): looked for, never found. */
+  vanished?(q: Person): boolean;
 }
 
 /** A follower re-aims at the one ahead when this far behind (m). */
@@ -654,6 +658,7 @@ export class Tasks {
     if (p.id !== t.owner) return this.member(t, p, a);
     if (t.kind === "search" && !t.found) {
       if (h.t - t.startedAt > GIVE_UP) {
+        t.looked = true;
         this.finish(t, "gave-up");
         return false;
       }
@@ -760,7 +765,10 @@ export class Tasks {
   private advance(t: Task): void {
     if (t.outcome !== null) return;
     t.i++;
-    if (t.i >= t.steps.length) return this.finish(t, t.kind === "search" ? (t.found ? "found" : "gave-up") : "done");
+    if (t.i >= t.steps.length) {
+      if (t.kind === "search" && !t.found) t.looked = true;
+      return this.finish(t, t.kind === "search" ? (t.found ? "found" : "gave-up") : "done");
+    }
     this.begin(t);
   }
 
@@ -852,7 +860,8 @@ export class Tasks {
   private spotted(t: Task, p: Person): boolean {
     const h = this.host;
     const q = h.people[t.other]!;
-    if (!q.present || q.gone) {
+    // Gone home, nothing to find. Gone without a word (milestone 3), they look until they give up.
+    if ((!q.present || q.gone) && !h.vanished?.(q)) {
       this.finish(t, "gave-up");
       return true;
     }

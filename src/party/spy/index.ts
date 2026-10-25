@@ -20,6 +20,9 @@
  * PR 4 gives it cover (scheduler.ts): habits that show between its steps (habits.ts) and tactics
  * for doing them (tactics.ts), each on and off through the evening: a false alibi, other people's
  * things, the lights.
+ *
+ * PR 5 has it kill (kill.ts): strangling or the injection, whichever moment comes, the body
+ * hidden, and whoever sees it sure at once.
  */
 import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH, phaseIndexAt } from "../clock";
@@ -33,6 +36,7 @@ import type { Knacks, SpyBody, SpyCast, SpyGoal, SpyOwn, SpySetup } from "./cast
 import { Cues, type CuesHost } from "./cues";
 import { GoalThings } from "./goals";
 import { Habits } from "./habits";
+import { Killing, type KillHost, type KillHow, type KillOutcome, type KillWhy } from "./kill";
 import { Measure, TWIN_VERBS, type TellId } from "./measure";
 import { Posing } from "./posing";
 import { held } from "./privacy";
@@ -53,9 +57,10 @@ export { Finds, type FindsHost } from "./finds";
 export { COVERS, Covers, HABIT_COVERS, MAX_ON, MAX_TOTAL, RISKY, type Cover, type CoverState, type Spell } from "./scheduler";
 export { Habits, outOfStep, type Deed, type HabitsHost } from "./habits";
 export { ALIBI_KINDS, Tactics, type Alibi, type AlibiKind, type TacticsHost } from "./tactics";
+export { DRAG_SPEED, DYING, EMBRACE, FINISH, Killing, STRUGGLE, WALK_OFF_SPEED, type Hide, type HidePlace, type KillHost, type KillHow, type KillOutcome, type KillStage, type KillWhy } from "./kill";
 
 /** What the spy needs from the party. */
-export interface SpyHost extends CuesHost, AnswersHost, TacticsHost, CoversHost {
+export interface SpyHost extends CuesHost, AnswersHost, TacticsHost, CoversHost, KillHost {
   readonly people: Person[];
   readonly ident: Ident;
   /** When the farewell's first goodbye was said (-1 not yet). */
@@ -116,6 +121,8 @@ export class Spy {
   readonly covers: Covers;
   readonly habits: Habits;
   readonly tactics: Tactics;
+  /** Its kills (kill.ts): one at a time, for the goal, a doubter or a face. */
+  readonly kill: Killing;
   /** Leaving: the share of the leavers it goes at, why (its goal done, or given up at the first goodbye), and how long a late deed keeps it. */
   readonly exit: { at: number; why: "done" | "gave-up" | null; stay: number } = { at: 0, why: null, stay: 0 };
   /** The record's ties as the evening began: a tie raised tonight is one it saw made. */
@@ -159,6 +166,7 @@ export class Spy {
     this.covers = new Covers(host, this, on, rng.fork("covers"));
     this.habits = new Habits(host, this, rng.fork("habits"));
     this.tactics = new Tactics(host, this, rng.fork("tactics"));
+    this.kill = new Killing(host, this, rng.fork("kill"));
     this.exit.at = this.own.leaveAt;
     // Left behind before the party: a trace from the start, until someone picks it up (PR 2).
     if (this.garment) this.measure.tell("garment", cast.body?.t ?? 0, PARTY_LENGTH, -1, garment!.view);
@@ -210,7 +218,7 @@ export class Spy {
     return e >= EXPECT && this.record.fluency[skill] < e - DODGE_GAP;
   }
 
-  /** Once a step: its covers, its cues, its answers, the step of its plan under way, its tactics and its habits. */
+  /** Once a step: its covers, its cues, its answers, the step of its plan under way, a kill under way, its tactics and its habits. */
   step(): void {
     const p = this.record;
     if (!p.present || p.gone) return;
@@ -218,6 +226,7 @@ export class Spy {
     if (this.byCues) this.cues.step(p);
     this.answers.step();
     this.plans.step();
+    this.kill.step();
     this.tactics.step();
     this.habits.step();
   }
@@ -236,6 +245,7 @@ export class Spy {
   stepDone(t: Task, st: Step): void {
     this.tactics.stepDone(t, st);
     this.plans.stepDone(t, st);
+    this.kill.stepDone(t, st);
     this.habits.stepDone(t, st);
   }
 
@@ -251,10 +261,23 @@ export class Spy {
 
   finished(t: Task): void {
     this.plans.finished(t);
+    this.kill.finished(t);
+  }
+
+  /** A kill ended: for its goal, the plan takes it from there. */
+  killEnded(why: KillWhy, out: KillOutcome, how: KillHow): void {
+    if (why === "goal") this.plans.killEnded(out, how);
+  }
+
+  /** Whom a kill holds now, besides the spy (-1 nobody): their pose is the kill's. */
+  get holding(): number {
+    return this.kill.victim;
   }
 
   /** How someone down, or the spy itself, looks while a kill or a poisoning has them (null: as the rest of the sim has it). */
   pose(p: Person): Pose | null {
+    const k = this.kill.pose(p);
+    if (k) return k;
     if (p.down === "dead" || p.down === "collapsed") return "lie";
     return null;
   }
@@ -276,7 +299,11 @@ export class Spy {
       if (!this.knows[b.id]) this.knows[b.id] = 1;
       if (this.byCues) this.cues.saw(b);
       this.answers.saw(b);
-    } else if (b.id === this.id && !a.staff) {
+      if (b.id === this.goal.target && this.goal.kind === "kill") this.things.sawTarget(b);
+    } else if (b.id === this.id) {
+      // Staff who see a kill raise the alarm too; tells are the guests'.
+      this.kill.saw(a, b);
+      if (a.staff) return;
       this.measure.seen(a.id, this.host.t, (x) => this.readsAct(a, b, x.whose, this.small(x.what)));
       this.tactics.saw(a, d);
     }
@@ -358,7 +385,7 @@ export class Spy {
    */
   wantsToGo(): boolean {
     const h = this.host;
-    if (!this.mayGo()) return false;
+    if (!this.mayGo() || this.kill.busy) return false;
     this.firstGoodbye();
     const done = this.goal.doneAt;
     const farewell = h.programme[h.programme.length - 1]!.start;
@@ -383,11 +410,11 @@ export class Spy {
     h.log("spy", [this.id], this.record.room, `done:${this.goal.kind}`);
   }
 
-  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps and its tactics. */
+  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps, its tactics and its kills. */
   digest(): string {
     let k = 0;
     for (let j = 0; j < this.knows.length; j++) k += this.knows[j]!;
     const c = this.cues;
-    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}`;
+    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}:${this.kill.digest()}`;
   }
 }

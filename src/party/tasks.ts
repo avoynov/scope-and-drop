@@ -918,6 +918,8 @@ export class Tasks {
   /** Someone in the owner's party: follow in single file, or (the photo) take their place in line. */
   private member(t: Task, p: Person, a: ActionState): boolean {
     const h = this.host;
+    // Whoever the spy holds goes where it has them (spy/kill.ts).
+    if (t.kind === "spy") return false;
     if (t.kind === "photo") {
       const s = t.slots?.get(p.id);
       if (!s || t.steps[t.i]!.label === "show") return false;

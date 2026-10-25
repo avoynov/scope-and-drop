@@ -192,23 +192,33 @@ function noteCheck(name: string, hear: (party: Party, note: string, out: string[
 /**
  * Privacy (PR 3): the moment an act that waits for its moment begins, nobody who counts can see
  * it by the senses' own answer (`canSee`), apart from the privacy check's geometry. Who counts is
- * the plan's: for an act done alone, anyone present (but a kill's target, whose spot it is);
- * unwatched, anyone not held by the toast, the speech, the piano or the floor, the owner of the
- * things always, for a bag or a coat only those who'd know whose it is, and for a hand at a pocket
- * or the mantel only those within the detail of a look.
+ * the plan's: for an act done alone, anyone present; unwatched, anyone not held by the toast, the
+ * speech, the piano or the floor, the owner of the things always, for a bag or a coat only those
+ * who'd know whose it is, and for a hand at a pocket or the mantel only those within the detail of
+ * a look. The kill's points of no return (PR 5) the same: the grip from behind with nobody awake
+ * to see the victim, the jab with nobody within 6 m not held seeing them.
  */
 export function privacyCheck(): Check {
   return noteCheck("privacy", (party, note, out) => {
-    const alone = note.startsWith("alone:");
-    if (!alone && !note.startsWith("risky:")) return;
     const spy = party.spy!;
-    const act = alone ? null : (note.slice(6) as ActId);
-    const spec = act ? spy.things.spec(act) : null;
-    const mode = spec ? spec.mode : "alone";
-    if (!mode) return;
     const p = spy.record;
-    // The spot asked about: where the act is done, or where the target stands.
-    const at = alone ? party.people[spy.goal.target]! : p;
+    const [k, how, who] = note.split(":");
+    if (k === "kill" && (how === "grip" || how === "jab")) {
+      const q = party.people[Number(who)]!;
+      for (const o of party.people) {
+        if (o === p || o === q || !o.present || o.gone || (o.down && o.down !== "ill")) continue;
+        if (how === "jab" && (held(party, o) || o.level !== q.level || Math.hypot(o.x - q.x, o.z - q.z) > 6)) continue;
+        if (party.senses.canSee(o, q)) out.push(`${o.id} could see it ${how === "grip" ? "seize" : "jab"} ${q.id}`);
+      }
+      return;
+    }
+    if (!note.startsWith("risky:")) return;
+    const act = note.slice(6) as ActId;
+    const spec = spy.things.spec(act);
+    const mode = spec.mode;
+    if (!mode) return;
+    // The spot asked about: where the act is done.
+    const at = p;
     const owner = act === "bag" || act === "coat" ? spy.goal.target : -1;
     const knows = owner >= 0 ? spy.things.knowsWhose(owner) : null;
     for (const q of party.people) {
@@ -216,7 +226,7 @@ export function privacyCheck(): Check {
       if (knows && !knows(q)) continue;
       if (mode === "unwatched" && q.id !== owner && held(party, q)) continue;
       if (spec?.within !== undefined && (q.level !== at.level || Math.hypot(q.x - at.x, q.z - at.z) > spec.within)) continue;
-      if (party.senses.canSee(q, at)) out.push(`${q.id} could see it as it began ${act ?? "alone with its target"}`);
+      if (party.senses.canSee(q, at)) out.push(`${q.id} could see it as it began ${act}`);
     }
   });
 }
@@ -228,8 +238,8 @@ const FOLDED = F.there | F.unwatched | F.close;
  * Steps (PR 3): each step of the plan starts with its needs holding, by the facts as the spy sees
  * them then (goals.ts): a step as it sets off, but for what the moves folded into it bring (going
  * there, the room looking away, coming close to the target); an act as it begins, but for the
- * moment the privacy check has just found. A kill's target is never followed while its theft
- * first is on, and a goal is done only with its facts holding.
+ * moment the privacy check has just found. A kill's target is never followed, nor closed in on,
+ * while its theft first is on, and a goal is done only with its facts holding.
  */
 export function stepsCheck(): Check {
   return noteCheck("steps", (party, note, out) => {
@@ -250,10 +260,8 @@ export function stepsCheck(): Check {
       const m = a ? lacking(needs(a) & ~F.unwatched) : "";
       if (!a) out.push(`began ${what} with no step under way`);
       else if (m) out.push(`began ${a} without ${m}`);
-    } else if (kind === "alone") {
-      if (things.firstOn(p)) out.push("alone with its target with the theft first still on");
-      const m = lacking(needs("wait-alone"));
-      if (m) out.push(`alone with its target without ${m}`);
+    } else if (kind === "kill" && (what === "strangled" || what === "injection") && Number(end) === spy.goal.target) {
+      if (things.firstOn(p)) out.push("closed in on its target with the theft first still on");
     } else if (kind === "done") {
       const m = lacking(ctx.goal);
       if (m) out.push(`goal done without ${m}`);

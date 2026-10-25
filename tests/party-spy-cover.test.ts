@@ -224,7 +224,8 @@ describe("each cover held on", () => {
     const want: Array<[ReturnType<typeof at>, string[]]> = [
       [at("match-42", ["out-of-step"]), ["out-of-step"]],
       [at("gala-night", ["returns"], "safe"), ["returns"]],
-      [at("gala-night", ["odd-places"]), ["followed"]],
+      // Following close needs a target to follow: a kill with murder on, still waiting for its moment (with neither tactic on, a kill has no plan).
+      [at("hall-9", ["odd-places", "murder"], "kill"), ["followed"]],
       [at("gala-night", ["startles"], "ledger"), ["startled"]],
       [at("gala-night", ["tours"]), ["touring"]],
       [at("match-42", ["out-of-picture"]), ["camera-shy"]],

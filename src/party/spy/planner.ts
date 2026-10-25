@@ -10,13 +10,13 @@
  * whenever an action ends (steps.ts), which is what takes a fact away.
  */
 
-export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone"] as const;
+export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone", "arms", "sagging", "dead"] as const;
 export type Fact = (typeof FACTS)[number];
 /** Each fact's bit in the mask. */
 export const F = Object.fromEntries(FACTS.map((f, i) => [f, 1 << i])) as Record<Fact, number>;
 
-/** What switches an action on, off until its pull request: touring alone and commotion are PR 4's tactics, other people's things too, the host's place PR 5's murder. */
-export type Tactic = "touring" | "things" | "commotion" | "murder" | "tour";
+/** What switches an action on: touring alone, other people's things and commotion are PR 4's tactics; murder (the host's place, the kill's own) and poison PR 5's. */
+export type Tactic = "touring" | "things" | "commotion" | "murder" | "poison" | "tour";
 
 export type PlanActionId =
   | "learn"
@@ -41,7 +41,11 @@ export type PlanActionId =
   | "brush-host"
   | "ledger"
   | "follow"
-  | "wait-alone";
+  | "wait-alone"
+  | "embrace"
+  | "inject"
+  | "walk-off"
+  | "strangle";
 
 export interface PlanAction {
   id: PlanActionId;
@@ -81,6 +85,11 @@ export const ACTIONS: readonly PlanAction[] = [
   { id: "ledger", needs: F.there, brings: F.copied, cost: 3 },
   { id: "follow", needs: 0, brings: F.close, cost: 1 },
   { id: "wait-alone", needs: F.close, brings: F.alone, cost: 2 },
+  // The kill (PR 5): an embrace, the jab and the walk off like a drunk friend; or from behind, alone (kill.ts). The moment picks which.
+  { id: "embrace", needs: F.close, brings: F.arms, cost: 2, tactic: "murder" },
+  { id: "inject", needs: F.arms, brings: F.sagging, cost: 1, tactic: "murder" },
+  { id: "walk-off", needs: F.sagging, brings: F.dead, cost: 3, tactic: "murder" },
+  { id: "strangle", needs: F.alone, brings: F.dead, cost: 2, tactic: "murder" },
 ];
 export const ACTION_BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));
 
@@ -107,6 +116,11 @@ export interface PlanProblem {
   /** Actions that failed, and until when they cost BLOCK_COST times as much. */
   blocked?: ReadonlyMap<PlanActionId, number>;
   t?: number;
+  /**
+   * What the goal adds to an action's cost now (never below 1 in all): waiting for the target alone
+   * dearer when they are rarely alone, strangling cheaper when they are alone somewhere private.
+   */
+  costs?: Partial<Record<PlanActionId, number>>;
 }
 
 export interface Plan {
@@ -124,10 +138,11 @@ const bits = (m: number): number => {
 /** The goal facts still false: one action brings at most one of them, and every action costs at least 1, so this never overestimates. */
 const heuristic = (m: number, goal: number): number => bits(goal & ~m);
 
-/** What an action costs now. */
-export function costOf(a: PlanAction, p: Pick<PlanProblem, "blocked" | "t">): number {
+/** What an action costs now: the goal's own bit on top (at least 1 in all), four times as much while it is blocked. */
+export function costOf(a: PlanAction, p: Pick<PlanProblem, "blocked" | "t" | "costs">): number {
   const until = p.blocked?.get(a.id);
-  return until !== undefined && (p.t ?? 0) < until ? a.cost * BLOCK_COST : a.cost;
+  const c = Math.max(1, a.cost + (p.costs?.[a.id] ?? 0));
+  return until !== undefined && (p.t ?? 0) < until ? c * BLOCK_COST : c;
 }
 
 /**

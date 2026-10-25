@@ -29,6 +29,7 @@ const THEFT = F.holding | F.stashed;
 describe("the planner", () => {
   const use = (...parts: GoalPart[]) => new Set(parts.flatMap((k) => GOAL_ACTIONS[k]));
   const steps = (p: PlanProblem) => plan(p)?.steps ?? null;
+  const MURDER = new Set<Tactic>(["murder"]);
 
   it("plans every goal from scratch the cheapest way, and nothing once the goal holds", () => {
     const want: Array<[string, PlanProblem, PlanActionId[]]> = [
@@ -43,7 +44,7 @@ describe("the planner", () => {
       ["bug in a locked room", { start: 0, goal: F.planted, use: use("bug-room") }, ["learn", "go", "pick-lock", "plant"]],
       ["bug on the host", { start: 0, goal: F.planted, use: use("bug-host") }, ["brush-host"]],
       ["ledger", { start: 0, goal: F.copied, use: use("ledger") }, ["learn", "go", "ledger"]],
-      ["kill", { start: 0, goal: F.alone, use: use("kill") }, ["follow", "wait-alone"]],
+      ["kill", { start: 0, goal: F.dead, use: use("kill"), tactics: MURDER }, ["follow", "wait-alone", "strangle"]],
     ];
     for (const [name, p, s] of want) expect(steps(p), name).toEqual(s);
     expect(plan({ start: THEFT, goal: THEFT, use: use("statuette") })).toEqual({ steps: [], cost: 0, expansions: 0 });
@@ -51,16 +52,29 @@ describe("the planner", () => {
     expect(plan({ start: 0, goal: F.copied, use: use("statuette") })).toBeNull();
   });
 
+  it("kills the cheaper way: from behind when they're alone, the embrace when they're rarely alone; with murder off, not at all", () => {
+    const kill = (costs?: PlanProblem["costs"], start = 0): PlanProblem => ({ start, goal: F.dead, use: use("kill"), tactics: MURDER, costs });
+    expect(steps(kill())).toEqual(["follow", "wait-alone", "strangle"]);
+    // Rarely alone (their partner by them, a crowd round them): waiting dearer, so the embrace, the jab and the walk off.
+    expect(steps(kill({ "wait-alone": 4 }))).toEqual(["follow", "embrace", "inject", "walk-off"]);
+    // Alone somewhere private right now: straight to it.
+    expect(plan(kill({ strangle: -1 }, F.close | F.alone))).toMatchObject({ steps: ["strangle"], cost: 1 });
+    // A goal's own cost never takes an action below 1.
+    expect(plan(kill({ strangle: -9 }, F.close | F.alone))!.cost).toBe(1);
+    expect(steps({ start: 0, goal: F.dead, use: use("kill") })).toBeNull();
+  });
+
   it("puts a kill's theft first: following the target waits for the thing stashed, and a pocket is picked at their side first", () => {
     const first = (from: "bag" | "coat" | "pocket"): PlanProblem => ({
       start: 0,
-      goal: F.alone | THEFT,
+      goal: F.dead | THEFT,
       use: use("kill", from),
-      needs: from === "pocket" ? { "look-away": F.close, "wait-alone": F.close | F.stashed } : { follow: F.stashed },
+      tactics: MURDER,
+      needs: from === "pocket" ? { "look-away": F.close, "wait-alone": F.close | F.stashed, embrace: F.close | F.stashed } : { follow: F.stashed },
     });
-    expect(steps(first("bag"))).toEqual(["find-bag", "wait-owner", "bag", "stash", "follow", "wait-alone"]);
-    expect(steps(first("coat"))).toEqual(["learn", "go", "look-away", "coat", "stash", "follow", "wait-alone"]);
-    expect(steps(first("pocket"))).toEqual(["follow", "look-away", "pocket", "stash", "wait-alone"]);
+    expect(steps(first("bag"))).toEqual(["find-bag", "wait-owner", "bag", "stash", "follow", "wait-alone", "strangle"]);
+    expect(steps(first("coat"))).toEqual(["learn", "go", "look-away", "coat", "stash", "follow", "wait-alone", "strangle"]);
+    expect(steps(first("pocket"))).toEqual(["follow", "look-away", "pocket", "stash", "wait-alone", "strangle"]);
   });
 
   it("a locked door makes it plan again, picking the lock", () => {
@@ -97,7 +111,7 @@ describe("the planner", () => {
     expect(a).toBeLessThan(ACTIONS.findIndex((x) => x.id === "pocket"));
     expect(a).toBeLessThan(ACTIONS.findIndex((x) => x.id === "palm"));
     // The same state always gives the same plan.
-    const p: PlanProblem = { start: 0, goal: F.alone | THEFT, use: use("kill", "coat"), needs: { follow: F.stashed } };
+    const p: PlanProblem = { start: 0, goal: F.dead | THEFT, use: use("kill", "coat"), tactics: MURDER, needs: { follow: F.stashed } };
     expect(plan(p)).toEqual(plan({ ...p, use: new Set([...p.use].reverse()) }));
   });
 
@@ -127,7 +141,7 @@ describe("the planner", () => {
     expect(MAX_EXPANSIONS).toBe(200);
     const all = new Set(ACTIONS.map((a) => a.id));
     const tactics = new Set<Tactic>(["touring", "things", "commotion", "murder", "tour"]);
-    const every = ACTIONS.reduce((m, a) => m | a.brings, 0) & ~F.alone;
+    const every = ACTIONS.reduce((m, a) => m | a.brings, 0) & ~(F.alone | F.arms | F.sagging | F.dead);
     // Every fact first, then the target alone: such a plan exists...
     const chain: PlanActionId[] = ["learn", "go", "pick-lock", "open-safe", "find-bag", "wait-owner", "look-away", "papers", "stash", "plant", "ledger", "follow", "wait-alone"];
     const needs = { "wait-alone": every };

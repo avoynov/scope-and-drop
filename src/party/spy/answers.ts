@@ -19,9 +19,9 @@ import { PARTY_LENGTH } from "../clock";
 import type { Ident } from "../ident";
 import type { Gesture, Group, PartyEvent, Person } from "../types";
 
-/** Why it thinks someone dangerous: its study, seen with its victim (PR 5), a wave, coming over, a kiss, a double take, a test, a whisper, a challenge, a name. */
-export type DangerWhy = "study" | "with" | "wave" | "came" | "kiss" | "double-take" | "test" | "whisper" | "challenge" | "name";
-export const DANGER_WHY: readonly DangerWhy[] = ["study", "with", "wave", "came", "kiss", "double-take", "test", "whisper", "challenge", "name"];
+/** Why it thinks someone dangerous: its study, seen with its victim (PR 5), a wave, coming over, a kiss, a double take, a test, a whisper, a challenge, a name, and seeing it kill (PR 5). */
+export type DangerWhy = "study" | "with" | "wave" | "came" | "kiss" | "double-take" | "test" | "whisper" | "challenge" | "name" | "witness";
+export const DANGER_WHY: readonly DangerWhy[] = ["study", "with", "wave", "came", "kiss", "double-take", "test", "whisper", "challenge", "name", "witness"];
 
 /** Bluffing a test: having studied its victim and knowing the tester from that study, else anyone. */
 export const BLUFF_KNOWN = 0.4;
@@ -147,6 +147,11 @@ export class Answers {
     if (!spy.knows[j]) spy.knows[j] = 1;
     spy.close[j] = Math.max(spy.close[j]!, GREET[how]);
     this.raise(j, GREET[how], how);
+  }
+
+  /** It noticed j while it killed (kill.ts): they saw it. As dangerous as anyone can be. */
+  sawKill(j: number): void {
+    this.raise(j, 1, "witness");
   }
 
   // ------------------------------------------------------- what is put to it

@@ -1436,6 +1436,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "react",
     "challenge",
     "spy",
+    "down",
   ]),
   gossip: new Set(["gossip"]),
   "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
@@ -1446,7 +1447,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
   "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
   "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
   "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
-  "the spy": new Set(["spy", "react"]),
+  "the spy": new Set(["spy", "react", "down"]),
   "seen through": new Set(["double-take", "test", "challenge", "react"]),
   // The spy's tells, from its record rather than the log (spy.ts), once it is revealed.
   tells: new Set(),
@@ -1567,6 +1568,7 @@ function eventText(e: PartyEvent): string {
     case "challenge":
     case "spy":
     case "react":
+    case "down":
       return spyLab.eventText(e, n) ?? e.kind;
     default:
       return e.kind;

@@ -98,7 +98,7 @@ export const GOAL_ACTIONS: Record<GoalPart, readonly PlanActionId[]> = {
   "bug-room": ["learn", "tour-alone", "go", "pick-lock", "slip-in", "plant"],
   "bug-host": ["brush-host"],
   ledger: ["learn", "tour-alone", "go", "ledger"],
-  kill: ["follow", "wait-alone"],
+  kill: ["follow", "wait-alone", "embrace", "inject", "walk-off", "strangle"],
 };
 
 /** Someone was seen within this long (in-game s) for the spy to know where they and their bag are, and dancing or at the games this recently for it to know the bag is down. */
@@ -107,6 +107,18 @@ const DOWN_FOR = 60;
 const PUT_DOWN = new Set([actionIndex("dance"), actionIndex("games")]);
 /** Close to the target: the same room, within this (m). */
 const CLOSE = 6;
+/**
+ * Rarely alone: their partner at the party, or a crowd round them (CROWD or more within CLOSE) in
+ * most of the spy's sightings of them, which makes waiting for them alone dearer (RARELY_ALONE),
+ * and the embrace and the walk off the cheaper way; alone somewhere private now (a bathroom, a
+ * bedroom, the terrace) makes strangling cheaper (ALONE_NOW).
+ */
+const CROWD = 3;
+const RARELY_ALONE = 4;
+const ALONE_NOW = -1;
+/** How much each sighting moves the spy's idea of the crowd round its target. */
+const CROWD_EMA = 0.2;
+const PRIVATE_NOW: ReadonlySet<string> = new Set(["bathroom", "bedroom", "dressing-room"]);
 /** At a locked door: within this of the spot outside it (m). */
 const AT_DOOR = 2.5;
 
@@ -129,6 +141,8 @@ export interface GoalContext {
   goal: number;
   use: ReadonlySet<PlanActionId>;
   needs: Partial<Record<PlanActionId, number>>;
+  /** What this goal adds to an action's cost now (planner.ts PlanProblem.costs). */
+  costs: Partial<Record<PlanActionId, number>>;
   /** The room its place is in (-1 none: a bag, a pocket, a target). */
   room: number;
   /** The thing it is after now (-1 none yet). */
@@ -164,6 +178,8 @@ export class GoalThings {
   droppedFirst = -1;
   /** Who knew the statuette stood there when it went, and since when they last saw it (-1: didn't). */
   knewSince: Float32Array | null = null;
+  /** A kill's target as the spy has seen them: how many about them, on the whole (0 before it has seen them). */
+  crowd = 0;
 
   constructor(
     private readonly h: GoalHost,
@@ -265,6 +281,7 @@ export class GoalThings {
     const g = this.goal;
     const use = new Set<PlanActionId>();
     const needs: Partial<Record<PlanActionId, number>> = {};
+    const costs: Partial<Record<PlanActionId, number>> = {};
     let goal = 0;
     let room = -1;
     const add = (k: GoalPart) => {
@@ -296,16 +313,39 @@ export class GoalThings {
       room = this.bug?.room ?? -1;
     } else {
       add("kill");
-      goal = F.alone;
+      goal = F.dead;
       if (this.firstOn(spy)) {
         theft(g.first!.from);
         goal |= F.stashed;
-        // The theft always comes first: following the target waits for it, or (a pocket, picked at their side) waiting for them alone does.
-        if (g.first!.from === "pocket") needs["wait-alone"] = F.close | F.stashed;
-        else needs.follow = F.stashed;
+        // The theft always comes first: following the target waits for it, or (a pocket, picked at their side) waiting for them alone and the embrace do.
+        if (g.first!.from === "pocket") {
+          needs["wait-alone"] = F.close | F.stashed;
+          needs.embrace = F.close | F.stashed;
+        } else needs.follow = F.stashed;
+      }
+      const target = g.target >= 0 ? this.h.people[g.target]! : null;
+      if (target) {
+        const partner = target.partner !== null ? this.h.people[target.partner]! : null;
+        if ((partner?.present && !partner.gone) || this.crowd >= CROWD) costs["wait-alone"] = RARELY_ALONE;
+        if (this.aloneNow(target, spy)) costs.strangle = ALONE_NOW;
       }
     }
-    return { goal, use, needs, room, thing: this.thing(spy) };
+    return { goal, use, needs, costs, room, thing: this.thing(spy) };
+  }
+
+  /** The spy sees its target: how many stand about them (within CLOSE, in their room) moves its idea of the crowd round them. */
+  sawTarget(q: Person): void {
+    let c = 0;
+    for (const o of this.h.people) if (o !== q && o.present && !o.gone && o.level === q.level && o.room === q.room && Math.hypot(o.x - q.x, o.z - q.z) <= CLOSE) c++;
+    this.crowd += CROWD_EMA * (c - this.crowd);
+  }
+
+  /** The target alone somewhere private now: a bathroom, a bedroom or the terrace, nobody else within CLOSE (the spy aside). */
+  private aloneNow(q: Person, spy: Person): boolean {
+    if (!q.present || q.gone || q.down) return false;
+    const type = q.room >= 0 ? this.h.bp.rooms[q.room]!.type : q.room === -2 ? "terrace" : null;
+    if (!type || (type !== "terrace" && !PRIVATE_NOW.has(type))) return false;
+    return !this.h.people.some((o) => o !== q && o !== spy && o.present && !o.gone && o.level === q.level && Math.hypot(o.x - q.x, o.z - q.z) <= CLOSE);
   }
 
   standRoom(): number {
@@ -366,6 +406,8 @@ export class GoalThings {
     if (this.device >= 0) m |= F.planted;
     if (this.copiedAt >= 0) m |= F.copied;
     if (target?.present && !target.gone && target.level === spy.level && target.room === spy.room && Math.hypot(target.x - spy.x, target.z - spy.z) <= CLOSE) m |= F.close;
+    // A poisoned target counts as killed at the collapse.
+    if (target && (target.down === "dead" || target.down === "collapsed")) m |= F.dead;
     return m;
   }
 

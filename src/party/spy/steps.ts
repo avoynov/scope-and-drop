@@ -19,8 +19,12 @@
  *
  * Pacing: nothing before 19:20, while the host still watches the door; nothing new at dinner (it
  * sits through it; PR 4's alibis get it up); nothing while it lies low; a kill's theft first
- * dropped at 21:00; and whatever it waits for given up at the farewell's first goodbye. Until PR 5
- * a kill's plan ends at the target alone: the spy notes it and goes back to the party.
+ * dropped at 21:00; and whatever it waits for given up at the farewell's first goodbye.
+ *
+ * A kill (PR 5): following the target a step behind, the kill runner (kill.ts) watches for either
+ * moment, alone with them or close and unwatched, and takes it, whichever the plan expected; the
+ * plan says only which wait counts against which method. Waiting for them alone starts when they
+ * set off somewhere quiet; the embrace's wait whenever they're about.
  *
  * Its tactics (PR 4, tactics.ts), each only while it is on: an act away from the party wrapped in
  * a false alibi; a spill down a bag's owner, and their bag carried off half the time to be gone
@@ -78,8 +82,6 @@ const TRAIL_GAP = 4;
 const BRUSH_GAP = 0.9;
 /** Close enough for a hand to reach (m). */
 const REACH = 1.5;
-/** Close to the target while following: the same room, within this (m), as goals.ts has it. */
-const CLOSE = 6;
 /** A bag whose owner never puts it down for this long is a failure; meanwhile an eye on them a few minutes at a time. */
 const FREE_MAX = 30 * 60;
 const WATCH: readonly [number, number] = [120, 240];
@@ -90,8 +92,6 @@ const SEARCHED = 10 * 60;
 const AFTER_LOOK: readonly [number, number] = [20, 40];
 /** Putting what it took into its own coat (in-game s). */
 const STASH: readonly [number, number] = [6, 10];
-/** How long a kill would take, for the alone check while following (PR 5 sets the methods' own). */
-const ALONE_SECS = 60;
 /** Interrupted from outside (a spill, a word): back to it in a minute or two. */
 const INTERRUPTED: readonly [number, number] = [60, 120];
 /** Its time back at the party over, within this it gets up from whatever it idly does for the next step (in-game s). */
@@ -103,6 +103,9 @@ const OFF_ALONE: ReadonlySet<string> = new Set(["toilet", "terrace", "wander"]);
 const UP: readonly [number, number] = [0.15, 0.8];
 /** The plan's moves that fold into the step they lead to. */
 const FOLD: ReadonlySet<PlanActionId> = new Set(["go", "look-away", "follow", "commotion"]);
+/** A kill's steps: waiting for the target alone and strangling them, and the embrace, the jab and the walk off (kill.ts runs them). */
+const ALONE_WAY: ReadonlySet<PlanActionId> = new Set(["wait-alone", "strangle"]);
+const EMBRACE_WAY: ReadonlySet<PlanActionId> = new Set(["embrace", "inject", "walk-off"]);
 /** The lights out: one try at the moment while they're out (in-game s). */
 const DARK_TRY = 30;
 /** Taking a bag up from its chair to carry it off (in-game s). */
@@ -151,7 +154,7 @@ export class Plans {
   readonly history: PlanRecord[] = [];
   /** Actions that failed, and until when they cost the planner four times as much. */
   readonly blocked = new Map<PlanActionId, number>();
-  /** A kill's plan reached the target alone (PR 5 kills): it is over for tonight. */
+  /** A kill's target gone home: it is over for tonight. */
   parked = false;
   readonly stats = { started: 0, done: 0, broken: 0, failed: 0, tries: 0 };
   /** Seconds waited for each step's moment, and its break-offs, since it last failed or was done. */
@@ -212,7 +215,8 @@ export class Plans {
     const a = pl.steps[this.lead(pl.steps)]!;
     const act = ACT_OF[a];
     if (act) return this.things.site(act, p) !== null;
-    if (a === "follow" || a === "wait-alone") return OFF_ALONE.has(h.people[this.spy.goal.target]?.action?.id ?? "mingle");
+    if (a === "follow" || ALONE_WAY.has(a)) return OFF_ALONE.has(h.people[this.spy.goal.target]?.action?.id ?? "mingle");
+    if (EMBRACE_WAY.has(a)) return true;
     if (a === "stash") return p.coat >= 0 && h.world.items.stateOf(p.coat) === "hung";
     if (a === "spill") return this.spillable() !== null;
     return a === "find-bag" || a === "wait-owner" || a === "learn" || a === "tour-alone" || a === "go";
@@ -248,11 +252,11 @@ export class Plans {
     return true;
   }
 
-  /** Nothing in the way of a step starting: not parked, not done, not given up, not between tries, not lying low. */
+  /** Nothing in the way of a step starting: not parked, not done, not given up, not between tries, not lying low, not killing. */
   private free(): boolean {
     const h = this.h;
     const spy = this.spy;
-    if (this.parked || spy.goal.doneAt !== null || h.byeAt >= 0 || this.task >= 0) return false;
+    if (this.parked || spy.goal.doneAt !== null || h.byeAt >= 0 || this.task >= 0 || spy.kill.busy) return false;
     return h.t >= FIRST_STEP && h.t >= this.retryAt && h.t >= spy.answers.lowUntil;
   }
 
@@ -301,17 +305,19 @@ export class Plans {
   /** The cheapest plan from what is true now, or null when there is none (or nothing left to do). Only the tactics switched on are offered. */
   private make(p: Person, ctx = this.things.context(p)): { steps: PlanActionId[] } | null {
     const facts = this.things.facts(p, ctx);
-    const pl = plan({ start: facts, goal: ctx.goal, use: ctx.use, needs: ctx.needs, tactics: this.tactics(), blocked: this.blocked, t: this.h.t });
+    const pl = plan({ start: facts, goal: ctx.goal, use: ctx.use, needs: ctx.needs, costs: ctx.costs, tactics: this.tactics(), blocked: this.blocked, t: this.h.t });
     return pl?.steps.length ? pl : null;
   }
 
-  /** The planner's tactics its covers have on now: touring alone, other people's things, commotion (murder waits for PR 5, slipping in behind a tour for a fact of its own). */
+  /** The planner's tactics its covers have on now: touring alone, other people's things, commotion, murder and poison (slipping in behind a tour waits for a fact of its own). */
   private tactics(): ReadonlySet<Tactic> {
     const c = this.spy.covers;
     const on = new Set<Tactic>();
     if (c.active("tours")) on.add("touring");
     if (c.active("others-things")) on.add("things");
     if (c.active("commotion")) on.add("commotion");
+    if (c.active("murder")) on.add("murder");
+    if (c.active("poison")) on.add("poison");
     return on;
   }
 
@@ -395,7 +401,42 @@ export class Plans {
     else this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(INTERRUPTED[0], INTERRUPTED[1]));
   }
 
-  /** Its line in the spy's digest: steps started, done, broken off and failed, and whether a kill's plan reached its end. */
+  /**
+   * A kill for its goal ended (kill.ts): dead is done; broken off before the point of no return
+   * counts as a break of the method's first step (three, and the planner tries the other way);
+   * lost (they moved off) only delays it; let go alive, the method fails for a while.
+   */
+  killEnded(out: "dead" | "broken" | "lost" | "survived", how: "strangled" | "injection"): void {
+    const h = this.h;
+    const action: PlanActionId = how === "strangled" ? "strangle" : "embrace";
+    this.record(action, out === "dead" ? "done" : out);
+    if (out === "dead") {
+      this.stats.done++;
+      this.waited.delete(action);
+      this.breaks.delete(action);
+      return;
+    }
+    if (out === "lost") {
+      this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(INTERRUPTED[0], INTERRUPTED[1]));
+      return;
+    }
+    if (out === "survived") {
+      this.breaks.delete(action);
+      this.fail(action, "survived");
+      return;
+    }
+    this.stats.broken++;
+    const n = (this.breaks.get(action) ?? 0) + 1;
+    if (n >= BREAKS) {
+      this.breaks.delete(action);
+      this.fail(action, "seen");
+    } else {
+      this.breaks.set(action, n);
+      this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(AFTER_BREAK[0], AFTER_BREAK[1]));
+    }
+  }
+
+  /** Its line in the spy's digest: steps started, done, broken off and failed, and whether a kill's target went home first. */
   digest(): string {
     const s = this.stats;
     return `${s.started},${s.done},${s.broken},${s.failed},${this.parked ? 1 : 0}`;
@@ -413,8 +454,14 @@ export class Plans {
     switch (a) {
       case "follow":
       case "wait-alone":
+      case "strangle":
         // Only after them when they're off somewhere quiet; meanwhile it keeps an eye on them (watchTarget()).
-        return OFF_ALONE.has(this.h.people[this.spy.goal.target]?.action?.id ?? "mingle") && this.startTrail(p);
+        return OFF_ALONE.has(this.h.people[this.spy.goal.target]?.action?.id ?? "mingle") && this.startTrail(p, a === "follow" ? "wait-alone" : a);
+      case "embrace":
+      case "inject":
+      case "walk-off":
+        // Close and unwatched can come anywhere they stand about: after them whenever they're here.
+        return this.startTrail(p, "embrace");
       case "find-bag":
         return this.startFind(p);
       case "wait-owner":
@@ -575,7 +622,7 @@ export class Plans {
     if (h.memory.lastT[p.id * h.people.length + q.id]! < h.t - 10) return;
     const steps = this.make(p);
     const head = steps ? steps.steps[this.lead(steps.steps)] : undefined;
-    if (head === "wait-alone" || head === "follow") this.startTrail(p);
+    if (head === "follow" || (head && ALONE_WAY.has(head))) this.startTrail(p, head === "follow" ? "wait-alone" : head);
   }
 
   /**
@@ -594,17 +641,17 @@ export class Plans {
     p.thinkAt = h.t;
   }
 
-  /** Following the target until they're alone somewhere (PR 5 kills them there). */
-  private startTrail(p: Person): boolean {
+  /** Following the target a step behind until a moment comes (kill.ts takes it); `action` is the wait it counts against. */
+  private startTrail(p: Person, action: PlanActionId): boolean {
     const h = this.h;
     const q = h.people[this.spy.goal.target];
-    if (!q?.present || q.gone) return false;
+    if (!q?.present || q.gone || q.down) return false;
     this.run = {
-      action: "wait-alone",
+      action,
       act: null,
       site: null,
       room: -1,
-      secs: ALONE_SECS,
+      secs: 0,
       awaitFrom: h.t,
       riskyAt: -1,
       tryFor: this.rng.range(TRAIL_TRY[0], TRAIL_TRY[1]),
@@ -875,21 +922,22 @@ export class Plans {
     }
   }
 
-  /** A step a step behind the target: alone somewhere, nobody seeing and nobody coming, is where PR 5's kill would be. */
+  /** A step behind the target: the moment for either way of killing them, with murder on, is the kill runner's to take (kill.ts). */
   private trail(run: Running, t: Task, p: Person): void {
     const h = this.h;
-    const q = h.people[this.spy.goal.target]!;
-    if (!q.present || q.gone) return this.stop(t, "gone");
-    if (this.ticks % 2 === 0 && q.room === p.room && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) <= CLOSE) {
-      this.check = check(h, { mode: "alone", at: spotOf(q), secs: ALONE_SECS, self: p, who: null, skip: q.id });
-      if (this.check.ok) {
-        this.parked = true;
-        h.log("spy", [p.id, q.id], q.room, `alone:${q.id}`);
-        return this.stop(t, "done");
+    const spy = this.spy;
+    const q = h.people[spy.goal.target]!;
+    if (!q.present || q.gone || q.down) return this.stop(t, "gone");
+    if (this.ticks % 2 === 0 && spy.covers.active("murder")) {
+      const m = spy.kill.moment(p, q, { strangle: true, inject: true });
+      if (m) {
+        this.stop(t, "kill");
+        if (!spy.kill.begin(p, q, m, "goal")) this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(INTERRUPTED[0], INTERRUPTED[1]));
+        return;
       }
     }
     if (h.t - run.awaitFrom >= run.tryFor) {
-      this.waitedFor("wait-alone", h.t - run.awaitFrom);
+      this.waitedFor(run.action, h.t - run.awaitFrom);
       this.retryAt = Math.max(this.retryAt, h.t + this.rng.range(TRAIL_BETWEEN[0], TRAIL_BETWEEN[1]));
       this.stop(t, "not-yet");
     }
@@ -961,7 +1009,7 @@ export class Plans {
     this.note("stashed");
   }
 
-  /** A step done: the goal reached, unless it is a kill's (PR 5 kills). */
+  /** A step done: the goal reached, unless it is a kill's (the kill runner says when it is done). */
   private checkGoal(): void {
     const spy = this.spy;
     if (spy.goal.kind === "kill" || spy.goal.doneAt !== null) return;

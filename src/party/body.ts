@@ -57,6 +57,8 @@ export interface BathState {
   /** When the person at the front of the queue got there, and whether they have knocked. */
   frontSince: number;
   knocked: boolean;
+  /** The spy has it for a body (milestone 3, spy/kill.ts): taken to anyone who comes, until it lets it go (-1 not). */
+  hold: number;
 }
 
 interface Counter {
@@ -95,7 +97,7 @@ export class Body {
     const B = host.places.bathrooms.length;
     this.n = n;
     this.B = B;
-    this.baths = host.places.bathrooms.map(() => ({ occupant: -1, queue: [], frontSince: 0, knocked: false }));
+    this.baths = host.places.bathrooms.map(() => ({ occupant: -1, queue: [], frontSince: 0, knocked: false, hold: -1 }));
     this.seenT = new Float32Array(n * B).fill(-1e9);
     this.seenBusy = new Uint8Array(n * B);
     this.absorb = new Float32Array(n);
@@ -229,6 +231,24 @@ export class Body {
     if (p.room !== this.host.places.bathrooms[i]!.room.index) this.free(i);
   }
 
+  /** The spy takes a free bathroom for a body (spy/kill.ts): whoever comes finds it taken until it lets it go. False when someone has it. */
+  holdBath(i: number, p: Person): boolean {
+    const b = this.baths[i]!;
+    if (b.occupant >= 0 || b.queue.length) return false;
+    b.occupant = p.id;
+    b.hold = p.id;
+    b.knocked = false;
+    return true;
+  }
+
+  /** Let go of a bathroom held for a body: free again, its door ajar. */
+  unholdBath(i: number): void {
+    const b = this.baths[i]!;
+    if (b.hold < 0) return;
+    b.hold = -1;
+    this.free(i);
+  }
+
   private claim(p: Person, i: number): void {
     const b = this.baths[i]!;
     b.occupant = p.id;
@@ -294,6 +314,15 @@ export class Body {
     const b = this.baths[i]!;
     const bath = this.host.places.bathrooms[i]!;
     const room = bath.room.index;
+    // Held for a body: nobody claims it, it never frees itself, and the light goes on once the spy is in.
+    if (b.hold >= 0) {
+      const o = this.host.people[b.hold]!;
+      if (o.room === room && !this.host.world.lightOn[room]) {
+        this.host.world.setLight(room, true);
+        this.host.log("light", [o.id], room, "on");
+      }
+      return;
+    }
     if (b.occupant >= 0) {
       const o = this.host.people[b.occupant]!;
       const a = o.action;

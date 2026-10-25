@@ -37,7 +37,8 @@ export type SoundKind =
   | "call"
   | "rattle"
   | "smash"
-  | "announce";
+  | "announce"
+  | "thud";
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -74,6 +75,8 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   smash: { db: 88, tension: 0.06, fact: "crash" },
   /** The host's announcement: a glass tapped, then a raised voice over the crowd. Only the spy listens for it (spy/cues.ts); everyone else just knows. */
   announce: { db: 90, tension: 0 },
+  /** Someone falling to the floor (milestone 3: the strangled), heard as something dropped. */
+  thud: { db: 62, tension: 0.02, fact: "crash" },
 };
 
 export interface Sound {

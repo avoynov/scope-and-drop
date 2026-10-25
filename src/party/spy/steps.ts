@@ -12,9 +12,10 @@
  * third break-off is a failure: the planner makes that action cost four times as much for 15
  * minutes, and the spy plans again from what is true then.
  *
- * While it acts it knows only its own senses: whoever it notices makes it break off, clear its
- * notable and look at something else, and it tries again a few minutes later. Someone who comes in
- * silently behind it sees the act, which is how a guest sees a hard tell.
+ * While it acts it knows only its own senses: whoever it notices makes it break off, stand, look
+ * at something else and try again a few minutes later. Standing takes it a second (CAUGHT), so
+ * whoever walked in looking its way sees the act as it stops, and someone who comes in silently
+ * behind it sees it for longer: that is how a guest sees a hard tell.
  *
  * Pacing: nothing before 19:20, while the host still watches the door; nothing new at dinner (it
  * sits through it; PR 4's alibis get it up); nothing while it lies low; a kill's theft first
@@ -27,7 +28,7 @@ import { yawTo, type RoomCells } from "../places";
 import type { SoundKind } from "../senses";
 import type { Step, Task } from "../tasks";
 import type { PartyEvent, Person } from "../types";
-import { ACT_OF, ACTS, type ActId, type ActSite, type GoalContext, type GoalHost, type GoalThings } from "./goals";
+import { ACT_OF, type ActId, type ActSite, type GoalContext, type GoalHost, type GoalThings } from "./goals";
 import type { Spy } from "./index";
 import { BLOCK_FOR, F, plan, type PlanActionId } from "./planner";
 import { check, doorsNow, held, nearRooms, noticed, type PrivacyHost, type PrivacyResult, type Spot3 } from "./privacy";
@@ -60,6 +61,8 @@ export const AFTER_BREAK: readonly [number, number] = [120, 300];
 export const AFTER_FAIL: readonly [number, number] = [120, 300];
 /** The look at something else once it has broken off. */
 const COVER_LOOK: readonly [number, number] = [6, 10];
+/** Caught at it, it takes about a real second to stand and turn away (in-game s): whoever looks meanwhile sees what it was doing. */
+export const CAUGHT = 3;
 /** Following the target: one try, and the wait before the next. */
 const TRAIL_TRY: readonly [number, number] = [180, 360];
 const TRAIL_BETWEEN: readonly [number, number] = [300, 600];
@@ -190,7 +193,7 @@ export class Plans {
     const pl = this.make(p);
     if (!pl) return false;
     const act = ACT_OF[pl.steps[this.lead(pl.steps)]!];
-    if (!act || ACTS[act].mode !== "alone") return false;
+    if (!act || this.things.spec(act).mode !== "alone") return false;
     this.upAt = ph.start;
     this.up = true;
     this.note("up-from-dinner");
@@ -368,7 +371,7 @@ export class Plans {
       this.retryAt = h.t + LATER;
       return false;
     }
-    const spec = ACTS[act];
+    const spec = this.things.spec(act);
     const secs = this.secsFor(act);
     const person = act === "pocket" || act === "brush";
     const steps: Step[] = person
@@ -409,7 +412,19 @@ export class Plans {
     const h = this.h;
     const q = h.people[this.spy.goal.target];
     if (!q?.present || q.gone) return false;
-    this.run = { action: "wait-alone", act: null, site: null, room: -1, secs: ALONE_SECS, awaitFrom: h.t, riskyAt: -1, tryFor: this.rng.range(TRAIL_TRY[0], TRAIL_TRY[1]), near: null, door: -1, end: null };
+    this.run = {
+      action: "wait-alone",
+      act: null,
+      site: null,
+      room: -1,
+      secs: ALONE_SECS,
+      awaitFrom: h.t,
+      riskyAt: -1,
+      tryFor: this.rng.range(TRAIL_TRY[0], TRAIL_TRY[1]),
+      near: null,
+      door: -1,
+      end: null,
+    };
     return this.launch(p, "follow", "wander", [{ do: "shadow", who: q.id, gap: TRAIL_GAP, label: "trail" }]);
   }
 
@@ -512,7 +527,7 @@ export class Plans {
 
   /** How long an act takes: anywhere in the plan's range, its knack moving it toward the quick end. */
   private secsFor(act: ActId): number {
-    const spec = ACTS[act];
+    const spec = this.things.spec(act);
     const [lo, hi] = spec.secs;
     if (hi <= lo) return lo;
     const k = spec.knack ? this.spy.knack[spec.knack] : 0;
@@ -569,12 +584,12 @@ export class Plans {
   private moment(run: Running, site: ActSite, p: Person): boolean {
     const h = this.h;
     const act = run.act!;
-    const mode = ACTS[act].mode;
+    const mode = this.things.spec(act).mode;
     if (!mode) return true;
     if (act === "pocket" && !held(h, h.people[site.owner]!)) return false;
     const at = act === "pocket" ? spotOf(p) : site.at;
     if (!run.near || act === "pocket") run.near = nearRooms(h, at);
-    this.check = check(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: ACTS[act].within }, run.near);
+    this.check = check(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: this.things.spec(act).within }, run.near);
     return this.check.ok;
   }
 
@@ -593,7 +608,7 @@ export class Plans {
     const h = this.h;
     const spy = this.spy;
     const act = run.act!;
-    const spec = ACTS[act];
+    const spec = this.things.spec(act);
     const site = run.site!;
     h.tasks.next(t);
     if (t.outcome !== null || t.steps[t.i]?.label !== `risky:${act}`) return;
@@ -625,18 +640,18 @@ export class Plans {
       const q = h.people[site.owner]!;
       if (!q.present || q.gone || q.level !== p.level || Math.hypot(q.x - p.x, q.z - p.z) > REACH + 0.5) return this.stop(t, "moved");
     }
-    const mode = ACTS[act].mode;
+    const mode = this.things.spec(act).mode;
     if (!mode) return;
     const at = act === "pocket" ? spotOf(p) : site.at;
-    const by = noticed(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: ACTS[act].within }, this.shut);
+    const by = noticed(h, { mode, at, secs: run.secs, self: p, who: this.whoCounts(act, site), owner: this.ownerOf(act, site), within: this.things.spec(act).within }, this.shut);
     doorsNow(h, this.shut);
     if (by >= 0) this.breakOff(run, t, p, by);
   }
 
-  /** Someone came: it stands, clears what it showed, looks at something else, and tries again later. */
+  /** Someone came: it stands, clears what it showed (a moment later: it was seen at it meanwhile), looks at something else, and tries again later. */
   private breakOff(run: Running, t: Task, p: Person, by: number): void {
     const h = this.h;
-    this.clear(run);
+    this.clear(run, CAUGHT);
     this.stats.broken++;
     h.log("spy", [p.id, by], p.room, `broke:${run.act}`);
     const n = (this.breaks.get(run.action) ?? 0) + 1;
@@ -766,16 +781,20 @@ export class Plans {
     this.h.tasks.finish(t, why);
   }
 
-  /** An act ended before its time: its notable and its tell stop showing. */
-  private clear(run: Running): void {
+  /** An act ended before its time: its notable and its tell stop showing, `linger` in-game s from now. */
+  private clear(run: Running, linger = 0): void {
     if (run.riskyAt < 0 || !run.act) return;
     const p = this.spy.record;
-    const spec = ACTS[run.act];
+    const spec = this.things.spec(run.act);
+    const until = this.h.t + linger;
     if (spec.verb && p.notable === spec.verb) {
-      p.notable = null;
-      p.notableUntil = this.h.t;
+      if (linger > 0) p.notableUntil = Math.min(p.notableUntil, until);
+      else {
+        p.notable = null;
+        p.notableUntil = this.h.t;
+      }
     }
-    if (spec.tell) this.spy.measure.end(spec.tell, this.h.t);
+    if (spec.tell) this.spy.measure.end(spec.tell, until);
   }
 
   /** A try's wait, added to the step's: ten minutes in all is a failure, else back to the party for a while. */

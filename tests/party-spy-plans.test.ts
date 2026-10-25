@@ -85,7 +85,11 @@ describe("the planner", () => {
 
   it("breaks equal costs by the table's order, whatever order the goal gives its actions in", () => {
     const at = F.there | F.unwatched | F.close;
-    for (const order of [["palm", "coat", "pocket"], ["pocket", "palm", "coat"], ["coat", "pocket", "palm"]] as PlanActionId[][]) {
+    for (const order of [
+      ["palm", "coat", "pocket"],
+      ["pocket", "palm", "coat"],
+      ["coat", "pocket", "palm"],
+    ] as PlanActionId[][]) {
       // The three cost the same and need what holds: the table has the coat first.
       expect(steps({ start: at, goal: F.holding, use: new Set(order) }), order.join()).toEqual(["coat"]);
     }
@@ -284,6 +288,24 @@ describe("the privacy check", () => {
     expect(check(party, ask7(2)).ok).toBe(true);
   });
 
+  it("foresees only whoever it sees or hears: the same walker, out of its sight and earshot, may walk in on it", () => {
+    reset();
+    const far = twoPoints(party, room, 7);
+    stand(party, w!, far.w, yawTo(far.at.x, far.at.z, far.w.x, far.w.z));
+    const beyond = party.pf.snap(far.at.level, 2 * far.at.x - far.w.x, 2 * far.at.z - far.w.z, 3);
+    w!.path = party.pf.route({ level: w!.level, x: w!.x, z: w!.z }, beyond!)!;
+    w!.pathIndex = 0;
+    w!.speed = 1.3;
+    const ask7: PrivacyAsk = { mode: "unwatched", at: far.at, secs: 30, self: self!, who: null };
+    // Waiting a storey away, it neither sees nor hears them.
+    const upstairs = bp.rooms.find((r) => r.level !== far.at.level && !r.doubleHeight && party.cells.random(r.index, new Rng("up"), 1));
+    stand(party, self!, party.cells.random(upstairs!.index, new Rng("up"), 1)!, 0);
+    expect(check(party, ask7).ok).toBe(true);
+    // Back across the room from them, it sees them coming.
+    stand(party, self!, far.at, 0);
+    expect(check(party, ask7).by).toEqual([{ who: w!.id, why: "coming" }]);
+  });
+
   it("waits for someone next door by an open doorway when it needs the room alone, not for an act done as if its own", () => {
     reset();
     // Someone just through an open doorway in the next room, out of view of the spot, facing away from the doorway.
@@ -390,8 +412,9 @@ describe("the goals' things", () => {
 
 describe("what the crowd finds", () => {
   it("the statuette is missed only by someone who saw it on its stand tonight, or knew it from before", () => {
+    // Before 19:20, when nothing risky has started: the statuette is still on its stand.
     const party = new Party(bp, { seed: SEED, spy: { setup: "self", goal: "statuette" } });
-    party.advance(30 * MIN);
+    party.advance(15 * MIN);
     const finding = party.finding!;
     const th = party.spy!.things;
     const stand0 = th.stand!;

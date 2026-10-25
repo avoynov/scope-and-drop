@@ -10,13 +10,14 @@
  * those who would know they aren't the spy's, and their owner held or not, since nobody misses a
  * stranger at their own bag from the dance floor.
  *
- * Now and soon: nobody counted sees the spot now, and within the step's length plus SOON nobody's
- * route or errand brings them where they would see it, nobody free to step in waits next door by an
- * open doorway (for the alone mode), and nobody held now who could see it is let go. A route is followed as far as they walk in that
- * time, a point every ROUTE_STEP metres, and each point in a room that sees into the spot's is put
- * to the same sight rules as a guest standing there, facing the way they walk (whichever way, for
- * the alone mode). Only those within NEAR_GRAPH metres of the spot by the room graph are checked,
- * as far as a glance down a corridor or a footstep reaches.
+ * Now and soon: nobody counted sees the spot now, and within the step's length plus SOON nobody
+ * it sees or hears (within EARSHOT) has a route or errand that brings them where they would see it,
+ * nobody free to step in waits next door by an open doorway (for the alone mode: it peeks through
+ * each), and nobody held now who could see it is let go. Whoever it neither sees nor hears it can't
+ * foresee, and they may walk in on it. A route is followed as far as they walk in that time, a
+ * point every ROUTE_STEP metres, and each point in a room that sees into the spot's is put to the
+ * same sight rules as a guest standing there, facing the way they walk (whichever way, for the
+ * alone mode). Only those within NEAR_GRAPH metres of the spot by the room graph are checked at all.
  *
  * While it works the spy knows only its own senses (`noticed()`): whoever comes into its view,
  * within a few steps of it, or through a shut door into the room.
@@ -41,6 +42,8 @@ export const DOORWAY = 6;
 export const NEAR_GRAPH = 25;
 /** While it works: anyone this close is heard or felt, whichever way it faces (m). */
 export const CLOSE_BY = 3;
+/** Footsteps and voices reach the spy this far, in its own room or one that sees into it (m). */
+export const EARSHOT = 8;
 /** A doorway passes sight at this much open (sight.ts). */
 const OPEN = 0.5;
 /** A route is looked along at a point this often (m); one shorter than SETTLING is someone settling into place, who will face where they mean to. */
@@ -180,6 +183,16 @@ export function check(h: PrivacyHost, ask: PrivacyAsk, near = nearRooms(h, ask.a
   return { ok: by.length === 0, by };
 }
 
+/**
+ * Whether the spy, where it stands, sees or hears someone now: only then can it tell where they
+ * are going. Whoever it neither sees nor hears (behind a shut door, round a corner, upstairs) it
+ * can't foresee, and may walk in on it.
+ */
+function perceives(h: PrivacyHost, self: Person, q: Person): boolean {
+  if (q.level === self.level && Math.hypot(q.x - self.x, q.z - self.z) <= EARSHOT && (q.room === self.room || h.sight.seeRooms(self.room, q.room))) return true;
+  return h.senses.visibleAt(self, { level: q.level, x: q.x, z: q.z, y: q.y, room: q.room }, Math.PI, q) !== null;
+}
+
 /** Someone standing at a point, for the sight rules: facing `yaw`, nowhere else to look. */
 function ghost(h: PrivacyHost, level: number, x: number, z: number, room: number, yaw: number): Person {
   const y = room >= 0 ? (h.bp.rooms[room]?.floorY ?? 0) : 0;
@@ -210,9 +223,11 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
     const ends = a.duration < 9e4 ? a.startedAt + a.duration : h.programme[phaseIndexAt(h.programme, h.t)]!.end;
     return ends - h.t < window && !beyond(ask, q.level, q.x, q.z) && h.senses.visibleAt(q, at, Math.PI, self) ? "let-go" : null;
   }
-  // Their route, as far as they walk in the window: would they see the spot from any point of it, looking the way they go?
+  // Their route, as far as they walk in the window: would they see the spot from any point of it, looking the way they go? Only if it sees or hears them.
   const reach = (window * q.speed) / TIME_SCALE;
-  if (q.path.length && q.pathIndex < q.path.length && routeLeft(q) >= SETTLING) {
+  let known: boolean | null = null;
+  const knows = () => (known ??= perceives(h, self, q));
+  if (q.path.length && q.pathIndex < q.path.length && routeLeft(q) >= SETTLING && knows()) {
     let px = q.x;
     let pz = q.z;
     let walked = 0;
@@ -244,12 +259,18 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
       if (Math.hypot(e.x - q.x, e.z - q.z) <= DOORWAY) return "doorway";
     }
   }
-  // A step of their own task due where they would see it: a tour's next room, an errand's, a search's.
+  // A step of their own task due where they would see it: a tour's next room, an errand's, a search's; again only for someone it sees or hears.
   const t = a?.id === "task" ? h.tasks.of(q) : undefined;
-  if (t && t.owner === q.id) {
+  if (t && t.owner === q.id && knows()) {
     for (let k = t.i; k < Math.min(t.steps.length, t.i + 3); k++) {
       const st = t.steps[k]!;
-      if (st.do === "goto" && watch.has(st.to.room) && !beyond(ask, st.to.level, st.to.x, st.to.z) && h.senses.visibleAt(ghost(h, st.to.level, st.to.x, st.to.z, st.to.room, st.to.yaw), at, Math.PI, self)) return "due";
+      if (
+        st.do === "goto" &&
+        watch.has(st.to.room) &&
+        !beyond(ask, st.to.level, st.to.x, st.to.z) &&
+        h.senses.visibleAt(ghost(h, st.to.level, st.to.x, st.to.z, st.to.room, st.to.yaw), at, Math.PI, self)
+      )
+        return "due";
     }
   }
   return null;
@@ -258,8 +279,9 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
 /**
  * While it works: whoever who counts the spy notices now, by its own senses (-1 nobody): in its
  * view (its usual field of view, facing the work), within CLOSE_BY whichever way it faces, or
- * opening a shut door into the room (the handle, the hinge). `shut` holds how far each door was
- * open on the step before.
+ * opening a shut door into the room (the handle, the hinge). Done unwatched, as if it were its
+ * own among people, only someone who could see the work counts: one looking the other way at its
+ * elbow is just the party. `shut` holds how far each door was open on the step before.
  */
 export function noticed(h: PrivacyHost, ask: PrivacyAsk, shut: Float32Array): number {
   const { self, at } = ask;
@@ -267,6 +289,8 @@ export function noticed(h: PrivacyHost, ask: PrivacyAsk, shut: Float32Array): nu
     if (q === self || q.id === ask.skip || !q.present || q.gone) continue;
     if (ask.who && !ask.who(q)) continue;
     if (absorbed(h, ask, q)) continue;
+    if (beyond(ask, q.level, q.x, q.z) && ask.mode === "unwatched") continue;
+    if (ask.mode === "unwatched" && !h.senses.visibleAt(q, at, FOV, self)) continue;
     if (q.level === self.level && Math.hypot(q.x - self.x, q.z - self.z) <= CLOSE_BY) return q.id;
     if (!beyond(ask, q.level, q.x, q.z) && h.senses.visibleAt(self, { level: q.level, x: q.x, z: q.z, y: q.y, room: q.room }, FOV, q)) return q.id;
   }

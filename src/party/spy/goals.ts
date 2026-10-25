@@ -63,6 +63,14 @@ export const ACTS: Record<ActId, ActSpec> = {
   ledger: { mode: "alone", secs: [60, 120], pose: "camera", verb: "snooping", tell: "ledger" },
 };
 
+/**
+ * The bug down the drawing room's sofa or under the dining table's edge: a hand slipped in for a
+ * few seconds while nobody close looks, as anyone would do it in a room that is never empty (the
+ * plan's 20 to 40 s alone found no moment there in the sweep: a bartender or a waiter is always
+ * about). Under the study desk it is screwed in, alone, as ACTS has it.
+ */
+const SLIP_IN: ActSpec = { mode: "unwatched", secs: [3, 5], knack: "palm", pose: "serve", verb: "snooping", tell: "plant", within: DETAIL_RANGE };
+
 /** The plan's actions that are acts, and which. */
 export const ACT_OF: Partial<Record<PlanActionId, ActId>> = {
   "pick-lock": "lock",
@@ -407,6 +415,11 @@ export class GoalThings {
         return of({ level: q.level, x: q.x, z: q.z, yaw: q.yaw, room: q.room }, q.id, q.id);
       }
     }
+  }
+
+  /** An act as it is done in this house: the bug slipped into a sofa or under a table quickly, under a desk as ACTS has it. */
+  spec(act: ActId): ActSpec {
+    return act === "plant" && (this.bug?.place === "sofa" || this.bug?.place === "table") ? SLIP_IN : ACTS[act];
   }
 
   /** Who would know a bag or a coat isn't the spy's: its owner, their partner and friends, the cloakroom attendant. */

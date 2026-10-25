@@ -10,7 +10,6 @@ export { Body, DRINK_LIFE } from "./body";
 export { Reactions, LATE } from "./reactions";
 export {
   Spy,
-  ACTS,
   check as checkPrivacy,
   factNames,
   nearRooms,

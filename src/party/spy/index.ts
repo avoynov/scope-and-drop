@@ -28,7 +28,7 @@ import { Answers, type AnswersHost } from "./answers";
 import type { Knacks, SpyBody, SpyCast, SpyGoal, SpyOwn, SpySetup } from "./cast";
 import { Cues, type CuesHost } from "./cues";
 import { GoalThings } from "./goals";
-import { Measure, TWIN_VERBS } from "./measure";
+import { Measure, TWIN_VERBS, type TellId } from "./measure";
 import { Posing } from "./posing";
 import { held } from "./privacy";
 import { Plans, type StepsHost } from "./steps";
@@ -220,19 +220,27 @@ export class Spy {
       if (!this.knows[b.id]) this.knows[b.id] = 1;
       if (this.byCues) this.cues.saw(b);
       this.answers.saw(b);
-    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t, (x) => this.readsAct(a, b, x.whose, x.what === "pocket" || x.what === "palm"));
+    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t, (x) => this.readsAct(a, b, x.whose, this.small(x.what)));
   }
 
   /**
    * Whether a reads what the spy's notable shows, by the privacy check's own rules: going through a
    * bag or a coat looks wrong only to whoever knows it isn't the spy's, and to them only when nothing
-   * else holds their eyes (its owner always); a hand in a pocket or the statuette palmed only to
-   * someone close by and not held by the toast, the speech, the piano or the floor.
+   * else holds their eyes (its owner always); a hand in a pocket, the statuette palmed or the bug
+   * slipped into a sofa or under a table only to someone close by and not held by the toast, the
+   * speech, the piano or the floor.
    */
   reads(a: Person, b: Person): boolean {
     const v = b.notable;
     if (v === "in-bag") return this.readsAct(a, b, b.notableObj >= 0 ? this.host.world.items.owner[b.notableObj]! : -1, false);
-    return v === "pocket" || (v === "carrying" && b.notableObj >= 0 && b.notableObj === this.things.statuette) ? this.readsAct(a, b, -1, true) : true;
+    const small =
+      v === "pocket" || (v === "carrying" && b.notableObj >= 0 && b.notableObj === this.things.statuette) || (v === "snooping" && this.plans.current?.act === "plant" && this.small("plant"));
+    return small ? this.readsAct(a, b, -1, true) : true;
+  }
+
+  /** A tell only someone close by can make out: a hand at a pocket, the statuette palmed, the bug slipped in. */
+  private small(what: TellId): boolean {
+    return what === "pocket" || what === "palm" || (what === "plant" && this.things.spec("plant").within !== undefined);
   }
 
   private readsAct(a: Person, b: Person, whose: number, small: boolean): boolean {

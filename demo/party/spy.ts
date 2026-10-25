@@ -21,7 +21,6 @@
  * cover (looking at the paintings, wandering about) until then, as the crowd sees them.
  */
 import {
-  ACTS,
   checkPrivacy,
   clockLabel,
   factNames,
@@ -897,7 +896,7 @@ export class SpyLab {
       lines.push(row);
     } else if (spy.goal.doneAt === null && !pl.parked) lines.push(t < 20 * 60 ? "no plan yet: nothing before 19:20, while the host watches the door" : "no plan made yet");
     if (cur?.stage === "waiting" && cur.act && pl.check && !pl.check.ok) {
-      const mode = ACTS[cur.act].mode;
+      const mode = spy.things.spec(cur.act).mode;
       lines.push(`waits to be ${mode ?? "unseen"}; in the way: ${pl.check.by.map((x) => `${name(x.who)} (${WAY_LABEL[x.why]})`).join(", ")}`);
     }
     if (pl.facts)

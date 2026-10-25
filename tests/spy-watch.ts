@@ -11,7 +11,7 @@ import { LAST_TOAST } from "../src/party/mind";
 import { HURRY_OUT, type Party } from "../src/party/sim";
 import type { CueHow, GoalKind, SpySetup } from "../src/party/spy";
 import { DELAY_TOLD } from "../src/party/spy/cues";
-import { ACTS, type ActId } from "../src/party/spy/goals";
+import type { ActId } from "../src/party/spy/goals";
 import { ranks, TELLS, type TellId } from "../src/party/spy/measure";
 import { ACTION_BY_ID, F, factNames, type PlanActionId } from "../src/party/spy/planner";
 import { held } from "../src/party/spy/privacy";
@@ -200,7 +200,7 @@ export function privacyCheck(): Check {
     if (!alone && !note.startsWith("risky:")) return;
     const spy = party.spy!;
     const act = alone ? null : (note.slice(6) as ActId);
-    const spec = act ? ACTS[act] : null;
+    const spec = act ? spy.things.spec(act) : null;
     const mode = spec ? spec.mode : "alone";
     if (!mode) return;
     const p = spy.record;

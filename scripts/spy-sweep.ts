@@ -20,7 +20,7 @@ import { PARTY_LENGTH, TIME_SCALE } from "../src/party/clock";
 import { Party } from "../src/party/sim";
 import type { SpyOptions } from "../src/party/spy";
 import { GOALS, SETUPS } from "../src/party/spy/cast";
-import { watchSpy, type SpyEvening } from "../tests/spy-watch";
+import { isHard, watchSpy, type SpyEvening } from "../tests/spy-watch";
 
 export const SIZES: readonly MansionSize[] = ["compact", "grand", "palatial"];
 
@@ -130,20 +130,36 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     .map((xs) => real(Math.min(...xs)));
   const twinsRate = mean(rs.map((r) => r.twins / (real(PARTY_LENGTH) / 5)));
   const soft = mean(rs.map((r) => r.tells.filter((x) => x.what === "out-of-step").length));
+  // Its plan (PR 3): a waiter keeps the staff's routine and a kill ends at the target alone until PR 5, so the goals done count the rest.
+  const planning = rs.filter((r) => r.setup !== "waiter");
+  const goals = planning.filter((r) => r.goal !== "kill");
+  const killing = planning.filter((r) => r.goal === "kill");
+  const hardSeen = rs.filter((r) => r.tells.some((x) => isHard(x.what) && x.seen)).length;
+  const hardPerch = rs.filter((r) => r.tells.some((x) => isHard(x.what) && x.view >= 0.5)).length;
+  const traced = rs.filter((r) => r.traces > 0);
+  const oneIn = (k: number) => (k ? `, 1 in ${(n / k).toFixed(1)}` : "");
   const rows: Array<[string, string, string]> = [
-    ["The spy's goal done", "55 to 80% of evenings", "– (PR 3 brings the plans)"],
+    [
+      "The spy's goal done",
+      "55 to 80% of evenings",
+      `${pct(goals.filter((r) => r.doneAt >= 0).length, goals.length)} of ${goals.length} besides kills · kills: the target alone in ${killing.filter((r) => r.alone).length} of ${killing.length} (PR 5 kills) · waiters plan in PR 5 (${rs.length - planning.length})`,
+    ],
     [
       "First tell anyone could see, median",
       "10 real min or sooner",
-      firsts.length ? `${median(firsts).toFixed(1)} real min in ${firsts.length} of ${n} evenings (PR 1's tells: out of step, the garment)` : "none seen yet",
+      firsts.length ? `${median(firsts).toFixed(1)} real min in ${firsts.length} of ${n} evenings (out of step, the garment, the plan's acts)` : "none seen yet",
     ],
     ["Innocent twins", "1 per 5 real min, ≥ soft tells", `${twinsRate.toFixed(2)} per 5 real min; ${mean(rs.map((r) => r.twins)).toFixed(1)} a night against ${soft.toFixed(1)} soft tells`],
-    ["A guest sees a hard tell", "~1 evening in 15 to 20", "– (PR 3: no hard tells yet)"],
-    ["A hard tell in a perch's view", "1 evening in 3 or more", "– (PR 3)"],
+    ["A guest sees a hard tell", "~1 evening in 15 to 20", `${hardSeen} of ${n} evenings${oneIn(hardSeen)}`],
+    ["A hard tell in a perch's view", "1 evening in 3 or more", `${hardPerch} of ${n} evenings${oneIn(hardPerch)} (its view 0.5 or more)`],
     ["Playing someone: tested by the end of dinner", "60% or more", `${pct(playing.filter((r) => r.tested).length, playing.length)} of ${playing.length}`],
     ["Playing someone: someone sure by the last toast", "30 to 60%", `${pct(playing.filter((r) => r.sure).length, playing.length)} of ${playing.length}`],
     ["An innocent confronted", "slightly under 1 in 20", `${pct(rs.filter((r) => r.innocentConfronted > 0).length, n)} of ${n} evenings`],
-    ["Spy in the crowd's top three when its goal left a trace", "half or more", "– (PR 3)"],
+    [
+      "Spy in the crowd's top three when its goal left a trace",
+      "half or more",
+      traced.length ? `${pct(traced.filter((r) => r.rankAtGo >= 1 && r.rankAtGo <= 3).length, traced.length)} of ${traced.length} evenings with a trace (as it set off home)` : "no trace left yet",
+    ],
     [
       "One evening, headless",
       "under 5 s",
@@ -224,6 +240,26 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     const moved = g.flatMap((r) => r.shares);
     L.push(
       `  ${s.padEnd(7)} ${String(g.length).padStart(3)} · ${moved.length ? `moved on after ${(100 * mean(moved)).toFixed(0)}%` : "not by cues"} · set off with ${(100 * mean(g.filter((r) => r.goingAt >= 0).map((r) => r.goingShare))).toFixed(0)}% on their way · tested ${g.filter((r) => r.tested).length} · sure ${g.filter((r) => r.sure).length}`,
+    );
+  }
+
+  // By goal: how far its plan got, how it went, and what it left showing.
+  L.push("");
+  L.push("by goal (waiters left out: they plan in PR 5)");
+  const clock = (t: number) => `${19 + Math.floor(t / 3600)}:${String(Math.floor((t % 3600) / 60)).padStart(2, "0")}`;
+  for (const goal of GOALS) {
+    const g = planning.filter((r) => r.goal === goal);
+    if (!g.length) continue;
+    const tried = g.filter((r) => r.triedAt >= 0);
+    const done = g.filter((r) => r.doneAt >= 0);
+    const end = goal === "kill" ? `alone ${g.filter((r) => r.alone).length}` : `done ${done.length}${done.length ? ` (median ${clock(median(done.map((r) => r.doneAt)))})` : ""}`;
+    const theft =
+      goal === "kill" && g.some((r) => r.theft)
+        ? ` · stole first ${g.filter((r) => r.stashedAt >= 0).length} of ${g.filter((r) => r.theft).length}, dropped ${g.filter((r) => r.droppedAt >= 0).length}`
+        : "";
+    const hard = g.map((r) => r.tells.filter((x) => isHard(x.what)));
+    L.push(
+      `  ${goal.padEnd(9)} ${String(g.length).padStart(3)} · tried ${tried.length} · ${end}${theft} · steps a night ${night((r) => r.plan.started, g)} (broken off ${night((r) => r.plan.broken, g)}, failed ${night((r) => r.plan.failed, g)}) · hard tells ${night((r) => r.tells.filter((x) => isHard(x.what)).length, g)} (seen in ${hard.filter((h) => h.some((x) => x.seen)).length}, perch ${hard.filter((h) => h.some((x) => x.view >= 0.5)).length}) · traces in ${g.filter((r) => r.traces > 0).length}`,
     );
   }
   return L;

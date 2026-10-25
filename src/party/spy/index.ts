@@ -27,7 +27,7 @@ import { EXPECT, SLIP_SKILLS, type Ident, type Tie } from "../ident";
 import type { Verb } from "../memory";
 import { DETAIL_RANGE } from "../senses";
 import type { Step, Task } from "../tasks";
-import { SKILLS, type ActionState, type PartyEvent, type Person, type Skill } from "../types";
+import { SKILLS, type ActionState, type PartyEvent, type Person, type Pose, type Skill } from "../types";
 import { Answers, type AnswersHost } from "./answers";
 import type { Knacks, SpyBody, SpyCast, SpyGoal, SpyOwn, SpySetup } from "./cast";
 import { Cues, type CuesHost } from "./cues";
@@ -251,6 +251,12 @@ export class Spy {
 
   finished(t: Task): void {
     this.plans.finished(t);
+  }
+
+  /** How someone down, or the spy itself, looks while a kill or a poisoning has them (null: as the rest of the sim has it). */
+  pose(p: Person): Pose | null {
+    if (p.down === "dead" || p.down === "collapsed") return "lie";
+    return null;
   }
 
   /** Its first risky act toward the goal: what the mission report counts as having tried. */

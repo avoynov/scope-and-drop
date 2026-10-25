@@ -16,7 +16,10 @@ import type { Person } from "../types";
  * handles, out of the room as the photographer comes in, what it was fetching left on a stair,
  * the crash and the held hand off alone, off to change, straight off for a lost thing, a phone to
  * the ear in an empty room, the bare hand and the clean shirt after, someone else's bag in its
- * hands, and the room gone dark.
+ * hands, and the room gone dark; and the killing (PR 5): an embrace, the jab inside it, one figure
+ * propping another, a struggle, a body dragged, a dose tipped into a glass or the bar's open red,
+ * a tray waved off, the change of clothes behind a shut door, someone falling, and a body left where
+ * it can be seen.
  */
 export type TellId =
   | "out-of-step"
@@ -42,7 +45,18 @@ export type TellId =
   | "bare-hand"
   | "clean-shirt"
   | "their-bag"
-  | "dark";
+  | "dark"
+  | "embrace"
+  | "jab"
+  | "propped"
+  | "struggle"
+  | "drag"
+  | "dose"
+  | "bar-dose"
+  | "refused-tray"
+  | "changing"
+  | "fallen"
+  | "body";
 
 /** A cover is a soft tell an innocent can give too, a trace is something left behind, a hard tell is an act only the spy does. */
 export type TellKind = "cover" | "trace" | "hard";
@@ -77,6 +91,17 @@ export const TELLS: Record<TellId, { kind: TellKind; zoom: number }> = {
   "clean-shirt": { kind: "trace", zoom: 8 },
   "their-bag": { kind: "cover", zoom: 8 },
   dark: { kind: "cover", zoom: 4 },
+  embrace: { kind: "cover", zoom: 4 },
+  jab: { kind: "hard", zoom: 12 },
+  propped: { kind: "cover", zoom: 4 },
+  struggle: { kind: "hard", zoom: 4 },
+  drag: { kind: "hard", zoom: 4 },
+  dose: { kind: "hard", zoom: 12 },
+  "bar-dose": { kind: "hard", zoom: 10 },
+  "refused-tray": { kind: "cover", zoom: 6 },
+  changing: { kind: "cover", zoom: 4 },
+  fallen: { kind: "trace", zoom: 4 },
+  body: { kind: "trace", zoom: 6 },
 };
 
 /**

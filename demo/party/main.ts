@@ -241,6 +241,7 @@ const TASK_LABEL: Record<TaskKind, string> = {
   drama: "caught up in a drama",
   habit: "up to something",
   spy: "working at its plan",
+  carry: "helping someone who fell",
 };
 /** What a mishap, a drama or an oddball's outing is, for the people list and the log. */
 const DRAMA_LABEL: Record<MishapId | CardId | Habit, string> = {

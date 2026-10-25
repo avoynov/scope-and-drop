@@ -67,7 +67,12 @@ export type Verb =
   | "no-stain"
   | "found-at-once"
   | "followed"
-  | "abandoned";
+  | "abandoned"
+  | "collapsed"
+  | "propped-up"
+  | "propped-sober"
+  | "attacked"
+  | "refused-tray";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -157,6 +162,14 @@ export const VERBS: Record<Verb, VerbSpec> = {
   "found-at-once": { kind: "odd", juicy: 0.4, odd: 0.1, halfLife: 45 * MIN },
   followed: { kind: "odd", juicy: 0.5, odd: 0.08, halfLife: 45 * MIN },
   abandoned: { kind: "odd", juicy: 0.5, odd: 0.1, halfLife: 45 * MIN, thing: true },
+  // Killing and faces (milestone 3, PR 5): someone fallen who didn't get up (innocent in itself: milestone 4 decides what follows),
+  // one walking another who can barely stand (the object is whom; worse from someone who saw them sober within the hour), someone
+  // seen killing or dragging a body (the object is whom: sure at once), and a tray of one drink waved off.
+  collapsed: { kind: "mishap", juicy: 1, odd: 0, halfLife: 90 * MIN },
+  "propped-up": { kind: "odd", juicy: 0.6, odd: 0.05, halfLife: 45 * MIN },
+  "propped-sober": { kind: "odd", juicy: 0.8, odd: 0.25, halfLife: 45 * MIN },
+  attacked: { kind: "odd", juicy: 1, odd: 1, halfLife: 180 * MIN },
+  "refused-tray": { kind: "odd", juicy: 0.2, odd: 0.03, halfLife: 45 * MIN },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 

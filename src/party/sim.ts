@@ -634,6 +634,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
         if (this.t >= p.arriveAt) this.arrive(p);
         continue;
       }
+      // Down (milestone 3): no needs, no programme, no going home, no plans; walked, carried or dragged by whoever's task holds them.
+      if (p.down) {
+        if (p.action) this.act(p, dt);
+        this.updatePose(p);
+        continue;
+      }
       this.updateNeeds(p, dt);
       this.updatePhase(p);
       // Guests look at the time every other second; the spy, once the farewell's first goodbye is said, every step, so it sets off among the first half even when many go at once.
@@ -785,7 +791,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const j = this.ident.wantTest[p.id]!;
     if (j >= 0) {
       const q = this.people[j]!;
-      if (q.gone) this.ident.wantTest[p.id] = -1;
+      if (q.gone || q.down) this.ident.wantTest[p.id] = -1;
       else if (q.present && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 15 && this.memory.lastT[p.id * this.people.length + j]! > this.t - 60) {
         const s = beside(q, p, this.pf);
         if (s) return void this.start(p, { id: "ask", target: s, duration: 5, pose: "talk", gain: { social: 0.1 }, ref: j, note: "test" });
@@ -1678,6 +1684,14 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   private updatePose(p: Person): void {
     if (p.gesture && this.t >= p.gestureUntil) p.gesture = null;
+    // Milestone 3: someone down lies, sags or sits as the spy's work has them, and the spy props, grapples or drags.
+    if (this.spy && (p.down || p.id === this.spy.id)) {
+      const o = this.spy.pose(p);
+      if (o) {
+        p.pose = o;
+        return;
+      }
+    }
     if (p.detour && p.detour.until >= 0) {
       p.pose = "look";
       return;
@@ -2662,7 +2676,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     let bd = 20;
     const n = this.people.length;
     for (const q of this.people) {
-      if (q === p || !q.present || q.level !== p.level || (p.avoid.get(`ask:${q.id}`) ?? -1) > this.t) continue;
+      if (q === p || !q.present || q.down || q.level !== p.level || (p.avoid.get(`ask:${q.id}`) ?? -1) > this.t) continue;
       if (q.action?.id === "toilet" || q.action?.id === "leave" || q.action?.id === "ask") continue;
       if (!(q.staff || q.role === "host" || q.id === p.partner || p.friends.includes(q.id) || this.ident.tieOf(p.id, q.id) >= 1)) continue;
       if (this.memory.lastT[p.id * n + q.id]! < this.t - 60) continue;
@@ -2813,7 +2827,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
 
   /** Whether someone could be drawn into something now: present, a guest, outside the rituals, and not busy with a task, the bathroom, leaving or words. */
   free(p: Person): boolean {
-    if (!p.present || p.gone || p.staff || p.role === "host" || this.dramas.busy(p)) return false;
+    if (!p.present || p.gone || p.down || p.staff || p.role === "host" || this.dramas.busy(p)) return false;
     const ph = this.phase.id;
     if (ph === "toast" || ph === "dinner" || ph === "champagne" || this.practices.speaking) return false;
     const a = p.action;
@@ -3317,7 +3331,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   private actOnSure(p: Person): boolean {
     const j = this.sureOf[p.id]!;
     const q = this.people[j]!;
-    if (!q.present || q.gone) {
+    if (!q.present || q.gone || q.down) {
       this.sureOf[p.id] = -1;
       return false;
     }
@@ -3347,7 +3361,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** Whom someone sure goes to: the host, else the nearest of the staff, else their partner or a friend, if seen lately on their floor (never the one they're sure of). */
   private confidant(p: Person, about: Person): Person | null {
     const n = this.people.length;
-    const ok = (q: Person) => q !== p && q !== about && q.present && !q.gone && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 25 && this.memory.lastT[p.id * n + q.id]! > this.t - 120;
+    const ok = (q: Person) =>
+      q !== p && q !== about && q.present && !q.gone && !q.down && q.level === p.level && Math.hypot(q.x - p.x, q.z - p.z) < 25 && this.memory.lastT[p.id * n + q.id]! > this.t - 120;
     if (ok(this.host)) return this.host;
     const nearest = (qs: Person[]) => qs.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0] ?? null;
     return nearest(this.people.filter((q) => q.staff && ok(q))) ?? nearest(this.people.filter((q) => (q.id === p.partner || p.friends.includes(q.id)) && ok(q)));
@@ -3595,10 +3610,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     let k = 0;
     for (let i = 0; i < ps.length; i++) {
       const a = ps[i]!;
-      if (!a.present) continue;
+      if (!a.present || a.down) continue;
       for (let j = i + 1; j < ps.length; j++) {
         const b = ps[j]!;
-        if (!b.present || b.level !== a.level || b.room !== a.room) continue;
+        if (!b.present || b.down || b.level !== a.level || b.room !== a.room) continue;
         const d = Math.hypot(b.x - a.x, b.z - a.z);
         if (d >= 3) continue;
         this.pairs[2 * k] = i;

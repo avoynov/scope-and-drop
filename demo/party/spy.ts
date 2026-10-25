@@ -212,6 +212,17 @@ const TELL_LABEL: Record<TellId, string> = {
   "clean-shirt": "clean again after a spill",
   "their-bag": "someone else's bag in its hands",
   dark: "the lights out",
+  embrace: "an embrace",
+  jab: "the jab in the embrace",
+  propped: "walking someone who can barely stand",
+  struggle: "a struggle",
+  drag: "dragging a body",
+  dose: "a dose into a glass",
+  "bar-dose": "a dose into the bar's red",
+  "refused-tray": "a tray waved off",
+  changing: "changing behind a shut door",
+  fallen: "someone falls",
+  body: "a body in view",
 };
 /** The covers (scheduler.ts), as the card, the log and the strip name them. */
 const COVER_LABEL: Record<Cover, string> = {

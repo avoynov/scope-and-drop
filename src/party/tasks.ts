@@ -20,9 +20,12 @@ import type { SoundKind } from "./senses";
 import { SKILLS, type ActionState, type DrinkId, type Gesture, type Needs, type PartyEvent, type Person, type Pose, type Spot } from "./types";
 import type { Door, World } from "./world";
 
-/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which), and so does each step of the spy's plan (spy/steps.ts). */
-export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit" | "spy";
-export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit", "spy"];
+/**
+ * Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which), and so does each step of the
+ * spy's plan (spy/steps.ts). Someone fallen is fanned and carried to a sofa or a bed by two of those about (`carry`, milestone 3).
+ */
+export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit" | "spy" | "carry";
+export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit", "spy", "carry"];
 
 /** What an errand fetches: the good whisky to the bar, a coat to its owner, clean glasses for the bar, a drink for someone. */
 export type ErrandKind = "whisky" | "coat" | "glasses" | "drink";
@@ -361,9 +364,17 @@ export class Tasks {
     return this.make(kind, owner, party, steps, { what, gap });
   }
 
-  /** One action of the spy's plan, alone (spy/steps.ts): `what` the action, `cover` what it looks like. */
-  spy(owner: Person, what: string, cover: string, steps: Step[]): Task {
-    return this.make("spy", owner, [], steps, { what, cover });
+  /**
+   * One action of the spy's plan (spy/steps.ts): `what` the action, `cover` what it looks like. A kill's party is whoever it walks
+   * off, holds or drags (spy/kill.ts), following at `gap`.
+   */
+  spy(owner: Person, what: string, cover: string, steps: Step[], party: Person[] = [], gap?: number): Task {
+    return this.make("spy", owner, party, steps, { what, cover, gap });
+  }
+
+  /** Someone fallen: fanned where they lie, then carried by two to a sofa or a bed (spy/poison.ts); `what` names which. */
+  carry(owner: Person, party: Person[], steps: Step[], what: string, gap?: number): Task {
+    return this.make("carry", owner, party, steps, { what, gap, other: party[0]?.id ?? -1 });
   }
 
   /** On to the next step now (a long wait that dramas.ts ends when what it waits for has happened). */
@@ -558,11 +569,11 @@ export class Tasks {
       if (!h.goTo(p, st.to)) return this.finish(t, "gave-up");
     } else if (st.do === "meet") {
       const q = h.people[st.who]!;
-      const s = q.present && !q.gone ? this.toMeet(q, p) : null;
+      const s = this.there(t, q) ? this.toMeet(q, p) : null;
       if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
     } else if (st.do === "shadow") {
       const q = h.people[st.who]!;
-      const s = q.present && !q.gone ? (h.beside(q, p, st.gap, p) ?? this.toMeet(q, p)) : null;
+      const s = this.there(t, q) ? (h.beside(q, p, st.gap, p) ?? this.toMeet(q, p)) : null;
       if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
       t.aimed.set(p.id, h.t);
     } else {
@@ -652,7 +663,7 @@ export class Tasks {
     const st = t.steps[t.i]!;
     if (st.do === "meet") {
       const q = h.people[st.who]!;
-      if (!q.present || q.gone) {
+      if (!this.there(t, q)) {
         this.finish(t, "gave-up");
         return false;
       }
@@ -687,7 +698,7 @@ export class Tasks {
   private shadow(t: Task, p: Person, a: ActionState, st: Step & { do: "shadow" }): boolean {
     const h = this.host;
     const q = h.people[st.who]!;
-    if (!q.present || q.gone) {
+    if (!this.there(t, q)) {
       this.finish(t, "gave-up");
       return false;
     }
@@ -714,6 +725,11 @@ export class Tasks {
       }
     }
     return a.startedAt === null;
+  }
+
+  /** Someone a task's walk can still reach: here, and (unless the task is the spy's or a carry for someone fallen) not down. */
+  private there(t: Task, q: Person): boolean {
+    return q.present && !q.gone && (!q.down || t.kind === "spy" || t.kind === "carry");
   }
 
   /** Where to go to meet someone: beside them, or where they'll step off the stair they're on. */

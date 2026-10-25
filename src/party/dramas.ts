@@ -549,7 +549,7 @@ export class Dramas {
 
   /** Free for a drama to draw in: a guest outside the rituals and not busy (the host and staff by `staffOk`). */
   private available(p: Person, staffOk = false): boolean {
-    if (!p.present || p.gone || this.busy(p)) return false;
+    if (!p.present || p.gone || p.down || this.busy(p)) return false;
     if (!staffOk || (!p.staff && p.role !== "host")) return this.host.free(p);
     const a = p.action;
     return !a || !["task", "toilet", "leave", "row", "toast", "dinner", "champagne", "arrive"].includes(a.id);
@@ -634,7 +634,7 @@ export class Dramas {
     for (const p of h.people) {
       const u = this.roll.next();
       this.stats.rolls++;
-      if (!p.present || p.gone) continue;
+      if (!p.present || p.gone || p.down) continue;
       if (p.held === "tray") {
         if (p.item >= 0 && h.world.items.count[p.item]! > 0 && u < (TRAY * (1 - p.fluency.tray) * (1 + this.crowdAround(p, 2) / 4)) / NORM) this.dropTray(p);
         continue;

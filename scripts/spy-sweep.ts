@@ -79,7 +79,7 @@ export async function runEvenings(specs: readonly EveningSpec[], jobs = Math.min
 
 // ------------------------------------------------------------------ the report
 
-/** The tells each cover gives (poison and murder give theirs in PR 5). */
+/** The tells each cover gives. */
 const COVER_TELLS: Record<Cover, readonly TellId[]> = {
   "out-of-step": ["out-of-step"],
   returns: ["returns"],
@@ -91,8 +91,8 @@ const COVER_TELLS: Record<Cover, readonly TellId[]> = {
   alibi: ["cut-off", "bare-hand", "spill-off", "clean-shirt", "lost-off", "call"],
   "others-things": ["their-bag"],
   commotion: ["dark"],
-  poison: [],
-  murder: [],
+  poison: ["dose", "bar-dose", "refused-tray", "fallen"],
+  murder: ["embrace", "jab", "propped", "struggle", "drag", "body"],
 };
 
 const pct = (a: number, b: number): string => (b ? `${Math.round((100 * a) / b)}%` : "–");

@@ -425,7 +425,7 @@ export class Groups {
     const people = h.people;
     for (const j of h.seenLast(p.id)) {
       const q = people[j]!;
-      if (q.staff || q === p || this.hasGreeted(p.id, j) || h.tieFor(p.id, j) < 2 || q.level !== p.level) continue;
+      if (q.staff || q === p || q.down || this.hasGreeted(p.id, j) || h.tieFor(p.id, j) < 2 || q.level !== p.level) continue;
       const d = Math.hypot(q.x - p.x, q.z - p.z);
       if (d > GREET_RANGE) continue;
       this.markGreeted(p.id, j);

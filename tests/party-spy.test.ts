@@ -366,7 +366,9 @@ describe("evenings with a spy", () => {
       expect(r.ev.byeAt, r.name).toBeGreaterThanOrEqual(0);
       expect(r.ev.goingAt, r.name).toBeGreaterThanOrEqual(r.ev.byeAt);
       expect(r.ev.leftAt, r.name).toBeGreaterThan(r.ev.goingAt);
-      expect(r.ev.exitWhy, r.name).toBe("gave-up");
+      // Its goal done by the first goodbye, it goes for that; otherwise it gives the goal up then.
+      const done = r.party.spy!.goal.doneAt;
+      expect(r.ev.exitWhy, r.name).toBe(done !== null && done <= r.ev.byeAt ? "done" : "gave-up");
       expect(r.ev.goingShare, r.name).toBeLessThanOrEqual(0.6);
       shares.push(r.ev.goingShare);
     }

@@ -28,8 +28,8 @@ const MIN = 60;
 
 // ----------------------------------------------------------------- case templates
 
-export type CaseKind = "gone" | "person-gone" | "dark" | "locked" | "noise" | "cheating" | "not-themselves";
-export const CASE_KINDS: readonly CaseKind[] = ["gone", "person-gone", "dark", "locked", "noise", "cheating", "not-themselves"];
+export type CaseKind = "gone" | "person-gone" | "dark" | "locked" | "noise" | "cheating" | "not-themselves" | "planted";
+export const CASE_KINDS: readonly CaseKind[] = ["gone", "person-gone", "dark", "locked", "noise", "cheating", "not-themselves", "planted"];
 
 export interface CaseTemplate {
   /**
@@ -63,6 +63,8 @@ export const CASES: Record<CaseKind, CaseTemplate> = {
   noise: { match: "place", severity: 0, settle: 0.6, lookBack: 1 * MIN, juicy: 0.6, verb: "crash" },
   cheating: { match: "pair", severity: 0, settle: 0.52, lookBack: 90 * MIN, juicy: 1, verb: "cheating" },
   "not-themselves": { match: "doubt", severity: 0.05, settle: 0.6, lookBack: 0, juicy: 0.5, verb: "not-themselves" },
+  // A bug found under a table or a sofa (milestone 3, PR 3): whoever sat or lingered there in the last two hours.
+  planted: { match: "place", severity: 0.5, settle: 0.6, lookBack: 120 * MIN, juicy: 1, verb: "planted" },
 };
 
 // ----------------------------------------------------------------------- sizes
@@ -594,10 +596,10 @@ export class Register {
       this.copyCase(i, from, c);
       return;
     }
-    if (verb === "gone" || verb === "missing") {
-      const kind: CaseKind = verb === "gone" ? "gone" : "person-gone";
+    if (verb === "gone" || verb === "missing" || verb === "planted") {
+      const kind: CaseKind = verb === "gone" ? "gone" : verb === "planted" ? "planted" : "person-gone";
       const t0 = m.t[f]!;
-      this.open(i, kind, m.subject[f]!, verb === "gone" ? m.object[f]! : -1, m.room[f]!, t0 - CASES[kind].lookBack, t0, f, from, from, 1);
+      this.open(i, kind, m.subject[f]!, verb === "missing" ? -1 : m.object[f]!, m.room[f]!, t0 - CASES[kind].lookBack, t0, f, from, from, 1);
       return;
     }
     const e = this.entryByFact(from, f);

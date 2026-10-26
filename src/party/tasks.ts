@@ -20,9 +20,9 @@ import type { SoundKind } from "./senses";
 import { SKILLS, type ActionState, type DrinkId, type Gesture, type Needs, type PartyEvent, type Person, type Pose, type Spot } from "./types";
 import type { Door, World } from "./world";
 
-/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which). */
-export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit";
-export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit"];
+/** Mishaps, small dramas and oddballs' habits run their steps as tasks too (dramas.ts; `what` names which), and so does each step of the spy's plan (spy/steps.ts). */
+export type TaskKind = "tour" | "errand" | "search" | "photo" | "candid" | "leave" | "check" | "chore" | "pull" | "elope" | "mishap" | "drama" | "habit" | "spy";
+export const TASK_KINDS: readonly TaskKind[] = ["tour", "errand", "search", "photo", "candid", "leave", "check", "chore", "pull", "elope", "mishap", "drama", "habit", "spy"];
 
 /** What an errand fetches: the good whisky to the bar, a coat to its owner, clean glasses for the bar, a drink for someone. */
 export type ErrandKind = "whisky" | "coat" | "glasses" | "drink";
@@ -38,7 +38,9 @@ export type Step =
   | { do: "bolt" | "unbolt"; door: number; room: number; label: string }
   | { do: "pick"; item: number; label: string }
   | { do: "give"; item: number; who: number; label: string }
-  | { do: "wait"; s: number; pose: Pose; label: string };
+  | { do: "wait"; s: number; pose: Pose; label: string }
+  /** Keep within `gap` of someone as they move, until whoever runs the task moves it on (the spy at its target's side, or a step behind them). */
+  | { do: "shadow"; who: number; gap: number; label: string };
 
 export interface Task {
   id: number;
@@ -72,8 +74,10 @@ export interface Task {
   gap?: number;
   /** A search meant to have it out with the one it finds (bonds.ts), or for the real one behind a face someone is sure isn't theirs (sim.ts): no sighting of that face ends it. */
   intent?: "confront" | "real";
-  /** Which mishap, drama or habit a dramas.ts task belongs to. */
+  /** Which mishap, drama or habit a dramas.ts task belongs to, or which of the spy's actions. */
   what?: string;
+  /** What a spy's task looks like to anyone watching (the lab shows it before the reveal): to the bathroom, a look at the paintings. */
+  cover?: string;
   /** The drink an errand brings, when not the asker's favourite (water for one who's had too much). */
   drink?: DrinkId;
 }
@@ -230,7 +234,9 @@ export class Tasks {
       h.end(q, false);
       h.start(q, { id: "task", target: null, duration: 99999, pose: "stand", gain: {}, ref: t.id, note: q === owner ? (steps[0]?.label ?? kind) : "follow" });
     }
-    h.log("task", [owner.id, ...t.party], owner.room, kind);
+    // The spy's steps are its own business: the lab shows them once it is revealed.
+    if (kind === "spy") h.log("spy", [owner.id], owner.room, `task:${t.what}`);
+    else h.log("task", [owner.id, ...t.party], owner.room, kind);
     this.begin(t);
     return t;
   }
@@ -351,14 +357,19 @@ export class Tasks {
     return this.make(kind, owner, party, steps, { what, gap });
   }
 
+  /** One action of the spy's plan, alone (spy/steps.ts): `what` the action, `cover` what it looks like. */
+  spy(owner: Person, what: string, cover: string, steps: Step[]): Task {
+    return this.make("spy", owner, [], steps, { what, cover });
+  }
+
   /** On to the next step now (a long wait that dramas.ts ends when what it waits for has happened). */
   next(t: Task): void {
     if (t.outcome === null) this.advance(t);
   }
 
-  /** A short job of the staff's own (the butler looking over the table, then a word with the host), or anyone's errand with an item in hand. */
-  chore(p: Person, steps: Step[], item = -1): Task {
-    return this.make("chore", p, [], steps, { item });
+  /** A short job of the staff's own (the butler looking over the table, then a word with the host), or anyone's errand with an item in hand; `what` names it. */
+  chore(p: Person, steps: Step[], item = -1, what?: string): Task {
+    return this.make("chore", p, [], steps, what ? { item, what } : { item });
   }
 
   // ---------------------------------------------------------------- searches
@@ -499,11 +510,12 @@ export class Tasks {
   /**
    * Going home: find the host and say goodbye, then the cloakroom (the attendant hands the coat
    * over), then out of the front door. A partner comes along. In a hurry, straight to the coats.
+   * `first` goes before all of it (back for a bag left on a chair: spy/finds.ts).
    */
-  leave(p: Person, partner: Person | null, attendant: Person | null, hurry: boolean): Task {
+  leave(p: Person, partner: Person | null, attendant: Person | null, hurry: boolean, first: readonly Step[] = []): Task {
     const h = this.host;
     const host = h.host;
-    const steps: Step[] = [];
+    const steps: Step[] = [...first];
     if (!hurry && host.present && !host.gone && host !== p)
       steps.push({ do: "meet", who: host.id, label: "to-host" }, { do: "say", who: host.id, s: this.rng.range(4, 6), pose: "shake", label: "goodbye" });
     const coat = h.places.chains.coats.spots[0];
@@ -544,6 +556,11 @@ export class Tasks {
       const q = h.people[st.who]!;
       const s = q.present && !q.gone ? this.toMeet(q, p) : null;
       if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
+    } else if (st.do === "shadow") {
+      const q = h.people[st.who]!;
+      const s = q.present && !q.gone ? (h.beside(q, p, st.gap, p) ?? this.toMeet(q, p)) : null;
+      if (!s || !h.goTo(p, s)) return this.finish(t, "gave-up");
+      t.aimed.set(p.id, h.t);
     } else {
       a.target = null;
       a.startedAt = h.t;
@@ -649,6 +666,7 @@ export class Tasks {
       }
       return true;
     }
+    if (st.do === "shadow") return this.shadow(t, p, a, st);
     if (st.do === "goto") return a.startedAt === null;
     // Timed steps. A lock waits at the door while anyone in the party is still inside; a bolt, until they're all in.
     if (st.do === "lock" && h.t - t.stepAt < LOCK_WAIT && this.inside(t, st.room)) return false;
@@ -659,6 +677,39 @@ export class Tasks {
       this.advance(t);
     }
     return false;
+  }
+
+  /** Keeping within a gap of someone: stand facing them while they're close, walk after them when they move off. */
+  private shadow(t: Task, p: Person, a: ActionState, st: Step & { do: "shadow" }): boolean {
+    const h = this.host;
+    const q = h.people[st.who]!;
+    if (!q.present || q.gone) {
+      this.finish(t, "gave-up");
+      return false;
+    }
+    const d = q.level === p.level ? Math.hypot(q.x - p.x, q.z - p.z) : Infinity;
+    if (d <= st.gap + 0.6) {
+      if (a.startedAt === null && !p.path[p.pathIndex]?.climb) {
+        a.startedAt = h.t;
+        p.path = [];
+        p.pathIndex = 0;
+      }
+      if (a.startedAt !== null && d > 0.3) p.yaw = yawTo(p.x, p.z, q.x, q.z);
+      return a.startedAt === null;
+    }
+    // Re-aim when they have moved on from where it was heading, or it stopped short (never halfway up a stair).
+    const tgt = a.target;
+    const stale = a.startedAt !== null || !tgt || tgt.level !== q.level || Math.hypot(q.x - tgt.x, q.z - tgt.z) > st.gap + 1.5 || p.pathIndex >= p.path.length;
+    if (stale && !p.path[p.pathIndex]?.climb && h.t - (t.aimed.get(p.id) ?? -1e9) >= 1) {
+      t.aimed.set(p.id, h.t);
+      const s = h.beside(q, p, st.gap, p) ?? this.toMeet(q, p);
+      if (!s || !h.goTo(p, s)) {
+        // Nowhere to stand by them just now: wait where it is.
+        a.startedAt ??= h.t;
+        return false;
+      }
+    }
+    return a.startedAt === null;
   }
 
   /** Where to go to meet someone: beside them, or where they'll step off the stair they're on. */
@@ -928,7 +979,8 @@ export class Tasks {
       this.stats.stalled++;
     }
     if (outcome === "found") this.stats.found++;
-    h.log("task", [t.owner, ...t.party], owner.room, `${t.kind}:${outcome}`);
+    if (t.kind === "spy") h.log("spy", [t.owner], owner.room, `task:${t.what}:${outcome}`);
+    else h.log("task", [t.owner, ...t.party], owner.room, `${t.kind}:${outcome}`);
     h.finished?.(t);
     for (const m of [t.owner, ...t.party]) {
       const q = h.people[m]!;

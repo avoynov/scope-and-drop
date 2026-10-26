@@ -147,6 +147,8 @@ export interface SensesHost {
   sawSlip?(a: Person, b: Person, skill: number): void;
   /** A look ended: anything else worth a glance (the garden's lost things). */
   looked?(a: Person): void;
+  /** Whether a can read what b's notable shows (someone going through a bag looks wrong only to whoever knows whose it is); absent, always. */
+  reads?(a: Person, b: Person): boolean;
 }
 
 const ACTIONS: readonly ActionId[] = [
@@ -261,22 +263,33 @@ export class Senses {
   /** Distance and bearing off a's facing when a can see b (attention aside), else null. */
   private visible(a: Person, b: Person): { d: number; off: number } | null {
     if (a === b || !a.present || !b.present) return null;
+    return this.visibleAt(a, b, FOV, b);
+  }
+
+  /**
+   * Distance and bearing off a's facing when a could see a point now (attention aside), else null:
+   * the same tests in the same order as a look, with a field of view `fov` either side of where they
+   * look (π: whichever way they face). `b` is whoever stands there, never one of the crowd between
+   * them (the spy's privacy check asks this of the spot it would work at).
+   */
+  visibleAt(a: Person, at: { level: number; x: number; z: number; y: number; room: number }, fov = FOV, b: Person | null = null): { d: number; off: number } | null {
+    if (a === b) return null;
     const { sight } = this.host;
-    const same = a.level === b.level;
+    const same = a.level === at.level;
     if (!same && !sight.atrium) return null;
-    const dx = b.x - a.x;
-    const dz = b.z - a.z;
+    const dx = at.x - a.x;
+    const dz = at.z - a.z;
     // Past the furthest anyone can be made out in full light, before anything dearer.
     if (dx * dx + dz * dz > MAX_RANGE * MAX_RANGE) return null;
-    if (!sight.seeRooms(a.room, b.room)) return null;
-    const d = same ? Math.hypot(dx, dz) : Math.hypot(dx, dz, b.y - a.y);
-    if (d > this.range(b.room)) return null;
+    if (!sight.seeRooms(a.room, at.room)) return null;
+    const d = same ? Math.hypot(dx, dz) : Math.hypot(dx, dz, at.y - a.y);
+    if (d > this.range(at.room)) return null;
     const off = wrap(Math.atan2(dx, dz) - this.facing(a));
-    if (d > 1.2 && Math.abs(off) > FOV) return null;
-    if (!same) return sight.acrossVoid(a.level, a.x, a.z, b.level, b.x, b.z) ? { d, off } : null;
-    if (d > 1.5 && this.crowded(a, b, dx, dz, d)) return null;
+    if (d > 1.2 && Math.abs(off) > fov) return null;
+    if (!same) return sight.acrossVoid(a.level, a.x, a.z, at.level, at.x, at.z) ? { d, off } : null;
+    if (d > 1.5 && this.crowded(a, b, at.room, dx, dz, d)) return null;
     this.stats.walks++;
-    return sight.clear(a.level, a.x, a.z, b.x, b.z) ? { d, off } : null;
+    return sight.clear(a.level, a.x, a.z, at.x, at.z) ? { d, off } : null;
   }
 
   /** Where someone is looking: where their head is turned during a glance, else the way they face. */
@@ -292,18 +305,18 @@ export class Senses {
     return dx * dx + dz * dz <= DETAIL_RANGE * DETAIL_RANGE && Math.abs(wrap(Math.atan2(dx, dz) - this.facing(a))) <= DETAIL_FOV;
   }
 
-  /** Two or more people standing on the line between them hide one from the other. */
-  private crowded(a: Person, b: Person, dx: number, dz: number, d: number): boolean {
-    if (!this.lookStep || !this.byRoom) return this.blockers(this.host.people, a, b, dx, dz, d, 0, true) >= 2;
-    const c = this.blockers(this.byRoom[a.room + 2] ?? [], a, b, dx, dz, d, 0, false);
-    return c >= 2 || (b.room !== a.room && this.blockers(this.byRoom[b.room + 2] ?? [], a, b, dx, dz, d, c, false) >= 2);
+  /** Two or more people standing on the line between them (b, in room `room`, or a point there) hide one from the other. */
+  private crowded(a: Person, b: Person | null, room: number, dx: number, dz: number, d: number): boolean {
+    if (!this.lookStep || !this.byRoom) return this.blockers(this.host.people, a, b, room, dx, dz, d, 0, true) >= 2;
+    const c = this.blockers(this.byRoom[a.room + 2] ?? [], a, b, room, dx, dz, d, 0, false);
+    return c >= 2 || (room !== a.room && this.blockers(this.byRoom[room + 2] ?? [], a, b, room, dx, dz, d, c, false) >= 2);
   }
 
   /** Count people (from `c`, stopping at two) standing on the line from a to b. */
-  private blockers(qs: readonly Person[], a: Person, b: Person, dx: number, dz: number, d: number, c: number, all: boolean): number {
+  private blockers(qs: readonly Person[], a: Person, b: Person | null, room: number, dx: number, dz: number, d: number, c: number, all: boolean): number {
     for (const q of qs) {
       if (q === a || q === b || q.level !== a.level) continue;
-      if (all && ((q.room !== a.room && q.room !== b.room) || !q.present || q.pose === "sit")) continue;
+      if (all && ((q.room !== a.room && q.room !== room) || !q.present || q.pose === "sit")) continue;
       const rx = q.x - a.x;
       const rz = q.z - a.z;
       const along = (rx * dx + rz * dz) / d;
@@ -344,7 +357,7 @@ export class Senses {
     if (detail && b.tipsy > 0.6) memory.observe(a.id, "tipsy", b.id);
     // Something worth remembering: a wrong turn, a rattled door, coming out of a bedroom. Somewhere
     // private, or doing something notable, they go in the register too.
-    if (b.notable && h.t < b.notableUntil) {
+    if (b.notable && h.t < b.notableUntil && (!h.reads || h.reads(a, b))) {
       const f = memory.observe(a.id, b.notable, b.id, b.notableObj, b.room);
       h.register.see(a.id, b, b.notable, b.notableRoom >= 0 ? b.notableRoom : b.room, b.notableObj, f);
     } else if (h.register.watching(a.id, b.room)) h.register.see(a.id, b, "was-in", b.room);

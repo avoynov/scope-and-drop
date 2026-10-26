@@ -7,7 +7,10 @@
  * game's own pace, where 1x plays the three-hour party in one real hour. ov turns on
  * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
  * tension and energy= scales everyone's energy at time t. The spy is on: spy=0 turns it off,
- * and setup=, goal=, odds=, steal= and reveal=1 pin its draws and show it (see spy.ts).
+ * and setup=, goal=, odds=, steal=, target= and reveal=1 pin its draws and show it (see spy.ts).
+ * Once it is revealed, the privacy overlay shades where an act could begin near it now (green
+ * alone, amber only unwatched) and the spy overlay draws its route, its goal's things and a line
+ * to its target.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -84,6 +87,21 @@ const spyLab = new SpyLab(
       refreshPanel();
     },
     select: (id) => select(id),
+    busy: (fn) => {
+      $("busy").classList.add("on");
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          fn();
+          acc = 0;
+          snapshot();
+          $("busy").classList.remove("on");
+          refreshPanel();
+        }, 0),
+      );
+    },
+    pause: () => {
+      speed = 0;
+    },
   },
   $("spy"),
   $("spycard"),
@@ -209,6 +227,7 @@ const TASK_LABEL: Record<TaskKind, string> = {
   mishap: "after a mishap",
   drama: "caught up in a drama",
   habit: "up to something",
+  spy: "working at its plan",
 };
 /** What a mishap, a drama or an oddball's outing is, for the people list and the log. */
 const DRAMA_LABEL: Record<MishapId | CardId | Habit, string> = {
@@ -340,6 +359,15 @@ const STEP_LABEL: Record<string, string> = {
   "to-piano": "to the piano",
   piano: "at the piano",
   after: "going after them",
+  // What the crowd does about the spy's work (spy/finds.ts).
+  "to-bag": "back for their bag",
+  "bag-back": "taking their bag back",
+  "to-coat": "to their coat",
+  "coat-check": "feeling in the coat's pockets",
+  "to-safe": "to the safe",
+  "safe-check": "checking the safe",
+  "to-stand": "over to the empty stand",
+  "gone-look": "staring at the empty stand",
 };
 
 let bp: MansionBlueprint;
@@ -376,8 +404,8 @@ let follow = params.has("follow");
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "bonds" | "map" | "mood";
-const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "bonds", "map", "mood"];
+type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "bonds" | "map" | "mood" | "privacy" | "spy";
+const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "bonds", "map", "mood", "privacy", "spy"];
 const overlays = new Set<Overlay>((params.get("ov") ?? "").split(",").filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
 /** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
@@ -757,6 +785,7 @@ let overlayDrawn = false;
 const MOOD_RGB: Record<RoomMood, string> = { festive: "224,181,106", relaxed: "111,163,200", uneasy: "217,137,74", tense: "212,82,74" };
 const KIND_COLOR: Record<FactKind, string> = { romance: "#e58fb0", odd: "#e0b56a", mishap: "#8fc7e5", house: "#a9b6c8", request: "#b6e58f", whereabouts: "#9a9486", case: "#c99ae0" };
 const CASE_RGB = "201, 154, 224";
+const PRIVACY_FILL = { alone: "rgba(96, 232, 128, 0.8)", unwatched: "rgba(244, 172, 64, 0.8)", seen: "rgba(226, 120, 106, 0.4)" } as const;
 const CASE_LABEL: Record<CaseKind, string> = {
   gone: "something gone",
   "person-gone": "someone missing",
@@ -765,6 +794,7 @@ const CASE_LABEL: Record<CaseKind, string> = {
   noise: "a crash",
   cheating: "cheating?",
   "not-themselves": "not themselves",
+  planted: "a bug found",
 };
 /** How long a sound or a piece of gossip stays drawn (in-game s). */
 const SOUND_FADE = 20;
@@ -1004,7 +1034,7 @@ function drawOverlays(states: FrameState[]): void {
   // Tasks: who leads, who follows, and what step they're on.
   if (overlays.has("tasks")) {
     for (const tk of party.tasks.list) {
-      if (tk.outcome !== null) continue;
+      if (tk.outcome !== null || (tk.kind === "spy" && !spyLab.revealed)) continue;
       const own = here(tk.owner);
       for (const m of tk.party) {
         const at = here(m);
@@ -1012,7 +1042,7 @@ function drawOverlays(states: FrameState[]): void {
       }
       if (!own) continue;
       const step = tk.steps[tk.i];
-      const label = step ? (STEP_LABEL[step.label.split(":")[0]!] ?? step.label.replace(/-/g, " ")) : "";
+      const label = !step ? "" : tk.kind === "spy" ? spyLab.stepLabel(step.label) : (STEP_LABEL[step.label.split(":")[0]!] ?? step.label.replace(/-/g, " "));
       chip(`${tk.kind}${label ? ` · ${label}` : ""}`, own[0], own[1] - 16, "#8fc7e5");
     }
   }
@@ -1095,6 +1125,43 @@ function drawOverlays(states: FrameState[]): void {
       octx.stroke();
       chip(`${Math.round(v * 100)}`, at[0], at[1] + r + 9, "#e98a80");
     }
+  }
+
+  // The spy, once revealed (spy.ts): where an act could begin near it now, green alone, amber
+  // only unwatched, a faint red dot where someone would see it; and its route, its goal's things
+  // and a line to its target.
+  if (overlays.has("privacy")) {
+    const r = Math.max(1.5, 0.2 * pxPerM);
+    for (const c of spyLab.privacy()) {
+      if (c.level !== planLevel) continue;
+      const [x, y] = planPx(c.x, c.z);
+      octx.fillStyle = PRIVACY_FILL[c.mode];
+      octx.beginPath();
+      octx.arc(x, y, c.mode === "seen" ? r * 0.6 : r, 0, Math.PI * 2);
+      octx.fill();
+    }
+  }
+  const marks = overlays.has("spy") ? spyLab.marks() : null;
+  if (marks) {
+    const r = marks.route;
+    for (let k = 1; k < r.length; k++) {
+      const a = r[k - 1]!;
+      const b = r[k]!;
+      if (a.level === planLevel && b.level === planLevel) line(planPx(a.x, a.z), planPx(b.x, b.z), "rgba(226, 120, 106, 0.85)", 2, [5, 3]);
+    }
+    for (const m of marks.marks) {
+      if (m.level !== planLevel) continue;
+      const [x, y] = planPx(m.x, m.z);
+      octx.strokeStyle = "#e2786a";
+      octx.lineWidth = 2;
+      octx.beginPath();
+      octx.arc(x, y, 5, 0, Math.PI * 2);
+      octx.stroke();
+      chip(m.label, x, y - 14, "#e2786a");
+    }
+    const from = party.spy ? here(party.spy.id) : null;
+    const to = marks.target >= 0 ? here(marks.target) : null;
+    if (from && to) line(from, to, "rgba(226, 120, 106, 0.6)", 1.5, [2, 4]);
   }
 }
 
@@ -1187,7 +1254,9 @@ function describe(p: Person): string {
   if (a.id === "task") {
     const t = party.tasks.of(p);
     const what = t?.what && (t.kind === "mishap" || t.kind === "drama" || t.kind === "habit") ? (DRAMA_LABEL[t.what as MishapId] ?? TASK_LABEL[t.kind]) : t ? TASK_LABEL[t.kind] : "";
-    if (t) s = t.owner === p.id ? `${what}: ${STEP_LABEL[note.split(":")[0]!] ?? note.replace(/-/g, " ")}` : `${what} with ${party.people[t.owner]?.name ?? "?"}`;
+    // The spy's steps look like what they cover for (a look at the paintings, a wander) until it is revealed.
+    if (t?.kind === "spy") s = spyLab.revealed ? `${what}: ${spyLab.stepLabel(note)}` : (ACTION_LABEL[t.cover as ActionId] ?? ACTION_LABEL.wander);
+    else if (t) s = t.owner === p.id ? `${what}: ${STEP_LABEL[note.split(":")[0]!] ?? note.replace(/-/g, " ")}` : `${what} with ${party.people[t.owner]?.name ?? "?"}`;
   }
   return (p.pose === "walk" || p.pose === "climb") && a.id !== "leave" && !s.startsWith("to ") ? `→ ${s}` : s;
 }
@@ -1195,7 +1264,7 @@ function describe(p: Person): string {
 /** The task someone is part of: its steps so far, and who's along. */
 function taskText(p: Person): string {
   const t = party.tasks.of(p);
-  if (!t) return "";
+  if (!t || (t.kind === "spy" && !spyLab.revealed)) return "";
   const others = [t.owner, ...t.party].filter((i) => i !== p.id).map((i) => party.people[i]?.name ?? "?");
   return `${t.kind} · step ${Math.min(t.i + 1, t.steps.length)} of ${t.steps.length}${others.length ? ` · with ${others.join(", ")}` : ""}`;
 }
@@ -1622,7 +1691,7 @@ function refreshPanel(): void {
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
     // Bumps are many; only one that slops a drink is worth a line. The spy's own doings wait for its reveal.
-    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop") && !spyLab.hides(e)) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop") && !spyLab.hides(e, logFilter === "the spy")) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
   $("events").textContent = lines.join("\n");
 

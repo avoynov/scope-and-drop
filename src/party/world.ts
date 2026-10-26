@@ -101,10 +101,47 @@ export const LIGHT_OFF = 0.08;
 
 /**
  * An earring lost on the floor, the shards of a vase, red wine on the carpet: the small dramas' things.
- * The spy's go at the end (stored as indices): something its victim wore, left in the garden.
+ * The spy's go at the end (stored as indices): something its victim wore, left in the garden; and what
+ * its goal is after (milestone 3, PR 3): a statuette on its stand, papers in the safe or in a bag, a
+ * phone in a coat or a pocket, and the bug it plants.
  */
-export type ItemKind = "glass" | "tray" | "bottle" | "kit" | "bandage" | "bag" | "coat" | "spectacles" | "camera" | "earring" | "shards" | "stain" | "garment";
-export const ITEM_KINDS: readonly ItemKind[] = ["glass", "tray", "bottle", "kit", "bandage", "bag", "coat", "spectacles", "camera", "earring", "shards", "stain", "garment"];
+export type ItemKind =
+  | "glass"
+  | "tray"
+  | "bottle"
+  | "kit"
+  | "bandage"
+  | "bag"
+  | "coat"
+  | "spectacles"
+  | "camera"
+  | "earring"
+  | "shards"
+  | "stain"
+  | "garment"
+  | "statuette"
+  | "papers"
+  | "device"
+  | "phone";
+export const ITEM_KINDS: readonly ItemKind[] = [
+  "glass",
+  "tray",
+  "bottle",
+  "kit",
+  "bandage",
+  "bag",
+  "coat",
+  "spectacles",
+  "camera",
+  "earring",
+  "shards",
+  "stain",
+  "garment",
+  "statuette",
+  "papers",
+  "device",
+  "phone",
+];
 
 /**
  * full: a glass with drink in it. empty: drunk. down: set down somewhere, drink and all.
@@ -138,6 +175,8 @@ export class Items {
   fill = new Float32Array(0);
   /** Trays: glasses left on it. */
   count = new Uint8Array(0);
+  /** The bag or coat it is in (-1 none): papers in a bag, a phone in a coat pocket, what the spy stashed in its own coat. */
+  inside = new Int16Array(0);
 
   constructor(capacity = 512) {
     this.grow(capacity);
@@ -157,6 +196,7 @@ export class Items {
     this.drink = keep(this.drink, new Uint8Array(cap));
     this.fill = keep(this.fill, new Float32Array(cap));
     this.count = keep(this.count, new Uint8Array(cap));
+    this.inside = keep(this.inside, new Int16Array(cap));
   }
 
   add(kind: ItemKind, state: ItemState, owner: number, holder: number, at: { level: number; x: number; z: number; room: number }, t: number): number {
@@ -171,6 +211,7 @@ export class Items {
     this.fill[i] = 0;
     this.count[i] = 0;
     this.drink[i] = 0;
+    this.inside[i] = -1;
     return i;
   }
 

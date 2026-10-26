@@ -1,12 +1,14 @@
 /**
- * The party lab's spy (milestone 3): its options, the goal odds, the reveal and its card, and the
- * ten people the crowd suspects most.
+ * The party lab's spy (milestone 3): its options, the goal odds, the reveal and its card, the
+ * ten people the crowd suspects most, and (once revealed) its plan, the privacy and spy overlays
+ * and a jump to its next tell anyone could see.
  *
- *   /party/?seed=gala-night&setup=victim&goal=safe&odds=kill:50,bug:0&steal=80&reveal=1
+ *   /party/?seed=gala-night&setup=victim&goal=safe&odds=kill:50,bug:0&steal=80&target=12&reveal=1
  *
  * spy=0 turns it off. setup (self, victim, host, waiter) and goal (kill, statuette, safe, bag,
  * bug, ledger) pin those draws; odds weighs the goals (a goal left out keeps its share, 0 switches
- * it off) and steal says how often a kill steals first (0 to 100). A value the lab doesn't know is
+ * it off), steal says how often a kill steals first (0 to 100), and target is a person's id (as
+ * sel= takes) for whom to kill, whose bag, or whom to play. A value the lab doesn't know is
  * dropped, so that draw is made as usual.
  *
  * Until it is revealed (the button, or reveal=1) the lab shows its record as the crowd believes
@@ -15,24 +17,32 @@
  * start, since they are chances, not the draw; a change builds the evening afresh from 19:00 with
  * the same house, guests and provocations, and only the spy cast anew. Tests show in the log
  * without their outcome until the reveal, since only an impostor bluffs or fails one; the ranks
- * show from the start, and mark the spy's record once it is revealed.
+ * show from the start, and mark the spy's record once it is revealed. Its tasks show as its
+ * cover (looking at the paintings, wandering about) until then, as the crowd sees them.
  */
 import {
+  checkPrivacy,
   clockLabel,
+  factNames,
   GOAL_SHARES,
   goalOdds,
   GOALS,
+  nearRooms,
   phaseIndexAt,
   ranks,
   SETUPS,
   STEAL,
+  type ActId,
   type CueHow,
   type DangerWhy,
   type GoalKind,
+  type InTheWay,
   type Party,
   type PartyEvent,
+  type PlanActionId,
   type SpyOptions,
   type SpySetup,
+  type TellId,
 } from "../../src/party";
 
 const GOAL_LABEL: Record<GoalKind, string> = {
@@ -61,6 +71,136 @@ const WHY_LABEL: Record<DangerWhy, string> = {
 /** What a test came to, in the log once the spy is revealed. */
 const TEST_LABEL: Record<string, string> = { passed: "it's them", fumbled: "too drunk to get it, and laughs it off", bluffed: "they laugh along", failed: "a blank look" };
 const SURE_LABEL: Record<string, string> = { "out-loud": "had it out", "backed-away": "backed away to tell someone", silent: "kept silent" };
+/** The plan's actions, as the card lists them. */
+const PLAN_LABEL: Record<PlanActionId, string> = {
+  learn: "learn the way",
+  "tour-alone": "look round alone",
+  go: "go there",
+  "pick-lock": "pick the lock",
+  "slip-in": "slip in behind a tour",
+  "host-place": "take the host's place",
+  "open-safe": "open the safe",
+  "find-bag": "find the bag's owner",
+  "wait-owner": "wait for the bag to go down",
+  spill: "spill something on its owner",
+  bag: "go through the bag",
+  coat: "go through the coat",
+  pocket: "pick the pocket",
+  papers: "take the papers",
+  palm: "palm the statuette",
+  "look-away": "wait for the room to look away",
+  commotion: "make a commotion",
+  stash: "into its coat",
+  plant: "plant the bug",
+  "brush-host": "brush past the host",
+  ledger: "photograph the ledger",
+  follow: "follow the target",
+  "wait-alone": "wait for them alone",
+};
+/** How a step of the plan ended, for the card's history and the log. */
+const HOW_STEP: Record<string, string> = {
+  done: "done",
+  "not-yet": "no moment yet",
+  moved: "the moment went",
+  broken: "broken off",
+  "given-up": "given up at the goodbyes",
+  gone: "target gone",
+  "gave-up": "taken off it",
+};
+/** Why a step failed (the planner keeps off it for 15 minutes). */
+const FAIL_LABEL: Record<string, string> = { "no-moment": "no moment in ten minutes", seen: "broken off three times", "no-way": "no way there", kept: "the bag never went down" };
+const howLabel = (how: string): string => (how.startsWith("failed:") ? `failed: ${FAIL_LABEL[how.slice(7)] ?? how.slice(7)}` : (HOW_STEP[how] ?? how));
+/** Why someone is in the way of a step's moment. */
+const WAY_LABEL: Record<InTheWay, string> = { sees: "can see it", coming: "on the way in", doorway: "next door by the doorway", due: "due there", "let-go": "about to be free" };
+/** The step under way: on its way, waiting for the moment, or at it. */
+const STAGE_LABEL = { going: "on its way", waiting: "waiting for the moment", acting: "at it" } as const;
+/** What is true as it last planned, by the planner's facts. */
+const FACT_LABEL: Record<string, string> = {
+  way: "knows the way",
+  there: "there",
+  door: "the way in open",
+  safe: "the safe open",
+  found: "knows where its target is",
+  free: "the bag down",
+  unwatched: "unwatched",
+  holding: "has it",
+  stashed: "put away",
+  planted: "the bug in",
+  copied: "the ledger copied",
+  close: "at its target's side",
+  alone: "its target alone",
+};
+/** An act under way, for the people list and the log. */
+const ACT_LABEL: Record<ActId, string> = {
+  lock: "picking the lock",
+  safe: "opening the safe",
+  papers: "taking the papers",
+  bag: "going through the bag",
+  coat: "going through the coat",
+  pocket: "picking the pocket",
+  palm: "palming the statuette",
+  plant: "planting the bug",
+  brush: "brushing past the host",
+  ledger: "photographing the ledger",
+};
+/** What an act leaves done, for the log. */
+const DID_LABEL: Record<ActId, string> = {
+  lock: "the lock is picked",
+  safe: "the safe is open",
+  papers: "has the papers",
+  bag: "has the papers from the bag",
+  coat: "has the phone from the coat",
+  pocket: "has the phone from the pocket",
+  palm: "has the statuette",
+  plant: "the bug is in",
+  brush: "the bug is on the host",
+  ledger: "has the ledger on film",
+};
+/** The tells, for the next-tell note. */
+const TELL_LABEL: Record<TellId, string> = {
+  "out-of-step": "out of step with the room",
+  garment: "the garment by a garden door",
+  lock: "on one knee at a locked door",
+  safe: "crouched at the safe",
+  bag: "going through someone's things",
+  pocket: "a hand in a pocket",
+  palm: "palming the statuette",
+  plant: "planting the bug",
+  ledger: "photographing the ledger",
+};
+/** The steps of the spy's tasks, by their whole label (they share their first word with other tasks'). */
+const SPY_STEP: Record<string, string> = {
+  trail: "following its target",
+  "to:find": "looking for its target",
+  "look-for": "looking round for them",
+  "to:watch": "keeping an eye on the bag",
+  "watch-bag": "watching for the bag to go down",
+  "to:learn": "learning the way",
+  learn: "taking in the way",
+  "to:stash": "to its coat",
+  stash: "putting it in its coat",
+  cover: "looking at something else",
+};
+const ACT_WHERE: Record<ActId, string> = {
+  lock: "the door",
+  safe: "the safe",
+  papers: "the safe",
+  bag: "the bag",
+  coat: "the coat",
+  pocket: "the target",
+  palm: "the statuette",
+  plant: "where the bug goes",
+  brush: "the host",
+  ledger: "the ledger",
+};
+/** The crowd's finds in the log and on the card: the statuette missed, a thing gone, the safe found open, a bug. */
+const FIND_LABEL: Record<string, string> = {
+  "statuette-gone": "sees the statuette is gone from its stand",
+  "gone:papers": "finds the papers gone",
+  "gone:phone": "finds the phone gone",
+  "safe-open": "finds the safe open, and shuts it",
+  bug: "finds a bug",
+};
 /** The ranks list shows this many. */
 const RANKS = 10;
 
@@ -79,6 +219,8 @@ export function spyOption(params: URLSearchParams): false | SpyOptions {
   if (Object.keys(odds).length) o.odds = odds;
   const steal = Number(params.get("steal"));
   if (params.has("steal") && Number.isFinite(steal)) o.steal = Math.max(0, Math.min(100, steal)) / 100;
+  const target = Number(params.get("target"));
+  if (params.has("target") && Number.isInteger(target) && target >= 0) o.target = target;
   return o;
 }
 
@@ -98,6 +240,92 @@ export interface SpyLabHost {
   rebuild(): void;
   /** Pick a person, as clicking their row does. */
   select(id: number): void;
+  /** Run something slow with the "simulating" note up, then refresh the panel. */
+  busy(fn: () => void): void;
+  /** Stop the clock. */
+  pause(): void;
+}
+
+/** A cell of the privacy overlay: an act could start there now alone, or only unwatched, or someone would see it. */
+export interface PrivacyCell {
+  level: number;
+  x: number;
+  z: number;
+  mode: "alone" | "unwatched" | "seen";
+}
+
+/** The spy overlay: its route, its goal's things and a line to its target. */
+export interface SpyMarks {
+  route: Array<{ level: number; x: number; z: number }>;
+  marks: Array<{ level: number; x: number; z: number; label: string }>;
+  target: number;
+}
+
+/** The privacy overlay is worked out at most this often (ms of wall time), and for an act this long (in-game s). */
+const PRIVACY_EVERY = 1000;
+const PRIVACY_SECS = 30;
+
+/**
+ * The privacy overlay: each metre of the spy's room and the rooms next to it, and whether an act
+ * of `secs` could begin there now by the plan's own check (privacy.ts): alone (nobody who could
+ * see it, whichever way they face), only unwatched (nobody facing it and free to look), or seen.
+ */
+export function privacyCells(party: Party, secs = PRIVACY_SECS): PrivacyCell[] {
+  const self = party.spy?.record;
+  if (!self?.present || self.gone || self.room < 0) return [];
+  const { bp, pf } = party;
+  const rooms = new Set<number>([self.room]);
+  for (const e of party.world.graph[self.room] ?? []) if (e.to >= 0) rooms.add(e.to);
+  const out: PrivacyCell[] = [];
+  for (const r of rooms) {
+    const room = bp.rooms[r];
+    if (!room) continue;
+    const { x0, x1, z0, z1 } = room.inner;
+    for (let x = x0 + 0.5; x < x1; x += 1)
+      for (let z = z0 + 0.5; z < z1; z += 1) {
+        if (!pf.walkable(room.level, x, z) || pf.roomAt(room.level, x, z) !== r) continue;
+        const at = { level: room.level, x, z, y: room.floorY, room: r };
+        const near = nearRooms(party, at);
+        const mode = checkPrivacy(party, { mode: "alone", at, secs, self, who: null }, near).ok
+          ? "alone"
+          : checkPrivacy(party, { mode: "unwatched", at, secs, self, who: null }, near).ok
+            ? "unwatched"
+            : "seen";
+        out.push({ level: room.level, x, z, mode });
+      }
+  }
+  return out;
+}
+
+/** The spy overlay: the way it walks now, its goal's things where they are (a thing carried is with whoever has it), and its target. */
+export function spyMarks(party: Party): SpyMarks | null {
+  const spy = party.spy;
+  if (!spy) return null;
+  const p = spy.record;
+  const here = p.present && !p.gone;
+  const route = here ? [{ level: p.level, x: p.x, z: p.z }, ...p.path.slice(p.pathIndex).map((w) => ({ level: w.level, x: w.x, z: w.z }))] : [];
+  const marks: SpyMarks["marks"] = [];
+  const items = party.world.items;
+  const th = spy.things;
+  const item = (i: number, label: string) => {
+    if (i < 0) return;
+    const q = items.holder[i]! >= 0 ? party.people[items.holder[i]!] : null;
+    if (q && (!q.present || q.gone)) return;
+    marks.push(q ? { level: q.level, x: q.x, z: q.z, label } : { level: items.level[i]!, x: items.x[i]!, z: items.z[i]!, label });
+  };
+  item(th.statuette, "the statuette");
+  if (th.safe) marks.push({ level: th.safe.level, x: th.safe.x, z: th.safe.z, label: th.safeOpen ? "the safe (open)" : "the safe" });
+  if (th.ledger) marks.push({ level: th.ledger.level, x: th.ledger.x, z: th.ledger.z, label: th.copiedAt >= 0 ? "the ledger (copied)" : "the ledger" });
+  if (th.bug?.prop && th.device < 0) marks.push({ level: th.bug.prop.level, x: th.bug.prop.x, z: th.bug.prop.z, label: `the bug goes here (${th.bug.place})` });
+  item(th.device, "the bug");
+  const g = spy.goal;
+  const target = g.target >= 0 ? party.people[g.target]! : null;
+  if (target) {
+    const from = g.kind === "bag" ? "bag" : g.first?.from;
+    if (from === "bag") item(th.bagOf(target), `${target.name}'s bag`);
+    if (from === "coat") item(target.coat, `${target.name}'s coat`);
+  }
+  return { route, marks, target: target?.present && !target.gone ? target.id : -1 };
 }
 
 export class SpyLab {
@@ -114,6 +342,14 @@ export class SpyLab {
   private readonly lines: HTMLElement;
   private readonly button: HTMLButtonElement;
   private readonly verdict: HTMLElement;
+  /** Once revealed: on to the next tell a guest saw or the perch could see. */
+  private readonly nextButton: HTMLButtonElement;
+  private readonly nextNote: HTMLElement;
+  private nextRow: HTMLElement | null = null;
+  /** The privacy overlay as last worked out: when (in-game and wall time), and its cells. */
+  private cells: PrivacyCell[] = [];
+  private cellsT = -1;
+  private cellsAt = -1e9;
   private readonly chances = new Map<GoalKind, HTMLElement>();
   private readonly weights = new Map<GoalKind, HTMLInputElement>();
   private readonly switches = new Map<GoalKind, HTMLInputElement>();
@@ -143,6 +379,12 @@ export class SpyLab {
     this.button = document.createElement("button");
     this.verdict = document.createElement("span");
     this.verdict.className = "label";
+    this.nextButton = document.createElement("button");
+    this.nextButton.textContent = "next tell ›";
+    this.nextButton.title = "Play on to the next tell a guest sees or the perch could see (its view 0.5 or more), and pause there";
+    this.nextButton.onclick = () => this.nextTell();
+    this.nextNote = document.createElement("span");
+    this.nextNote.className = "label";
     this.rankHead = document.createElement("div");
     this.rankHead.className = "label";
     for (let k = 0; k < RANKS; k++) {
@@ -185,7 +427,12 @@ export class SpyLab {
     label.textContent = "spy";
     this.button.onclick = () => this.reveal();
     row.append(label, this.button, this.verdict);
-    box.appendChild(row);
+    const next = document.createElement("div");
+    next.className = "row";
+    next.hidden = !this.revealed;
+    next.append(this.nextButton, this.nextNote);
+    this.nextRow = next;
+    box.append(row, next);
     const pins = [this.option0.setup ? `comes ${SETUP_LABEL[this.option0.setup]}` : "", this.option0.goal ? `goal pinned: ${GOAL_LABEL[this.option0.goal]}` : ""].filter(Boolean);
     if (pins.length) {
       const p = document.createElement("div");
@@ -284,9 +531,76 @@ export class SpyLab {
   private picked = -1;
   private lastRefresh: (() => void) | null = null;
 
-  /** Until the reveal, the spy's own events stay out of the log. */
-  hides(e: PartyEvent): boolean {
-    return e.kind === "spy" && !this.revealed;
+  /**
+   * Until the reveal, the spy's own events stay out of the log. After it, the start and end of each
+   * step and the plan itself show only under the spy's own filter (`all`), and the end of a look
+   * at something else nowhere.
+   */
+  hides(e: PartyEvent, all = false): boolean {
+    if (e.kind !== "spy") return false;
+    if (!this.revealed) return true;
+    const note = e.note ?? "";
+    if (note.startsWith("task:cover:")) return true;
+    return !all && (note.startsWith("task:") || note.startsWith("plan:") || note === "no-plan");
+  }
+
+  /** A step of the spy's task, as the people list and the tasks overlay show it once revealed. */
+  stepLabel(label: string): string {
+    const s = SPY_STEP[label];
+    if (s) return s;
+    const [k, a] = label.split(":");
+    const act = a as ActId;
+    if (k === "to") return `to ${ACT_WHERE[act] ?? a}`;
+    if (k === "await")
+      return act === "pocket" ? "at its target's side, waiting for the moment" : act === "brush" ? "by the host, waiting for the moment" : `at ${ACT_WHERE[act] ?? a}, waiting for the moment`;
+    if (k === "risky") return ACT_LABEL[act] ?? a ?? label;
+    return label.replace(/-/g, " ");
+  }
+
+  /** The privacy overlay's cells, once revealed: worked out afresh at most once a second, and only when the evening has moved on. */
+  privacy(): PrivacyCell[] {
+    const party = this.party;
+    if (!party?.spy || !this.revealed) return [];
+    const now = performance.now();
+    if (party.t !== this.cellsT && now - this.cellsAt >= PRIVACY_EVERY) {
+      this.cells = privacyCells(party);
+      this.cellsT = party.t;
+      this.cellsAt = now;
+    }
+    return this.cells;
+  }
+
+  /** The spy overlay's route, things and target, once revealed. */
+  marks(): SpyMarks | null {
+    return this.revealed && this.party ? spyMarks(this.party) : null;
+  }
+
+  /** Play on to the next tell a guest sees or the perch could see well (its view 0.5 or more), and pause there. */
+  private nextTell(): void {
+    const party = this.party;
+    if (!party?.spy || !this.revealed) return;
+    const m = party.spy.measure;
+    const from = party.t;
+    this.host.busy(() => {
+      const name = (i: number) => party.people[i]?.name ?? "?";
+      const shows = () => m.tells.find((x) => x.t > from && x.kind !== "trace" && (x.view >= 0.5 || x.seenBy.length > 0));
+      let x = shows();
+      while (!x && !party.over) {
+        party.step();
+        x = shows();
+      }
+      this.host.pause();
+      this.nextNote.textContent = x
+        ? `${clockLabel(x.t)}: ${TELL_LABEL[x.what]}${x.seenBy.length ? `, seen by ${x.seenBy.map(name).join(", ")}` : `, the perch's view ${pct(x.view)}`}`
+        : `no tell anyone could see after ${clockLabel(from)}`;
+    });
+  }
+
+  /** " in the study", for an event that names a room. */
+  private at(e: PartyEvent): string {
+    const r = e.room;
+    if (r === undefined || r === -1 || !this.party) return "";
+    return r === -2 ? " on the terrace" : ` in the ${this.party.bp.rooms[r]?.label.toLowerCase() ?? "room"}`;
   }
 
   /**
@@ -331,6 +645,8 @@ export class SpyLab {
       if (e.note === "later") return `${a} puts ${b}'s tour off till later`;
       if (e.note === "prompt") return `${a} has a word in ${b}'s ear about the programme`;
       if (e.note === "garment") return e.actors.length > 1 ? `${a} finds something of ${b}'s by a garden door` : `${a} finds something lying by a garden door`;
+      const found = FIND_LABEL[e.note ?? ""];
+      if (found) return `${a} ${found}${this.at(e)}`;
       return `${a} reacts to ${b}: ${e.note}`;
     }
     if (e.kind !== "spy" || !party) return null;
@@ -347,6 +663,29 @@ export class SpyLab {
     if (what === "beg-off") return `the spy (${who}) begs off ${a === "piano" ? "the piano" : a === "dance" ? "a dance" : a}, asked by ${n(e.actors[1])}`;
     if (what === "decline") return `the spy (${who}) turns down a dance with ${n(e.actors[1])}`;
     if (what === "leave-table") return `the spy (${who}) leaves the table: ${a === "bathroom" ? "the bathroom" : "a call in the hall"}`;
+    // Its plan: what it plans, each step's start and end, each act, a break-off, a failure.
+    const act = a as ActId;
+    if (what === "plan")
+      return `the spy (${who}) plans: ${(a ?? "")
+        .split(",")
+        .map((x) => PLAN_LABEL[x as PlanActionId] ?? x)
+        .join(" → ")}`;
+    if (what === "no-plan") return `the spy (${who}) sees no way to its goal yet`;
+    if (what === "task") {
+      if (a === "cover") return `the spy (${who}) looks at something else`;
+      const step = PLAN_LABEL[a as PlanActionId] ?? a;
+      return b ? `the spy (${who}): ${step}, ${howLabel(b)}` : `the spy (${who}) sets about it: ${step}`;
+    }
+    if (what === "risky") return `the spy (${who}) is ${ACT_LABEL[act] ?? a}${this.at(e)}`;
+    if (what === "did") return `the spy (${who}): ${DID_LABEL[act] ?? a}`;
+    if (what === "broke") return `the spy (${who}) stops ${ACT_LABEL[act] ?? a}: it noticed ${n(e.actors[1])}`;
+    if (what === "fail") return `the spy (${who}) gives up on ${PLAN_LABEL[a as PlanActionId] ?? a} for a while: ${FAIL_LABEL[b ?? ""] ?? b}`;
+    if (what === "tried") return `the spy (${who}) makes its first try at ${GOAL_LABEL[a as GoalKind] ?? a}`;
+    if (what === "stashed") return `the spy (${who}) slips it into its coat`;
+    if (what === "alone") return `the spy (${who}) has ${n(e.actors[1])} alone${this.at(e)}: here the kill would come (PR 5)`;
+    if (what === "drop-first") return `the spy (${who}) drops the theft: the kill comes first now`;
+    if (what === "target-gone") return `the spy (${who}) has lost its target: they've gone home`;
+    if (what === "up-from-dinner") return `the spy (${who}) gets up from the table`;
     return `the spy (${who}): ${e.note}`;
   }
 
@@ -364,9 +703,14 @@ export class SpyLab {
     if (this.party !== party) {
       this.party = party;
       this.odds0 = goalOdds(party.bp, party.places, this.odds);
+      this.cells = [];
+      this.cellsT = -1;
+      this.cellsAt = -1e9;
+      this.nextNote.textContent = "";
     }
     this.picked = selected;
     this.lastRefresh = redraw;
+    if (this.nextRow) this.nextRow.hidden = !this.revealed;
     this.renderRanks(party);
     const spy = party.spy;
     if (!spy) {
@@ -446,8 +790,14 @@ export class SpyLab {
                 ? "plant a bug"
                 : "copy the ledger";
     const first = goal.first ? `, after taking ${goal.first.thing === "phone" ? "the phone" : "the papers"} from their ${FROM_LABEL[goal.first.from]}` : "";
-    lines.push(`goal: ${what}${first}${goal.doneAt !== null ? ` · done ${clockLabel(goal.doneAt)}` : " · waits for its plan (PR 3)"}`);
+    const dropped = spy.things.droppedFirst >= 0 ? ` (dropped ${clockLabel(spy.things.droppedFirst)})` : "";
+    const tried = goal.triedAt !== null ? ` · first try ${clockLabel(goal.triedAt)}` : "";
+    const alone = goal.kind === "kill" && party.events.some((e) => e.kind === "spy" && e.note?.startsWith("alone:"));
+    const done = goal.doneAt !== null ? ` · done ${clockLabel(goal.doneAt)}` : alone ? " · had them alone: the kill comes in PR 5" : spy.plans.parked ? " · its target went home" : "";
+    lines.push(`goal: ${what}${first}${dropped}${tried}${done}`);
     if (goal.rooms.length) lines.push(`knows the way to ${goal.rooms.map(roomLabel).join(", ")}`);
+    this.planLines(party, lines, name);
+    this.findsLines(party, lines, name);
     // Its cue: the phase it acts on, how it caught it, and how far behind the room it is.
     const t = party.t;
     const cur = phaseIndexAt(party.programme, t);
@@ -504,7 +854,10 @@ export class SpyLab {
     }
     const m = spy.measure;
     const seen = m.tells.filter((x) => x.kind !== "trace" && x.seenBy.length).length;
-    lines.push(`tells ${m.tells.length} (${seen} seen by someone) · innocent twins ${m.twins.length}`);
+    const hard = m.tells.filter((x) => x.kind === "hard");
+    lines.push(
+      `tells ${m.tells.length} (${seen} seen by someone) · hard ${hard.length} (${hard.filter((x) => x.seenBy.length).length} seen, ${hard.filter((x) => x.view >= 0.5).length} the perch could see) · innocent twins ${m.twins.length}`,
+    );
     this.lines.replaceChildren(
       ...lines.map((l) => {
         const d = document.createElement("div");
@@ -514,5 +867,73 @@ export class SpyLab {
       }),
     );
     box.classList.toggle("picked", selected === spy.id);
+  }
+
+  /**
+   * Its plan: the steps as last made (the one under way in bold, and how far it has got), who is
+   * in the way of the moment it waits for, what was true as it planned, what it keeps off a
+   * while, and how its last few steps went.
+   */
+  private planLines(party: Party, lines: Array<string | HTMLElement>, name: (i: number) => string): void {
+    const spy = party.spy!;
+    const pl = spy.plans;
+    const t = party.t;
+    if (!spy.byCues) return void lines.push("plans nothing yet: keeps the staff's routine (PR 5)");
+    const cur = pl.current;
+    if (pl.steps.length && spy.goal.doneAt === null && !pl.parked) {
+      const row = document.createElement("span");
+      row.append("plan: ");
+      let marked = false;
+      pl.steps.forEach((a, k) => {
+        if (k) row.append(" → ");
+        if (cur && !marked && a === cur.action) {
+          marked = true;
+          const b = document.createElement("b");
+          b.textContent = `${PLAN_LABEL[a]} (${STAGE_LABEL[cur.stage]})`;
+          row.append(b);
+        } else row.append(PLAN_LABEL[a]);
+      });
+      lines.push(row);
+    } else if (spy.goal.doneAt === null && !pl.parked) lines.push(t < 20 * 60 ? "no plan yet: nothing before 19:20, while the host watches the door" : "no plan made yet");
+    if (cur?.stage === "waiting" && cur.act && pl.check && !pl.check.ok) {
+      const mode = spy.things.spec(cur.act).mode;
+      lines.push(`waits to be ${mode ?? "unseen"}; in the way: ${pl.check.by.map((x) => `${name(x.who)} (${WAY_LABEL[x.why]})`).join(", ")}`);
+    }
+    if (pl.facts)
+      lines.push(
+        `as it last planned: ${factNames(pl.facts)
+          .map((f) => FACT_LABEL[f] ?? f)
+          .join(", ")}`,
+      );
+    const off = [...pl.blocked].filter(([, until]) => until > t);
+    if (off.length) lines.push(`keeps off: ${off.map(([a, until]) => `${PLAN_LABEL[a]} till ${clockLabel(until)}`).join(", ")}`);
+    const last = pl.history.slice(-4).reverse();
+    if (last.length) lines.push(`last steps: ${last.map((r) => `${clockLabel(r.t)} ${PLAN_LABEL[r.what]}: ${howLabel(r.how)}`).join(" · ")}`);
+    const s = pl.stats;
+    if (s.started) lines.push(`steps ${s.started} started, ${s.done} done, ${s.broken} broken off, ${s.failed} failed · waited for the moment ${s.tries}×`);
+  }
+
+  /** What the crowd has found of its work, and the finds still to come: the host's look in on the safe, the statuette's watchers, bags set down. */
+  private findsLines(party: Party, lines: Array<string | HTMLElement>, name: (i: number) => string): void {
+    const f = party.finding;
+    const spy = party.spy!;
+    if (!f) return;
+    const found = party.events.filter((e) => e.kind === "react" && FIND_LABEL[e.note ?? ""]);
+    lines.push(found.length ? `found: ${found.map((e) => `${clockLabel(e.t)} ${name(e.actors[0]!)} ${FIND_LABEL[e.note!]}`).join(" · ")}` : "nobody has found anything yet");
+    if (spy.things.statuette >= 0) {
+      let knew = 0;
+      let tonight = 0;
+      for (let i = 0; i < f.knewAt.length; i++) {
+        if (f.knewAt[i]! < 0) continue;
+        knew++;
+        if (f.knewAt[i]! > 0) tonight++;
+      }
+      lines.push(`the statuette's stand: ${knew} would miss it (${tonight} saw it there tonight)${f.stats.lookers ? ` · ${f.stats.lookers} came over to look` : ""}`);
+    }
+    if (f.studyAt >= 0) lines.push(`the host looks in on the safe at ${clockLabel(f.studyAt)}`);
+    else if (f.stats.study) lines.push("the host has looked in on the safe");
+    if (f.stats.down)
+      lines.push(`bags set down to dance or play ${f.stats.down}×, fetched ${f.stats.back}×${f.stats.checks ? ` · ${name(spy.goal.target)} looked in their things ${f.stats.checks}×` : ""}`);
+    else if (f.stats.checks) lines.push(`${name(spy.goal.target)} looked in their things ${f.stats.checks}×`);
   }
 }

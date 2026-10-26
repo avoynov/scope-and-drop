@@ -12,26 +12,40 @@
  * away from whoever its own sightings show to be dangerous, laughs off a challenge, and turns
  * down what the one it played was known for when its own skill falls short. Playing the host,
  * it follows its cues like any spy and the household prompts it (posing.ts, prompts.ts).
+ *
+ * PR 3 gives it a plan (steps.ts): the goal's things in the house (goals.ts), the cheapest chain
+ * of actions to it (planner.ts), and each risky act started only when nobody who counts can see
+ * it (privacy.ts). Playing a waiter it keeps the staff's routine and plans nothing yet (PR 5).
  */
 import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH, phaseIndexAt } from "../clock";
 import { EXPECT, SLIP_SKILLS, type Ident, type Tie } from "../ident";
 import type { Verb } from "../memory";
+import { DETAIL_RANGE } from "../senses";
+import type { Step, Task } from "../tasks";
 import { SKILLS, type PartyEvent, type Person, type Skill } from "../types";
 import { Answers, type AnswersHost } from "./answers";
 import type { Knacks, SpyBody, SpyCast, SpyGoal, SpyOwn, SpySetup } from "./cast";
 import { Cues, type CuesHost } from "./cues";
-import { Measure, TWIN_VERBS } from "./measure";
+import { GoalThings } from "./goals";
+import { Measure, TWIN_VERBS, type TellId } from "./measure";
 import { Posing } from "./posing";
+import { held } from "./privacy";
+import { Plans, type StepsHost } from "./steps";
 
 export { castSpy, goalOdds, goalRooms, houseHolds, studied, GOALS, GOAL_SHARES, SETUPS, STEAL, type GoalKind, type SpyBody, type SpyCast, type SpyGoal, type SpyOptions, type SpySetup } from "./cast";
 export { DELAY_HEARD, DELAY_SEEN, DELAY_TOLD, NOTICE, type CueHow, type CueRecord } from "./cues";
 export { ranks, TELLS, type Tell, type TellId } from "./measure";
 export { AVOID, BLUFF, BLUFF_KNOWN, DANGER_WHY, type DangerWhy } from "./answers";
 export { AGREE_TOUR, DINNER_LEAVE, REFUSE_TOUR } from "./posing";
+export { ACTS, BUG_PLACES, GoalThings, type ActId, type BugPlace } from "./goals";
+export { ACTIONS, FACTS, factNames, plan, type Fact, type PlanActionId } from "./planner";
+export { check, held, nearRooms, type InTheWay, type PrivacyMode, type PrivacyResult } from "./privacy";
+export { Plans, type PlanRecord, type StepsHost } from "./steps";
+export { Finds, type FindsHost } from "./finds";
 
 /** What the spy needs from the party. */
-export interface SpyHost extends CuesHost, AnswersHost {
+export interface SpyHost extends CuesHost, AnswersHost, StepsHost {
   readonly people: Person[];
   readonly ident: Ident;
   /** When the farewell's first goodbye was said (-1 not yet). */
@@ -43,9 +57,10 @@ export interface SpyHost extends CuesHost, AnswersHost {
   log(kind: PartyEvent["kind"], actors: number[], room?: number, note?: string): void;
 }
 
-/** Its goal as it stands: what, whom, the theft first, the rooms it needs, and when it was done. */
+/** Its goal as it stands: what, whom, the theft first, the rooms it needs, when it first tried (its first risky act) and when it was done. */
 export interface SpyGoalState extends SpyGoal {
   rooms: number[];
+  triedAt: number | null;
   doneAt: number | null;
 }
 
@@ -84,6 +99,9 @@ export class Spy {
   readonly answers: Answers;
   /** Its ways as the host (posing.ts). */
   readonly posing: Posing;
+  /** Its goal's things in the house, and its plan for them (goals.ts, steps.ts). */
+  readonly things: GoalThings;
+  readonly plans: Plans;
   /** Leaving: the share of the leavers it goes at, why (its goal done, or given up at the first goodbye), and how long a late deed keeps it. */
   readonly exit: { at: number; why: "done" | "gave-up" | null; stay: number } = { at: 0, why: null, stay: 0 };
   /** The record's ties as the evening began: a tie raised tonight is one it saw made. */
@@ -105,7 +123,7 @@ export class Spy {
     this.id = cast.record;
     this.setup = cast.setup;
     this.victim = cast.victim;
-    this.goal = { ...cast.goal, rooms, doneAt: null };
+    this.goal = { ...cast.goal, rooms, triedAt: null, doneAt: null };
     this.own = cast.own;
     this.knack = cast.own.knack;
     this.selves = [cast.record];
@@ -121,6 +139,8 @@ export class Spy {
     for (let j = 0; j < n; j++) this.castTie[j] = host.ident.tieOf(this.id, j);
     this.answers = new Answers(host, this, rng.fork("answers"));
     this.posing = new Posing(rng.fork("posing"));
+    this.things = new GoalThings(host, this.goal, this.record, rng.fork("goal"));
+    this.plans = new Plans(host, this, this.things, rng.fork("plan"));
     this.exit.at = this.own.leaveAt;
     // Left behind before the party: a trace from the start, until someone picks it up (PR 2).
     if (this.garment) this.measure.tell("garment", cast.body?.t ?? 0, PARTY_LENGTH, -1, garment!.view);
@@ -161,12 +181,34 @@ export class Spy {
     return e >= EXPECT && this.record.fluency[skill] < e - DODGE_GAP;
   }
 
-  /** Once a step: its cues, and its answers. */
+  /** Once a step: its cues, its answers, and the step of its plan under way. */
   step(): void {
     const p = this.record;
     if (!p.present || p.gone) return;
     if (this.byCues) this.cues.step(p);
     this.answers.step();
+    this.plans.step();
+  }
+
+  /** Its mind is free: the plan's next step, if one can start now (true); else it lives the evening. */
+  think(p: Person): boolean {
+    return p.id === this.id && this.plans.think(p);
+  }
+
+  /** A step of one of its tasks done, and one of its tasks ended. */
+  stepDone(t: Task, st: Step): void {
+    this.plans.stepDone(t, st);
+  }
+
+  finished(t: Task): void {
+    this.plans.finished(t);
+  }
+
+  /** Its first risky act toward the goal: what the mission report counts as having tried. */
+  tried(): void {
+    if (this.goal.triedAt !== null) return;
+    this.goal.triedAt = this.host.t;
+    this.host.log("spy", [this.id], this.record.room, `tried:${this.goal.kind}`);
   }
 
   /**
@@ -178,7 +220,32 @@ export class Spy {
       if (!this.knows[b.id]) this.knows[b.id] = 1;
       if (this.byCues) this.cues.saw(b);
       this.answers.saw(b);
-    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t);
+    } else if (b.id === this.id && !a.staff) this.measure.seen(a.id, this.host.t, (x) => this.readsAct(a, b, x.whose, this.small(x.what)));
+  }
+
+  /**
+   * Whether a reads what the spy's notable shows, by the privacy check's own rules: going through a
+   * bag or a coat looks wrong only to whoever knows it isn't the spy's, and to them only when nothing
+   * else holds their eyes (its owner always); a hand in a pocket, the statuette palmed or the bug
+   * slipped into a sofa or under a table only to someone close by and not held by the toast, the
+   * speech, the piano or the floor.
+   */
+  reads(a: Person, b: Person): boolean {
+    const v = b.notable;
+    if (v === "in-bag") return this.readsAct(a, b, b.notableObj >= 0 ? this.host.world.items.owner[b.notableObj]! : -1, false);
+    const small =
+      v === "pocket" || (v === "carrying" && b.notableObj >= 0 && b.notableObj === this.things.statuette) || (v === "snooping" && this.plans.current?.act === "plant" && this.small("plant"));
+    return small ? this.readsAct(a, b, -1, true) : true;
+  }
+
+  /** A tell only someone close by can make out: a hand at a pocket, the statuette palmed, the bug slipped in. */
+  private small(what: TellId): boolean {
+    return what === "pocket" || what === "palm" || (what === "plant" && this.things.spec("plant").within !== undefined);
+  }
+
+  private readsAct(a: Person, b: Person, whose: number, small: boolean): boolean {
+    if (whose >= 0) return this.things.knowsWhose(whose)(a) && (a.id === whose || !held(this.host, a));
+    return !small || (a.level === b.level && Math.hypot(a.x - b.x, a.z - b.z) <= DETAIL_RANGE && !held(this.host, a));
   }
 
   /** The garment picked up: the trace is gone. */
@@ -255,11 +322,11 @@ export class Spy {
     h.log("spy", [this.id], this.record.room, `done:${this.goal.kind}`);
   }
 
-  /** Its line in the party's digest: the record, its cue, the goal, the covers (none yet), the bodies, whom it knows, its exit, its tells and its danger list summed. */
+  /** Its line in the party's digest: the record, its cue, the goal, the covers (none yet), the bodies, whom it knows, its exit, its tells, its danger list summed and its plan's steps. */
   digest(): string {
     let k = 0;
     for (let j = 0; j < this.knows.length; j++) k += this.knows[j]!;
     const c = this.cues;
-    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:0:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}`;
+    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:0:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}`;
   }
 }

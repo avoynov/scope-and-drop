@@ -141,7 +141,7 @@ describe("the planner", () => {
     expect(MAX_EXPANSIONS).toBe(200);
     const all = new Set(ACTIONS.map((a) => a.id));
     const tactics = new Set<Tactic>(["touring", "things", "commotion", "murder", "tour"]);
-    const every = ACTIONS.reduce((m, a) => m | a.brings, 0) & ~(F.alone | F.arms | F.sagging | F.dead);
+    const every = ACTIONS.reduce((m, a) => m | a.brings, 0) & ~(F.alone | F.arms | F.sagging | F.dead | F.trusted);
     // Every fact first, then the target alone: such a plan exists...
     const chain: PlanActionId[] = ["learn", "go", "pick-lock", "open-safe", "find-bag", "wait-owner", "look-away", "papers", "stash", "plant", "ledger", "follow", "wait-alone"];
     const needs = { "wait-alone": every };

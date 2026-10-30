@@ -133,8 +133,9 @@ export function soberCheck(): Check {
 }
 
 /**
- * Tests (PR 2): nobody but the spy fails or bluffs a friendly test. Someone drunk may fumble one,
- * and passes the next the same person puts to them. Holds with or without a spy.
+ * Tests (PR 2): nobody but the spy (in any record it has worn) fails or bluffs a friendly test.
+ * Someone drunk may fumble one, and passes the next the same person puts to them. Holds with or
+ * without a spy.
  */
 export function testsCheck(): Check {
   let seen = 0;
@@ -147,7 +148,7 @@ export function testsCheck(): Check {
         const e = ev[seen++]!;
         if (e.kind !== "test") continue;
         const [i, j] = e.actors as [number, number];
-        if (j === party.spyId) continue;
+        if (party.spy?.selves.includes(j)) continue;
         const key = `${i}:${j}`;
         if (e.note === "failed" || e.note === "bluffed") return `${j} ${e.note} a test by ${i}`;
         if (e.note !== "fumbled") fumbled.delete(key);
@@ -386,8 +387,10 @@ export interface SpyEvening {
   /**
    * When it set off home, and the share of the farewell's leavers already on their way out then
    * (playing the host, the share it had seen off: nobody gets past it without its goodbye, so all
-   * of them can be on their way, waiting on it, while a mishap holds it up); when it was gone, and
-   * the share of them gone before it; why it went (its goal done, or given up).
+   * of them can be on their way, waiting on it, while a mishap holds it up; as a waiter, the share
+   * past their goodbye, since it walks out with one of them and the rest queue for the host at
+   * once); when it was gone, and the share of them gone before it; why it went (its goal done, or
+   * given up).
    */
   goingAt: number;
   goingShare: number;
@@ -483,7 +486,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
   let before = 0;
   /** The guests still here at the farewell's first goodbye (the household aside). */
   let stayers: number[] | null = null;
-  /** Playing the host, those it has said goodbye to since then. */
+  /** Since then, those the host has said goodbye to (the spy itself, playing the host). */
   const seenOff = new Set<number>();
   let read = 0;
   let here = 0;
@@ -507,7 +510,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
           goingAt = p.t;
           goingShare = before;
           rankAtGo = ranks(p.people, p.memory, p.ident, p.t).findIndex((r) => r.id === me.id) + 1;
-        } else if (spy.setup !== "host") before = p.farewellGoing();
+        } else if (spy.setup !== "host" && spy.setup !== "waiter") before = p.farewellGoing();
         else {
           const f = stayers ?? [];
           before = f.length ? f.filter((i) => seenOff.has(i) || p.people[i]!.gone).length / f.length : 0;

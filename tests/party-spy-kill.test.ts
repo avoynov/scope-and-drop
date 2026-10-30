@@ -3,14 +3,17 @@
  * each way of killing set up by hand in a quiet room during dinner, from the moment to the body
  * hidden, and a witness at a strangling, who backs away to tell while the victim, let go out
  * cold, comes to. Then someone gone without a word, looked for and said to be missing, and the
- * spy silencing someone sure of it, once.
+ * spy silencing someone sure of it, once. Last, taking someone's place: the needle on the landing,
+ * the change behind their bolt, and out as them; and the spy as a waiter, its plan between rounds
+ * and a coat over its arm on the way out.
  */
 import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
 import { yawTo } from "../src/party/places";
 import { Party } from "../src/party/sim";
-import { FINISH, STRUGGLE, type KillStage } from "../src/party/spy";
+import { CHANGE, FINISH, STRUGGLE, type KillStage } from "../src/party/spy";
 import type { Person } from "../src/party/types";
+import { spyChecks, watch } from "./spy-watch";
 
 const MIN = 60;
 const bp = generateMansion({ seed: "gala-night" });
@@ -280,5 +283,99 @@ describe("someone missing, and silencing a doubter", () => {
       expect(spy.silence.busy || spy.kill.busy).toBe(false);
     }
     expect(q2.down).toBeNull();
+  });
+});
+
+describe("taking someone's place, and the waiter", () => {
+  it("takes the place of someone off alone: the needle on the landing, into their clothes behind their bolt, the body hidden, and out as them", () => {
+    const party = new Party(bp, { seed: "swap-1", spy: { setup: "self", goal: "bug", swap: true, on: ["murder"] } });
+    const dinner = party.programme.find((ph) => ph.id === "dinner")!;
+    party.advance(dinner.start + 10 * MIN);
+    const spy = party.spy!;
+    const a = spy.record;
+    const n = party.people.length;
+    expect(spy.swap.may).toBe(true);
+    // Someone it could pass as: its height, its sex.
+    const v = party.people.find((o) => !o.staff && o.role === "guest" && o.present && o.id !== a.id && o.id !== spy.goal.target && spy.swap.fit(o) >= 1)!;
+    expect(v).toBeDefined();
+    // On the upstairs landing by a bathroom with a bolt, nobody about: they're on their way in.
+    const bath = party.places.bathrooms.findIndex((b) => b.room.level === 1 && party.world.doors[b.doorId]?.lock === "inside");
+    const b = party.places.bathrooms[bath]!;
+    const at = { level: b.door.level, x: b.door.x, z: b.door.z, room: b.door.room };
+    put(party, v, at, 0);
+    put(party, a, { ...at, x: at.x + 0.8 }, yawTo(at.x + 0.8, at.z, at.x, at.z));
+    spy.swap.face = v.id;
+    spy.swap.why = "halfway";
+    // Only behind a bolt, for a swap.
+    const m = spy.kill.moment(a, v, { strangle: false, inject: true, shut: true });
+    expect(m?.how).toBe("injection");
+    expect(m!.hide.door).toBeGreaterThanOrEqual(0);
+    // Someone it has seen tonight, and when: what it knows goes with it.
+    const seen = party.people.find((o) => o !== a && o !== v && party.memory.lastT[a.id * n + o.id]! > 0)!;
+    const sawAt = party.memory.lastT[a.id * n + seen.id]!;
+    expect(spy.kill.begin(a, v, m!, "swap")).toBe(true);
+    let changeFrom = -1;
+    let changeTo = -1;
+    let bolted = false;
+    const stages = run(party, 20 * MIN, (s) => {
+      if (s === "change" && changeFrom < 0) changeFrom = party.t;
+      if (s === "hide" && changeFrom >= 0 && changeTo < 0) changeTo = party.t;
+      if (s === "change") bolted ||= party.world.doors[m!.hide.door]!.locked;
+    });
+    expect(stages.filter((s) => s !== "out")).toEqual(["close", "embrace", "walk-off", "dying", "change", "hide"]);
+    expect(bolted).toBe(true);
+    expect(changeTo - changeFrom).toBeGreaterThanOrEqual(CHANGE[0] - 1);
+    expect(changeTo - changeFrom).toBeLessThanOrEqual(CHANGE[1] + 1);
+    expect(spy.measure.tells.some((x) => x.what === "changing")).toBe(true);
+    // Out as them: its old self gone without a word, its new one up and about where it stood.
+    expect(spy.id).toBe(v.id);
+    expect(party.spyId).toBe(v.id);
+    expect(spy.selves).toEqual([a.id, v.id]);
+    expect(spy.swap.done).toBe(true);
+    expect(spy.swap.stats.swaps).toBe(1);
+    expect(party.events.some((e) => e.kind === "spy" && e.note === `swap:${a.id}:${v.id}:halfway`)).toBe(true);
+    expect(a.present).toBe(false);
+    expect(party.vanished(a)).toBe(true);
+    expect(v.present && !v.gone).toBe(true);
+    expect(v.down).toBeNull();
+    // The body in the bath is theirs, in their clothes or in its own.
+    expect(spy.bodies).toHaveLength(1);
+    expect(spy.bodies[0]).toMatchObject({ who: v.id, how: "injection" });
+    expect([undefined, a.id]).toContain(spy.bodies[0]!.wears);
+    // Its body and mind in their record.
+    expect(v.look.height).toBe(spy.own.height);
+    expect(v.look.build).toBe(spy.own.build);
+    expect(party.ident.fake).toBe(v.id);
+    expect(party.memory.lastT[v.id * n + seen.id]).toBeGreaterThanOrEqual(sawAt);
+    expect(Array.from(party.memory.lastT.subarray(a.id * n, (a.id + 1) * n)).every((x) => x <= -1e9)).toBe(true);
+    for (let j = 0; j < n; j++) expect(spy.close[j]).toBe(j === v.id ? 0 : spy.swap.pairs[v.id * n + j]);
+    // Nothing held or bolted behind it, and the evening goes on with it as them.
+    for (const x of party.body.baths) expect(x.hold).toBe(-1);
+    expect(party.world.doors.some((d) => d.locked && (d.lockedBy === a.id || d.lockedBy === v.id))).toBe(false);
+    expect(watch(party, spyChecks().all, party.t + 20 * MIN)).toEqual([]);
+    expect(v.present && !v.gone).toBe(true);
+    expect(spy.record).toBe(v);
+  });
+
+  it("as a waiter, takes its plan's next step between rounds, and walks out with the leaving guests, a coat over its arm", () => {
+    const party = new Party(bp, { seed: "w1", spy: { setup: "waiter", goal: "ledger" } });
+    const spy = party.spy!;
+    expect(spy.record.staff).toBe(true);
+    let held: string | null | undefined;
+    const coat = {
+      name: "coat",
+      step(p: Party) {
+        if (held === undefined && p.tasks.of(spy.record)?.kind === "leave") held = spy.record.held;
+        return null;
+      },
+    };
+    const broken = watch(party, [...spyChecks().all, coat]);
+    expect(broken).toEqual([]);
+    expect(spy.plans.stats.started).toBeGreaterThan(0);
+    expect(spy.goal.doneAt).not.toBeNull();
+    // Never an alibi: its rounds take it anywhere.
+    expect(spy.tactics.stats.alibis).toBe(0);
+    expect(held).toBe("coat");
+    expect(spy.record.gone).toBe(true);
   });
 });

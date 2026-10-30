@@ -41,6 +41,8 @@ export interface SpyOptions {
   target?: number;
   /** Covers held on all evening, past the caps (scheduler.ts). */
   on?: readonly Cover[];
+  /** Taking someone's place mid-party (swap.ts): true it means to tonight (playing a guest too), false never. */
+  swap?: boolean;
 }
 
 /** As itself in 55% of evenings; otherwise as someone killed before the party. */
@@ -50,6 +52,8 @@ const AS_HOST = 0.55;
 const AS_WAITER = 0.1;
 /** A kill steals first this often, unless the options say. */
 export const STEAL = 0.5;
+/** Meaning to take someone's place mid-party: this share of the evenings it comes as itself (the plan: about a fifth of them swap). */
+export const SWAP = 0.3;
 /** The odds of a bag at the door (sim.ts), which a kill's theft from a bag follows. */
 const BAG: Record<Sex, number> = { f: 0.6, m: 0.08 };
 /** What it saw of each of its victim's people before the party, by tie: an acquaintance, a friend, a close friend, the partner; and each of the staff when it plays the host. */
@@ -136,6 +140,8 @@ export interface SpyBody {
   /** In-game seconds after 19:00 (negative: before the party). */
   t: number;
   how: "before" | "injection" | "strangled" | "poison";
+  /** Whose clothes it has on, when not its own: after a swap, the spy's old self's. */
+  wears?: number;
 }
 
 export interface SpyCast {
@@ -153,6 +159,8 @@ export interface SpyCast {
   garment: { at: { level: number; x: number; z: number; room: number }; what: string; color: string } | null;
   /** The target the spy means to rob of a bag is given one at the door when the usual draw gives them none. */
   bagFor: number;
+  /** Taking someone's place mid-party (swap.ts): whether it means to tonight, and whom it could play, by casting's own rule. */
+  swap: { may: boolean; playable: readonly number[] };
 }
 
 const PARTY_TYPES: ReadonlySet<RoomType> = new Set(["entrance-hall", "stair-hall", "hall-gallery"]);
@@ -342,7 +350,7 @@ function garmentSpot(bp: MansionBlueprint, places: Places, rng: Rng): { level: n
  */
 export function castSpy(rng: Rng, people: readonly Person[], drama: DramaCast, bp: MansionBlueprint, places: Places, opts: SpyOptions = {}): SpyCast {
   const host = people.find((p) => p.role === "host")!;
-  const r = { setup: rng.fork("setup"), goal: rng.fork("goal"), own: rng.fork("own"), study: rng.fork("study"), site: rng.fork("site") };
+  const r = { setup: rng.fork("setup"), goal: rng.fork("goal"), own: rng.fork("own"), study: rng.fork("study"), site: rng.fork("site"), swap: rng.fork("swap") };
 
   // How it comes, and whom it plays.
   const selves = selfCandidates(people, drama);
@@ -406,7 +414,11 @@ export function castSpy(rng: Rng, people: readonly Person[], drama: DramaCast, b
     body = { who: record.id, at: b.at, place: b.place, hides: BODY_HIDES, t: -r.site.range(20, 90) * 60, how: "before" };
     if (r.site.chance(GARMENT_SHARE)) garment = { at: garmentSpot(bp, places, r.site), what: r.site.pick(GARMENT[record.look.sex]), color: r.site.pick(GARMENT_COLORS) };
   }
-  return { setup, record: record.id, victim: setup === "self" ? -1 : record.id, goal: { kind, target, first }, own, study, body, garment, bagFor };
+  // Mid-party it may take someone's place: drawn every evening, kept only coming as itself, unless the options say (and then playing a guest too).
+  const ready = r.swap.chance(SWAP);
+  const may = opts.swap !== undefined ? opts.swap && (setup === "self" || setup === "victim") : setup === "self" && ready;
+  const swap = { may, playable: victimCandidates(people, drama).map((p) => p.id) };
+  return { setup, record: record.id, victim: setup === "self" ? -1 : record.id, goal: { kind, target, first }, own, study, body, garment, bagFor, swap };
 }
 
 /**

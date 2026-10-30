@@ -10,6 +10,7 @@
  */
 import type { MansionBlueprint, Poi, Prop } from "../../mansion/core/types";
 import type { Rng } from "../../mansion/core/rng";
+import { TEST, type Ident } from "../ident";
 import { KNOWN, type Memory, type Verb } from "../memory";
 import type { Pathfinder } from "../path";
 import { frontOf, type Places } from "../places";
@@ -95,10 +96,10 @@ export const GOAL_ACTIONS: Record<GoalPart, readonly PlanActionId[]> = {
   bag: ["find-bag", "wait-owner", "spill", "bag", "stash"],
   coat: ["learn", "tour-alone", "go", "look-away", "commotion", "coat", "stash"],
   pocket: ["follow", "look-away", "pocket", "stash"],
-  "bug-room": ["learn", "tour-alone", "go", "pick-lock", "slip-in", "plant"],
+  "bug-room": ["learn", "tour-alone", "go", "pick-lock", "slip-in", "host-place", "plant"],
   "bug-host": ["brush-host"],
   ledger: ["learn", "tour-alone", "go", "ledger"],
-  kill: ["follow", "wait-alone", "embrace", "inject", "walk-off", "strangle"],
+  kill: ["follow", "wait-alone", "embrace", "inject", "walk-off", "strangle", "friend-place", "aside"],
 };
 
 /** Someone was seen within this long (in-game s) for the spy to know where they and their bag are, and dancing or at the games this recently for it to know the bag is down. */
@@ -134,6 +135,7 @@ export interface GoalHost {
   readonly tasks: Tasks;
   readonly host: Person;
   readonly senses: Senses;
+  readonly ident: Ident;
 }
 
 /** The goal as the plan sees it: the facts wanted, the actions it can use, their needs where they differ, and the room it is about. */
@@ -322,6 +324,7 @@ export class GoalThings {
           needs["wait-alone"] = F.close | F.stashed;
           needs.embrace = F.close | F.stashed;
         } else needs.follow = F.stashed;
+        needs.aside = F.trusted | F.close | F.stashed;
       }
       const target = g.target >= 0 ? this.h.people[g.target]! : null;
       if (target) {
@@ -406,8 +409,9 @@ export class GoalThings {
     if (this.device >= 0) m |= F.planted;
     if (this.copiedAt >= 0) m |= F.copied;
     if (target?.present && !target.gone && target.level === spy.level && target.room === spy.room && Math.hypot(target.x - spy.x, target.z - spy.z) <= CLOSE) m |= F.close;
-    // A poisoned target counts as killed at the collapse.
-    if (target && (target.down === "dead" || target.down === "collapsed")) m |= F.dead;
+    if (target?.down === "dead") m |= F.dead;
+    // Its target trusts the face it wears: a friend of theirs, as far as they can tell (a swap into one, or playing one from the start).
+    if (target && h.ident.tieOf(target.id, spy.id) >= 3 && h.ident.doubtOf(target.id, spy.id, h.t) < TEST) m |= F.trusted;
     return m;
   }
 

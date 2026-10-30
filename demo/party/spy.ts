@@ -126,6 +126,8 @@ const PLAN_LABEL: Record<PlanActionId, string> = {
   inject: "the jab",
   "walk-off": "walk them off like a drunk friend",
   strangle: "strangle them from behind",
+  "friend-place": "take a friend of theirs' place",
+  aside: "a word in private",
 };
 /** Where a body went, for the log. */
 const HIDE_LABEL: Record<HidePlace, string> = {

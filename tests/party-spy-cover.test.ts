@@ -52,7 +52,7 @@ function scheduler(o: { seed: string; goal?: GoalKind; playing?: boolean; forced
     mood: { energy: new Float32Array(5).fill(o.energy ?? 0), tension: new Float32Array(5).fill(o.tension ?? 0) },
     log: () => {},
   };
-  const spy: CoversSpy = { record: crowd[0]!, goal: { kind: o.goal ?? "statuette" }, playing: !!o.playing, stealing: () => !!o.stealing, answers: { lowUntil: -1 } };
+  const spy: CoversSpy = { record: crowd[0]!, goal: { kind: o.goal ?? "statuette" }, playing: !!o.playing, stealing: () => !!o.stealing, answers: { lowUntil: -1 }, swap: { may: false } };
   const covers = new Covers(host, spy, o.forced ?? [], new Rng(o.seed));
   return { host, spy, covers };
 }
@@ -270,7 +270,8 @@ const notes = (party: Party, re: RegExp) => party.events.filter((e) => e.kind ==
 
 describe("the false alibi", () => {
   // At dinner on orangery-1 the spy has a glass in hand and the ledger to copy: it cuts itself.
-  const cutAt = { where: "orangery-1", seed: "orangery-1", spy: { on: ["alibi"], goal: "ledger" } as SpyOptions };
+  // Never taking a place mid-party (PR 5), which would tilt murder on earlier and move the evening.
+  const cutAt = { where: "orangery-1", seed: "orangery-1", spy: { on: ["alibi"], goal: "ledger", swap: false } as SpyOptions };
 
   /** The cut evening, watched: the wave, the wash inside, the bandage, and where it stood at the act. */
   function cutEvening(provoke?: Provocation[]) {

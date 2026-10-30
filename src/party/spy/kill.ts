@@ -17,6 +17,11 @@
  *   return: it walks them off like a drunk friend, bolts the door, and they die there a minute or
  *   two after the jab (never before they're in).
  *
+ * For a swap (swap.ts) only a place it can bolt itself in with them will do, a bathroom or a
+ * bedroom: there it kills them either way, changes into their clothes behind the bolt for two to
+ * four minutes (the `changing` tell, for a window), hides the body, and its task ends there, the
+ * bolt drawn back, for the swap to take it out as them.
+ *
  * Up to the grip or the jab it can stop like any step: the grip a hand on the shoulder, the
  * embrace a hug, then a word and on. After it, it finishes. Whoever it notices looking its way
  * then it knows saw it (answers.ts). Noticed during the struggle, the drag or the holding on, it
@@ -91,7 +96,7 @@ export interface Hide {
 }
 
 /** Where a kill has got to. */
-export type KillStage = "close" | "embrace" | "struggle" | "drag" | "finish" | "walk-off" | "dying" | "hide" | "out";
+export type KillStage = "close" | "embrace" | "struggle" | "drag" | "finish" | "walk-off" | "dying" | "change" | "hide" | "out";
 
 interface Kill {
   why: KillWhy;
@@ -99,6 +104,8 @@ interface Kill {
   victim: number;
   task: number;
   stage: KillStage;
+  /** For a swap: only behind a bolt, changing there after, the task ending once the body is hidden. */
+  shut: boolean;
   /** When it began closing in, the point of no return (-1 not yet), when the victim dies (the injection), and when they died (-1 not yet). */
   from: number;
   noReturn: number;
@@ -120,6 +127,8 @@ interface Kill {
 export const STRUGGLE: readonly [number, number] = [20, 40];
 export const FINISH: readonly [number, number] = [120, 240];
 export const EMBRACE: readonly [number, number] = [2, 4];
+/** Changing into their clothes behind the bolt, for a swap (in-game s). */
+export const CHANGE: readonly [number, number] = [120, 240];
 /** Let go out cold: they come to this long after (in-game s). */
 const WAKE: readonly [number, number] = [20, 90];
 /** Injected: dead this long after the jab, and never before they're in. */
@@ -162,7 +171,7 @@ const HUG = 0.35;
 /** A pantry, the spa, the gym: shut away. */
 const STORES: ReadonlySet<string> = new Set(["pantry", "spa", "gym"]);
 /** Where people pass through all evening: never somewhere to strangle anyone. */
-const PASSAGES: ReadonlySet<string> = new Set(["corridor", "service-stair", "landing", "entrance-hall", "hall-gallery"]);
+export const PASSAGES: ReadonlySet<string> = new Set(["corridor", "service-stair", "landing", "entrance-hall", "hall-gallery"]);
 
 const spot3 = (p: Person): Spot3 => ({ level: p.level, x: p.x, z: p.z, y: p.y, room: p.room });
 
@@ -210,12 +219,13 @@ export class Killing {
 
   /**
    * Following q a step behind: whether this is a moment, and for which method. Strangling first,
-   * the quieter death, when alone with them; else the injection, when it's on.
+   * the quieter death, when alone with them; else the injection, when it's on. `shut`: only with
+   * a place it can bolt itself in with them (a swap).
    */
-  moment(p: Person, q: Person, ways: { strangle: boolean; inject: boolean }): { how: KillHow; hide: Hide } | null {
+  moment(p: Person, q: Person, ways: { strangle: boolean; inject: boolean; shut?: boolean }): { how: KillHow; hide: Hide } | null {
     if (!q.present || q.gone || q.down || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE) return null;
     if (ways.strangle) {
-      const hide = this.strangling(p, q);
+      const hide = this.strangling(p, q, ways.shut === true);
       if (hide) return { how: "strangled", hide };
     }
     if (ways.inject) {
@@ -225,8 +235,8 @@ export class Killing {
     return null;
   }
 
-  /** Alone with q, off the stairs and out of the passages, not behind a bolt, and somewhere to hide them: where. */
-  private strangling(p: Person, q: Person): Hide | null {
+  /** Alone with q, off the stairs and out of the passages, not behind a bolt, and somewhere to hide them (`shut`: behind a bolt of its own): where. */
+  private strangling(p: Person, q: Person, shut: boolean): Hide | null {
     const h = this.h;
     if (q.pose === "climb" || q.path[q.pathIndex]?.climb || (q.room >= 0 && PASSAGES.has(h.bp.rooms[q.room]!.type)) || this.bolted(q.room)) return null;
     // Anyone else in the room: the privacy check would say no.
@@ -234,7 +244,7 @@ export class Killing {
     const c = check(h, { mode: "alone", at: spot3(q), secs: STRUGGLE[1] + STRUGGLE_SOON, self: p, who: null, skip: q.id });
     this.spy.plans.check = c;
     if (!c.ok) return null;
-    const hide = this.hiding(p, q);
+    const hide = this.hiding(p, q, shut);
     this.lastHide = hide;
     return hide;
   }
@@ -284,6 +294,7 @@ export class Killing {
       victim: q.id,
       task: t.id,
       stage: "close",
+      shut: why === "swap",
       from: h.t,
       noReturn: -1,
       diesAt: -1,
@@ -347,7 +358,7 @@ export class Killing {
     if (h.byeAt >= 0 || h.t - k.from > CLOSE_FOR || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE || this.bolted(q.room)) return this.end(t, "lost");
     if (this.ticks % 2 !== 0 || Math.hypot(q.x - p.x, q.z - p.z) > REACH) return;
     if (k.how === "strangled") {
-      const hide = this.strangling(p, q);
+      const hide = this.strangling(p, q, k.shut);
       if (!hide) return this.breakOff(t, p, q);
       k.hide = hide;
       return this.grip(k, t, p, q);
@@ -468,7 +479,7 @@ export class Killing {
     this.spy.measure.tell("jab", h.t, h.t + 1, p.room, h.visibility(p));
     p.speed = WALK_OFF_SPEED;
     // From the embrace's end (tasks.ts moves on to these itself).
-    const steps: Step[] = [{ do: "goto", to: hide.to, label: "kill:walk-off" }, { do: "wait", s: 0, pose: "serve", label: "kill:in" }, ...this.inside(hide, "injection")];
+    const steps: Step[] = [{ do: "goto", to: hide.to, label: "kill:walk-off" }, { do: "wait", s: 0, pose: "serve", label: "kill:in" }, ...this.inside(hide, "injection", k.shut)];
     t.steps.splice(t.i + 1, t.steps.length, ...steps);
     k.stage = "walk-off";
     h.notable(p, "propped-up", q.id, 3, p.room);
@@ -476,16 +487,23 @@ export class Killing {
     this.note(`kill:jab:${q.id}`);
   }
 
-  /** The steps in the place it takes them: the bolt drawn behind them, their last minutes (injected) or holding on until they're dead (strangled), the hiding, the bolt back and out. */
-  private inside(hide: Hide, how: KillHow): Step[] {
+  /**
+   * The steps in the place it takes them: the bolt drawn behind them, their last minutes (injected)
+   * or holding on until they're dead (strangled), the hiding, the bolt back and out. For a swap
+   * (`shut`), the change into their clothes before the hiding, and nothing after: the swap takes it
+   * out as them.
+   */
+  private inside(hide: Hide, how: KillHow, shut: boolean): Step[] {
     const steps: Step[] = [];
     const room = hide.lay.room;
     if (hide.door >= 0) steps.push({ do: "bolt", door: hide.door, room, label: "kill:bolt" });
     if (how === "injection") steps.push({ do: "wait", s: 1, pose: "stand", label: "kill:dying" });
     else steps.push({ do: "wait", s: this.rng.range(FINISH[0], FINISH[1]), pose: "struggle", label: "kill:finish" });
+    if (shut) steps.push({ do: "wait", s: this.rng.range(CHANGE[0], CHANGE[1]), pose: "stand", label: "kill:change" });
     const secs =
       hide.place === "store" ? HIDE_SHUT : hide.place === "outside" ? this.rng.range(HIDE_OUT[0], HIDE_OUT[1]) + (2 * hide.beyond * TIME_SCALE) / DRAG_SPEED : this.rng.range(HIDE_IN[0], HIDE_IN[1]);
     steps.push({ do: "wait", s: secs, pose: "serve", label: "kill:hide" });
+    if (shut) return steps;
     if (hide.door >= 0) steps.push({ do: "unbolt", door: hide.door, room, label: "kill:unbolt" });
     if (hide.out) steps.push({ do: "goto", to: hide.out, label: "kill:out" });
     return steps;
@@ -534,16 +552,30 @@ export class Killing {
         return;
       }
       case "kill:dying":
-      case "kill:finish":
+      case "kill:finish": {
         this.dead(k, p, q);
         if (p.notable === "attacked") p.notableUntil = h.t;
         this.spy.measure.end("struggle", h.t);
         if (k.hide!.place === "fell") return this.leave(k, p, q, "fell");
+        // For a swap, their clothes on first: a window could show it.
+        const next = t.steps[t.i + 1];
+        if (k.shut && next?.do === "wait" && next.label === "kill:change") {
+          k.stage = "change";
+          this.spy.measure.tell("changing", h.t, h.t + next.s, p.room, h.visibility(p));
+          return;
+        }
+        k.stage = "hide";
+        return;
+      }
+      case "kill:change":
+        this.spy.measure.end("changing", h.t);
         k.stage = "hide";
         return;
       case "kill:hide":
         this.hidden(k, q, k.hide!);
         k.stage = "out";
+        // For a swap the task ends behind the bolt (drawn back as it ends): the swap takes it out as them.
+        if (k.shut) this.end(t, "dead");
         return;
     }
   }
@@ -562,7 +594,7 @@ export class Killing {
   private rehide(k: Kill, p: Person, q: Person): void {
     const h = this.h;
     const was = k.hide!;
-    const now = this.hiding(p, q);
+    const now = this.hiding(p, q, k.shut);
     this.lastHide = now;
     if (was.bath >= 0 && now?.bath !== was.bath) h.body.unholdBath(was.bath);
     if (now && now.bath >= 0 && now.bath !== was.bath && !h.body.holdBath(now.bath, p)) k.hide = this.fell(q);
@@ -574,7 +606,7 @@ export class Killing {
     const h = this.h;
     const hide = k.hide!;
     p.speed = DRAG_SPEED;
-    t.steps.splice(t.i + 1, t.steps.length, { do: "goto", to: hide.to, label: "kill:drag" }, { do: "wait", s: 0, pose: "serve", label: "kill:in" }, ...this.inside(hide, "strangled"));
+    t.steps.splice(t.i + 1, t.steps.length, { do: "goto", to: hide.to, label: "kill:drag" }, { do: "wait", s: 0, pose: "serve", label: "kill:in" }, ...this.inside(hide, "strangled", k.shut));
     k.stage = "drag";
     h.notable(p, "attacked", q.id, 3, p.room);
     this.note(`kill:drag:${hide.place}`);
@@ -877,13 +909,15 @@ export class Killing {
 
   /**
    * The nearest hiding place by its way there, on the victim's storey, within MAX_DRAG, by a way
-   * through no room with anyone in it (null: none). Nearest first by a straight line, so a way
-   * longer than the best found ends the search.
+   * through no room with anyone in it (null: none); `shut`, only one with a bolt. Nearest first by
+   * a straight line, so a way longer than the best found ends the search.
    */
-  private hiding(p: Person, q: Person): Hide | null {
+  private hiding(p: Person, q: Person, shut: boolean): Hide | null {
     const from = spot3(q);
     const near = (c: Hide) => Math.hypot(c.to.x - from.x, c.to.z - from.z) + c.beyond;
-    const cands = this.places(q.level, p, q).sort((a, b) => near(a) - near(b));
+    const cands = this.places(q.level, p, q)
+      .filter((c) => !shut || c.door >= 0)
+      .sort((a, b) => near(a) - near(b));
     let best: Hide | null = null;
     for (const c of cands) {
       const straight = near(c);

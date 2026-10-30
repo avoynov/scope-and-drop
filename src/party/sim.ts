@@ -933,12 +933,17 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.thinkAt = this.t + 10;
   }
 
-  /** Waiters (and the butler with the brandy after dinner): load a tray, then a round of stops offering it. */
+  /** Waiters (and the butler with the brandy after dinner): load a tray, then a round of stops offering it. The spy playing a waiter takes its plan's next step between rounds, the tray set down first. */
   private waiterThink(p: Person): void {
     const pl = this.places;
     const rng = this.rng;
     const stops = this.stops.get(p.id) ?? 0;
     if (this.body.trayCount(p) === 0 || stops >= 4) {
+      if (p.id === this.spyId && this.spy!.think(p)) {
+        this.body.setDown(p);
+        this.stops.set(p.id, 0);
+        return;
+      }
       // Reload at the bar or the kitchen; the nearest when a toast is waiting on it.
       const near = this.phase.id === "champagne" || this.phase.id === "toast";
       const away = (s: Spot) => Math.hypot(s.x - p.x, s.z - p.z) + 15 * Math.abs(s.level - p.level);
@@ -2216,18 +2221,23 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
    * and in the last hurry whatever it meant to do. When its moment comes it drops whatever it is
    * busy with (dabbing a spill, an errand) rather than miss the first leavers, but it waits out
    * the bathroom and a row; a partner in the bathroom it doesn't wait for. Playing the host, it walks out with a leaving guest and doesn't come
-   * back; as a waiter, or in the last hurry, it walks out alone.
+   * back; as a waiter it carries a coat out with leaving guests the same way; in the last hurry it walks out alone.
    */
   private spyDeparture(p: Person, spy: Spy): void {
     const a = p.action;
     const hurry = this.t >= PARTY_LENGTH - HURRY_OUT;
     if (!spy.mayGo()) return;
     if (!hurry && ((a?.id === "toilet" && a.note !== "door") || a?.id === "row" || !spy.wantsToGo())) return;
-    if (p.role === "host" && !p.staff && !hurry) {
-      // A host never goes home: it walks out with a guest already past their goodbye, and waits for one.
+    if ((p.role === "host" || p.staff) && !hurry) {
+      // A host never goes home: it walks out with a guest already past their goodbye, and waits for one. A waiter sees them out to the cars with a coat over its arm.
       const t = this.tasks.running("leave").find((x) => x.owner !== p.id && x.i > x.steps.findIndex((st) => st.label === "goodbye"));
       if (!t) return;
       this.log("spy", [p.id], p.room, "leave");
+      if (p.staff) {
+        this.body.setDown(p);
+        p.held = "coat";
+        p.heldUntil = PARTY_LENGTH + 1;
+      }
       this.tasks.join(t, p);
       return;
     }
@@ -2337,6 +2347,93 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   /** Gone without a goodbye: whoever looks for them never finds them. */
   vanished(q: Person): boolean {
     return this.leftPlay[q.id] === 1;
+  }
+
+  /**
+   * The spy out of the room it bolted, as the one it killed there (spy/swap.ts): their record
+   * takes its body (its height and build, its walk, its voice, its own habits and skills, what it
+   * has drunk, the bandage on its hand), its mind (its temper, whom it knows and what it holds, its
+   * map of the house, what it knows of the bathrooms) and its place in the room. The record keeps
+   * who they are to everyone else: the name, the clothes (a stain and all), the partner and
+   * friends, the seat, the coat, their bag, and every memory of them. What they were set on goes
+   * with them: their doubts and tests, their grudges, their cases, whatever they were sure of or
+   * meant to tell. Its old self leaves play with no goodbye, its coat on its hook and a bag it
+   * carried left with its clothes.
+   */
+  swapSpy(v: Person): void {
+    const spy = this.spy!;
+    const a = spy.record;
+    const own = spy.own;
+    const items = this.world.items;
+    // Up again where it stands, in their clothes.
+    v.present = true;
+    v.gone = false;
+    v.down = null;
+    this.leftPlay[v.id] = 0;
+    v.level = a.level;
+    v.x = a.x;
+    v.z = a.z;
+    v.y = a.y;
+    v.yaw = a.yaw;
+    v.room = a.room;
+    v.pose = "stand";
+    v.action = null;
+    v.path = [];
+    v.pathIndex = 0;
+    v.detour = null;
+    v.thinkAt = this.t;
+    v.gesture = null;
+    v.gestureUntil = 0;
+    v.lookUntil = 0;
+    v.notable = null;
+    v.notableObj = -1;
+    v.notableRoom = -1;
+    v.notableUntil = 0;
+    if (v.held !== "bag") v.held = null;
+    // Its own body.
+    v.tipsy = a.tipsy;
+    v.drinks = a.drinks;
+    v.drinkLog = a.drinkLog.map((d) => ({ ...d }));
+    v.needs = { ...a.needs };
+    v.bandage = a.bandage;
+    v.phaseSeen = a.phaseSeen;
+    dress(v, own, false);
+    this.mood.energy[v.id] = this.mood.energy[a.id]!;
+    this.mood.tension[v.id] = this.mood.tension[a.id]!;
+    this.doorIn[v.id] = this.doorIn[a.id]!;
+    this.doorIn[a.id] = -1;
+    // Its own mind: what it knows moves with it, and what they were set on goes.
+    this.memory.moveSelf(a.id, v.id);
+    this.body.moveSelf(a.id, v.id);
+    this.register.forget(v.id);
+    this.register.forget(a.id);
+    this.register.refreshLook(v);
+    this.ident.impostor(v.id, (i) => spy.answers.answer(i));
+    this.ident.newMind(v.id);
+    this.ident.recast(v, own.voice);
+    this.bonds.setTemper(v.id, own.temper);
+    this.bonds.newMind(v.id);
+    for (const x of [v, a]) {
+      this.alarmOf[x.id] = -1;
+      this.sureOf[x.id] = -1;
+      this.backedAway[x.id] = 0;
+      this.watching[x.id] = -1;
+      this.about.delete(x.id);
+      this.lookFor.delete(x.id);
+    }
+    // Whom it kept away from was about its old face (the answers raise it anew); the rest of its avoid list is its own.
+    v.avoid = new Map([...a.avoid].filter(([k]) => !k.startsWith("person:")));
+    // Its old self: a bag it carried stays with its clothes; then out of play, gone with no goodbye.
+    for (let i = 0; i < items.n; i++) {
+      if (items.holder[i] !== a.id || items.kindOf(i) !== "bag") continue;
+      items.holder[i] = -1;
+      items.set(i, "down", this.t);
+      items.place(i, a);
+    }
+    a.held = null;
+    this.leavePlay(a);
+    if (v.role === "host") this.prompts.fake = true;
+    spy.became(v.id);
   }
 
   /** A task step the party acts on. */
@@ -3032,9 +3129,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.log("react", [i, lead, subject], p.room, "keep-in-view");
   }
 
-  /** The room where someone last saw whoever they keep in view (the spy: the lone doubter it means to silence), or -1. */
+  /** The room where someone last saw whoever they keep in view (the spy: the lone doubter it means to silence, else the one whose place it means to take), or -1. */
   keepInView(p: Person): number {
-    const j = p.id === this.spyId ? this.spy!.silence.watching : this.watching[p.id]!;
+    const spy = this.spy;
+    const j = spy && p.id === spy.id ? (spy.silence.watching >= 0 ? spy.silence.watching : spy.swap.watching) : this.watching[p.id]!;
     if (j < 0) return -1;
     const q = this.people[j]!;
     return q.present && !q.gone ? this.memory.lastRoom[p.id * this.people.length + j]! : -1;

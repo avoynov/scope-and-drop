@@ -46,7 +46,7 @@ export const MAX_ON = 3;
 export const MAX_TOTAL = 90 * 60;
 /** Keeping out of the picture while it plays someone: off this long at a time. */
 export const PICTURE_OFF: readonly [number, number] = [5 * 60, 10 * 60];
-/** The goal's tilt on the covers it favours, and the kill's on murder and poison; playing someone, on keeping out of the picture. */
+/** The goal's tilt on the covers it favours, and the kill's on murder (a place it means to take tonight's too) and poison; playing someone, on keeping out of the picture. */
 export const GOAL_TILT = 1.6;
 export const MURDER_TILT = 1.8;
 export const POISON_TILT = 1.5;
@@ -99,6 +99,8 @@ export interface CoversSpy {
   readonly playing: boolean;
   /** A kill's theft first still on (it tilts as a theft until done or dropped). */
   stealing(): boolean;
+  /** Meaning to take someone's place tonight (swap.ts), which is a kill too. */
+  readonly swap: { readonly may: boolean };
   /** Its lying low, which feeling watched extends. */
   readonly answers: { lowUntil: number };
 }
@@ -192,7 +194,7 @@ export class Covers {
     let k = 1;
     const favours = g === "kill" && spy.stealing() ? FAVOURS.bag : FAVOURS[g];
     if (favours.includes(c)) k *= GOAL_TILT;
-    if (g === "kill" && c === "murder") k *= MURDER_TILT;
+    if (c === "murder" && (g === "kill" || spy.swap.may)) k *= MURDER_TILT;
     if (g === "kill" && c === "poison") k *= POISON_TILT;
     if (c === "out-of-picture" && spy.playing) k *= PLAYING_TILT;
     if (RISKY.has(c)) k *= this.moodTilt();

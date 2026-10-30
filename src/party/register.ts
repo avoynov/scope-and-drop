@@ -463,6 +463,27 @@ export class Register {
     return this.confAt(s) * this.sourceWeight(i, s);
   }
 
+  /**
+   * Another mind in i's record (the spy, out of one record and into another): what the record knew
+   * of sightings, claims and cases goes, and so does any trust it had lost in a teller, so the spy
+   * starts the new record's afresh (its old record's go too). What anyone else has filed about i
+   * stays.
+   */
+  forget(i: number): void {
+    const n = this.n;
+    for (let s = i * E; s < (i + 1) * E; s++) {
+      if (!this.used[s]) continue;
+      this.used[s] = 0;
+      this.gen[s]!++;
+    }
+    this.cUsed.fill(0, i * CASE_SLOTS, (i + 1) * CASE_SLOTS);
+    this.openN[i] = 0;
+    this.wantTell[i] = -1;
+    this.beliefLoss.fill(0, i * n, (i + 1) * n);
+    this.beliefT.fill(0, i * n, (i + 1) * n);
+    this.broke.fill(0, i * n, (i + 1) * n);
+  }
+
   /** How someone looks, as a description (call again when it changes). */
   refreshLook(p: Person): void {
     describe(p, this.looks, p.id * D);

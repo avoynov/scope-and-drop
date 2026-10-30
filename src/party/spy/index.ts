@@ -15,7 +15,8 @@
  *
  * PR 3 gives it a plan (steps.ts): the goal's things in the house (goals.ts), the cheapest chain
  * of actions to it (planner.ts), and each risky act started only when nobody who counts can see
- * it (privacy.ts). Playing a waiter it keeps the staff's routine and plans nothing yet (PR 5).
+ * it (privacy.ts). Playing a waiter it keeps the staff's routine and, from PR 5, plans between
+ * its rounds.
  *
  * PR 4 gives it cover (scheduler.ts): habits that show between its steps (habits.ts) and tactics
  * for doing them (tactics.ts), each on and off through the evening: a false alibi, other people's
@@ -23,7 +24,9 @@
  *
  * PR 5 has it kill (kill.ts): strangling or the injection, whichever moment comes, the body
  * hidden, and whoever sees it sure at once; and, once at most, silence someone it has seen to be
- * sure of it (silence.ts).
+ * sure of it (silence.ts). Coming as itself, now and then it takes someone's place halfway through
+ * the evening (swap.ts): the host's for the keys, a friend's of its target, or a new face once
+ * people grow watchful of the old one.
  */
 import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH, phaseIndexAt } from "../clock";
@@ -44,6 +47,7 @@ import { held } from "./privacy";
 import { Covers, type Cover, type CoversHost } from "./scheduler";
 import { Silencing } from "./silence";
 import { Plans } from "./steps";
+import { Swapping, type SwapHost } from "./swap";
 import { Tactics, type TacticsHost } from "./tactics";
 
 export { castSpy, goalOdds, goalRooms, houseHolds, studied, GOALS, GOAL_SHARES, SETUPS, STEAL, type GoalKind, type SpyBody, type SpyCast, type SpyGoal, type SpyOptions, type SpySetup } from "./cast";
@@ -59,11 +63,28 @@ export { Finds, type FindsHost } from "./finds";
 export { COVERS, Covers, HABIT_COVERS, MAX_ON, MAX_TOTAL, RISKY, type Cover, type CoverState, type Spell } from "./scheduler";
 export { Habits, outOfStep, type Deed, type HabitsHost } from "./habits";
 export { ALIBI_KINDS, Tactics, type Alibi, type AlibiKind, type TacticsHost } from "./tactics";
-export { DRAG_SPEED, DYING, EMBRACE, FINISH, Killing, STRUGGLE, WALK_OFF_SPEED, type Hide, type HidePlace, type KillHost, type KillHow, type KillOutcome, type KillStage, type KillWhy } from "./kill";
+export {
+  CHANGE,
+  DRAG_SPEED,
+  DYING,
+  EMBRACE,
+  FINISH,
+  Killing,
+  STRUGGLE,
+  WALK_OFF_SPEED,
+  type Hide,
+  type HidePlace,
+  type KillHost,
+  type KillHow,
+  type KillOutcome,
+  type KillStage,
+  type KillWhy,
+} from "./kill";
 export { Silencing } from "./silence";
+export { FRIEND_SEEN, NEAR as SWAP_NEAR, FAR as SWAP_FAR, SWAP_FROM, Swapping, WATCHFUL, type SwapHost, type SwapWhy } from "./swap";
 
 /** What the spy needs from the party. */
-export interface SpyHost extends CuesHost, AnswersHost, TacticsHost, CoversHost, KillHost {
+export interface SpyHost extends CuesHost, AnswersHost, TacticsHost, CoversHost, KillHost, SwapHost {
   readonly people: Person[];
   readonly ident: Ident;
   /** When the farewell's first goodbye was said (-1 not yet). */
@@ -128,9 +149,11 @@ export class Spy {
   readonly kill: Killing;
   /** Going after someone sure of it, once at most (silence.ts). */
   readonly silence: Silencing;
+  /** Someone else's place mid-party, once at most (swap.ts). */
+  readonly swap: Swapping;
   /** Leaving: the share of the leavers it goes at, why (its goal done, or given up at the first goodbye), and how long a late deed keeps it. */
   readonly exit: { at: number; why: "done" | "gave-up" | null; stay: number } = { at: 0, why: null, stay: 0 };
-  /** The record's ties as the evening began: a tie raised tonight is one it saw made. */
+  /** The record's ties as the evening began (or as it took the record): a tie raised since is one it saw made. */
   private readonly castTie: Uint8Array;
   private readonly rng: Rng;
 
@@ -173,6 +196,7 @@ export class Spy {
     this.tactics = new Tactics(host, this, rng.fork("tactics"));
     this.kill = new Killing(host, this, rng.fork("kill"));
     this.silence = new Silencing(host, this, rng.fork("silence"));
+    this.swap = new Swapping(host, this, cast.swap, rng.fork("swap"));
     this.exit.at = this.own.leaveAt;
     // Left behind before the party: a trace from the start, until someone picks it up (PR 2).
     if (this.garment) this.measure.tell("garment", cast.body?.t ?? 0, PARTY_LENGTH, -1, garment!.view);
@@ -199,9 +223,9 @@ export class Spy {
     return !this.record.staff;
   }
 
-  /** Playing someone (the record isn't its own): their face isn't its face. */
+  /** Playing someone (the record isn't its own, killed before the party or taken mid-party): their face isn't its face. */
   get playing(): boolean {
-    return this.victim >= 0;
+    return this.victim >= 0 || this.id !== this.selves[0];
   }
 
   /** A kill's theft first still on: not done, not dropped. */
@@ -224,8 +248,9 @@ export class Spy {
     return e >= EXPECT && this.record.fluency[skill] < e - DODGE_GAP;
   }
 
-  /** Once a step: its covers, its cues, its answers, the step of its plan under way, a doubter it follows, a kill under way, its tactics and its habits. */
+  /** Once a step: out as the one whose place it took, first of all; then its covers, its cues, its answers, the step of its plan under way, a doubter or a face it follows, a kill under way, its tactics and its habits. */
   step(): void {
+    this.swap.settle();
     const p = this.record;
     if (!p.present || p.gone) return;
     this.covers.step();
@@ -233,6 +258,7 @@ export class Spy {
     this.answers.step();
     this.plans.step();
     this.silence.step();
+    this.swap.step();
     this.kill.step();
     this.tactics.step();
     this.habits.step();
@@ -245,6 +271,8 @@ export class Spy {
    */
   think(p: Person): boolean {
     if (p.id !== this.id) return false;
+    // About to come out as someone else: nothing new meanwhile.
+    if (this.swap.settling) return true;
     return this.tactics.think(p) || this.plans.think(p) || this.tactics.done(p) || this.habits.think(p);
   }
 
@@ -269,19 +297,41 @@ export class Spy {
   finished(t: Task): void {
     this.plans.finished(t);
     this.silence.finished(t);
+    this.swap.finished(t);
     this.kill.finished(t);
   }
 
-  /** A kill ended: for its goal, the plan takes it from there; for a doubter, the silencing. */
+  /** A kill ended: for its goal, the plan takes it from there; for a doubter, the silencing; for a face, the swap. */
   killEnded(why: KillWhy, out: KillOutcome, how: KillHow): void {
     if (why === "goal") this.plans.killEnded(out, how);
     else if (why === "silence") this.silence.killEnded(out);
+    else this.swap.killEnded(out);
   }
 
-  /** Whom it follows a step behind (-1 nobody): its kill's target, or someone sure of it. */
+  /** Whom it follows a step behind (-1 nobody): its kill's target, someone sure of it, or the one whose place it means to take. */
   get trailing(): number {
     const j = this.plans.trailing;
-    return j >= 0 ? j : this.silence.trailing;
+    if (j >= 0) return j;
+    const k = this.silence.trailing;
+    return k >= 0 ? k : this.swap.trailing;
+  }
+
+  /**
+   * Out as the one whose place it took (swap.ts; the party has moved its memory and dressed the
+   * record already): their record is its own from now on. It keeps whom it has seen tonight, and
+   * believes close to them only those it saw them with; a tie it greets by is one it saw made, now
+   * from theirs. What it made of who is dangerous was about its old face, and starts again.
+   */
+  became(v: number): void {
+    const h = this.host;
+    const n = h.people.length;
+    this.id = v;
+    this.selves.push(v);
+    for (let j = 0; j < n; j++) {
+      this.castTie[j] = h.ident.tieOf(v, j);
+      this.close[j] = j === v ? 0 : this.swap.pairs[v * n + j]!;
+    }
+    this.answers.anew();
   }
 
   /** Whom a kill holds now, besides the spy (-1 nobody): their pose is the kill's. */
@@ -314,6 +364,7 @@ export class Spy {
       if (!this.knows[b.id]) this.knows[b.id] = 1;
       if (this.byCues) this.cues.saw(b);
       this.answers.saw(b);
+      if (this.swap.may) this.swap.saw(b);
       if (b.id === this.goal.target && this.goal.kind === "kill") this.things.sawTarget(b);
     } else if (b.id === this.id) {
       // Staff who see a kill raise the alarm too; tells are the guests'.
@@ -425,11 +476,11 @@ export class Spy {
     h.log("spy", [this.id], this.record.room, `done:${this.goal.kind}`);
   }
 
-  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps, its tactics, its kills and its silencing. */
+  /** Its line in the party's digest: the record, its cue, the goal, the covers, the bodies, whom it knows, its exit, its tells, its danger list summed, its plan's steps, its tactics, its kills, its silencing and its swap. */
   digest(): string {
     let k = 0;
     for (let j = 0; j < this.knows.length; j++) k += this.knows[j]!;
     const c = this.cues;
-    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}:${this.kill.digest()}:${this.silence.digest()}`;
+    return `spy${this.id}:${c.phase},${c.known}:${this.goal.doneAt === null ? 0 : 1}:${this.covers.digest()}:${this.bodies.length}:${k}:${this.exit.why ?? "-"}:${this.measure.tells.length}:${this.answers.total}:${this.plans.digest()}:${this.tactics.digest()}:${this.kill.digest()}:${this.silence.digest()}:${this.swap.digest()}`;
   }
 }

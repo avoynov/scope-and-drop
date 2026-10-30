@@ -10,13 +10,18 @@
  * whenever an action ends (steps.ts), which is what takes a fact away.
  */
 
-export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone", "arms", "sagging", "dead"] as const;
+export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone", "arms", "sagging", "dead", "trusted"] as const;
 export type Fact = (typeof FACTS)[number];
 /** Each fact's bit in the mask. */
 export const F = Object.fromEntries(FACTS.map((f, i) => [f, 1 << i])) as Record<Fact, number>;
 
-/** What switches an action on: touring alone, other people's things and commotion are PR 4's tactics; murder (the host's place, the kill's own) and poison PR 5's. */
-export type Tactic = "touring" | "things" | "commotion" | "murder" | "poison" | "tour";
+/**
+ * What switches an action on: touring alone, other people's things and commotion are PR 4's
+ * tactics; murder (the kill's own, and a word aside) and poison PR 5's; swap (someone else's place:
+ * the host's, a friend of the target's) is on while murder is and the spy may still take a place
+ * tonight (swap.ts).
+ */
+export type Tactic = "touring" | "things" | "commotion" | "murder" | "poison" | "swap" | "tour";
 
 export type PlanActionId =
   | "learn"
@@ -45,7 +50,9 @@ export type PlanActionId =
   | "embrace"
   | "inject"
   | "walk-off"
-  | "strangle";
+  | "strangle"
+  | "friend-place"
+  | "aside";
 
 export interface PlanAction {
   id: PlanActionId;
@@ -67,7 +74,7 @@ export const ACTIONS: readonly PlanAction[] = [
   { id: "go", needs: F.way, brings: F.there, cost: 1 },
   { id: "pick-lock", needs: F.there, brings: F.door, cost: 4 },
   { id: "slip-in", needs: 0, brings: F.door | F.there, cost: 3, tactic: "tour" },
-  { id: "host-place", needs: 0, brings: F.door, cost: 12, tactic: "murder" },
+  { id: "host-place", needs: 0, brings: F.door, cost: 12, tactic: "swap" },
   { id: "open-safe", needs: F.there | F.door, brings: F.safe, cost: 3 },
   { id: "find-bag", needs: 0, brings: F.found, cost: 2 },
   { id: "wait-owner", needs: F.found, brings: F.free, cost: 2 },
@@ -90,6 +97,9 @@ export const ACTIONS: readonly PlanAction[] = [
   { id: "inject", needs: F.arms, brings: F.sagging, cost: 1, tactic: "murder" },
   { id: "walk-off", needs: F.sagging, brings: F.dead, cost: 3, tactic: "murder" },
   { id: "strangle", needs: F.alone, brings: F.dead, cost: 2, tactic: "murder" },
+  // Wearing the face of someone the target trusts (a swap into a friend of theirs it saw them with), a word in private takes them somewhere alone.
+  { id: "friend-place", needs: 0, brings: F.trusted, cost: 4, tactic: "swap" },
+  { id: "aside", needs: F.trusted | F.close, brings: F.alone, cost: 1, tactic: "murder" },
 ];
 export const ACTION_BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));
 

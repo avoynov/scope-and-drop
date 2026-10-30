@@ -927,8 +927,8 @@ export class Tasks {
   /** Someone in the owner's party: follow in single file, or (the photo) take their place in line. */
   private member(t: Task, p: Person, a: ActionState): boolean {
     const h = this.host;
-    // Whoever the spy holds goes where it has them (spy/kill.ts).
-    if (t.kind === "spy") return false;
+    // Whoever the spy holds goes where it has them (spy/kill.ts); a friend it takes aside for a word follows like anyone (spy/steps.ts).
+    if (t.kind === "spy" && t.what !== "aside") return false;
     if (t.kind === "photo") {
       const s = t.slots?.get(p.id);
       if (!s || t.steps[t.i]!.label === "show") return false;
@@ -964,7 +964,7 @@ export class Tasks {
     const t = this.of(p);
     if (!t) return "stand";
     if (p.id !== t.owner) {
-      if (t.kind === "elope" || t.kind === "pull") {
+      if (t.kind === "elope" || t.kind === "pull" || (t.kind === "spy" && t.what === "aside")) {
         const st = t.steps[t.i];
         return st?.do === "wait" ? st.pose : "stand";
       }

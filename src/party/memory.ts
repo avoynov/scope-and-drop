@@ -619,6 +619,39 @@ export class Memory {
     this.seenIntoT.fill(-1e9, a, a + this.M);
   }
 
+  /**
+   * The spy out of one record and into another (spy/swap.ts): what it knows goes with it (whom it
+   * last saw where, the facts it holds, its suspicions, its map of the house), and the record it
+   * left keeps nothing. What anyone knows of either record is theirs, and stays.
+   */
+  moveSelf(from: number, to: number): void {
+    const n = this.n;
+    const M = this.M;
+    const row = (a: Float32Array | Int16Array | Int32Array | Uint8Array, w: number, empty: number) => {
+      a.copyWithin(to * w, from * w, (from + 1) * w);
+      a.fill(empty, from * w, (from + 1) * w);
+    };
+    row(this.lastT, n, -1e9);
+    row(this.lastRoom, n, -1);
+    row(this.lastAct, n, 0);
+    row(this.secondHand, n, 0);
+    row(this.sawDrinking, n, -1e9);
+    row(this.sFact, SLOTS, -1);
+    row(this.sConf, SLOTS, 0);
+    row(this.sT, SLOTS, 0);
+    row(this.sFrom, SLOTS, 0);
+    row(this.sHops, SLOTS, 0);
+    this.held[to] = this.held[from]!;
+    this.held[from] = 0;
+    row(this.suspicion, n, 0);
+    row(this.know, M, 0);
+    row(this.knowT, M, 0);
+    row(this.visits, M, 0);
+    row(this.seenIntoT, M, -1e9);
+    // Into one of the household (the host): the household still counts them, but the map is the spy's own.
+    if (this.household[to]) this.ownMap[to] = 1;
+  }
+
   /** Walking into a room: learnt well, less so when tipsy. */
   walkInto(i: number, room: number): void {
     if (room === -1 || this.knowsHouse(i)) return;

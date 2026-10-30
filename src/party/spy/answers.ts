@@ -13,6 +13,9 @@
  * off and walks to another room; it stays until the last half hour all the same. A circle going
  * quiet as it joins sends it back to ordinary life for 10 to 20 minutes (`lowUntil`, which PR 4's
  * scheduler reads).
+ *
+ * Out in someone else's place mid-party (PR 5, swap.ts), all of that was about its old face, and
+ * starts again: those it saw close to the one it now plays are its danger list (`with`).
  */
 import type { Rng } from "../../mansion/core/rng";
 import { PARTY_LENGTH } from "../clock";
@@ -50,6 +53,8 @@ export interface AnswersSpy {
   readonly id: number;
   /** Whom it killed before the party (-1 as itself). */
   readonly victim: number;
+  /** Playing someone: killed before the party, or taken mid-party. */
+  readonly playing: boolean;
   readonly knows: Uint8Array;
   readonly close: Float32Array;
   /** Whether the one it plays knew j before tonight. */
@@ -158,9 +163,10 @@ export class Answers {
 
   // ------------------------------------------------------- what is put to it
 
-  /** A test from i: a bluff, with the chance its study gives it, else it fails. */
+  /** A test from i: a bluff, with the chance its study gives it (only of the one it studied: not of a place taken mid-party), else it fails. */
   answer(i: number): "bluffed" | "failed" {
-    const studied = this.spy.victim >= 0 && this.spy.knows[i] === 2;
+    const spy = this.spy;
+    const studied = spy.victim >= 0 && spy.id === spy.victim && spy.knows[i] === 2;
     const out = this.rng.chance(studied ? BLUFF_KNOWN : BLUFF) ? "bluffed" : "failed";
     this.stats[out]++;
     return out;
@@ -206,7 +212,7 @@ export class Answers {
   turn(members: readonly number[], speaker: number): void {
     const spy = this.spy;
     const h = this.host;
-    if (spy.victim < 0 || !members.includes(spy.id)) return;
+    if (!spy.playing || !members.includes(spy.id)) return;
     for (const m of members) {
       if (m === spy.id || (speaker !== spy.id && speaker !== m) || spy.knows[m]! >= 2 || !spy.knewVictim(m) || !this.rng.chance(NO_NAME)) continue;
       const q = h.people[m]!;
@@ -238,6 +244,25 @@ export class Answers {
     if (!g || g.id === this.excusedFrom || !g.members.some((m) => this.avoided[m] && m !== me.id)) return;
     this.excusedFrom = g.id;
     this.leaveAt = h.t + this.rng.range(EXCUSE[0], EXCUSE[1]);
+  }
+
+  /**
+   * Out as someone else (swap.ts; `close` is now how close it saw each person to them): who was
+   * dangerous, and why, was about its old face, and so were the signals it was catching, the excuse
+   * it meant to make and the lying low. Those it saw close to the one it plays are its danger now,
+   * and past AVOID on its avoid list (the party gave the record its old list, less anyone in it).
+   */
+  anew(): void {
+    const spy = this.spy;
+    this.danger.fill(0);
+    this.why.fill(0);
+    this.avoided.fill(0);
+    this.sig.fill(SIG_NONE);
+    this.sigUntil.fill(0);
+    this.leaveAt = -1;
+    this.excusedFrom = -1;
+    this.lowUntil = -1;
+    for (let j = 0; j < this.danger.length; j++) if (spy.close[j]! > 0) this.raise(j, spy.close[j]!, "with");
   }
 
   /** Whether it has seen for itself that j is sure of it (silence.ts): a challenge, a kill seen, a test it failed. */

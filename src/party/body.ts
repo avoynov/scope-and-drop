@@ -114,6 +114,19 @@ export class Body {
     this.counters = [...counters.values()];
   }
 
+  /** The spy out of one record and into another (spy/swap.ts): what it knows of the bathroom doors goes with it, and so does the glass it was drinking. */
+  moveSelf(from: number, to: number): void {
+    const B = this.B;
+    this.seenT.copyWithin(to * B, from * B, (from + 1) * B);
+    this.seenBusy.copyWithin(to * B, from * B, (from + 1) * B);
+    this.seenT.fill(-1e9, from * B, (from + 1) * B);
+    this.seenBusy.fill(0, from * B, (from + 1) * B);
+    this.absorb[to] = this.absorb[from]!;
+    this.dose[to] = this.dose[from]!;
+    this.absorb[from] = 0;
+    this.dose[from] = 0;
+  }
+
   // ------------------------------------------------------------- per step
 
   /** Before anyone moves: remember where they stand. */

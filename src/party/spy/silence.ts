@@ -15,9 +15,11 @@
  * its plan that only waits, and follows a step behind, a few minutes at a time, as it follows a
  * kill's target (steps.ts); in the bathroom, it waits for them to come out. At dinner, them
  * getting up from the table, it excuses itself a moment later, as it would for a face it means to
- * take (swap.ts). The moment, the grip, the struggle and the hiding are the kill's
- * (kill.ts), and only strangling: a needle needs them walked off in view, for a goal worth that.
- * Dead, they are a second person missing; let go alive, they tell.
+ * take (swap.ts). Playing a waiter, its rounds take it to the room it last saw them in, and seeing
+ * them set off it breaks off its round at the end of that stop, its tray set down first, as it
+ * does for its plan's steps (sim.ts waiterThink). The moment, the grip, the struggle and the
+ * hiding are the kill's (kill.ts), and only strangling: a needle needs them walked off in view,
+ * for a goal worth that. Dead, they are a second person missing; let go alive, they tell.
  *
  * It draws only from its own fork.
  */
@@ -36,6 +38,8 @@ const SEEN = 10;
 const AFTER_LOST: readonly [number, number] = [60, 120];
 /** A step behind them in the bathroom, it waits for them to come out, this long at most from setting off (in-game s). */
 const WAIT_OUT = 12 * 60;
+/** Playing a waiter, it saw them set off this long ago at most and still breaks off its round for them, at the end of a stop (in-game s; a stop is 35 to 70 s). */
+const CUE_FOR = 90;
 
 export class Silencing {
   readonly stats = { trails: 0, moments: 0, dead: 0, survived: 0, broken: 0, lost: 0 };
@@ -51,6 +55,9 @@ export class Silencing {
   /** The one person still about it knows to be sure of it (-1 none, or more than one), looked at every few steps; and whether it has held murder on for them. */
   private lone = -1;
   private held = false;
+  /** Playing a waiter: the lone doubter it saw set off somewhere quiet while on its round (-1 none), and when. */
+  private cue = -1;
+  private cueAt = 0;
 
   constructor(
     private readonly h: KillHost,
@@ -90,16 +97,37 @@ export class Silencing {
     if (!this.free(p)) return;
     const q = this.h.people[this.lone]!;
     const n = this.h.people.length;
-    if (this.offAlone(q) && this.h.memory.lastT[p.id * n + q.id]! >= this.h.t - SEEN) this.follow(p, q);
+    if (!this.offAlone(q) || this.h.memory.lastT[p.id * n + q.id]! < this.h.t - SEEN) return;
+    // A waiter on its rounds breaks off at the end of this stop, its tray set down first (think()); from a step of its plan that only waits, it goes at once, as anyone.
+    if (p.staff && !this.spy.plans.busy) {
+      this.cue = q.id;
+      this.cueAt = this.h.t;
+    } else this.follow(p, q);
   }
 
-  /** Free to go after someone: murder on, no kill under way and nothing of its plan begun, between the programme's beats or at dinner, only idling or at the table. */
+  /** Playing a waiter, whether it breaks off its round at the end of this stop: it saw its lone doubter set off somewhere quiet a moment ago, and they are off there still. */
+  get breaking(): boolean {
+    if (this.cue < 0 || this.cue !== this.lone || this.task >= 0 || this.h.t - this.cueAt > CUE_FOR) return false;
+    return this.offAlone(this.h.people[this.cue]!);
+  }
+
+  /** Playing a waiter, between its rounds (sim.ts waiterThink): after its lone doubter, if it broke off its round for them (true: on their trail). */
+  think(p: Person): boolean {
+    const go = this.breaking && this.free(p);
+    const j = this.cue;
+    this.cue = -1;
+    if (!go) return false;
+    this.follow(p, this.h.people[j]!);
+    return this.task >= 0;
+  }
+
+  /** Free to go after someone: murder on, no kill under way and nothing of its plan begun, between the programme's beats or at dinner; only idling or at the table, or a waiter, whose round gives way (think()). */
   private free(p: Person): boolean {
     const h = this.h;
     const spy = this.spy;
-    if (p.staff || h.byeAt >= 0 || h.t < FIRST_STEP || h.t < this.nextAt) return false;
+    if (h.byeAt >= 0 || h.t < FIRST_STEP || h.t < this.nextAt) return false;
     if (!spy.covers.active("murder") || spy.kill.busy || (spy.plans.busy && !spy.plans.waiting) || !FREE.has(h.programme[spy.phase]?.id ?? "")) return false;
-    return spy.plans.busy || !p.action || LOOSE.has(p.action.id) || p.action.id === "dinner";
+    return p.staff || spy.plans.busy || !p.action || LOOSE.has(p.action.id) || p.action.id === "dinner";
   }
 
   /** The one person still about it has seen to be sure of it, or -1 when there is nobody or more than one (a kill's target is its plan's). */

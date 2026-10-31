@@ -934,12 +934,17 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     p.thinkAt = this.t + 10;
   }
 
-  /** Waiters (and the butler with the brandy after dinner): load a tray, then a round of stops offering it. The spy playing a waiter takes its plan's next step between rounds, the tray set down first. */
+  /**
+   * Waiters (and the butler with the brandy after dinner): load a tray, then a round of stops
+   * offering it. The spy playing a waiter takes its plan's next step between rounds, the tray set
+   * down first; meaning to silence someone, its rounds go where it last saw them, and seeing them
+   * set off somewhere quiet it breaks off its round at the end of the stop (spy/silence.ts).
+   */
   private waiterThink(p: Person): void {
     const pl = this.places;
     const rng = this.rng;
     const stops = this.stops.get(p.id) ?? 0;
-    if (this.body.trayCount(p) === 0 || stops >= 4) {
+    if (this.body.trayCount(p) === 0 || stops >= 4 || (p.id === this.spyId && this.spy!.silence.breaking)) {
       if (p.id === this.spyId && this.spy!.think(p)) {
         this.body.setDown(p);
         this.stops.set(p.id, 0);
@@ -966,7 +971,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     const toast = ph === "champagne" || ph === "toast";
     const rooms = pl.mingleRooms.length ? pl.mingleRooms : [pl.toastRoom.index];
     const stay = rooms.includes(p.room) && rng.chance(0.65) && this.leavers.some((q) => q.present && q.room === p.room);
-    const s = (toast && this.emptyHanded(p)) || this.cells.random(ph === "dinner" && pl.dining ? pl.dining.index : toast ? pl.toastRoom.index : stay ? p.room : rng.pick(rooms), rng, 0.5);
+    const keep = p.id === this.spyId ? this.keepInView(p) : -1;
+    const s =
+      (toast && this.emptyHanded(p)) ||
+      this.cells.random(ph === "dinner" && pl.dining ? pl.dining.index : toast ? pl.toastRoom.index : stay ? p.room : rooms.includes(keep) ? keep : rng.pick(rooms), rng, 0.5);
     if (s) {
       this.stops.set(p.id, stops + 1);
       return void this.start(p, { id: "staff", target: s, duration: toast ? rng.range(12, 25) : rng.range(35, 70), pose: "serve", gain: {}, note: "serve" });

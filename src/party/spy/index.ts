@@ -283,15 +283,16 @@ export class Spy {
   }
 
   /**
-   * Its mind is free: an alibi's aftermath (someone's bag back, the wash, the bandage), else the
-   * plan's next step if one can start now (an alibi away covers it too); with nothing more to do
-   * for now, the alibi drops; else a habit's outing that is due (true); else it lives the evening.
+   * Its mind is free: a waiter that broke off its round goes after its lone doubter; else an
+   * alibi's aftermath (someone's bag back, the wash, the bandage), else the plan's next step if
+   * one can start now (an alibi away covers it too); with nothing more to do for now, the alibi
+   * drops; else a habit's outing that is due (true); else it lives the evening.
    */
   think(p: Person): boolean {
     if (p.id !== this.id) return false;
     // About to come out as someone else: nothing new meanwhile.
     if (this.swap.settling) return true;
-    return this.tactics.think(p) || this.plans.think(p) || this.tactics.done(p) || this.habits.think(p);
+    return this.silence.think(p) || this.tactics.think(p) || this.plans.think(p) || this.tactics.done(p) || this.habits.think(p);
   }
 
   /** A step of one of its tasks done, and one of its tasks ended. */

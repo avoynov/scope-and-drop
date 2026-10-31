@@ -360,6 +360,49 @@ describe("someone missing, and silencing a doubter", () => {
     }
     expect(q2.down).toBeNull();
   });
+
+  it("as a waiter, breaks off its round when its one doubter sets off somewhere quiet, sets its tray down and follows them", () => {
+    const party = new Party(bp, { seed: "silence-w2", spy: { setup: "waiter", goal: "statuette", on: ["murder"] } });
+    party.advance(110 * MIN);
+    const spy = party.spy!;
+    const p = spy.record;
+    expect(p.staff).toBe(true);
+    expect(party.programme[spy.phase]!.id).toBe("dancing");
+    const q = party.people.find((o) => !o.staff && o.role === "guest" && o.present && o.id !== spy.id)!;
+    spy.answers.sawKill(q.id);
+    party.advance(2);
+    // Meaning to silence them, its rounds go where it last saw them.
+    expect(spy.silence.watching).toBe(q.id);
+    expect(party.keepInView(p)).toBe(party.memory.lastRoom[p.id * party.people.length + q.id]);
+    // On its round with a tray, a few metres from them as they wander off through an empty bedroom.
+    const room = quietBedroom(party);
+    const a = spotIn(party, room, 0, 1);
+    const b = spotIn(party, room, 0, -2.5);
+    put(party, q, a, 0);
+    party.start(q, { id: "wander", target: { ...spotIn(party, room, 1, 1.5), yaw: 0 }, duration: 120, pose: "look", gain: {} });
+    put(party, p, b, yawTo(b.x, b.z, a.x, a.z), 0);
+    party.body.loadTray(p, "champagne");
+    party.start(p, { id: "staff", target: { ...b, yaw: yawTo(b.x, b.z, a.x, a.z) }, duration: 20, pose: "serve", gain: {}, note: "serve" });
+    expect(party.body.trayCount(p)).toBeGreaterThan(0);
+    // It sees them go, and finishes the stop it's on before it breaks off.
+    party.advance(4);
+    expect(spy.silence.breaking).toBe(true);
+    expect(spy.silence.trailing).toBe(-1);
+    expect(p.action?.id).toBe("staff");
+    let followed = -1;
+    let trayAt = -1;
+    const stages = run(party, 10 * MIN, () => {
+      if (followed < 0 && spy.silence.trailing >= 0) {
+        followed = spy.silence.trailing;
+        trayAt = party.body.trayCount(p);
+      }
+    });
+    expect(followed).toBe(q.id);
+    expect(trayAt).toBe(0);
+    expect(stages.filter((s) => s !== "out")).toEqual(["close", "struggle", "drag", "finish", "hide"]);
+    expect(q.down).toBe("dead");
+    expect(spy.silence.done).toBe(true);
+  });
 });
 
 describe("taking someone's place, and the waiter", () => {

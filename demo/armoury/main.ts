@@ -4,7 +4,7 @@
  * real. Everything is the armoury's own logic (src/armoury); this page only shows it and stores the career.
  * Functional, not finished: how it looks comes later.
  */
-import { SPOTTER_TIERS, settleContract, type Receipt } from "../../src/armoury/career";
+import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt } from "../../src/armoury/career";
 import { ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type ItemId, type Slot } from "../../src/armoury/catalogue";
 import { carried, checkLoadout, decodeKit, encodeKit, payFactor } from "../../src/armoury/loadout";
 import { ROUNDS } from "../../src/scope/ballistics";
@@ -27,7 +27,8 @@ type ResultId = keyof typeof RESULTS;
 
 const career = loadCareer();
 let chosen = loadChosen(career.owned);
-const contract = { fee: 6000, result: "killed" as ResultId };
+/** `done`: when the stand-in job was done, in in-game minutes after 19:00 (180 = the evening's end, no boost). */
+const contract = { fee: 6000, result: "killed" as ResultId, done: 180 };
 /** What the stand-in mission used of the kit carried: unused kit is listed on the receipt. */
 let touched = new Set<ItemId>();
 let receipt: Receipt | null = null;
@@ -298,11 +299,22 @@ function renderContract(): void {
   });
   for (const [k, r] of Object.entries(RESULTS)) result.append(h("option", { value: k, textContent: `${r.label} (×${r.factor})` }));
   result.value = contract.result;
+  const done = h("select", {
+    onchange: () => {
+      contract.done = Number(done.value);
+    },
+  });
+  for (let m = 15; m <= 180; m += 15) {
+    const clock = `${19 + Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+    done.append(h("option", { value: String(m), textContent: m === 180 ? `${clock} (the evening's end)` : `${clock} (+${Math.round(earlyBoost(m * 60) * 100)}%)` }));
+  }
+  done.value = String(contract.done);
   const items = carried(l);
   const problems = checkLoadout(l, career.owned);
   $("contract").replaceChildren(
     h("div", { class: "row" }, "Fee ", fee),
     h("div", { class: "row" }, "Result ", result),
+    h("div", { class: "row" }, "Done at ", done),
     ...(items.length ? [h("div", { class: "muted", textContent: "What you used of the kit:" })] : []),
     ...items.map((id) => {
       const box = h("input", {
@@ -327,7 +339,7 @@ function renderContract(): void {
 function settle(): void {
   const l = loadout();
   const r = RESULTS[contract.result];
-  receipt = career.settle({ fee: contract.fee, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}` }, r, l, touched);
+  receipt = career.settle({ fee: contract.fee, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}` }, { ...r, doneAt: contract.done * 60 }, l, touched);
   touched = new Set();
   commit();
   showBalance();
@@ -345,6 +357,7 @@ function renderReceipt(): void {
   box.replaceChildren(
     h("h2", { textContent: "Receipt", style: "margin-top: 14px" }),
     line(`${r.contract}: ${r.result}`, r.gross, "", i++),
+    ...(r.early ? [line(r.early.label, r.early.amount, "", i++)] : []),
     ...r.kit.map((x) => line(x.label, x.amount, "muted", i++)),
     ...r.spotters.map((x) => line(x.label, x.amount, "muted", i++)),
     line("Paid in", r.total, "total", i++),

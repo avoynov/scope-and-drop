@@ -85,6 +85,10 @@ export const MARKUP = 4;
 export const START_BALANCE = 6000;
 /** Owed to each hired spotter when the contract fails. */
 export const RETAINER = 400;
+/** The early-finish boost on a job done the moment the evening starts; nothing at the evening's end. */
+export const EARLY_MAX = 0.5;
+/** How sharply the early-finish boost bends: 0 is a straight line, higher is closer to 1/x (small late, climbing fast as the job gets earlier). */
+export const EARLY_BEND = 1.5;
 
 const all = (d: number) => ({ svd: d, bolt: d, vss: d });
 const only = (r: Partial<Record<RifleId, number>>) => ({ svd: r.svd ?? null, bolt: r.bolt ?? null, vss: r.vss ?? null });

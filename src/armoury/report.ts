@@ -37,6 +37,8 @@ export interface ShotReport {
   fromChestMrad: number;
   /** The angular miss beyond the torso's outline (mrad), 0 for a hit. */
   missMrad: number;
+  /** Slant range from the muzzle to the target (m): turns the angles back into centimetres, and sets the chest's half-width for the margin's quality. */
+  rangeM: number;
   /** Seconds since the shooter last scoped in (One Breath). */
   sinceScopeInS: number;
   /** The shot's slope (deg, down positive), for Glass Roof. */

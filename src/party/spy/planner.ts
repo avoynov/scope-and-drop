@@ -10,13 +10,19 @@
  * whenever an action ends (steps.ts), which is what takes a fact away.
  */
 
-export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone"] as const;
+export const FACTS = ["way", "there", "door", "safe", "found", "free", "unwatched", "holding", "stashed", "planted", "copied", "close", "alone", "arms", "sagging", "dead", "trusted"] as const;
 export type Fact = (typeof FACTS)[number];
 /** Each fact's bit in the mask. */
 export const F = Object.fromEntries(FACTS.map((f, i) => [f, 1 << i])) as Record<Fact, number>;
 
-/** What switches an action on, off until its pull request: touring alone and commotion are PR 4's tactics, other people's things too, the host's place PR 5's murder. */
-export type Tactic = "touring" | "things" | "commotion" | "murder" | "tour";
+/**
+ * What switches an action on: touring alone, other people's things and commotion are PR 4's
+ * tactics; murder (the kill's own, and a word aside) PR 5's, poison never built; swap (someone
+ * else's place: the host's, a friend of the target's) is on while murder is and the spy may still
+ * take a place tonight (swap.ts); lure (a stranger's word in private) while murder is and its
+ * target hasn't twice said no (steps.ts).
+ */
+export type Tactic = "touring" | "things" | "commotion" | "murder" | "swap" | "tour" | "lure";
 
 export type PlanActionId =
   | "learn"
@@ -41,7 +47,14 @@ export type PlanActionId =
   | "brush-host"
   | "ledger"
   | "follow"
-  | "wait-alone";
+  | "wait-alone"
+  | "embrace"
+  | "inject"
+  | "walk-off"
+  | "strangle"
+  | "friend-place"
+  | "aside"
+  | "lure";
 
 export interface PlanAction {
   id: PlanActionId;
@@ -63,7 +76,7 @@ export const ACTIONS: readonly PlanAction[] = [
   { id: "go", needs: F.way, brings: F.there, cost: 1 },
   { id: "pick-lock", needs: F.there, brings: F.door, cost: 4 },
   { id: "slip-in", needs: 0, brings: F.door | F.there, cost: 3, tactic: "tour" },
-  { id: "host-place", needs: 0, brings: F.door, cost: 12, tactic: "murder" },
+  { id: "host-place", needs: 0, brings: F.door, cost: 12, tactic: "swap" },
   { id: "open-safe", needs: F.there | F.door, brings: F.safe, cost: 3 },
   { id: "find-bag", needs: 0, brings: F.found, cost: 2 },
   { id: "wait-owner", needs: F.found, brings: F.free, cost: 2 },
@@ -81,6 +94,16 @@ export const ACTIONS: readonly PlanAction[] = [
   { id: "ledger", needs: F.there, brings: F.copied, cost: 3 },
   { id: "follow", needs: 0, brings: F.close, cost: 1 },
   { id: "wait-alone", needs: F.close, brings: F.alone, cost: 2 },
+  // The kill (PR 5): an embrace, the jab and the walk off like a drunk friend; or from behind, alone (kill.ts). The moment picks which.
+  { id: "embrace", needs: F.close, brings: F.arms, cost: 2, tactic: "murder" },
+  { id: "inject", needs: F.arms, brings: F.sagging, cost: 1, tactic: "murder" },
+  { id: "walk-off", needs: F.sagging, brings: F.dead, cost: 3, tactic: "murder" },
+  { id: "strangle", needs: F.alone, brings: F.dead, cost: 2, tactic: "murder" },
+  // Wearing the face of someone the target trusts (a swap into a friend of theirs it saw them with), a word in private takes them somewhere alone.
+  { id: "friend-place", needs: 0, brings: F.trusted, cost: 4, tactic: "swap" },
+  { id: "aside", needs: F.trusted | F.close, brings: F.alone, cost: 1, tactic: "murder" },
+  // A stranger to them, the same word in private ("let me show you something upstairs"): half of those it asks come along.
+  { id: "lure", needs: F.close, brings: F.alone, cost: 3, tactic: "lure" },
 ];
 export const ACTION_BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));
 
@@ -107,6 +130,11 @@ export interface PlanProblem {
   /** Actions that failed, and until when they cost BLOCK_COST times as much. */
   blocked?: ReadonlyMap<PlanActionId, number>;
   t?: number;
+  /**
+   * What the goal adds to an action's cost now (never below 1 in all): waiting for the target alone
+   * dearer when they are rarely alone, strangling cheaper when they are alone somewhere private.
+   */
+  costs?: Partial<Record<PlanActionId, number>>;
 }
 
 export interface Plan {
@@ -124,10 +152,11 @@ const bits = (m: number): number => {
 /** The goal facts still false: one action brings at most one of them, and every action costs at least 1, so this never overestimates. */
 const heuristic = (m: number, goal: number): number => bits(goal & ~m);
 
-/** What an action costs now. */
-export function costOf(a: PlanAction, p: Pick<PlanProblem, "blocked" | "t">): number {
+/** What an action costs now: the goal's own bit on top (at least 1 in all), four times as much while it is blocked. */
+export function costOf(a: PlanAction, p: Pick<PlanProblem, "blocked" | "t" | "costs">): number {
   const until = p.blocked?.get(a.id);
-  return until !== undefined && (p.t ?? 0) < until ? a.cost * BLOCK_COST : a.cost;
+  const c = Math.max(1, a.cost + (p.costs?.[a.id] ?? 0));
+  return until !== undefined && (p.t ?? 0) < until ? c * BLOCK_COST : c;
 }
 
 /**

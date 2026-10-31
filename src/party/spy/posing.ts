@@ -1,6 +1,7 @@
 /**
  * Posing as the host (milestone 3 technical plan: Posing as the host and as staff). What changes
- * when the record the spy wears has a job: the host comes in PR 2, a waiter in PR 5.
+ * when the record the spy wears has a job: the host here (PR 2). A waiter keeps the staff's
+ * routine, and from PR 5 takes its plan's steps between its rounds (sim.ts waiterThink).
  *
  * The fake host keeps its own map (casting gave it one), so it takes wrong turns like a
  * first-timer, leads a tour it can't refuse by that map, and asks the butler where the good

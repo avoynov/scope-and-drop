@@ -177,6 +177,8 @@ export class Items {
   count = new Uint8Array(0);
   /** The bag or coat it is in (-1 none): papers in a bag, a phone in a coat pocket, what the spy stashed in its own coat. */
   inside = new Int16Array(0);
+  /** Glasses and trays (milestone 3): 1 poisoned, 2 its dose taken by whoever drank it; 0 for everything else. Poison was never built: always 0. */
+  dosed = new Uint8Array(0);
 
   constructor(capacity = 512) {
     this.grow(capacity);
@@ -197,6 +199,7 @@ export class Items {
     this.fill = keep(this.fill, new Float32Array(cap));
     this.count = keep(this.count, new Uint8Array(cap));
     this.inside = keep(this.inside, new Int16Array(cap));
+    this.dosed = keep(this.dosed, new Uint8Array(cap));
   }
 
   add(kind: ItemKind, state: ItemState, owner: number, holder: number, at: { level: number; x: number; z: number; room: number }, t: number): number {
@@ -212,6 +215,7 @@ export class Items {
     this.count[i] = 0;
     this.drink[i] = 0;
     this.inside[i] = -1;
+    this.dosed[i] = 0;
     return i;
   }
 

@@ -2,8 +2,9 @@
  * The spy's covers (milestone 3 technical plan: The scheduler, habits and tactics): twelve
  * habits and tactics, each switched on and off through the evening. Habits show between the
  * plan's steps (habits.ts); tactics are ways of doing a step that the planner may use only while
- * they are on (tactics.ts, steps.ts). Poison and murder are kept here from the first so the
- * evening's draws don't move when they come (PR 5); until then they change nothing.
+ * they are on (tactics.ts, steps.ts). Murder lets the plan kill (PR 5: kill.ts). Poison was never
+ * built: it stays in the list, its first chance still drawn so no other cover's moves, but it never
+ * comes on of itself, and held on by the options it changes nothing.
  *
  * Each cover starts off, with its first chance drawn in the first hour after the spy arrives, so
  * one or two come on early. When a chance comes it turns on with 0.5 times its tilts (at most
@@ -14,7 +15,9 @@
  * easy people: risks; tense ones: lie low), and feeling watched pauses every habit and every
  * risky step for 10 to 20 minutes. Keeping out of the picture is the exception while it plays
  * someone, whose face the photos would not match: outside the caps, off only 5 to 10 minutes at
- * a time, and never paused. Covers named in the options are on all evening, past the caps.
+ * a time, and never paused. Covers named in the options are on all evening, past the caps, and
+ * one the spy comes to need (murder, for a lone doubter: silence.ts) is held on the same way from
+ * then on.
  *
  * It draws only from its own fork, and reads the people about it only when a chance comes.
  */
@@ -46,9 +49,8 @@ export const MAX_ON = 3;
 export const MAX_TOTAL = 90 * 60;
 /** Keeping out of the picture while it plays someone: off this long at a time. */
 export const PICTURE_OFF: readonly [number, number] = [5 * 60, 10 * 60];
-/** The goal's tilt on the covers it favours, and the kill's on murder and poison; playing someone, on keeping out of the picture. */
+/** The goal's tilt on the covers it favours, and the kill's on poison (never used: poison never comes on of itself); playing someone, on keeping out of the picture. A kill, or a place it means to take tonight, holds murder on from the door instead (index.ts). */
 export const GOAL_TILT = 1.6;
-export const MURDER_TILT = 1.8;
 export const POISON_TILT = 1.5;
 export const PLAYING_TILT = 3;
 /** The mood that tilts the risky covers: the people within this (m), on its storey, the spy among them; the tilt is at least MOOD_MIN. */
@@ -67,13 +69,14 @@ const FAVOURS: Record<GoalKind, readonly Cover[]> = {
   ledger: ["odd-places", "returns"],
 };
 
-/** One cover's state: on or off, since when, its minutes on so far, its next chance or change, whether the options hold it on. */
+/** One cover's state: on or off, since when, its minutes on so far, its next chance or change, whether it is held on and since when (from the door for the options', -1 not held). */
 export interface CoverState {
   on: boolean;
   since: number;
   total: number;
   next: number;
   forced: boolean;
+  heldAt: number;
 }
 
 /** A spell a cover was on, for the lab's timeline, the monitor and the sweep (`to` -1 while it lasts). */
@@ -120,10 +123,10 @@ export class Covers {
     private readonly rng: Rng,
   ) {
     this.first = COVERS.map(() => rng.range(FIRST[0], FIRST[1]));
-    this.state = COVERS.map((c) => ({ on: false, since: -1, total: 0, next: Infinity, forced: forced.includes(c) }));
+    this.state = COVERS.map((c) => ({ on: false, since: -1, total: 0, next: Infinity, forced: forced.includes(c), heldAt: -1 }));
   }
 
-  /** In at the door: the forced covers come on, the rest have their first chances from now. */
+  /** In at the door: the forced covers come on, the rest have their first chances from now. Poison was never built: it never comes on of itself. */
   arrived(): void {
     const t = this.host.t;
     if (this.arrivedAt >= 0) return;
@@ -133,9 +136,10 @@ export class Covers {
       if (s.forced) {
         s.on = true;
         s.since = t;
+        s.heldAt = t;
         this.spells.push({ cover: c, from: t, to: -1 });
         this.host.log("spy", [this.spy.record.id], this.spy.record.room, `cover:${c}:on`);
-      } else s.next = t + this.first[k]!;
+      } else if (c !== "poison") s.next = t + this.first[k]!;
     });
     this.refreshNext();
   }
@@ -192,7 +196,6 @@ export class Covers {
     let k = 1;
     const favours = g === "kill" && spy.stealing() ? FAVOURS.bag : FAVOURS[g];
     if (favours.includes(c)) k *= GOAL_TILT;
-    if (g === "kill" && c === "murder") k *= MURDER_TILT;
     if (g === "kill" && c === "poison") k *= POISON_TILT;
     if (c === "out-of-picture" && spy.playing) k *= PLAYING_TILT;
     if (RISKY.has(c)) k *= this.moodTilt();
@@ -219,6 +222,24 @@ export class Covers {
   /** Its line in the spy's digest: each cover on or off, and its minutes on so far. */
   digest(): string {
     return COVERS.map((c, k) => `${this.state[k]!.on ? 1 : 0}${Math.round(this.totalOf(c) / 60)}`).join(".");
+  }
+
+  /** Held on from now to the end of the evening, past the caps, as one the options hold on (a lone doubter, and the lab's ask to take a place, need murder). Before its arrival, from the door. */
+  hold(c: Cover): void {
+    const t = this.host.t;
+    const s = this.state[COVERS.indexOf(c)]!;
+    if (s.forced) return;
+    s.forced = true;
+    s.next = Infinity;
+    if (this.arrivedAt < 0) return;
+    s.heldAt = t;
+    if (!s.on) {
+      s.on = true;
+      s.since = t;
+      this.spells.push({ cover: c, from: t, to: -1 });
+      this.host.log("spy", [this.spy.record.id], this.spy.record.room, `cover:${c}:on`);
+    }
+    this.refreshNext();
   }
 
   /** Gone home: every spell still running ends now. */

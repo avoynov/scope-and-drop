@@ -330,6 +330,7 @@ export function generateCast(rng: Rng, places: Places, opts: CastOptions = {}): 
       detour: null,
       stain: null,
       bandage: false,
+      down: null,
     };
     people.push(p);
     return p;

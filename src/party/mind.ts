@@ -120,6 +120,10 @@ export interface MindWorld {
   phaseWeights?(p: Person, phase: PhaseId): Partial<Record<ActionId, number>>;
   /** Wanders of their own to odd places (the spy's habit), scored with the rest. */
   oddPlaces?(p: Person): readonly Candidate[];
+  /** The room where someone they keep in view was last seen (milestone 3: whoever they blame for their partner or friend going missing), or -1. */
+  keepInView?(p: Person): number;
+  /** Whether they'd rather keep out of a room (milestone 3: the spy playing someone, where it last saw anyone it keeps away from). */
+  keepsOut?(p: Person, room: number): boolean;
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
@@ -128,6 +132,10 @@ const ANYWHERE: ReadonlySet<ActionId> = new Set(["champagne", "toast", "dinner",
 const DESPERATE = 0.1;
 /** Offers kept for full scoring after the quick prefilter (need over distance). */
 const SHORTLIST = 24;
+/** Anything in the room where someone they keep in view was last seen scores this much more. */
+const IN_VIEW = 1.6;
+/** A room someone would rather keep out of scores this much. */
+const KEEP_OUT = 0.25;
 
 export const spotKey = (s: Spot): string => `${s.level}:${s.x.toFixed(2)},${s.z.toFixed(2)}`;
 
@@ -398,7 +406,9 @@ export function score(p: Person, c: Candidate, w: MindWorld): number {
   if (W <= 0) return 0;
   const needs = c.programme ? 1 : needTerm(p, c.gain);
   const d = distance(p, c.target);
-  return W * needs * (c.mod ?? 1) * w.beat(p, c.id) * (1 / (1 + d / 30)) * w.rng.range(0.85, 1.15);
+  const view = w.keepInView?.(p) ?? -1;
+  const keep = (view !== -1 && c.target?.room === view ? IN_VIEW : 1) * (c.target && !c.programme && w.keepsOut?.(p, c.target.room) ? KEEP_OUT : 1);
+  return W * needs * (c.mod ?? 1) * keep * w.beat(p, c.id) * (1 / (1 + d / 30)) * w.rng.range(0.85, 1.15);
 }
 
 /**

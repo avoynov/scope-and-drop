@@ -635,10 +635,10 @@ export class Habits {
 
   // ---------------------------------------------------------------- following
 
-  /** A step behind its target in a quiet room for ten seconds: one figure close behind another. */
+  /** A step behind whoever it follows (its target, or someone sure of it) in a quiet room for ten seconds: one figure close behind another. */
   private follow(p: Person): void {
     const h = this.h;
-    const j = this.spy.plans.trailing;
+    const j = this.spy.trailing;
     const q = j >= 0 ? h.people[j]! : null;
     let close = !!q && q.room === p.room && q.level === p.level && p.room !== -1 && Math.hypot(q.x - p.x, q.z - p.z) <= FOLLOW_NEAR;
     if (close) {

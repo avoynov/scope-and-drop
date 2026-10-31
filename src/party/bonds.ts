@@ -1172,6 +1172,29 @@ export class Bonds {
     this.temper[i] = clamp01(v);
   }
 
+  /**
+   * Another mind in i's record (the spy, out of one record and into the one it killed): what the one
+   * who lived there was set on goes with them: their grudges, an eye for someone, a flirtation, a
+   * pull onto the floor, a sulk, a doubt about their partner. How anyone else feels about i stays.
+   */
+  newMind(i: number): void {
+    const n = this.n;
+    this.grudge.fill(0, i * n, (i + 1) * n);
+    this.grudgeT.fill(0, i * n, (i + 1) * n);
+    this.stray[i] = 0;
+    this.eye[i] = -1;
+    this.flirtingWith[i] = -1;
+    this.flirtUntil[i] = -1e9;
+    this.doubtV[i] = 0;
+    this.doubtT[i] = 0;
+    this.nSources[i] = 0;
+    this.watched[i] = 0;
+    this.suspectWith[i] = -1;
+    this.pullTo[i] = -1;
+    this.pullUntil[i] = -1e9;
+    this.sulk[i] = 0;
+  }
+
   /** a, facing b within 2 m: a grudge that's hot enough comes out. */
   private heat(a: Person, b: Person, d: number): void {
     const h = this.host;

@@ -1,18 +1,21 @@
 /**
  * The party lab's spy (milestone 3): its options, the goal odds, the reveal and its card, the
- * ten people the crowd suspects most, and (once revealed) its plan and covers, the privacy and
- * spy overlays, its evening on a strip under the programme, its tells, and a jump to the next one
- * anyone could see.
+ * ten people the crowd suspects most, and (once revealed) its plan and covers, the privacy, spy
+ * and bodies overlays, its evening on a strip under the programme, its tells, and a jump to the
+ * next one anyone could see. The bodies are drawn where they lie, revealed or not.
  *
- *   /party/?seed=gala-night&setup=victim&goal=safe&odds=kill:50,bug:0&steal=80&target=12&on=alibi&reveal=1
+ *   /party/?seed=gala-night&setup=victim&goal=safe&odds=kill:50,bug:0&steal=80&target=12&on=alibi&swap=1&reveal=1
  *
  * spy=0 turns it off. setup (self, victim, host, waiter) and goal (kill, statuette, safe, bag,
  * bug, ledger) pin those draws; odds weighs the goals (a goal left out keeps its share, 0 switches
  * it off), steal says how often a kill steals first (0 to 100), target is a person's id (as sel=
- * takes) for whom to kill, whose bag, or whom to play, and on holds covers on all evening, past
- * the caps (out-of-step, returns, odd-places, startles, tours, out-of-picture, drops, alibi,
- * others-things, commotion; poison and murder wait for PR 5). A value the lab doesn't know is
- * dropped, so that draw is made as usual.
+ * takes) for whom to kill, whose bag, or whom to play, on holds covers on all evening, past the
+ * caps (out-of-step, returns, odd-places, startles, tours, out-of-picture, drops, alibi,
+ * others-things, commotion, murder; poison isn't built), and swap=1 has it mean to take someone's
+ * place mid-party tonight (swap=0 never). A value the lab doesn't know is dropped, so that draw is
+ * made as usual. With someone picked, "its target" makes them the kill's target (a new evening),
+ * and "take their place" has the spy go after their place from now (a provocation, take=90:16 in
+ * the URL).
  *
  * Until it is revealed (the button, or reveal=1) the lab shows its record as the crowd believes
  * it: its own events stay out of the log and its card stays shut. With someone picked, the
@@ -41,12 +44,14 @@ import {
   goalOdds,
   GOALS,
   nearRooms,
+  OUT_OF_SIGHT,
   PARTY_LENGTH,
   phaseIndexAt,
   rankOf,
   ranks,
   SETUPS,
   STEAL,
+  SWAP_FROM,
   TIME_SCALE,
   type ActId,
   type Alibi,
@@ -55,17 +60,24 @@ import {
   type CueHow,
   type DangerWhy,
   type GoalKind,
+  type HidePlace,
   type InTheWay,
   type Party,
   type PartyEvent,
   type PlanActionId,
   type PlanRecord,
   type Spell,
+  type SpyBody,
   type SpyOptions,
   type SpySetup,
+  type SwapWhy,
   type Tell,
   type TellId,
 } from "../../src/party";
+import { terrainHeight } from "../../src/mansion";
+import type { BodyFigure, FrameState } from "../../src/party/render/crowd";
+import type { Provocation } from "../../src/party/sim";
+import type { Person } from "../../src/party/types";
 import type { AheadAsk, AheadRecord } from "./ahead";
 
 const GOAL_LABEL: Record<GoalKind, string> = {
@@ -90,6 +102,8 @@ const WHY_LABEL: Record<DangerWhy, string> = {
   whisper: "a whisper",
   challenge: "a challenge",
   name: "a name it didn't know",
+  witness: "saw it kill",
+  failed: "a test it failed",
 };
 /** What a test came to, in the log once the spy is revealed. */
 const TEST_LABEL: Record<string, string> = { passed: "it's them", fumbled: "too drunk to get it, and laughs it off", bluffed: "they laugh along", failed: "a blank look" };
@@ -119,6 +133,33 @@ const PLAN_LABEL: Record<PlanActionId, string> = {
   ledger: "photograph the ledger",
   follow: "follow the target",
   "wait-alone": "wait for them alone",
+  embrace: "an embrace",
+  inject: "the jab",
+  "walk-off": "walk them off like a drunk friend",
+  strangle: "strangle them from behind",
+  "friend-place": "take a friend of theirs' place",
+  aside: "a word in private",
+  lure: "a stranger's word in private",
+};
+/** Where a body went, for the log. */
+const HIDE_LABEL: Record<HidePlace, string> = {
+  bath: "into a bath, the curtain drawn",
+  bathroom: "into a bathroom",
+  store: "shut in a store room",
+  bed: "under a bed",
+  wardrobe: "into a wardrobe",
+  outside: "behind a hedge in the garden",
+  fell: "where it fell",
+};
+/** How a body came to be one, for the card and the bodies overlay (poison is never built). */
+const BODY_HOW: Record<SpyBody["how"], string> = { before: "killed before the party", injection: "the needle", strangled: "strangled", poison: "poisoned" };
+/** Why it takes someone's place, for the card. */
+const SWAP_WHY: Record<SwapWhy, string> = {
+  host: "the host's keys",
+  friend: "a friend of its target's",
+  face: "a new face, people grown watchful",
+  halfway: "a face for the rest of the evening",
+  lab: "the lab asked",
 };
 /** How a step of the plan ended, for the card's history and the log. */
 const HOW_STEP: Record<string, string> = {
@@ -129,6 +170,9 @@ const HOW_STEP: Record<string, string> = {
   "given-up": "given up at the goodbyes",
   gone: "target gone",
   "gave-up": "taken off it",
+  lost: "they moved off",
+  dead: "dead",
+  survived: "let go alive",
 };
 /** Why a step failed (the planner keeps off it for 15 minutes). */
 const FAIL_LABEL: Record<string, string> = {
@@ -138,6 +182,7 @@ const FAIL_LABEL: Record<string, string> = {
   kept: "the bag never went down",
   "no-switch": "no light switch to lean on",
   "no-drink": "nothing in a glass to spill",
+  survived: "it let them go alive",
 };
 const howLabel = (how: string): string => (how.startsWith("failed:") ? `failed: ${FAIL_LABEL[how.slice(7)] ?? how.slice(7)}` : (HOW_STEP[how] ?? how));
 /** Why someone is in the way of a step's moment. */
@@ -212,6 +257,17 @@ const TELL_LABEL: Record<TellId, string> = {
   "clean-shirt": "clean again after a spill",
   "their-bag": "someone else's bag in its hands",
   dark: "the lights out",
+  embrace: "an embrace",
+  jab: "the jab in the embrace",
+  propped: "walking someone who can barely stand",
+  struggle: "a struggle",
+  drag: "dragging a body",
+  dose: "a dose into a glass",
+  "bar-dose": "a dose into the bar's red",
+  "refused-tray": "a tray waved off",
+  changing: "changing behind a shut door",
+  fallen: "someone falls",
+  body: "a body in view",
 };
 /** The covers (scheduler.ts), as the card, the log and the strip name them. */
 const COVER_LABEL: Record<Cover, string> = {
@@ -225,8 +281,8 @@ const COVER_LABEL: Record<Cover, string> = {
   alibi: "a false alibi",
   "others-things": "other people's things",
   commotion: "the lights",
-  poison: "poison (PR 5)",
-  murder: "murder (PR 5)",
+  poison: "poison (never built)",
+  murder: "murder",
 };
 /** The false alibi's openers, and where it has got to. */
 const ALIBI_LABEL: Record<AlibiKind, string> = { cut: "a cut hand", spill: "a spill down itself", lost: "a lost thing", call: "a phone call" };
@@ -247,7 +303,14 @@ const PHOTO_STAY: Record<string, string> = {
   named: "the host is the photo's middle",
 };
 /** Its tasks besides the plan's steps, for the log. */
-const TASK_WHAT: Record<string, string> = { return: "go back", tour: "look round alone", startle: "a painting after a start", "put-back": "put the bag back" };
+const TASK_WHAT: Record<string, string> = {
+  return: "go back",
+  tour: "look round alone",
+  startle: "a painting after a start",
+  "put-back": "put the bag back",
+  "kill:strangled": "strangle its target",
+  "kill:injection": "the needle",
+};
 /** The steps of the spy's tasks, by their whole label (they share their first word with other tasks'). */
 const SPY_STEP: Record<string, string> = {
   trail: "following its target",
@@ -260,6 +323,19 @@ const SPY_STEP: Record<string, string> = {
   "to:stash": "to its coat",
   stash: "putting it in its coat",
   cover: "looking at something else",
+  // The kill (PR 5).
+  "kill:close": "closing in on them",
+  "kill:struggle": "strangling them from behind",
+  "kill:drag": "dragging them off, out cold",
+  "kill:embrace": "an embrace",
+  "kill:walk-off": "walking them off like a drunk friend",
+  "kill:in": "laying them down",
+  "kill:bolt": "bolting the door",
+  "kill:finish": "holding on until they're dead",
+  "kill:dying": "waiting for them to die",
+  "kill:hide": "hiding the body",
+  "kill:unbolt": "drawing the bolt back",
+  "kill:out": "stepping out",
   // Its covers (PR 4).
   "to:switch": "to the light switch",
   switch: "leaning on the light switch",
@@ -339,6 +415,8 @@ export function spyOption(params: URLSearchParams): false | SpyOptions {
   if (params.has("target") && Number.isInteger(target) && target >= 0) o.target = target;
   const on = (params.get("on") ?? "").split(",").filter((c): c is Cover => (COVERS as readonly string[]).includes(c));
   if (on.length) o.on = [...new Set(on)];
+  if (params.get("swap") === "1") o.swap = true;
+  else if (params.get("swap") === "0") o.swap = false;
   return o;
 }
 
@@ -366,6 +444,8 @@ export interface SpyLabHost {
   seek(t: number): void;
   /** The evening as newParty() builds it now, for the look-ahead. */
   evening(): Omit<AheadAsk, "key">;
+  /** Plant something now, as the lab's other buttons do (kept, so a seek back replays it). */
+  provoke(v: Provocation): void;
 }
 
 /** A cell of the privacy overlay: an act could start there now alone, or only unwatched, or someone would see it. */
@@ -461,7 +541,7 @@ const RANK_FLOOR = 10;
 const LEAD = 10;
 /** Ranks this far apart (in-game s) are a gap in the line: it was away, or the evening was skipped through. */
 const RANK_GAP = 2 * 60 + 1;
-/** The page's colours (index.html): habits in its grey, tactics in its accent, PR 5's covers and the hard tells in the spy's red. */
+/** The page's colours (index.html): habits in its grey, tactics in its accent, murder (and poison, never built) and the hard tells in the spy's red. */
 const INK = "#e9e4d8";
 const ACCENT = "#e0b56a";
 const RED = "#e2786a";
@@ -500,6 +580,11 @@ export class SpyLab {
   private readonly nextButton: HTMLButtonElement;
   private readonly nextNote: HTMLElement;
   private nextRow: HTMLElement | null = null;
+  /** With someone picked: make them the kill's target (a new evening), or have it go after their place from now. */
+  private readonly targetButton: HTMLButtonElement;
+  private readonly placeButton: HTMLButtonElement;
+  /** What the URL and the buttons pin: how it comes, its goal, the person pinned and the swap. */
+  private readonly pins: HTMLElement;
   /** The privacy overlay as last worked out: when (in-game and wall time), and its cells. */
   private cells: PrivacyCell[] = [];
   private cellsT = -1;
@@ -555,6 +640,13 @@ export class SpyLab {
     this.nextButton.onclick = () => this.nextTell();
     this.nextNote = document.createElement("span");
     this.nextNote.className = "label";
+    this.targetButton = document.createElement("button");
+    this.targetButton.onclick = () => this.pinTarget();
+    this.placeButton = document.createElement("button");
+    this.placeButton.textContent = "take their place";
+    this.placeButton.onclick = () => this.takePlace();
+    this.pins = document.createElement("div");
+    this.pins.className = "label";
     this.rankHead = document.createElement("div");
     this.rankHead.className = "label";
     for (let k = 0; k < RANKS; k++) {
@@ -614,14 +706,14 @@ export class SpyLab {
     next.hidden = !this.revealed;
     next.append(this.nextButton, this.nextNote);
     this.nextRow = next;
-    box.append(row, next);
-    const pins = [this.option0.setup ? `comes ${SETUP_LABEL[this.option0.setup]}` : "", this.option0.goal ? `goal pinned: ${GOAL_LABEL[this.option0.goal]}` : ""].filter(Boolean);
-    if (pins.length) {
-      const p = document.createElement("div");
-      p.className = "label";
-      p.textContent = pins.join(" · ");
-      box.appendChild(p);
-    }
+    const picked = document.createElement("div");
+    picked.className = "row";
+    const on = document.createElement("span");
+    on.className = "label";
+    on.textContent = "the picked";
+    picked.append(on, this.targetButton, this.placeButton);
+    box.append(row, next, picked);
+    box.appendChild(this.pins);
     // A line per goal: the switch, its weight and its chance for this house.
     const grid = document.createElement("div");
     grid.className = "odds";
@@ -697,6 +789,67 @@ export class SpyLab {
     this.host.rebuild();
   }
 
+  /** "its target": the picked person as the kill's target, pinned in the URL (goal=kill&target=), or the pin taken off again; a new evening either way. */
+  private pinTarget(): void {
+    const o = this.option0;
+    if (!o || this.picked < 0) return;
+    const url = new URL(location.href);
+    if (o.goal === "kill" && o.target === this.picked) {
+      delete o.goal;
+      delete o.target;
+      url.searchParams.delete("goal");
+      url.searchParams.delete("target");
+    } else {
+      o.goal = "kill";
+      o.target = this.picked;
+      url.searchParams.set("goal", "kill");
+      url.searchParams.set("target", String(this.picked));
+    }
+    history.replaceState(null, "", url);
+    this.host.rebuild();
+  }
+
+  /** "take their place": the spy goes after the picked person's place from now, as a provocation (kept, so a seek back replays it). */
+  private takePlace(): void {
+    const party = this.party;
+    const v = party?.people[this.picked];
+    if (!party?.spy || !v || v.staff || !v.present || v.gone || v.down) return;
+    this.host.provoke({ t: party.t, kind: "swap", subject: v.id });
+  }
+
+  /**
+   * The pins line and the picked person's buttons. Neither ever turns on whether the picked
+   * person is the spy: pinning its own record finds another target in the new evening, and
+   * asking it to take its own place does nothing, both out of sight until the reveal.
+   */
+  private renderPicked(party: Party, selected: number): void {
+    const o = this.option0;
+    if (!o) return;
+    const name = (i: number) => party.people[i]?.name ?? `#${i}`;
+    const pins = [
+      o.setup ? `comes ${SETUP_LABEL[o.setup]}` : "",
+      o.goal ? `goal pinned: ${GOAL_LABEL[o.goal]}` : "",
+      o.target !== undefined ? `${o.goal === "kill" ? "its target" : o.goal === "bag" ? "whose bag" : "pinned on"}: ${name(o.target)}` : "",
+      o.swap === true ? "means to take a place mid-party" : o.swap === false ? "never takes a place mid-party" : "",
+    ].filter(Boolean);
+    this.pins.textContent = pins.join(" · ");
+    this.pins.hidden = !pins.length;
+    const v = party.people[selected];
+    const pinned = o.goal === "kill" && o.target === selected;
+    this.targetButton.textContent = pinned ? "unpin target" : "its target";
+    this.targetButton.disabled = !pinned && (!v || v.staff);
+    this.targetButton.title = pinned
+      ? "Take the pin off: its goal and target drawn as usual (a new evening from 19:00)"
+      : v && !v.staff
+        ? `Make ${v.name} the spy's target: it means to kill them (a new evening from 19:00)`
+        : "Pick a guest to make them the spy's target";
+    this.placeButton.disabled = !v || v.staff || !v.present || v.gone || !!v.down;
+    this.placeButton.title =
+      v && !this.placeButton.disabled
+        ? `Have the spy go after ${v.name}'s place from now: it kills them at its first good chance behind a bolt, changes into their clothes and comes out as them`
+        : "Pick a guest who is here to have the spy go after their place";
+  }
+
   /** The button: a guess on whoever is picked, or a plain reveal. */
   private reveal(): void {
     if (this.revealed) return;
@@ -715,15 +868,28 @@ export class SpyLab {
 
   /**
    * Until the reveal, the spy's own events stay out of the log. After it, the start and end of each
-   * step, the plan itself, its covers coming on and off and its feeling watched show only under the
-   * spy's own filter (`all`), and the end of a look at something else nowhere.
+   * step, the plan itself, its covers coming on and off, its feeling watched and whom it picks and
+   * follows for a place or to silence show only under the spy's own filter (`all`), and the end of
+   * a look at something else nowhere.
    */
   hides(e: PartyEvent, all = false): boolean {
+    // A death and a body stay out of the log until the reveal too: they'd give the spy away.
+    if (e.kind === "down") return !this.revealed && (e.note === "dying" || e.note === "dead" || e.note === "hidden" || e.note === "left");
     if (e.kind !== "spy") return false;
     if (!this.revealed) return true;
     const note = e.note ?? "";
     if (note.startsWith("task:cover:")) return true;
-    return !all && (note.startsWith("task:") || note.startsWith("plan:") || note === "no-plan" || note.startsWith("cover:") || note.startsWith("watched:"));
+    return (
+      !all &&
+      (note.startsWith("task:") ||
+        note.startsWith("plan:") ||
+        note === "no-plan" ||
+        note.startsWith("cover:") ||
+        note.startsWith("watched:") ||
+        note.startsWith("swap:face:") ||
+        note.startsWith("swap:follow:") ||
+        note.startsWith("silence:follow:"))
+    );
   }
 
   /** A step of the spy's task, as the people list and the tasks overlay show it once revealed. */
@@ -756,6 +922,46 @@ export class SpyLab {
   /** The spy overlay's route, things and target, once revealed. */
   marks(): SpyMarks | null {
     return this.revealed && this.party ? spyMarks(this.party) : null;
+  }
+
+  /** The kill's hold, for the renderer: seized from behind and held in the struggle, kneeling over them holding on, dragged by the arms. Revealed or not, as anyone looking would see it. */
+  grip(p: Person): FrameState["grip"] {
+    const spy = this.party?.spy;
+    const stage = spy?.kill.stage;
+    if (!spy || !stage || spy.kill.victim < 0) return undefined;
+    const me = p.id === spy.id;
+    if (!me && p.id !== spy.kill.victim) return undefined;
+    if (stage === "struggle") return me ? "behind" : "held";
+    if (stage === "finish") return me ? "over" : undefined;
+    return stage === "drag" && !me ? "dragged" : undefined;
+  }
+
+  /**
+   * The bodies as they lie, for the renderer (revealed or not, as anyone there would see them):
+   * all but those out of sight, in a bath behind its curtain, under a bed or in a wardrobe; each
+   * in the clothes it died in, the spy's old ones after a swap, or stripped to shirtsleeves or a slip.
+   */
+  bodies(): BodyFigure[] {
+    const party = this.party;
+    const spy = party?.spy;
+    if (!party || !spy) return [];
+    const { bp } = party;
+    const out: BodyFigure[] = [];
+    for (const b of spy.bodies) {
+      if (OUT_OF_SIGHT.has(b.kind)) continue;
+      const { level, x, z, room } = b.at;
+      const y = room === -1 ? terrainHeight(bp.site.terrain, x, z) : room >= 0 ? (bp.rooms[room]?.floorY ?? 0) : room === -2 ? bp.site.terrace.y : (bp.levels[level]?.floorY ?? 0);
+      out.push({ who: party.people[b.who]!, look: b.look, stripped: !!b.stripped, x, y, z, yaw: b.yaw, room });
+    }
+    return out;
+  }
+
+  /** The bodies overlay, once revealed: every body where it lies, those out of sight too, with whose it is, how and where. */
+  bodyMarks(): Array<{ level: number; x: number; z: number; label: string; hidden: boolean }> {
+    const party = this.party;
+    const spy = party?.spy;
+    if (!party || !spy || !this.revealed) return [];
+    return spy.bodies.map((b) => ({ level: b.at.level, x: b.at.x, z: b.at.z, label: `${party.people[b.who]?.name ?? "?"} (${BODY_HOW[b.how]}, ${b.place})`, hidden: OUT_OF_SIGHT.has(b.kind) }));
   }
 
   /**
@@ -1076,6 +1282,9 @@ export class SpyLab {
       if (e.note === "silent") return `${a} says nothing, and keeps away from ${b}`;
       if (e.note === "told") return `${a} tells ${b} that ${c} isn't who they seem`;
       if (e.note === "compare") return `${a} has a quiet word with ${b} about ${c}`;
+      if (e.note === "attack-seen") return `${a} sees ${b} attack ${c}, and backs away`;
+      if (e.note === "came-to") return `${a} comes to, and backs away from ${b}`;
+      if (e.note === "told-attack") return `${a} tells ${b} what ${c} did`;
       return `${a} and ${b}: ${e.note}`;
     }
     if (e.kind === "react") {
@@ -1097,9 +1306,19 @@ export class SpyLab {
       if (found) return `${a} ${found}${this.at(e)}`;
       return `${a} reacts to ${b}: ${e.note}`;
     }
+    if (e.kind === "down") {
+      const [a, b] = [n(e.actors[0]), n(e.actors[1])];
+      if (e.note === "dying") return `${a} is past saving in the spy's hands (${b})${this.at(e)}`;
+      if (e.note === "dead") return `${a} dies${this.at(e)}`;
+      if (e.note === "hidden") return `${a}'s body is hidden${this.at(e)}`;
+      if (e.note === "left") return `${a}'s body lies in the open${this.at(e)}`;
+      if (e.note === "collapsed") return `${a} lies out cold${this.at(e)}`;
+      if (e.note === "came-to") return `${a} comes to${this.at(e)}`;
+      return `${a}: ${e.note}`;
+    }
     if (e.kind !== "spy" || !party) return null;
     const who = n(e.actors[0]);
-    const [what, a, b] = (e.note ?? "").split(":");
+    const [what, a, b, c] = (e.note ?? "").split(":");
     if (what === "arrive") return `the spy arrives ${SETUP_LABEL[a as SpySetup] ?? ""}: ${who}`;
     if (what === "cue") return `the spy (${who}) moves on to ${party.programme.find((ph) => ph.id === a)?.label.toLowerCase() ?? a}: ${HOW_LABEL[b as CueHow] ?? b}`;
     if (what === "give-up") return `the spy (${who}) gives its goal up for tonight`;
@@ -1121,6 +1340,8 @@ export class SpyLab {
     if (what === "no-plan") return `the spy (${who}) sees no way to its goal yet`;
     if (what === "task") {
       if (a === "cover") return `the spy (${who}) looks at something else`;
+      // A kill's task names its way: kill:strangled, kill:injection.
+      if (a === "kill") return c ? `the spy (${who}): ${TASK_WHAT[`kill:${b}`] ?? b}, ${howLabel(c)}` : `the spy (${who}) sets about it: ${TASK_WHAT[`kill:${b}`] ?? b}`;
       const step = PLAN_LABEL[a as PlanActionId] ?? TASK_WHAT[a ?? ""] ?? a;
       return b ? `the spy (${who}): ${step}, ${howLabel(b)}` : `the spy (${who}) sets about it: ${step}`;
     }
@@ -1130,7 +1351,24 @@ export class SpyLab {
     if (what === "fail") return `the spy (${who}) gives up on ${PLAN_LABEL[a as PlanActionId] ?? a} for a while: ${FAIL_LABEL[b ?? ""] ?? b}`;
     if (what === "tried") return `the spy (${who}) makes its first try at ${GOAL_LABEL[a as GoalKind] ?? a}`;
     if (what === "stashed") return `the spy (${who}) slips it into its coat`;
-    if (what === "alone") return `the spy (${who}) has ${n(e.actors[1])} alone${this.at(e)}: here the kill would come (PR 5)`;
+    // The kill (PR 5): closing in, the point of no return, the body.
+    if (what === "kill") {
+      const q = n(Number(b));
+      if (a === "strangled") return `the spy (${who}) closes in on ${q} from behind`;
+      if (a === "injection") return `the spy (${who}) comes up beside ${q}`;
+      if (a === "grip") return `the spy (${who}) seizes ${q} from behind${this.at(e)}`;
+      if (a === "jab") return `the spy (${who}) embraces ${q}, the needle goes in, and it walks them off like a drunk friend`;
+      if (a === "drag") return `the spy (${who}) drags the body off: ${HIDE_LABEL[b as HidePlace] ?? b}`;
+      if (a === "hidden") return `the spy (${who}) hides the body: ${HIDE_LABEL[b as HidePlace] ?? b}`;
+      if (a === "left") return b === "fell" ? `the spy (${who}) leaves the body where it fell` : `the spy (${who}) lets go${b === "dropped" ? " on the drag" : ""}, seen, and walks off`;
+      if (a === "end")
+        return b === "dead"
+          ? `the spy (${who}) is back at the party`
+          : b === "survived"
+            ? `the spy (${who}) is off: they're out cold, not dead`
+            : `the spy (${who}) lets the moment go: ${b === "broken" ? "a hand on their shoulder, a word, and on" : "they moved off"}`;
+    }
+    if (what === "kill-seen") return `the spy (${who}) sees ${n(e.actors[1])} has seen it`;
     if (what === "drop-first") return `the spy (${who}) drops the theft: the kill comes first now`;
     if (what === "target-gone") return `the spy (${who}) has lost its target: they've gone home`;
     if (what === "up-from-dinner") return `the spy (${who}) gets up from the table`;
@@ -1151,6 +1389,17 @@ export class SpyLab {
     if (what === "put-down") return `the spy (${who}) sets the bag down`;
     if (what === "lights") return `the spy (${who}) leans on the switch, and the lights go out${this.at(e)}`;
     if (what === "bandage-off") return `the spy (${who}) takes its bandage off`;
+    // Silencing someone sure of it, and someone else's place (PR 5).
+    if (what === "silence") {
+      if (a === "follow") return `the spy (${who}) follows ${n(Number(b))}, who is sure of it, to silence them`;
+      return a === "dead" ? `the spy (${who}) has silenced ${n(Number(b))}` : `the spy (${who}) tried to silence ${n(Number(b))}, who lived`;
+    }
+    if (what === "swap") {
+      if (a === "face") return `the spy (${who}) means to take ${n(Number(b))}'s place: ${SWAP_WHY[c as SwapWhy] ?? c}`;
+      if (a === "follow") return `the spy (${who}) follows ${n(Number(b))} a step behind, to take their place`;
+      if (a === "failed") return `the spy (${who}) takes no place tonight: ${b === "dead" ? "the body lies where it could be found" : "they lived"}`;
+      return `the spy (${n(Number(a))}) comes out as ${n(Number(b))}, its old self gone with no goodbye`;
+    }
     return `the spy (${who}): ${e.note}`;
   }
 
@@ -1179,6 +1428,7 @@ export class SpyLab {
     this.lastRefresh = redraw;
     if (this.nextRow) this.nextRow.hidden = !this.revealed;
     this.renderRanks(party);
+    this.renderPicked(party, selected);
     const spy = party.spy;
     if (!spy) {
       this.card.classList.remove("on");
@@ -1262,8 +1512,8 @@ export class SpyLab {
     const first = goal.first ? `, after taking ${goal.first.thing === "phone" ? "the phone" : "the papers"} from their ${FROM_LABEL[goal.first.from]}` : "";
     const dropped = spy.things.droppedFirst >= 0 ? ` (dropped ${clockLabel(spy.things.droppedFirst)})` : "";
     const tried = goal.triedAt !== null ? ` · first try ${clockLabel(goal.triedAt)}` : "";
-    const alone = goal.kind === "kill" && party.events.some((e) => e.kind === "spy" && e.note?.startsWith("alone:"));
-    const done = goal.doneAt !== null ? ` · done ${clockLabel(goal.doneAt)}` : alone ? " · had them alone: the kill comes in PR 5" : spy.plans.parked ? " · its target went home" : "";
+    const left = goal.kind === "kill" && spy.kill.stats.survived > 0 ? ` · let them go alive${spy.kill.stats.survived > 1 ? ` ${spy.kill.stats.survived} times` : ""}` : "";
+    const done = goal.doneAt !== null ? ` · done ${clockLabel(goal.doneAt)}` : spy.plans.parked ? " · its target went home" : left;
     lines.push(`goal: ${what}${first}${dropped}${tried}${done}`);
     if (goal.rooms.length) lines.push(`knows the way to ${goal.rooms.map(roomLabel).join(", ")}`);
     this.planLines(party, lines, name);
@@ -1304,6 +1554,38 @@ export class SpyLab {
     }
     const top = spy.answers.top(5);
     lines.push(top.length ? `most dangerous to it: ${top.map((x) => `${name(x.id)} ${pct(x.danger)} (${x.why.map((w) => WHY_LABEL[w]).join(", ")})`).join(" · ")}` : "thinks nobody dangerous yet");
+    // Silencing someone sure of it: whom it follows now, or whom it silenced.
+    const sil = spy.silence;
+    const silenced = ev.find((e) => e.kind === "spy" && /^silence:(dead|survived):/.test(e.note ?? ""));
+    if (sil.trailing >= 0) lines.push(`following ${name(sil.trailing)}, sure of it, to silence them`);
+    else if (silenced) {
+      const [, out, who] = silenced.note!.split(":");
+      lines.push(`${out === "dead" ? "silenced" : "tried to silence"} ${name(Number(who))} at ${clockLabel(silenced.t)}${out === "dead" ? "" : ", who lived"}`);
+    }
+    // Someone else's place: whether it means to tonight, whose and why, following them, or taken; and the bodies since 19:00.
+    const sw = spy.swap;
+    const took = ev.find((e) => e.kind === "spy" && /^swap:\d+:\d+:/.test(e.note ?? ""));
+    const wrong = ev.find((e) => e.kind === "spy" && e.note?.startsWith("swap:failed:"));
+    if (took) {
+      const [, a, v, why] = took.note!.split(":");
+      lines.push(`took ${name(Number(v))}'s place at ${clockLabel(took.t)} (${SWAP_WHY[why as SwapWhy] ?? why}); ${name(Number(a))} gone with no goodbye`);
+    } else if (wrong) lines.push(`no place taken: ${wrong.note === "swap:failed:dead" ? "it killed them where they could be found" : "it let them go alive"}`);
+    else if (sw.may) {
+      const why = sw.why ? ` (${SWAP_WHY[sw.why]})` : "";
+      lines.push(
+        sw.face < 0
+          ? `means to take someone's place tonight${t < SWAP_FROM ? `, from ${clockLabel(SWAP_FROM)}` : ""}`
+          : sw.trailing >= 0
+            ? `a step behind ${name(sw.face)}, to take their place${why}`
+            : `after ${name(sw.face)}'s place${why}`,
+      );
+    }
+    const bodies = spy.bodies.filter((b) => b.how !== "before");
+    if (bodies.length) {
+      const wore = (b: SpyBody) =>
+        b.wears !== undefined ? ` in ${name(b.wears)}'s clothes` : b.stripped ? (b.look.outfit === "long-dress" || b.look.outfit === "short-dress" ? " in a slip" : " in shirtsleeves") : "";
+      lines.push(`bodies: ${bodies.map((b) => `${name(b.who)}, ${BODY_HOW[b.how]} at ${clockLabel(b.t)}, ${b.place}${wore(b)}`).join(" · ")}`);
+    }
     if (spy.victim >= 0) {
       const unseen = party.people.filter((q) => q.id !== spy.id && q.present && !q.gone && party.ident.tieOf(q.id, spy.id) >= 3 && spy.answers.danger[q.id] === 0);
       lines.push(unseen.length ? `close to ${name(spy.victim)}, not spotted yet: ${unseen.map((q) => q.name).join(", ")}` : `has spotted every close tie of ${name(spy.victim)}'s here`);
@@ -1349,7 +1631,6 @@ export class SpyLab {
     const spy = party.spy!;
     const pl = spy.plans;
     const t = party.t;
-    if (!spy.byCues) return void lines.push("plans nothing yet: keeps the staff's routine (PR 5)");
     const cur = pl.current;
     if (pl.steps.length && spy.goal.doneAt === null && !pl.parked) {
       const row = document.createElement("span");

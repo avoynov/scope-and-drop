@@ -37,7 +37,8 @@ export type SoundKind =
   | "call"
   | "rattle"
   | "smash"
-  | "announce";
+  | "announce"
+  | "thud";
 
 interface SoundSpec {
   /** Level at 1 m (dB). */
@@ -74,6 +75,8 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   smash: { db: 88, tension: 0.06, fact: "crash" },
   /** The host's announcement: a glass tapped, then a raised voice over the crowd. Only the spy listens for it (spy/cues.ts); everyone else just knows. */
   announce: { db: 90, tension: 0 },
+  /** Someone falling to the floor (milestone 3: the strangled), heard as something dropped. */
+  thud: { db: 62, tension: 0.02, fact: "crash" },
 };
 
 export interface Sound {
@@ -220,9 +223,10 @@ export class Senses {
     // Who stands in each room, for the crowd test while people look (nobody moves meanwhile).
     const rooms = (this.byRoom ??= Array.from({ length: this.host.sight.R + 2 }, () => []));
     for (const r of rooms) r.length = 0;
-    for (const q of this.host.people) if (q.present && q.pose !== "sit") rooms[q.room + 2]?.push(q);
+    for (const q of this.host.people) if (q.present && q.pose !== "sit" && q.pose !== "lie") rooms[q.room + 2]?.push(q);
     this.lookStep = true;
-    for (const p of this.host.people) if (p.present && (p.id + stepNo) % 4 === 0) this.look(p);
+    // Someone fallen, dying or dead takes nothing in (milestone 3); someone feeling unwell still does.
+    for (const p of this.host.people) if (p.present && (p.id + stepNo) % 4 === 0 && (!p.down || p.down === "ill")) this.look(p);
     this.lookStep = false;
     const q = this.queue;
     this.queue = [];
@@ -318,7 +322,7 @@ export class Senses {
   private blockers(qs: readonly Person[], a: Person, b: Person | null, room: number, dx: number, dz: number, d: number, c: number, all: boolean): number {
     for (const q of qs) {
       if (q === a || q === b || q.level !== a.level) continue;
-      if (all && ((q.room !== a.room && q.room !== room) || !q.present || q.pose === "sit")) continue;
+      if (all && ((q.room !== a.room && q.room !== room) || !q.present || q.pose === "sit" || q.pose === "lie")) continue;
       const rx = q.x - a.x;
       const rz = q.z - a.z;
       const along = (rx * dx + rz * dz) / d;

@@ -122,7 +122,17 @@ export type Pose =
   /** A phone to the ear: called away. */
   | "phone"
   /** Trying a locked door's handle. */
-  | "rattle";
+  | "rattle"
+  /** An arm round someone, walking them along like a friend who has had one too many (milestone 3: the injection's walk-off). */
+  | "prop"
+  /** Being walked along, slumped against whoever holds them up; carried by two, feet trailing. */
+  | "sag"
+  /** Grappling: hands at a throat from behind, and the one held fighting it. */
+  | "struggle"
+  /** Bent low, walking backwards, pulling someone along the floor by the arms. */
+  | "drag"
+  /** Flat out on the floor, a sofa or a bed. */
+  | "lie";
 
 /**
  * A gesture over the pose, for a few seconds: asking the way, pointing it, a shrug, leaning in, a wave, a frown, beckoning someone over;
@@ -318,7 +328,15 @@ export interface Person {
   stain: DrinkId | null;
   /** A cut hand dressed: a bandage for the rest of the night. */
   bandage: boolean;
+  /**
+   * Milestone 3: injected and being walked off ('dying'), out cold where the spy let go of them ('collapsed'), or killed ('dead');
+   * poisoned and feeling unwell ('ill') is poison's, never built. Null for everyone else, and always without a spy.
+   */
+  down: Down | null;
 }
+
+/** How someone is down (milestone 3): only the spy's work puts anyone there. */
+export type Down = "ill" | "collapsed" | "dying" | "dead";
 
 export interface Group {
   id: number;
@@ -432,7 +450,13 @@ export type EventKind =
    * backing away ('backed-away') to tell someone ('told'), or saying nothing and keeping away ('silent'); and notes compared ('compare').
    * Actors: the doubter, then whom about; for 'compare' and 'told', the doubter, the listener, then whom about.
    */
-  | "challenge";
+  | "challenge"
+  /**
+   * Someone down (milestone 3): injected and walked off ('dying'), killed ('dead'), hidden ('hidden') or left where they fell ('left'), out
+   * cold ('collapsed') and up again ('came-to'); poisoned and unwell ('ill') and carried to a sofa or a bed ('carried', 'laid') are poison's,
+   * never built. Actors: who is down, then whoever did it or helped.
+   */
+  | "down";
 
 export interface PartyEvent {
   t: number;

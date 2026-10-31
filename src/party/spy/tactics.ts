@@ -156,11 +156,12 @@ export class Tactics {
   /**
    * Before an act at `site`, away from its room: with the alibi on and people about (or at dinner),
    * the steps that stage a reason to be away (`before`, where it stands; `at`, at the act's spot
-   * before its moment) and what the task looks like. Null: no alibi this time.
+   * before its moment) and what the task looks like. Null: no alibi this time, and never playing
+   * a waiter, whose rounds take it anywhere.
    */
   wrap(p: Person, site: Spot, dinner: boolean): { before: Step[]; at: Step[]; cover: string } | null {
     const h = this.h;
-    if (!this.spy.covers.active("alibi") || this.alibi || h.t - this.lastAlibi < ALIBI_GAP || site.room === p.room) return null;
+    if (p.staff || !this.spy.covers.active("alibi") || this.alibi || h.t - this.lastAlibi < ALIBI_GAP || site.room === p.room) return null;
     if (!dinner && this.around(p) < WATCHERS) return null;
     const bath = this.bathNear(p, site);
     const kind = this.pick(p, dinner, bath);

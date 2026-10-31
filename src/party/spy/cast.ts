@@ -14,7 +14,8 @@ import type { Rng } from "../../mansion/core/rng";
 import type { DramaCast } from "../dramas";
 import { TIE_WEIGHT, type Tie } from "../ident";
 import type { Places } from "../places";
-import { SKILLS, type Archetype, type DrinkId, type Person, type Quirk, type Sex, type Skill, type Traits } from "../types";
+import { SKILLS, type Archetype, type DrinkId, type Look, type Person, type Quirk, type Sex, type Skill, type Traits } from "../types";
+import type { HidePlace } from "./kill";
 import type { Cover } from "./scheduler";
 
 /** How it comes: as itself, or as someone killed before the party (a guest, the host, a waiter). */
@@ -41,6 +42,8 @@ export interface SpyOptions {
   target?: number;
   /** Covers held on all evening, past the caps (scheduler.ts). */
   on?: readonly Cover[];
+  /** Taking someone's place mid-party (swap.ts): true it means to tonight (playing a guest too), false never. */
+  swap?: boolean;
 }
 
 /** As itself in 55% of evenings; otherwise as someone killed before the party. */
@@ -124,18 +127,28 @@ export interface SpyGoal {
   first: { from: TheftFrom; thing: "papers" | "phone" } | null;
 }
 
-/** A body in the bodies list (milestone 3 plan: the pre-party body; PR 5 adds the rest). */
+/** A body in the bodies list (milestone 3 plan: the pre-party body; PR 5 adds the rest). The renderer draws bodies from it, never from a person. */
 export interface SpyBody {
   who: number;
-  /** Where it lies, outside on the lawn. */
+  /** Where it lies: outside on the lawn before the party; since, where the kill left or hid it. */
   at: { level: number; x: number; z: number; room: number };
-  /** The hiding place, for the lab's card. */
+  /** The way it lies (radians, as a person's yaw: its head lies the other way). */
+  yaw: number;
+  /** The hiding place, for the lab's card, and what kind of place: in a bath behind its curtain, a wardrobe or under a bed it is out of sight. */
   place: string;
+  kind: HidePlace;
   /** 0 to 1: milestone 4's chance a look there misses it. */
   hides: number;
   /** In-game seconds after 19:00 (negative: before the party). */
   t: number;
+  /** How it died ("poison" never: poison was never built). */
   how: "before" | "injection" | "strangled" | "poison";
+  /** How it looks where it lies: its own height, build, face and hair, in the clothes it died in (after a swap, the spy's old ones, `wears`). */
+  look: Look;
+  /** Whose clothes it has on, when not its own: after a swap, the spy's old self's. */
+  wears?: number;
+  /** Its jacket or dress on the spy (killed before the party, or a swap with the spy's own clothes put away): in shirtsleeves or a slip. */
+  stripped?: boolean;
 }
 
 export interface SpyCast {
@@ -153,6 +166,8 @@ export interface SpyCast {
   garment: { at: { level: number; x: number; z: number; room: number }; what: string; color: string } | null;
   /** The target the spy means to rob of a bag is given one at the door when the usual draw gives them none. */
   bagFor: number;
+  /** Taking someone's place mid-party (swap.ts): whether it means to tonight, and whom it could play, by casting's own rule. */
+  swap: { may: boolean; playable: readonly number[] };
 }
 
 const PARTY_TYPES: ReadonlySet<RoomType> = new Set(["entrance-hall", "stair-hall", "hall-gallery"]);
@@ -398,15 +413,29 @@ export function castSpy(rng: Rng, people: readonly Person[], drama: DramaCast, b
   const study = new Float32Array(people.length);
   for (let i = 0; i < people.length; i++) study[i] = r.study.next();
 
-  // Before the party: the victim's body hidden outside, and now and then something they wore dropped on the way back in.
+  // Before the party: the victim's body hidden outside, its jacket or dress on the spy now (so in shirtsleeves or a slip), and now and then something they wore dropped on the way back in.
   let body: SpyBody | null = null;
   let garment: SpyCast["garment"] = null;
   if (setup !== "self") {
     const b = bodySpot(bp, r.site);
-    body = { who: record.id, at: b.at, place: b.place, hides: BODY_HIDES, t: -r.site.range(20, 90) * 60, how: "before" };
+    body = {
+      who: record.id,
+      at: b.at,
+      yaw: Math.PI / 2,
+      place: b.place,
+      kind: "outside",
+      hides: BODY_HIDES,
+      t: -r.site.range(20, 90) * 60,
+      how: "before",
+      look: { ...record.look },
+      stripped: true,
+    };
     if (r.site.chance(GARMENT_SHARE)) garment = { at: garmentSpot(bp, places, r.site), what: r.site.pick(GARMENT[record.look.sex]), color: r.site.pick(GARMENT_COLORS) };
   }
-  return { setup, record: record.id, victim: setup === "self" ? -1 : record.id, goal: { kind, target, first }, own, study, body, garment, bagFor };
+  // Coming as itself, it means to take someone's place mid-party (about one evening in five, the chances tonight allowing: swap.ts), unless the options say (and then playing a guest too).
+  const may = opts.swap !== undefined ? opts.swap && (setup === "self" || setup === "victim") : setup === "self";
+  const swap = { may, playable: victimCandidates(people, drama).map((p) => p.id) };
+  return { setup, record: record.id, victim: setup === "self" ? -1 : record.id, goal: { kind, target, first }, own, study, body, garment, bagFor, swap };
 }
 
 /**

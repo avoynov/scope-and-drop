@@ -234,6 +234,34 @@ export class Ident {
   }
 
   /**
+   * Another mind in i's record (the spy, out of one record and into the one it killed): what the one
+   * who lived there made of anyone (their doubts, their tests, their notes compared) goes with them,
+   * and so does a turned ankle or a fumble showing. Their pictures of people stay, being of how
+   * people look. What anyone makes of i stays too.
+   */
+  newMind(i: number): void {
+    const n = this.n;
+    const a = i * n;
+    const b = a + n;
+    this.doubt.fill(0, a, b);
+    this.doubtT.fill(0, a, b);
+    this.half.fill(doubtHalfLife(0), a, b);
+    this.struck.fill(0, a, b);
+    this.stage.fill(NONE, a, b);
+    this.lastTest.fill(-1e9, a, b);
+    this.nextCompare.fill(0, a, b);
+    this.compared.fill(0, a, b);
+    for (let j = 0; j < n; j++) this.compared[j * n + i] = 0;
+    this.fumbled.fill(0, a, b);
+    this.slipSeen.fill(0, a, b);
+    this.wantTest[i] = -1;
+    this.wantCompare[i] = -1;
+    this.hurt[i] = 0;
+    this.slipping[i] = -1;
+    this.slipUntil[i] = 0;
+  }
+
+  /**
    * j has their spectacles back on: whoever knows them knows them in glasses, so a picture taken
    * while they were off (a test passed meanwhile) has them back.
    */

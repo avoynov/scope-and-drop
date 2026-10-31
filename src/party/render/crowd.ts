@@ -5,10 +5,13 @@
  * Poses are drawn procedurally from the simulation's pose and a clock, so the same
  * state always draws the same picture. Proportions follow height and build; the
  * outfit's colour and silhouette tell people apart at 4×.
+ *
+ * A few more figures than people are the bodies (`setBodies`), drawn as they lie from the
+ * spy's bodies list, never from a person: the record of someone the spy plays is its own.
  */
 import * as THREE from "three";
 import type { ScopedLighting } from "../../mansion/build/lighting";
-import { DRINKS, type DrinkId, type Gesture, type Held, type Person, type Pose } from "../types";
+import { DRINKS, type DrinkId, type Gesture, type Held, type Look, type Person, type Pose } from "../types";
 
 /** The colour of what's in the glass. */
 const DRINK_COLOR: Partial<Record<Held, string>> = { champagne: "#e9d9a0", red: "#6e1424", white: "#e6dca6", beer: "#c98a2a", whisky: "#9a5a1e", water: "#d8e2e6" };
@@ -58,6 +61,28 @@ export interface Litter {
 const FLASHES = 8;
 const FLASH_FOR = 0.6;
 
+/** Figures for bodies besides the people: the spy's list holds four at most (one before the party, the goal's, a doubter's, a face's). */
+export const BODY_SLOTS = 4;
+/** A slip, for a body whose dress the spy took. */
+const SLIP = "#e6ddd0";
+/** Lying on its back, the figure's middle this far off the floor (m). */
+const LIE_LIFT = 0.11;
+
+/** A body where it lies (the spy's bodies list): how it looks, whether its jacket or dress was taken, and where. */
+export interface BodyFigure {
+  /** The record it was: the colours and habits it is drawn with come from `look`. */
+  who: Person;
+  look: Look;
+  stripped: boolean;
+  x: number;
+  y: number;
+  z: number;
+  /** The way it lies (its head the other way). */
+  yaw: number;
+  /** Room index for lighting (-1 = outside). */
+  room: number;
+}
+
 type PartId = "thigh" | "shin" | "skirt" | "torso" | "shirt" | "stain" | "head" | "hair" | "arm" | "held" | "item" | "tray" | "hat" | "glasses" | "cane" | "bandage" | "halo" | "marker";
 
 interface Part {
@@ -96,6 +121,12 @@ export interface FrameState {
   headYaw?: number;
   /** Just back from slipping away: hair and shirt awry. */
   dishevelled?: boolean;
+  /**
+   * A kill's hold (spy/kill.ts), which the pose alone doesn't say: hands at a throat from behind
+   * and the one held fighting it (`struggle`), kneeling over someone down holding on (`struggle`),
+   * and pulled along the floor by the arms (`lie`).
+   */
+  grip?: "behind" | "held" | "over" | "dragged";
 }
 
 /** A camera flash: where, and how long ago (game s). */
@@ -126,7 +157,7 @@ export class Crowd {
   constructor(people: Person[], opts: CrowdOptions) {
     this.people = people;
     this.root.name = "crowd";
-    const n = people.length;
+    const n = people.length + BODY_SLOTS;
     const std = (rough = 0.75, metal = 0) => opts.lighting.patch(new THREE.MeshStandardMaterial({ roughness: rough, metalness: metal }));
     const capsule = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 3, 8).translate(0, -len / 2 - r, 0);
     this.add("thigh", capsule(0.075, 0.3), std(0.8), 2, n);
@@ -242,44 +273,81 @@ export class Crowd {
   private outfit: string[] = [];
   private stained: Array<DrinkId | null> = [];
 
-  /** Colours from each person's look. */
+  /** Colours from each person's look, and each body's. */
   private paint(): void {
     this.painted = this.selected;
+    this.people.forEach((p, i) => {
+      this.paintFigure(i, p.look, p.stain, null);
+      this.outfit[i] = p.look.color;
+      this.stained[i] = p.stain;
+    });
+    this.bodies.forEach((b, k) => b && this.paintFigure(this.people.length + k, b.fig.look, null, b.legs));
+    this.bodiesPainted = true;
+    for (const part of this.parts.values()) if (part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** One figure's colours: `legs` for trousers that aren't the look's main colour (a body in shirtsleeves). */
+  private paintFigure(i: number, L: Look, stain: DrinkId | null, legs: string | null): void {
     const c = new THREE.Color();
-    const set = (id: PartId, i: number, hex: string, k = 0) => {
+    const set = (id: PartId, hex: string, k = 0) => {
       const part = this.parts.get(id)!;
       part.mesh.setColorAt(i * part.per + k, c.set(hex));
     };
-    this.people.forEach((p, i) => {
-      const L = p.look;
-      const dress = L.outfit === "long-dress" || L.outfit === "short-dress";
-      const legColor = dress ? (L.outfit === "short-dress" ? "#2a2422" : L.color) : L.outfit === "waiter" && L.color !== "#1a1b1f" ? "#141518" : L.color;
-      for (const k of [0, 1]) {
-        set("thigh", i, legColor, k);
-        set("shin", i, legColor, k);
+    const dress = L.outfit === "long-dress" || L.outfit === "short-dress";
+    const legColor = legs ?? (dress ? (L.outfit === "short-dress" ? "#2a2422" : L.color) : L.outfit === "waiter" && L.color !== "#1a1b1f" ? "#141518" : L.color);
+    for (const k of [0, 1]) {
+      set("thigh", legColor, k);
+      set("shin", legColor, k);
+    }
+    set("skirt", L.color);
+    set("torso", L.color);
+    set("shirt", L.accent);
+    set("head", L.skin);
+    set("hair", L.hair);
+    // Dresses are sleeveless: bare arms; jackets have sleeves.
+    set("arm", dress ? L.skin : L.color, 0);
+    set("arm", dress ? L.skin : L.color, 1);
+    set("held", "#e8e2c8");
+    set("item", "#2b2724");
+    set("tray", "#c8c6c0");
+    set("hat", "#111114");
+    set("glasses", "#1a1a1a");
+    set("cane", "#2a1a10");
+    set("marker", L.color);
+    set("halo", i === this.selected ? "#e0b56a" : "#f4efe4");
+    set("bandage", "#f2f0ea");
+    set("stain", stain ? STAIN_COLOR[stain] : "#000000");
+  }
+
+  /** The bodies drawn, one a slot: the figure posed (a stand-in for the record, in the body's look), its trousers in shirtsleeves, and where it lies. */
+  private bodies: Array<{ fig: Person; legs: string | null; state: FrameState } | null> = Array.from({ length: BODY_SLOTS }, () => null);
+  /** What each slot was set for, so a slot is repainted only when its body changes. */
+  private bodyKeys: string[] = [];
+  private bodiesPainted = true;
+
+  /**
+   * The bodies where they lie (the spy's list; at most BODY_SLOTS), on their backs. A body
+   * stripped of its jacket lies in shirtsleeves, of its dress in a slip.
+   */
+  setBodies(list: readonly BodyFigure[]): void {
+    for (let k = 0; k < BODY_SLOTS; k++) {
+      const b = list[k];
+      if (!b) {
+        if (this.bodies[k]) this.bodyKeys[k] = "";
+        this.bodies[k] = null;
+        continue;
       }
-      set("skirt", i, L.color);
-      set("torso", i, L.color);
-      set("shirt", i, L.accent);
-      set("head", i, L.skin);
-      set("hair", i, L.hair);
-      // Dresses are sleeveless: bare arms; jackets have sleeves.
-      set("arm", i, dress ? L.skin : L.color, 0);
-      set("arm", i, dress ? L.skin : L.color, 1);
-      set("held", i, "#e8e2c8");
-      set("item", i, "#2b2724");
-      set("tray", i, "#c8c6c0");
-      set("hat", i, "#111114");
-      set("glasses", i, "#1a1a1a");
-      set("cane", i, "#2a1a10");
-      set("marker", i, L.color);
-      set("halo", i, i === this.selected ? "#e0b56a" : "#f4efe4");
-      set("bandage", i, "#f2f0ea");
-      set("stain", i, p.stain ? STAIN_COLOR[p.stain] : "#000000");
-      this.outfit[i] = L.color;
-      this.stained[i] = p.stain;
-    });
-    for (const part of this.parts.values()) if (part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
+      const dress = b.look.outfit === "long-dress" || b.look.outfit === "short-dress";
+      const look: Look = b.stripped ? (dress ? { ...b.look, outfit: "short-dress", color: SLIP, hat: false } : { ...b.look, color: b.look.accent, hat: false }) : b.look;
+      const key = `${b.who.id}:${look.outfit}:${look.color}:${look.accent}:${b.stripped}`;
+      if (this.bodyKeys[k] !== key) {
+        this.bodyKeys[k] = key;
+        this.bodiesPainted = false;
+      }
+      const fig = { ...b.who, look, held: null, quirks: [], stain: null, bandage: false, tipsy: 0 } as Person;
+      const state: FrameState = { x: b.x, y: b.y, z: b.z, yaw: b.yaw, pose: "lie", speaking: false, room: b.room, visible: true };
+      this.bodies[k] = { fig, legs: b.stripped && !dress ? b.look.color : null, state };
+    }
   }
 
   /** Draw everyone for this frame. `time` is real seconds, for gesture cycles. */
@@ -303,7 +371,22 @@ export class Crowd {
       P.get("marker")!.mesh.setMatrixAt(i, tmpM);
       P.get("halo")!.mesh.setMatrixAt(i, tmpM);
     }
-    if (this.painted !== this.selected || this.people.some((p, i) => p.look.color !== this.outfit[i] || p.stain !== this.stained[i])) this.paint();
+    for (let k = 0; k < BODY_SLOTS; k++) {
+      const i = this.people.length + k;
+      const b = this.bodies[k];
+      const scope = b && b.state.room >= 0 ? b.state.room : -1;
+      for (const part of P.values())
+        for (let kk = 0; kk < part.per; kk++) {
+          part.scope?.setX(i * part.per + kk, scope);
+          if (!b) part.mesh.setMatrixAt(i * part.per + kk, ZERO);
+        }
+      if (b) {
+        this.pose(i, b.fig, b.state, time);
+        P.get("marker")!.mesh.setMatrixAt(i, ZERO);
+        P.get("halo")!.mesh.setMatrixAt(i, ZERO);
+      }
+    }
+    if (!this.bodiesPainted || this.painted !== this.selected || this.people.some((p, i) => p.look.color !== this.outfit[i] || p.stain !== this.stained[i])) this.paint();
     this.paintGlasses();
     this.paintItems();
     for (const part of P.values()) {
@@ -349,9 +432,15 @@ export class Crowd {
     const t = time + hash(i) * 10;
     const dress = L.outfit === "long-dress" || L.outfit === "short-dress";
     const sit = s.pose === "sit";
-    // Down on the heels: looking under a table for something lost, sweeping up glass.
-    const crouch = s.pose === "crouch";
-    const walking = s.pose === "walk" || s.pose === "climb";
+    // A kill (spy/kill.ts): flat on the back, slumped against whoever walks them off, bent low dragging someone, and the hold.
+    const lie = s.pose === "lie";
+    const sag = s.pose === "sag";
+    const drag = s.pose === "drag";
+    const grip = s.pose === "struggle" ? (s.grip ?? "behind") : lie && s.grip === "dragged" ? "dragged" : null;
+    const kneel = grip === "over";
+    // Down on the heels: looking under a table for something lost, sweeping up glass; kneeling over someone, holding on.
+    const crouch = s.pose === "crouch" || kneel;
+    const walking = s.pose === "walk" || s.pose === "climb" || s.pose === "prop" || drag;
     // The slow dance, and club style (one in front, back to the other behind): dancing too.
     const close = s.pose === "slow" || s.pose === "front" || s.pose === "behind";
     const dance = s.pose === "dance" || close;
@@ -365,35 +454,54 @@ export class Crowd {
     const list = p.tipsy > 0.6 && !sit ? Math.min(1, (p.tipsy - 0.6) / 0.4) * 0.07 * Math.sin(t * 1.3) : 0;
     // Singing, they sway on their feet.
     const sing = s.pose === "sing" ? Math.sin(t * 1.9) * 0.6 : 0;
-    const hipY = (sit ? 0.47 : crouch ? 0.52 * k : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4 * tempo)) * 0.03 : 0);
-    const base = new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw + sway * 0.5 + sing * 0.15), tmpS.set(1, 1, 1));
-    const g = s.gesture ?? null;
+    const hipY = lie ? 0.92 * k : (sit ? 0.47 : crouch ? 0.52 * k : sag ? 0.8 * k : drag ? 0.78 * k : 0.92 * k) + bob + (dance ? Math.abs(Math.sin(t * 6.4 * tempo)) * 0.03 : 0);
+    // Lying, the standing figure is laid on its back about its hips: face up, the head the other way from its yaw.
+    const base = lie
+      ? new THREE.Matrix4()
+          .compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, s.yaw), tmpS.set(1, 1, 1))
+          .multiply(new THREE.Matrix4().makeTranslation(0, LIE_LIFT, hipY))
+          .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2))
+      : // Dragging someone, it backs along its way facing them.
+        new THREE.Matrix4().compose(tmpP.set(s.x, s.y, s.z), tmpQ.setFromAxisAngle(UP, drag ? s.yaw + Math.PI : s.yaw + sway * 0.5 + sing * 0.15), tmpS.set(1, 1, 1));
+    // Hands full or limp: no gesture over these.
+    const held = lie || sag || drag || grip !== null || s.pose === "prop";
+    const g = held ? null : (s.gesture ?? null);
     const lean =
       g === "startle"
         ? -0.14
-        : crouch
-          ? 0.42
-          : s.pose === "rattle" || s.pose === "dab"
-            ? 0.1
-            : g === "shove"
-              ? 0.18
-              : g === "pull"
-                ? -0.12
-                : s.pose === "play"
-                  ? 0.35
-                  : s.pose === "look"
-                    ? 0.05
-                    : s.pose === "kiss" || s.pose === "hug"
-                      ? 0.16
-                      : s.pose === "argue"
-                        ? 0.1
-                        : s.pose === "behind"
-                          ? 0.08
-                          : s.pose === "shake"
-                            ? 0.06
-                            : g === "lean"
-                              ? 0.14
-                              : 0;
+        : sag
+          ? 0.28
+          : drag
+            ? 0.75
+            : grip === "behind"
+              ? 0.12
+              : grip === "held"
+                ? -0.2 + Math.sin(t * 8) * 0.06
+                : kneel
+                  ? 0.6
+                  : crouch
+                    ? 0.42
+                    : s.pose === "rattle" || s.pose === "dab"
+                      ? 0.1
+                      : g === "shove"
+                        ? 0.18
+                        : g === "pull"
+                          ? -0.12
+                          : s.pose === "play"
+                            ? 0.35
+                            : s.pose === "look"
+                              ? 0.05
+                              : s.pose === "kiss" || s.pose === "hug"
+                                ? 0.16
+                                : s.pose === "argue"
+                                  ? 0.1
+                                  : s.pose === "behind"
+                                    ? 0.08
+                                    : s.pose === "shake"
+                                      ? 0.06
+                                      : g === "lean"
+                                        ? 0.14
+                                        : 0;
     const local = (x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, "YXZ")), new THREE.Vector3(sx, sy, sz));
     const stretch = local(0, 0, 0, 0, 0, 0, 1, k, 1);
@@ -414,16 +522,39 @@ export class Crowd {
         continue;
       }
       const ph = stride * side;
-      const swing = sit ? -1.5 : crouch ? -1.35 : walking ? -ph * 0.45 : dance ? Math.sin(t * 6.4 * tempo + side) * (s.pose === "slow" ? 0.1 : 0.2) : 0;
+      // Walked off, the feet trail; held from behind, braced, or kicking; dragging someone, knees bent.
+      const swing = sit
+        ? -1.5
+        : crouch
+          ? -1.35
+          : sag
+            ? -0.15
+            : grip === "behind"
+              ? side * 0.22
+              : grip === "held"
+                ? Math.sin(t * 7 + side) * 0.35
+                : walking
+                  ? -ph * (drag ? 0.3 : 0.45)
+                  : dance
+                    ? Math.sin(t * 6.4 * tempo + side) * (s.pose === "slow" ? 0.1 : 0.2)
+                    : lie
+                      ? side * 0.05
+                      : 0;
       const bend = sit
         ? 1.5
         : crouch
           ? 2.35
-          : walking
-            ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0)
-            : dance
-              ? 0.15 + Math.max(0, Math.sin(t * 6.4 * tempo + side)) * (s.pose === "slow" ? 0.1 : 0.3)
-              : 0.03;
+          : sag
+            ? 0.55
+            : grip === "behind"
+              ? 0.25
+              : grip === "held"
+                ? 0.3 + Math.abs(Math.sin(t * 9 + side)) * 0.4
+                : walking
+                  ? 0.08 + Math.max(0, ph) * 0.65 + (s.pose === "climb" ? 0.35 : 0) + (drag ? 0.45 : 0)
+                  : dance
+                    ? 0.15 + Math.max(0, Math.sin(t * 6.4 * tempo + side)) * (s.pose === "slow" ? 0.1 : 0.3)
+                    : 0.03;
       const hip = base.clone().multiply(local(side * 0.095 * wide, hipY, sit ? -0.05 : 0, swing));
       set("thigh", kk, hip.clone().multiply(stretch));
       set("shin", kk, hip.multiply(local(0, -0.45 * k, 0, bend)).multiply(stretch));
@@ -445,7 +576,7 @@ export class Crowd {
     const laugh = talking && p.quirks.includes("big-laugh") && Math.sin(t * 0.7) > 0.93;
     const nod = talking ? Math.sin(t * 2.3) * 0.08 : 0;
     // A glance turns the head (no further than the neck allows); otherwise a talker looks round the group.
-    const turn = s.headYaw ? Math.max(-1.3, Math.min(1.3, s.headYaw)) : talking ? Math.sin(t * 0.9) * 0.3 : 0;
+    const turn = lie ? (hash(i + 7) < 0.5 ? -0.75 : 0.75) : grip === "held" ? Math.sin(t * 6) * 0.25 : s.headYaw ? Math.max(-1.3, Math.min(1.3, s.headYaw)) : talking ? Math.sin(t * 0.9) * 0.3 : 0;
     const cheek = s.pose === "kiss" || s.pose === "hug" || s.pose === "slow";
     const tilt = g === "ask" ? 0 : g === "shrug" ? 0.12 : cheek ? 0.3 : 0;
     // A frown: chin down, eyes up at whoever did it.
@@ -453,13 +584,15 @@ export class Crowd {
     const jut = s.pose === "argue" ? -0.12 + Math.sin(t * 4.1) * 0.08 : 0;
     // Eyes down at the floor, the stain, the watch or the phone; head back to sing.
     const down = crouch ? 0.3 : s.pose === "dab" ? 0.4 : g === "watch" || s.pose === "phone" ? 0.3 : s.pose === "sing" ? -0.3 : 0;
-    const pitchHead = laugh ? -0.45 : nod + jut + down + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
+    // Slumped, the chin on the chest; held, the head pulled back; holding on or dragging, eyes on them.
+    const hold = sag ? 0.75 : grip === "held" ? -0.35 : kneel ? 0.4 : drag ? 0.25 : grip === "behind" ? 0.15 : 0;
+    const pitchHead = laugh ? -0.45 : nod + jut + down + hold + (s.pose === "look" ? -0.12 : 0) + (g === "lean" ? 0.15 : 0) + (g === "frown" ? 0.22 : 0) + (s.pose === "camera" ? 0.1 : 0);
     const head = hips.clone().multiply(local(0, torsoLen + 0.16 * k, 0.01, pitchHead, turn + (cheek ? 0.35 : 0), tilt, k, k, k));
     set("head", 0, head);
     set("hair", 0, head.clone().multiply(local(s.dishevelled ? 0.015 : 0, 0.012, -0.012, -0.25, 0, s.dishevelled ? 0.3 : 0)));
     if (p.quirks.includes("glasses")) set("glasses", 0, head.clone().multiply(local(0, 0.015, 0.1)));
     else hide("glasses");
-    if (L.hat && !sit && !s.dishevelled) set("hat", 0, head.clone().multiply(local(0, 0.07, 0, -0.08)));
+    if (L.hat && !sit && !lie && !s.dishevelled) set("hat", 0, head.clone().multiply(local(0, 0.07, 0, -0.08)));
     else hide("hat");
 
     // Arms: pitch forward (positive) from the shoulder, roll out from the body.
@@ -619,6 +752,45 @@ export class Crowd {
         rp = 1.2 + Math.sin(t * 15) * 0.1;
         rr = 0.06;
         break;
+      case "prop":
+        // An arm round their back, the other hand holding their wrist across.
+        rp = -0.3;
+        rr = 1.05;
+        lp = 1.1;
+        lr = -0.6;
+        break;
+      case "sag":
+        // An arm over the shoulders of whoever holds them up, the other hanging.
+        lp = 0.9;
+        lr = 1.3;
+        rp = 0.1;
+        rr = 0.05;
+        break;
+      case "drag":
+        // Bent over them, both hands down at their wrists.
+        rp = lp = 1.05;
+        rr = lr = -0.12;
+        break;
+      case "struggle":
+        if (grip === "held") {
+          // Clawing at the arm across the throat.
+          rp = lp = 2.15 + Math.sin(t * 12) * 0.2;
+          rr = lr = -0.8 + Math.sin(t * 10) * 0.1;
+        } else if (kneel) {
+          // Hands down at the throat of whoever lies there.
+          rp = lp = 0.9;
+          rr = lr = -0.3;
+        } else {
+          // Forearms crossed at a throat from behind, jerking.
+          rp = lp = 1.5 + Math.sin(t * 9) * 0.06;
+          rr = lr = -0.55;
+        }
+        break;
+      case "lie":
+        // By the sides; pulled along by the wrists, up over the head and off the floor to the hands that hold them.
+        rp = lp = grip === "dragged" ? 2.5 : 0;
+        rr = lr = grip === "dragged" ? 0.08 : 0.12;
+        break;
       default:
         if (p.held) rp = 0.75;
     }
@@ -685,7 +857,7 @@ export class Crowd {
       lp = 1.3;
       lr = -0.45;
     }
-    if (p.quirks.includes("cane") && !sit) lp = Math.max(lp, 0.35);
+    if (p.quirks.includes("cane") && !sit && !held) lp = Math.max(lp, 0.35);
     const right = arm(1, rp, rr);
     arm(-1, lp, lr);
     // A cut hand, bandaged for the night.
@@ -693,12 +865,12 @@ export class Crowd {
     else hide("bandage");
 
     // What's in the right hand: kept upright whatever the arm does.
-    const drink = p.held !== null && DRINKS.has(p.held);
+    const drink = p.held !== null && DRINKS.has(p.held) && !held;
     if (drink && s.pose !== "serve") set("held", 0, right.multiply(local(0, -0.62 * k, 0.02, rp)));
     else hide("held");
-    if (p.held === "tray" && !sit) set("tray", 0, hips.clone().multiply(local(0.3, shoulderY + 0.08, 0.42)));
+    if (p.held === "tray" && !sit && !held) set("tray", 0, hips.clone().multiply(local(0.3, shoulderY + 0.08, 0.42)));
     else hide("tray");
-    const it = p.held ? ITEMS[p.held] : undefined;
+    const it = p.held && !held ? ITEMS[p.held] : undefined;
     if (it) {
       const [sx, sy, sz] = it.size;
       // Held to the eye, carried before them in both hands, a coat over the arm, or simply in the hand.
@@ -712,7 +884,7 @@ export class Crowd {
               : right.clone().multiply(local(0, -0.62 * k, 0.03, p.held === "cue" ? rp - 0.3 : rp));
       set("item", 0, at.multiply(local(0, 0, 0, 0, 0, 0, sx, sy, sz)));
     } else hide("item");
-    if (p.quirks.includes("cane") && !sit) set("cane", 0, base.clone().multiply(local(-0.32, 0, 0.18)));
+    if (p.quirks.includes("cane") && !sit && !held) set("cane", 0, base.clone().multiply(local(-0.32, 0, 0.18)));
     else hide("cane");
   }
 

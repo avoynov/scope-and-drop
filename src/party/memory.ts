@@ -67,7 +67,12 @@ export type Verb =
   | "no-stain"
   | "found-at-once"
   | "followed"
-  | "abandoned";
+  | "abandoned"
+  | "collapsed"
+  | "propped-up"
+  | "propped-sober"
+  | "attacked"
+  | "refused-tray";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -157,6 +162,14 @@ export const VERBS: Record<Verb, VerbSpec> = {
   "found-at-once": { kind: "odd", juicy: 0.4, odd: 0.1, halfLife: 45 * MIN },
   followed: { kind: "odd", juicy: 0.5, odd: 0.08, halfLife: 45 * MIN },
   abandoned: { kind: "odd", juicy: 0.5, odd: 0.1, halfLife: 45 * MIN, thing: true },
+  // Killing and faces (milestone 3, PR 5): someone fallen who didn't get up (innocent in itself: milestone 4 decides what follows),
+  // one walking another who can barely stand (the object is whom; worse from someone who saw them sober within the hour), someone
+  // seen killing or dragging a body (the object is whom: sure at once), and a tray of one drink waved off.
+  collapsed: { kind: "mishap", juicy: 1, odd: 0, halfLife: 90 * MIN },
+  "propped-up": { kind: "odd", juicy: 0.6, odd: 0.05, halfLife: 45 * MIN },
+  "propped-sober": { kind: "odd", juicy: 0.8, odd: 0.25, halfLife: 45 * MIN },
+  attacked: { kind: "odd", juicy: 1, odd: 1, halfLife: 180 * MIN },
+  "refused-tray": { kind: "odd", juicy: 0.2, odd: 0.03, halfLife: 45 * MIN },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 
@@ -604,6 +617,39 @@ export class Memory {
     this.knowT.fill(0, a, a + this.M);
     this.visits.fill(0, a, a + this.M);
     this.seenIntoT.fill(-1e9, a, a + this.M);
+  }
+
+  /**
+   * The spy out of one record and into another (spy/swap.ts): what it knows goes with it (whom it
+   * last saw where, the facts it holds, its suspicions, its map of the house), and the record it
+   * left keeps nothing. What anyone knows of either record is theirs, and stays.
+   */
+  moveSelf(from: number, to: number): void {
+    const n = this.n;
+    const M = this.M;
+    const row = (a: Float32Array | Int16Array | Int32Array | Uint8Array, w: number, empty: number) => {
+      a.copyWithin(to * w, from * w, (from + 1) * w);
+      a.fill(empty, from * w, (from + 1) * w);
+    };
+    row(this.lastT, n, -1e9);
+    row(this.lastRoom, n, -1);
+    row(this.lastAct, n, 0);
+    row(this.secondHand, n, 0);
+    row(this.sawDrinking, n, -1e9);
+    row(this.sFact, SLOTS, -1);
+    row(this.sConf, SLOTS, 0);
+    row(this.sT, SLOTS, 0);
+    row(this.sFrom, SLOTS, 0);
+    row(this.sHops, SLOTS, 0);
+    this.held[to] = this.held[from]!;
+    this.held[from] = 0;
+    row(this.suspicion, n, 0);
+    row(this.know, M, 0);
+    row(this.knowT, M, 0);
+    row(this.visits, M, 0);
+    row(this.seenIntoT, M, -1e9);
+    // Into one of the household (the host): the household still counts them, but the map is the spy's own.
+    if (this.household[to]) this.ownMap[to] = 1;
   }
 
   /** Walking into a room: learnt well, less so when tipsy. */

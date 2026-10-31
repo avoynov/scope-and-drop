@@ -7,11 +7,13 @@
  * game's own pace, where 1x plays the three-hour party in one real hour. ov turns on
  * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
  * tension and energy= scales everyone's energy at time t. The spy is on: spy=0 turns it off,
- * and setup=, goal=, odds=, steal=, target=, on= and reveal=1 pin its draws, hold covers on and
- * show it (see spy.ts). Once it is revealed, the privacy overlay shades where an act could begin
- * near it now (green alone, amber only unwatched), the spy overlay draws its route, its goal's
- * things and a line to its target, a strip under the programme shows its whole evening (from a
- * look-ahead worker, ahead.ts), and the log's tells filter lists its tells.
+ * and setup=, goal=, odds=, steal=, target=, on=, swap= and reveal=1 pin its draws, hold covers
+ * on and show it (see spy.ts). The bodies it leaves are drawn where they lie, out of sight ones
+ * aside. Once it is revealed, the privacy overlay shades where an act could begin near it now
+ * (green alone, amber only unwatched), the spy overlay draws its route, its goal's things and a
+ * line to its target, the bodies overlay marks every body with whose it is, a strip under the
+ * programme shows its whole evening (from a look-ahead worker, ahead.ts), and the log's tells
+ * filter lists its tells.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -114,6 +116,7 @@ const spyLab = new SpyLab(
       mood: nudges,
       spy: spyLab.option(),
     }),
+    provoke: (v) => provoke(v),
   },
   $("spy"),
   $("spycard"),
@@ -241,6 +244,7 @@ const TASK_LABEL: Record<TaskKind, string> = {
   drama: "caught up in a drama",
   habit: "up to something",
   spy: "working at its plan",
+  carry: "helping someone who fell",
 };
 /** What a mishap, a drama or an oddball's outing is, for the people list and the log. */
 const DRAMA_LABEL: Record<MishapId | CardId | Habit, string> = {
@@ -417,8 +421,8 @@ let follow = params.has("follow");
 /** Clock for gestures: frozen when paused, so a paused frame stays still. */
 let animClock = 0;
 
-type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "bonds" | "map" | "mood" | "privacy" | "spy";
-const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "bonds", "map", "mood", "privacy", "spy"];
+type Overlay = "sight" | "sound" | "gossip" | "suspicion" | "cases" | "circles" | "tasks" | "bonds" | "map" | "mood" | "privacy" | "spy" | "bodies";
+const OVERLAYS: readonly Overlay[] = ["sight", "sound", "gossip", "suspicion", "cases", "circles", "tasks", "bonds", "map", "mood", "privacy", "spy", "bodies"];
 const overlays = new Set<Overlay>((params.get("ov") ?? "").split(",").filter((o): o is Overlay => (OVERLAYS as readonly string[]).includes(o)));
 
 /** What the lab has done to this evening (rumours, things gone, sightings, mood nudges), replayed whenever a seek goes back. */
@@ -442,7 +446,8 @@ function urlNudges(): MoodOverride[] {
  * 80 min), `seen=75:16:5` (person 16 seen poking round room 5 at 75 min), `mishap=80:16:spill` (a
  * spill on person 16 at 80 min), `drama=125:quarrel` (a card played at 125 min; `drama=125:quarrel:16`
  * with person 16 in it), `test=90:16` (person 16's closest tie here walks over and tests them at
- * 90 min). Several are joined by commas.
+ * 90 min), `take=90:16` (the spy goes after person 16's place from 90 min). Several are joined by
+ * commas.
  */
 function urlProvocations(): Provocation[] {
   const out: Provocation[] = [];
@@ -467,6 +472,10 @@ function urlProvocations(): Provocation[] {
   for (const g of (params.get("test") ?? "").split(",").filter(Boolean)) {
     const [t, who] = g.split(":").map(Number);
     if (Number.isFinite(t) && Number.isFinite(who)) out.push({ t: t! * 60, kind: "test", subject: who! });
+  }
+  for (const g of (params.get("take") ?? "").split(",").filter(Boolean)) {
+    const [t, who] = g.split(":").map(Number);
+    if (Number.isFinite(t) && Number.isFinite(who)) out.push({ t: t! * 60, kind: "swap", subject: who! });
   }
   return out.sort((a, b) => a.t - b.t);
 }
@@ -711,6 +720,7 @@ function frameStates(): FrameState[] {
       // A glance, or the way someone is pointing.
       headYaw: party.t < p.lookUntil || (p.gesture === "point" && party.t < p.gestureUntil) ? angleLerp(0, Math.atan2(p.lookX - p.x, p.lookZ - p.z) - p.yaw, 1) : 0,
       dishevelled: p.notable === "slipped-away" && party.t < p.notableUntil,
+      grip: spyLab.grip(p),
     };
   });
 }
@@ -776,6 +786,7 @@ function draw(): void {
     const now = party.t + acc;
     crowd.setFlashes(party.flashes.map((f): Flash => ({ x: f.x, y: (bp.levels[f.level]?.floorY ?? 0) + 1.65, z: f.z, age: (now - f.t) / TIME_SCALE })));
     crowd.setLitter(litter());
+    crowd.setBodies(spyLab.bodies());
   }
   drawOverlays(states);
   // Name tag over the selected person.
@@ -1176,6 +1187,17 @@ function drawOverlays(states: FrameState[]): void {
     const to = marks.target >= 0 ? here(marks.target) : null;
     if (from && to) line(from, to, "rgba(226, 120, 106, 0.6)", 1.5, [2, 4]);
   }
+  // The bodies, once revealed: a cross where each lies (dotted out of sight, in a bath, under a bed or in a wardrobe), whose, how and where.
+  if (overlays.has("bodies")) {
+    for (const b of spyLab.bodyMarks()) {
+      if (b.level !== planLevel) continue;
+      const [x, y] = planPx(b.x, b.z);
+      const dash = b.hidden ? [2, 2] : [];
+      line([x - 5, y - 5], [x + 5, y + 5], "#e2786a", 2, dash);
+      line([x - 5, y + 5], [x + 5, y - 5], "#e2786a", 2, dash);
+      chip(b.label, x, y - 14, "#e2786a");
+    }
+  }
 }
 
 function buildOverlayButtons(): void {
@@ -1435,6 +1457,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
     "react",
     "challenge",
     "spy",
+    "down",
   ]),
   gossip: new Set(["gossip"]),
   "connecting the dots": new Set(["case", "ask-around", "lead", "blame", "tell", "conflict", "recognised"]),
@@ -1445,7 +1468,7 @@ const LOG_FILTERS: Record<string, Kinds> = {
   "everyday life": new Set(["greet", "join", "split", "task", "photo", "goodbye", "breach", "beat"]),
   "romance & rows": new Set(["bond", "rebuff", "row", "confront", "doubt", "pull", "slip-away", "won"]),
   "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
-  "the spy": new Set(["spy", "react"]),
+  "the spy": new Set(["spy", "react", "down"]),
   "seen through": new Set(["double-take", "test", "challenge", "react"]),
   // The spy's tells, from its record rather than the log (spy.ts), once it is revealed.
   tells: new Set(),
@@ -1566,6 +1589,7 @@ function eventText(e: PartyEvent): string {
     case "challenge":
     case "spy":
     case "react":
+    case "down":
       return spyLab.eventText(e, n) ?? e.kind;
     default:
       return e.kind;

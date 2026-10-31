@@ -150,6 +150,9 @@ export function nearRooms(h: PrivacyHost, at: Spot3): Set<number> {
   return out;
 }
 
+/** Someone fallen, dying or dead sees nothing; someone feeling unwell still does. */
+const blind = (q: Person): boolean => q.down !== null && q.down !== "ill";
+
 /**
  * Could anyone who counts see the spot now, or before the step is done? `near` is nearRooms() of
  * the spot, which a caller asking often about one spot keeps.
@@ -165,7 +168,7 @@ export function check(h: PrivacyHost, ask: PrivacyAsk, near = nearRooms(h, ask.a
   const g = h.world.graph;
   const edges = g[at.room < 0 ? g.length - 1 : at.room] ?? [];
   for (const q of h.people) {
-    if (q === self || q.id === ask.skip || !q.present || q.gone || !near.has(q.room)) continue;
+    if (q === self || q.id === ask.skip || !q.present || q.gone || !near.has(q.room) || blind(q)) continue;
     if (ask.who && !ask.who(q)) continue;
     const busy = absorbed(h, ask, q);
     // Now.
@@ -286,7 +289,7 @@ function soon(h: PrivacyHost, q: Person, ask: PrivacyAsk, fov: number, watch: Re
 export function noticed(h: PrivacyHost, ask: PrivacyAsk, shut: Float32Array): number {
   const { self, at } = ask;
   for (const q of h.people) {
-    if (q === self || q.id === ask.skip || !q.present || q.gone) continue;
+    if (q === self || q.id === ask.skip || !q.present || q.gone || blind(q)) continue;
     if (ask.who && !ask.who(q)) continue;
     if (absorbed(h, ask, q)) continue;
     if (beyond(ask, q.level, q.x, q.z) && ask.mode === "unwatched") continue;

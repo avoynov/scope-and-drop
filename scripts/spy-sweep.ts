@@ -2,8 +2,8 @@
  * The spy sweep (milestone 3 technical plan: Tests and the sweep): evenings with a spy in every
  * one, a third on each house size, nothing pinned, so arrivals and goals come as drawn. Child
  * processes share the evenings out across the machine's cores. Every evening runs the monitors
- * (tests/spy-watch.ts), and the plan's targets are printed beside what was measured; the parts a
- * later pull request brings are marked with it. A miss on a target is reported, not failed.
+ * (tests/spy-watch.ts), and the plan's targets are printed beside what was measured. A miss on a
+ * target is reported, not failed.
  *
  *   npx tsx scripts/spy-sweep.ts [n] [--check] [--json file]
  *
@@ -18,7 +18,7 @@ import { generateMansion } from "../src/mansion";
 import type { MansionSize } from "../src/mansion/core/types";
 import { PARTY_LENGTH, TIME_SCALE } from "../src/party/clock";
 import { Party } from "../src/party/sim";
-import { COVERS, TELLS, type Cover, type SpyOptions, type TellId } from "../src/party/spy";
+import { COVERS, TELLS, type Cover, type HidePlace, type KillWhy, type SpyOptions, type SwapWhy, type TellId } from "../src/party/spy";
 import { GOALS, SETUPS } from "../src/party/spy/cast";
 import { isHard, watchSpy, type SpyEvening } from "../tests/spy-watch";
 
@@ -79,7 +79,7 @@ export async function runEvenings(specs: readonly EveningSpec[], jobs = Math.min
 
 // ------------------------------------------------------------------ the report
 
-/** The tells each cover gives (poison and murder give theirs in PR 5). */
+/** The tells each cover gives. */
 const COVER_TELLS: Record<Cover, readonly TellId[]> = {
   "out-of-step": ["out-of-step"],
   returns: ["returns"],
@@ -91,9 +91,14 @@ const COVER_TELLS: Record<Cover, readonly TellId[]> = {
   alibi: ["cut-off", "bare-hand", "spill-off", "clean-shirt", "lost-off", "call"],
   "others-things": ["their-bag"],
   commotion: ["dark"],
-  poison: [],
-  murder: [],
+  poison: ["dose", "bar-dose", "refused-tray", "fallen"],
+  murder: ["embrace", "jab", "propped", "struggle", "drag", "body"],
 };
+
+/** Why it killed, why it took a place, and where a body went, in the report's order. */
+const KILL_WHYS: readonly KillWhy[] = ["goal", "silence", "swap"];
+const SWAP_WHYS: readonly SwapWhy[] = ["host", "friend", "face", "halfway"];
+const HIDE_PLACES: readonly HidePlace[] = ["bath", "bathroom", "store", "bed", "wardrobe", "outside", "fell"];
 
 const pct = (a: number, b: number): string => (b ? `${Math.round((100 * a) / b)}%` : "–");
 const mean = (xs: readonly number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
@@ -146,10 +151,16 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     .map((xs) => real(Math.min(...xs)));
   const twinsRate = mean(rs.map((r) => r.twins / (real(PARTY_LENGTH) / 5)));
   const soft = mean(rs.map((r) => r.tells.filter((x) => TELLS[x.what].kind === "cover").length));
-  // Its plan (PR 3): a waiter keeps the staff's routine and a kill ends at the target alone until PR 5, so the goals done count the rest.
-  const planning = rs.filter((r) => r.setup !== "waiter");
-  const goals = planning.filter((r) => r.goal !== "kill");
-  const killing = planning.filter((r) => r.goal === "kill");
+  // Its plan: every arrival plans (a waiter between its rounds), and a kill is done at its target's death.
+  const others = rs.filter((r) => r.goal !== "kill");
+  const self = rs.filter((r) => r.setup === "self");
+  const dead = (r: EveningResult, why: KillWhy) => r.kills.filter((k) => k.why === why && k.out === "dead");
+  const how = (rows: readonly EveningResult[], why: KillWhy) => {
+    const ks = rows.flatMap((r) => dead(r, why));
+    return `strangled ${ks.filter((k) => k.how === "strangled").length}, the needle ${ks.filter((k) => k.how === "injection").length}`;
+  };
+  const swapped = self.filter((r) => r.swap.at >= 0);
+  const silenced = rs.filter((r) => dead(r, "silence").length > 0);
   const hardSeen = rs.filter((r) => r.tells.some((x) => isHard(x.what) && x.seen)).length;
   const hardPerch = rs.filter((r) => r.tells.some((x) => isHard(x.what) && x.view >= 0.5)).length;
   const traced = rs.filter((r) => r.traces > 0);
@@ -158,8 +169,14 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     [
       "The spy's goal done",
       "55 to 80% of evenings",
-      `${pct(goals.filter((r) => r.doneAt >= 0).length, goals.length)} of ${goals.length} besides kills · kills: the target alone in ${killing.filter((r) => r.alone).length} of ${killing.length} (PR 5 kills) · waiters plan in PR 5 (${rs.length - planning.length})`,
+      `${pct(rs.filter((r) => r.doneAt >= 0).length, n)} of ${n} · kills ${kills.filter((r) => r.doneAt >= 0).length} of ${kills.length} (${how(kills, "goal")}) · the rest ${others.filter((r) => r.doneAt >= 0).length} of ${others.length}`,
     ],
+    [
+      "Coming as itself: a mid-party swap",
+      "about 1 in 5",
+      `${pct(swapped.length, self.length)} of ${self.length}${swapped.length ? ` (${SWAP_WHYS.map((w) => `${w} ${swapped.filter((r) => r.swap.why === w).length}`).join(", ")})` : ""}; gone wrong in ${self.filter((r) => r.swap.failed > 0).length}`,
+    ],
+    ["A lone doubter silenced", "rare", `${silenced.length} of ${n} evenings${oneIn(silenced.length)} (${how(rs, "silence")}); followed in ${rs.filter((r) => r.silenced > 0).length}`],
     [
       "First tell anyone could see, median",
       "10 real min or sooner",
@@ -235,7 +252,7 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
     const on = rs.filter((r) => r.covers[c].spells > 0);
     const tells = rs.map((r) => r.tells.filter((x) => COVER_TELLS[c].includes(x.what)));
     const seen = tells.flat();
-    const said = COVER_TELLS[c].length ? `tells ${mean(tells.map((x) => x.length)).toFixed(1)} (${pct(seen.filter((x) => x.seen).length, seen.length)})` : "its tells in PR 5";
+    const said = c === "poison" ? "never built: on, it changes nothing" : `tells ${mean(tells.map((x) => x.length)).toFixed(1)} (${pct(seen.filter((x) => x.seen).length, seen.length)})`;
     L.push(`  ${c.padEnd(15)} on in ${String(on.length).padStart(2)} of ${n} · ${on.length ? mean(on.map((r) => r.covers[c].mins)).toFixed(0) : "–"} min · ${said}`);
   }
   const hb = (k: keyof EveningResult["habits"]) => night((r) => r.habits[k], rs);
@@ -246,7 +263,6 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
   L.push(
     `  tactics a night: alibis ${tc("alibis")} (cut ${tc("cut")}, spill ${tc("spill")}, lost ${tc("lost")}, call ${tc("call")}) · washes ${tc("washes")} · bandages off ${tc("bandageOff")} · claims ${tc("claims")} · kept quiet ${tc("quiet")} · spills on an owner ${tc("spills")} · bags carried ${tc("carried")} · lights ${tc("lights")}`,
   );
-  const self = rs.filter((r) => r.setup === "self");
   L.push(
     `  felt watched a night: wary glances ${night((r) => r.watched.glances, rs)} · tests failed ${night((r) => r.watched.tests, rs)} · circles hushed ${night((r) => r.watched.hushes, rs)} · lying low ${(100 * mean(playing.map((r) => r.lowShare))).toFixed(0)}% of its evening playing someone, ${(100 * mean(self.map((r) => r.lowShare))).toFixed(0)}% as itself`,
   );
@@ -284,14 +300,14 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
 
   // By goal: how far its plan got, how it went, and what it left showing.
   L.push("");
-  L.push("by goal (waiters left out: they plan in PR 5)");
+  L.push("by goal");
   const clock = (t: number) => `${19 + Math.floor(t / 3600)}:${String(Math.floor((t % 3600) / 60)).padStart(2, "0")}`;
   for (const goal of GOALS) {
-    const g = planning.filter((r) => r.goal === goal);
+    const g = rs.filter((r) => r.goal === goal);
     if (!g.length) continue;
     const tried = g.filter((r) => r.triedAt >= 0);
     const done = g.filter((r) => r.doneAt >= 0);
-    const end = goal === "kill" ? `alone ${g.filter((r) => r.alone).length}` : `done ${done.length}${done.length ? ` (median ${clock(median(done.map((r) => r.doneAt)))})` : ""}`;
+    const end = `done ${done.length}${done.length ? ` (median ${clock(median(done.map((r) => r.doneAt)))}${goal === "kill" ? `; ${how(g, "goal")}` : ""})` : ""}`;
     const theft =
       goal === "kill" && g.some((r) => r.theft)
         ? ` · stole first ${g.filter((r) => r.stashedAt >= 0).length} of ${g.filter((r) => r.theft).length}, dropped ${g.filter((r) => r.droppedAt >= 0).length}`
@@ -301,6 +317,19 @@ export function report(rs: readonly EveningResult[], secs: number): string[] {
       `  ${goal.padEnd(9)} ${String(g.length).padStart(3)} · tried ${tried.length} · ${end}${theft} · steps a night ${night((r) => r.plan.started, g)} (broken off ${night((r) => r.plan.broken, g)}, failed ${night((r) => r.plan.failed, g)}) · hard tells ${night((r) => r.tells.filter((x) => isHard(x.what)).length, g)} (seen in ${hard.filter((h) => h.some((x) => x.seen)).length}, perch ${hard.filter((h) => h.some((x) => x.view >= 0.5)).length}) · traces in ${g.filter((r) => r.traces > 0).length}`,
     );
   }
+
+  // Its killing (PR 5): every kill it set off on, the bodies, those missed, and poison (never built).
+  const ks = rs.flatMap((r) => r.kills);
+  const bodies = rs.flatMap((r) => r.bodies);
+  const ended = (out: string) => ks.filter((k) => k.out === out).length;
+  L.push("");
+  L.push(
+    `killing: ${ks.length} kills set off on in ${rs.filter((r) => r.kills.length).length} evenings (${KILL_WHYS.map((w) => `${w} ${ks.filter((k) => k.why === w).length}`).join(", ")}): dead ${ended("dead")} (strangled ${ks.filter((k) => k.out === "dead" && k.how === "strangled").length}, the needle ${ks.filter((k) => k.out === "dead" && k.how === "injection").length}), broken off ${ended("broken")}, lost ${ended("lost")}, let go alive ${ended("survived")}`,
+  );
+  L.push(
+    `  bodies: ${bodies.length} left tonight (${HIDE_PLACES.map((k) => `${k} ${bodies.filter((b) => b.kind === k).length}`).join(", ")}), hidden ${bodies.length ? mean(bodies.map((b) => b.hides)).toFixed(2) : "–"} on average · someone missed out loud in ${rs.filter((r) => r.missed > 0).length} evenings (${rs.reduce((a, r) => a + r.missed, 0)} cases)`,
+  );
+  L.push(`  poison: never built (its cover comes on and changes nothing; no dose, no tells)`);
   return L;
 }
 

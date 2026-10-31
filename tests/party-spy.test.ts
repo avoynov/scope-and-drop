@@ -15,6 +15,7 @@ import type { Places } from "../src/party/places";
 import { Party } from "../src/party/sim";
 import { castSpy, goalOdds, GOALS, selfCandidates, studied, type GoalKind, type SpyCast, type SpyOptions, type SpySetup } from "../src/party/spy/cast";
 import { DELAY_HEARD, DELAY_OUT, DELAY_SEEN, DELAY_TOLD } from "../src/party/spy/cues";
+import { COPIED } from "../src/party/spy/swap";
 import type { Person } from "../src/party/types";
 import { SOBER, watchSpy, type Check, type SpyEvening } from "./spy-watch";
 
@@ -187,10 +188,12 @@ describe("the record swap", () => {
       const at = (i * n + j) * FEATURES;
       expect(Array.from(party.ident.memLook.subarray(at, at + FEATURES))).toEqual(Array.from(plain.ident.memLook.subarray(at, at + FEATURES)));
     }
-    // ...while what they see is the spy: its height, its habits, its temper.
+    // ...while what they see is the spy: its height, its habits (the victim's mannerisms in place of its own, having studied
+    // them), its temper.
     expect(p.look.height).toBe(spy.own.height);
     expect(party.ident.look[j * FEATURES]).not.toBe(plain.ident.look[j * FEATURES]);
-    for (const q of spy.own.quirks) expect(p.quirks).toContain(q);
+    for (const q of spy.own.quirks) if (!COPIED.has(q)) expect(p.quirks).toContain(q);
+    for (const q of was.quirks) expect(p.quirks.includes(q)).toBe(COPIED.has(q) || spy.own.quirks.includes(q));
     expect(party.bonds.temper[j]).toBeCloseTo(spy.own.temper, 5);
   });
 
@@ -321,7 +324,7 @@ describe("evenings with a spy", () => {
       shares.push(...r.ev.shares);
       // Out of step (the habit), a change heard or seen waits longer; beckoned in, it still comes at once.
       for (const c of r.ev.cues) if (c.how !== "late") waits[c.out ? "out" : (c.how as "heard" | "seen" | "told")].push(c.wait);
-      // Playing a waiter, the household keeps it to the programme for now (PR 5). Playing the host, it is prompted at each
+      // Playing a waiter, the household keeps it to the programme (it plans between its rounds). Playing the host, it is prompted at each
       // change and goes by its own announcement, a few seconds after making it.
       if (r.ev.setup === "waiter") expect(r.ev.cues, r.name).toEqual([]);
       if (r.ev.setup === "host") for (const c of r.ev.cues) expect(c.how, r.name).toBe("told");
@@ -347,18 +350,18 @@ describe("evenings with a spy", () => {
         expect(spy.close[j]).toBeGreaterThanOrEqual(r.close0[j]!);
       }
       if (spy.setup === "self") expect(spy.knows.includes(2)).toBe(false);
-      const believes = (j: number) => spy.close[j]! >= 0.5 || r.party.ident.tieOf(spy.id, j) > r.ties0[j]!;
+      // Coming as itself it may take someone's place halfway (swap.ts), and from then on greets as them, by what it saw of them
+      // tonight: these are the greetings it made before, as the face it came with.
+      const swap = r.party.events.find((e) => e.kind === "spy" && /^swap:\d+:\d+:/.test(e.note ?? ""));
+      const me = spy.selves[0]!;
+      const until = swap?.t ?? Infinity;
+      const believes = (j: number) => (!swap && spy.close[j]! >= 0.5) || r.party.ident.tieOf(me, j) > r.ties0[j]!;
       for (const e of r.party.events) {
-        if (e.kind !== "greet") continue;
+        if (e.kind !== "greet" || e.t >= until) continue;
         const [a, b] = e.actors as [number, number];
-        if (a === spy.id) expect(believes(b), `${r.name} greets ${b}`).toBe(true);
-        if (e.note === "kiss" && (a === spy.id || b === spy.id)) expect(believes(a === spy.id ? b : a), `${r.name} kiss`).toBe(true);
+        if (a === me) expect(believes(b), `${r.name} greets ${b}`).toBe(true);
+        if (e.note === "kiss" && (a === me || b === me)) expect(believes(a === me ? b : a), `${r.name} kiss`).toBe(true);
       }
-      if (spy.setup === "self")
-        expect(
-          r.party.events.some((e) => e.kind === "greet" && e.actors[0] === spy.id && !believes(e.actors[1]!)),
-          r.name,
-        ).toBe(false);
     }
   });
 

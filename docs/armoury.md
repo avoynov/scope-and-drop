@@ -17,9 +17,9 @@ Money from contracts buys kit, kit makes the shot easier, and each item carried 
 
 ## Pay
 
-pay = fee × R × Π(1 − decayᵢ) × (1 − Σ sharesⱼ)
+pay = fee × R × E × Π(1 − decayᵢ) × (1 − Σ sharesⱼ)
 
-R is the contract's result (1 killed, 0.6 down, 0.2 wounded and gone, 0 failed; the mission will report it). Items the dossier calls for decay at half rate. A failed contract pays nothing and still owes each spotter the retainer. The receipt shares the kit's cost between the items by ln(1 − decay), which is fair whatever the order and sums exactly, and lists what was carried and never used.
+R is the contract's result (1 killed, 0.6 down, 0.2 wounded and gone, 0 failed; the mission will report it). E is the early-finish boost, `1 + EARLY_MAX × time left / evening length` (`earlyBoost` in career.ts, `EARLY_MAX` = 0.5 in the catalogue): a job done at 20:30 of the 19:00–22:00 party pays 25% more, one done at the end pays as before, and it never takes anything off. The mission reports when the job was done as `doneAt` on the result (in-game seconds after the evening started); left out, there is no boost. Kit and spotters come off the boosted pay, and the receipt shows the boost on its own line. Items the dossier calls for decay at half rate. A failed contract pays nothing and still owes each spotter the retainer. The receipt shares the kit's cost between the items by ln(1 − decay), which is fair whatever the order and sums exactly, and lists what was carried and never used.
 
 ## The lab
 

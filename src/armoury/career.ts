@@ -3,12 +3,13 @@
  * Plain data in and out (`toJSON` / `Career.fromJSON`), so it can live in localStorage now and on a server later;
  * whatever comes back from storage is checked, never trusted.
  *
- * Pay for a contract: fee × result × the loadout's kit factor, then each spotter's share of that. A failed contract
+ * Pay for a contract: fee × result × the early-finish boost × the loadout's kit factor, then each spotter's share of that. A failed contract
  * (result 0) pays nothing and still owes each spotter a retainer. The receipt has a line for each item: what its
  * decay cost tonight. Decay multiplies, so how the total splits between items is shared out by each item's
  * ln(1 − decay), which is fair whatever the order and sums to the total exactly.
  */
-import { ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
+import { PARTY_LENGTH } from "../party/clock";
+import { EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
 import { carried, checkLoadout, kitFactor, type Loadout } from "./loadout";
 
 export interface Contract {
@@ -21,6 +22,8 @@ export interface ContractResult {
   /** 1 the spy killed, 0.6 downed, 0.2 wounded and gone, 0 failed (the pay formula's R, coded later). */
   factor: number;
   label: string;
+  /** When the job was done, in in-game seconds after the evening started (the party clock). Left out: no boost. */
+  doneAt?: number;
 }
 
 export interface ReceiptLine {
@@ -35,6 +38,8 @@ export interface Receipt {
   fee: number;
   /** Fee × result. */
   gross: number;
+  /** The boost for finishing before the evening's end (never negative); kit and spotters come off the boosted pay. Absent on older receipts. */
+  early?: ReceiptLine;
   /** One line per carried item, then one per spotter (share or retainer). */
   kit: ReceiptLine[];
   spotters: ReceiptLine[];
@@ -54,15 +59,37 @@ export interface CareerData {
 
 const round = (x: number) => Math.round(x);
 
+/**
+ * The early-finish boost, as a fraction of the pay: EARLY_MAX for a job done as the evening starts, falling in a straight line
+ * to 0 at its end. Never below 0, whatever the clock says.
+ */
+export function earlyBoost(doneAt: number | undefined, evening = PARTY_LENGTH): number {
+  if (doneAt === undefined || !Number.isFinite(doneAt) || evening <= 0) return 0;
+  const left = Math.max(0, Math.min(evening, evening - doneAt));
+  return EARLY_MAX * (left / evening);
+}
+
+/** "Done 1 h 30 min before the evening's end", "Done 40 min before the evening's end". */
+function earlyLabel(secondsLeft: number): string {
+  const m = Math.round(secondsLeft / 60);
+  const hrs = Math.floor(m / 60);
+  const min = m % 60;
+  return `Done ${hrs ? `${hrs} h ${min ? `${min} min ` : ""}` : `${min} min `}before the evening's end`;
+}
+
 /** A contract settled: the receipt, with nothing changed yet (`Career.settle` books it). */
 export function settleContract(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>, balance = 0): Receipt {
   const gross = contract.fee * Math.max(0, result.factor);
+  // A failed job earns no boost.
+  const boost = gross > 0 ? earlyBoost(result.doneAt) : 0;
+  const bonus = round(gross * boost);
+  const boosted = round(gross) + bonus;
   const items = carried(loadout);
   const kf = kitFactor(loadout);
-  const afterKit = gross * kf;
+  const afterKit = boosted * kf;
   const logs = items.map((id) => Math.log(1 - (ITEMS[id].decay[loadout.rifle] ?? 0)));
   const logSum = logs.reduce((a, b) => a + b, 0);
-  const kitCost = gross - afterKit;
+  const kitCost = boosted - afterKit;
   const kit = items.map((id, i) => ({ label: ITEMS[id].name, amount: -round(logSum < 0 ? (kitCost * logs[i]!) / logSum : 0) }));
   const failed = gross <= 0;
   const spotters = loadout.spotters.map((s) => {
@@ -70,9 +97,21 @@ export function settleContract(contract: Contract, result: ContractResult, loado
     return failed ? { label: `${name}: retainer`, amount: -RETAINER } : { label: `${name}: ${Math.round(SPOTTERS[s.tier].share * 100)}%`, amount: -round(afterKit * SPOTTERS[s.tier].share) };
   });
   // The total is worked out once and the lines rounded to it, so they always add up.
-  const total = round(gross) + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
+  const total = boosted + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
   const unused = touched ? items.filter((id) => !touched.has(id)).map((id) => ({ label: `${ITEMS[id].name}: carried, never used`, amount: kit[items.indexOf(id)]!.amount })) : [];
-  return { contract: contract.label ?? "Contract", result: result.label, fee: contract.fee, gross: round(gross), kit, spotters, total, unused, balanceAfter: balance + total };
+  const early = bonus > 0 ? { label: `${earlyLabel(PARTY_LENGTH - (result.doneAt ?? PARTY_LENGTH))}: +${Math.round(boost * 100)}%`, amount: bonus } : undefined;
+  return {
+    contract: contract.label ?? "Contract",
+    result: result.label,
+    fee: contract.fee,
+    gross: round(gross),
+    ...(early ? { early } : {}),
+    kit,
+    spotters,
+    total,
+    unused,
+    balanceAfter: balance + total,
+  };
 }
 
 export class Career {

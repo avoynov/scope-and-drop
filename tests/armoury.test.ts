@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Career, settleContract } from "../src/armoury/career";
-import { ISSUED, ITEMS, ITEM_IDS, MARKUP, RETAINER, SLOTS, SPOTTERS, START_BALANCE, fits, type ItemId } from "../src/armoury/catalogue";
+import { Career, earlyBoost, settleContract } from "../src/armoury/career";
+import { EARLY_MAX, ISSUED, ITEMS, ITEM_IDS, MARKUP, RETAINER, SLOTS, SPOTTERS, START_BALANCE, fits, type ItemId } from "../src/armoury/catalogue";
 import { carried, checkLoadout, decodeKit, emptyLoadout, encodeKit, kitFactor, payFactor, type Loadout } from "../src/armoury/loadout";
 import { issuedRig, rigFor } from "../src/armoury/rig";
 import { ROUNDS } from "../src/scope/ballistics";
@@ -111,6 +111,33 @@ describe("the career", () => {
     const l = loadout("svd", [], [{ tier: "rookie", place: "beside" }, { tier: "veteran", place: "bearing", azDeg: -20, elDeg: 0 }]);
     const r = settleContract({ fee: 8000 }, { factor: 0, label: "failed" }, l);
     expect(r.total).toBe(-2 * RETAINER);
+  });
+
+  it("boosts the pay the earlier before the evening's end the job is done, and never takes anything off", () => {
+    const end = 3 * 3600;
+    expect(earlyBoost(undefined)).toBe(0);
+    expect(earlyBoost(end)).toBe(0);
+    expect(earlyBoost(end + 600)).toBe(0);
+    expect(earlyBoost(0)).toBe(EARLY_MAX);
+    expect(earlyBoost(-600)).toBe(EARLY_MAX);
+    let last = -1;
+    for (let t = end; t >= 0; t -= 300) {
+      const b = earlyBoost(t);
+      expect(b).toBeGreaterThan(last);
+      last = b;
+    }
+    const l = loadout("vss", ["atlas", "bag"], [{ tier: "veteran", place: "beside" }]);
+    const plain = settleContract({ fee: 6000 }, { factor: 1, label: "killed" }, l);
+    const late = settleContract({ fee: 6000 }, { factor: 1, label: "killed", doneAt: end }, l);
+    const early = settleContract({ fee: 6000 }, { factor: 1, label: "killed", doneAt: end / 2 }, l);
+    expect(late.total).toBe(plain.total);
+    expect(late.early).toBeUndefined();
+    expect(early.early!.amount).toBe(Math.round(6000 * EARLY_MAX * 0.5));
+    expect(early.early!.label).toBe("Done 1 h 30 min before the evening's end: +25%");
+    expect(early.total).toBe(early.gross + early.early!.amount + [...early.kit, ...early.spotters].reduce((s, x) => s + x.amount, 0));
+    expect(early.total).toBeCloseTo(6000 * (1 + EARLY_MAX * 0.5) * payFactor(l), -1);
+    // A failure stays a failure, however early.
+    expect(settleContract({ fee: 6000 }, { factor: 0, label: "failed", doneAt: 0 }, l).total).toBe(-RETAINER);
   });
 
   it("books the pay, and only for a loadout it owns", () => {

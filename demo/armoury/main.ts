@@ -7,6 +7,7 @@
 import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt } from "../../src/armoury/career";
 import { ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type ItemId, type Slot } from "../../src/armoury/catalogue";
 import { carried, checkLoadout, decodeKit, encodeKit, payFactor } from "../../src/armoury/loadout";
+import { PERCH_ARC_DEG } from "../../src/mansion/site/perch";
 import { ROUNDS } from "../../src/scope/ballistics";
 import type { RifleId } from "../../src/scope/shot";
 import { chosenLoadout, loadCareer, loadChosen, persistent, resetAll, saveCareer, saveChosen } from "./store";
@@ -146,13 +147,13 @@ function renderLoadout(): void {
       tier.value = s.tier;
       const place = h("select", {
         onchange: () => {
-          chosen.spotters[i] = place.value === "bearing" ? { tier: s.tier, place: "bearing", azDeg: 20, elDeg: 0 } : { tier: s.tier, place: "beside" };
+          chosen.spotters[i] = place.value === "bearing" ? { tier: s.tier, place: "bearing", azDeg: 20 } : { tier: s.tier, place: "beside" };
           commit();
         },
       });
       place.append(h("option", { value: "beside", textContent: "beside you" }), h("option", { value: "bearing", textContent: "on another bearing" }));
       place.value = s.place;
-      const num = (key: "azDeg" | "elDeg", lo: number, hi: number, label: string) => {
+      const num = (key: "azDeg", lo: number, hi: number, label: string) => {
         const inp = h("input", {
           type: "number",
           min: String(lo),
@@ -174,8 +175,7 @@ function renderLoadout(): void {
         { class: "row" },
         tier,
         place,
-        s.place === "bearing" ? num("azDeg", -60, 60, "bearing °") : null,
-        s.place === "bearing" ? num("elDeg", 0, 25, "elevation °") : null,
+        s.place === "bearing" ? num("azDeg", -PERCH_ARC_DEG, PERCH_ARC_DEG, "bearing °") : null,
         h("button", {
           textContent: "Release",
           onclick: () => {

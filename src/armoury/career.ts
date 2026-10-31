@@ -3,7 +3,10 @@
  * Plain data in and out (`toJSON` / `Career.fromJSON`), so it can live in localStorage now and on a server later;
  * whatever comes back from storage is checked, never trusted.
  *
- * Pay for a contract: fee × result × the early-finish boost × the loadout's kit factor, then each spotter's share of that. A failed contract
+ * Pay for a contract, in this order: the fee × the grade's multiplier × (1 + the client terms' premiums), then × the result R,
+ * then × the early-finish boost, then × the safety margin's factor, then × the loadout's kit factor (kit the dossier calls
+ * for decays at half rate), then less each spotter's share of that. (Grades, terms and the margin are 1 for now: task 10
+ * and task 11 fill them in.) A failed contract
  * (result 0) pays nothing and still owes each spotter a retainer. The receipt has a line for each item: what its
  * decay cost tonight. Decay multiplies, so how the total splits between items is shared out by each item's
  * ln(1 − decay), which is fair whatever the order and sums to the total exactly.
@@ -11,11 +14,14 @@
 import { PARTY_LENGTH } from "../party/clock";
 import { EARLY_BEND, EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
 import { carried, checkLoadout, kitFactor, type Loadout } from "./loadout";
+import { freshMargin, MARGIN, type MarginState } from "./margin";
 
 export interface Contract {
   /** What the client pays for a clean job (€). */
   fee: number;
   label?: string;
+  /** The kit the dossier calls for: it decays at half rate on this contract. */
+  calledFor?: readonly ItemId[];
 }
 
 export interface ContractResult {
@@ -50,12 +56,34 @@ export interface Receipt {
   balanceAfter: number;
 }
 
+/** The service record's medals (task 10). Each counts what earned it; the medal's material comes from its thresholds. */
+export const MEDAL_IDS = ["clean-hands", "unbroken", "first-look", "glass-roof", "nobody-heard", "second-bearing", "called-shot", "gale", "one-breath", "every-rifle"] as const;
+export type MedalId = (typeof MEDAL_IDS)[number];
+const isMedalId = (s: string): s is MedalId => (MEDAL_IDS as readonly string[]).includes(s);
+
+/**
+ * A career as stored (version 2). Everything v1 had (balance, kit owned, the last 50 receipts) plus counters that outlive
+ * the history, since medals and service marks must never be counted by scanning it.
+ */
 export interface CareerData {
-  v: 1;
+  v: 2;
   balance: number;
   owned: ItemId[];
   history: Receipt[];
+  /** Contracts settled, ever. */
+  contracts: number;
+  /** The unbroken run of clean contracts that sets the broker's grade (a margin hit holds it). */
+  streak: number;
+  /** Clean contracts in a row for the Unbroken medal (a margin hit doesn't add to it). */
+  cleanInRow: number;
+  medals: Record<MedalId, number>;
+  /** Contracts on which each item was carried and used (wear). */
+  uses: Partial<Record<ItemId, number>>;
+  /** The safety margin (task 11), mrad. */
+  margin: MarginState;
 }
+
+const noMedals = (): Record<MedalId, number> => Object.fromEntries(MEDAL_IDS.map((m) => [m, 0])) as Record<MedalId, number>;
 
 const round = (x: number) => Math.round(x);
 
@@ -81,17 +109,23 @@ function earlyLabel(secondsLeft: number): string {
 
 /** A contract settled: the receipt, with nothing changed yet (`Career.settle` books it). */
 export function settleContract(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>, balance = 0): Receipt {
-  const gross = contract.fee * Math.max(0, result.factor);
+  // Task 10's grade and client terms, then task 11's margin: 1 until they land.
+  const gradeMult = 1;
+  const termPremiums = 0;
+  const marginFactor = 1;
+  const fee = contract.fee * gradeMult * (1 + termPremiums);
+  const gross = fee * Math.max(0, result.factor);
   // A failed job earns no boost.
   const boost = gross > 0 ? earlyBoost(result.doneAt) : 0;
   const bonus = round(gross * boost);
   const boosted = round(gross) + bonus;
+  const afterMargin = boosted * marginFactor;
   const items = carried(loadout);
-  const kf = kitFactor(loadout);
-  const afterKit = boosted * kf;
+  const kf = kitFactor(loadout, new Set(contract.calledFor ?? []));
+  const afterKit = afterMargin * kf;
   const logs = items.map((id) => Math.log(1 - (ITEMS[id].decay[loadout.rifle] ?? 0)));
   const logSum = logs.reduce((a, b) => a + b, 0);
-  const kitCost = boosted - afterKit;
+  const kitCost = afterMargin - afterKit;
   const kit = items.map((id, i) => ({ label: ITEMS[id].name, amount: -round(logSum < 0 ? (kitCost * logs[i]!) / logSum : 0) }));
   const failed = gross <= 0;
   const spotters = loadout.spotters.map((s) => {
@@ -99,7 +133,7 @@ export function settleContract(contract: Contract, result: ContractResult, loado
     return failed ? { label: `${name}: retainer`, amount: -RETAINER } : { label: `${name}: ${Math.round(SPOTTERS[s.tier].share * 100)}%`, amount: -round(afterKit * SPOTTERS[s.tier].share) };
   });
   // The total is worked out once and the lines rounded to it, so they always add up.
-  const total = boosted + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
+  const total = boosted - round(boosted - afterMargin) + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
   const unused = touched ? items.filter((id) => !touched.has(id)).map((id) => ({ label: `${ITEMS[id].name}: carried, never used`, amount: kit[items.indexOf(id)]!.amount })) : [];
   const early = bonus > 0 ? { label: `${earlyLabel(PARTY_LENGTH - (result.doneAt ?? PARTY_LENGTH))}: +${Math.round(boost * 100)}%`, amount: bonus } : undefined;
   return {
@@ -120,11 +154,24 @@ export class Career {
   balance: number;
   readonly owned: Set<ItemId>;
   readonly history: Receipt[];
+  contracts: number;
+  streak: number;
+  cleanInRow: number;
+  readonly medals: Record<MedalId, number>;
+  readonly uses: Partial<Record<ItemId, number>>;
+  margin: MarginState;
 
-  constructor(data?: Partial<CareerData>) {
+  constructor(data?: Partial<Omit<CareerData, "v">>) {
     this.balance = data?.balance ?? START_BALANCE;
     this.owned = new Set(data?.owned ?? []);
     this.history = [...(data?.history ?? [])];
+    this.contracts = data?.contracts ?? 0;
+    this.streak = data?.streak ?? 0;
+    this.cleanInRow = data?.cleanInRow ?? 0;
+    this.medals = { ...noMedals(), ...data?.medals };
+    this.uses = { ...data?.uses };
+    const m = data?.margin ?? freshMargin();
+    this.margin = { ...m, rifle: { ...m.rifle } };
   }
 
   /** Whether an item can be bought now, and why not. */
@@ -143,7 +190,10 @@ export class Career {
     this.owned.add(id);
   }
 
-  /** Settles a contract taken with `loadout` and books the pay. Throws if the loadout can't be taken. */
+  /**
+   * Settles a contract taken with `loadout` and books the pay. Counts the contract and a use of each item touched (each
+   * item carried when `touched` isn't given). Throws if the loadout can't be taken.
+   */
   settle(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>): Receipt {
     const problems = checkLoadout(loadout, this.owned);
     if (problems.length) throw new Error(`Loadout can't be taken: ${problems.map((p) => p.why).join("; ")}`);
@@ -151,22 +201,70 @@ export class Career {
     this.balance = r.balanceAfter;
     this.history.unshift(r);
     if (this.history.length > 50) this.history.length = 50;
+    this.contracts++;
+    for (const id of carried(loadout)) if (!touched || touched.has(id)) this.uses[id] = (this.uses[id] ?? 0) + 1;
     return r;
   }
 
   toJSON(): CareerData {
-    return { v: 1, balance: this.balance, owned: [...this.owned], history: this.history };
+    return {
+      v: 2,
+      balance: this.balance,
+      owned: [...this.owned],
+      history: this.history,
+      contracts: this.contracts,
+      streak: this.streak,
+      cleanInRow: this.cleanInRow,
+      medals: { ...this.medals },
+      uses: { ...this.uses },
+      margin: { ...this.margin, rifle: { ...this.margin.rifle } },
+    };
   }
 
-  /** A career from stored data. Anything malformed is dropped; nothing unknown is let in. */
+  /**
+   * A career from stored data: version 2 as it is, version 1 upgraded (counters at 0, contracts = the receipts kept, the
+   * margin at its starting sizes), anything else a fresh start. Anything malformed is dropped; nothing unknown is let in.
+   */
   static fromJSON(raw: unknown): Career {
     const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-    if (o.v !== 1) return new Career();
+    if (o.v !== 1 && o.v !== 2) return new Career();
     const balance = typeof o.balance === "number" && Number.isFinite(o.balance) ? Math.round(o.balance) : START_BALANCE;
     const owned = Array.isArray(o.owned) ? o.owned.filter((x): x is ItemId => typeof x === "string" && isItemId(x)) : [];
     const history = Array.isArray(o.history) ? (o.history.filter((r) => r && typeof r === "object" && typeof (r as Receipt).total === "number") as Receipt[]).slice(0, 50) : [];
-    return new Career({ balance, owned, history });
+    // Version 1 (balance, owned, history) upgraded: no counters yet, and the receipts kept are the contracts known.
+    if (o.v === 1) return new Career({ balance, owned, history, contracts: history.length });
+    const count = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
+    const record = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
+    const medals = noMedals();
+    for (const [k, n] of Object.entries(record(o.medals))) if (isMedalId(k)) medals[k] = count(n);
+    const uses: Partial<Record<ItemId, number>> = {};
+    for (const [k, n] of Object.entries(record(o.uses))) if (isItemId(k) && count(n)) uses[k] = count(n);
+    return new Career({
+      balance,
+      owned,
+      history,
+      contracts: Math.max(count(o.contracts), history.length),
+      streak: count(o.streak),
+      cleanInRow: count(o.cleanInRow),
+      medals,
+      uses,
+      margin: marginFromJSON(o.margin),
+    });
   }
+}
+
+/** A stored margin, checked: each part a finite number in [0, its starting size]; anything missing at its start. */
+function marginFromJSON(raw: unknown): MarginState {
+  const m = freshMargin();
+  if (!raw || typeof raw !== "object") return m;
+  const o = raw as Record<string, unknown>;
+  const part = (x: unknown, max: number, d: number) => (typeof x === "number" && Number.isFinite(x) ? Math.max(0, Math.min(max, x)) : d);
+  m.career = part(o.career, MARGIN.career0, m.career);
+  const rifle = (o.rifle && typeof o.rifle === "object" ? o.rifle : {}) as Record<string, unknown>;
+  for (const id of Object.keys(m.rifle) as (keyof MarginState["rifle"])[]) m.rifle[id] = part(rifle[id], MARGIN.rifle0, m.rifle[id]);
+  m.missesInRow = typeof o.missesInRow === "number" && Number.isFinite(o.missesInRow) && o.missesInRow > 0 ? Math.floor(o.missesInRow) : 0;
+  m.lastContractAt = typeof o.lastContractAt === "string" && !Number.isNaN(Date.parse(o.lastContractAt)) ? o.lastContractAt : null;
+  return m;
 }
 
 /** The spotters' tiers, for menus. */

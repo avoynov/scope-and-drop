@@ -4,10 +4,13 @@
  * real. Everything is the armoury's own logic (src/armoury); this page only shows it and stores the career.
  * Functional, not finished: how it looks comes later.
  */
-import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt } from "../../src/armoury/career";
-import { ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type ItemId, type Slot } from "../../src/armoury/catalogue";
+import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt, type Settled } from "../../src/armoury/career";
+import { BROKER_PRICE, FINISHES, FIXER_PRICE, ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type FinishId, type ItemId, type Slot } from "../../src/armoury/catalogue";
+import { BASE_FEE, TERMS, gradeFor, makeDossier } from "../../src/armoury/dossier";
+import { MEDALS, MEDAL_IDS, medalMaterial, serviceMark, wearLook } from "../../src/armoury/record";
+import type { MissionReport, ShotReport } from "../../src/armoury/report";
 import { carried, checkLoadout, decodeKit, encodeKit, payFactor } from "../../src/armoury/loadout";
-import { marginHint } from "../../src/armoury/margin";
+import { effectiveMargin, marginHint } from "../../src/armoury/margin";
 import { PERCH_ARC_DEG } from "../../src/mansion/site/perch";
 import { ROUNDS } from "../../src/scope/ballistics";
 import type { RifleId } from "../../src/scope/shot";
@@ -29,8 +32,14 @@ type ResultId = keyof typeof RESULTS;
 
 const career = loadCareer();
 let chosen = loadChosen(career.owned);
-/** `done`: when the stand-in job was done, in in-game minutes after 19:00 (180 = the evening's end, no boost). */
-const contract = { fee: 6000, result: "killed" as ResultId, done: 180 };
+/**
+ * The stand-in mission's report, until the mission reports one. `done`: when the job was done, in in-game minutes after
+ * 19:00 (180 = the evening's end, no boost); `margin`: the share of the safety margin the shot used (0: a body hit).
+ */
+const contract = { result: "killed" as ResultId, done: 180, margin: 0, tried: false, confirmed: true, heard: 0 };
+/** The dossier on offer: the next contract's, drawn from the career's count so it stays put until one is settled. */
+const dossier = () => makeDossier({ seed: `contract-${career.contracts}`, streak: career.streak, brokered: career.brokered });
+let settled: Settled | null = null;
 /** What the stand-in mission used of the kit carried: unused kit is listed on the receipt. */
 let touched = new Set<ItemId>();
 let receipt: Receipt | null = null;
@@ -203,11 +212,18 @@ function renderLoadout(): void {
     }),
   );
 
-  // What the loadout leaves of a contract's fee, item by item.
-  const f = payFactor(l);
-  const preview = settleContract({ fee: contract.fee }, RESULTS.killed, l);
+  // What the loadout leaves of the dossier's fee, item by item (worn and called-for kit decays less), and the streak at stake.
+  const d = dossier();
+  const called = new Set(d.calledFor);
+  const f = payFactor(l, called, career.uses);
+  const preview = settleContract({ fee: BASE_FEE[d.house], grade: d.grade, terms: d.terms, calledFor: d.calledFor }, RESULTS.killed, l, undefined, 0, career.uses);
+  const stake =
+    career.streak === 0
+      ? "No streak at stake yet."
+      : `A streak of ${career.streak} (${gradeFor(career.streak)}) at stake: ${career.fixer ? "the fixer covers one failure." : "one failure drops you to routine work."}`;
   $("pay").replaceChildren(
-    h("div", {}, `A ${euro(contract.fee)} contract, clean, pays `, h("b", { textContent: euro(preview.total) }), ` (×${f.toFixed(2)})`),
+    h("div", {}, `This contract (${euro(d.fee)}), clean, pays `, h("b", { textContent: euro(preview.total) }), ` (×${f.toFixed(2)}); bare, ${euro(preview.gross)}`),
+    h("div", { class: "muted", textContent: stake }),
     h("div", { class: "meter" }, h("i", { style: `width: ${(f * 100).toFixed(1)}%` })),
     h("div", { class: "lines muted" }, ...[...preview.kit, ...preview.spotters].map((x) => h("div", {}, h("span", { textContent: x.label }), h("span", { textContent: euro(x.amount) })))),
   );
@@ -284,19 +300,116 @@ function renderCatalogue(): void {
   );
 }
 
+function renderDossier(): void {
+  const d = dossier();
+  const fc = d.forecast;
+  const sunset = 19 * 60 + fc.sunsetMin;
+  const broker = career.canBroker();
+  const fix = career.canFix();
+  $("dossier").replaceChildren(
+    h("div", {}, h("b", { textContent: `${d.grade[0]!.toUpperCase()}${d.grade.slice(1)} grade` }), ` · a ${d.house} house · `, h("b", { textContent: euro(d.fee) })),
+    h(
+      "div",
+      { class: "muted" },
+      `Wind ${fc.windMs} m/s gusting ${fc.gustMs}; rain ${fc.rain}; fog ${fc.fog}; sunset ${Math.floor(sunset / 60)}:${String(sunset % 60).padStart(2, "0")}, ${fc.darkBy21} by 21:00. ` +
+        `The treeline sees ${Math.round(d.treelineSees * 100)}% of the party floor${d.glassRoof ? "; a glass roof" : ""}.`,
+    ),
+    ...(d.terms.length ? d.terms.map((t) => h("div", {}, h("b", { textContent: `${TERMS[t].name} +${pct(TERMS[t].premium)}: ` }), `${TERMS[t].wants}. Helps: ${TERMS[t].helps}.`)) : [h("div", { class: "muted", textContent: "No client terms." })]),
+    ...(d.calledFor.length ? [h("div", { class: "good", textContent: `Called for (half decay): ${d.calledFor.map((id) => ITEMS[id].name).join(", ")}` })] : []),
+    h(
+      "div",
+      { class: "row", style: "margin-top: 6px" },
+      h("button", {
+        textContent: career.brokered ? "Bought from the broker" : `Broker: one grade up · ${euro(BROKER_PRICE)}`,
+        disabled: !broker.ok,
+        title: broker.why ?? "Paid now, lost if the contract fails.",
+        onclick: () => {
+          career.buyBroker();
+          commit();
+          showBalance();
+        },
+      }),
+      h("button", {
+        textContent: career.fixer ? "The fixer is held" : `Fixer: covers one failure · ${euro(FIXER_PRICE)}`,
+        disabled: !fix.ok,
+        title: fix.why ?? "The streak survives one failed contract.",
+        onclick: () => {
+          career.buyFixer();
+          commit();
+          showBalance();
+        },
+      }),
+    ),
+  );
+}
+
+function renderRecord(): void {
+  const sm = serviceMark(career.contracts);
+  const owned = [...career.owned];
+  $("record").replaceChildren(
+    h("div", {}, `${career.contracts} contracts${sm.mark ? ` · service mark ${sm.mark}` : ""}${sm.title ? ` · ${sm.title}` : ""} · streak ${career.streak}`),
+    ...MEDAL_IDS.map((id) => {
+      const n = career.medals[id];
+      const m = medalMaterial(id, n);
+      return h("div", { class: m ? "" : "muted" }, h("b", { textContent: MEDALS[id].name }), ` · ${m ?? "not yet"} (${n}) · ${MEDALS[id].earnedBy}`);
+    }),
+    ...(owned.length ? [h("h2", { textContent: "Wear and finishes", style: "margin-top: 10px" })] : []),
+    ...owned.map((id) => {
+      const finish = h("select", {
+        onchange: () => {
+          if (!finish.value) return;
+          try {
+            career.buyFinish(id, finish.value as FinishId);
+            commit();
+            showBalance();
+          } catch (e) {
+            finish.title = (e as Error).message;
+          }
+        },
+      });
+      finish.append(h("option", { value: "", textContent: career.finishes[id] ? FINISHES[career.finishes[id]!].name : "Finish…" }));
+      for (const [k, v] of Object.entries(FINISHES)) finish.append(h("option", { value: k, textContent: `${v.name} · ${euro(v.price)}` }));
+      const uses = career.uses[id] ?? 0;
+      return h("div", { class: "row", style: "margin: 2px 0" }, h("span", { textContent: `${ITEMS[id].name}: ${uses} uses${wearLook(id, uses) ? `, ${wearLook(id, uses)!.toLowerCase()}` : ""}` }), finish);
+    }),
+  );
+}
+
 function renderContract(): void {
   const l = loadout();
-  const fee = h("input", {
-    type: "number",
-    min: "500",
-    max: "100000",
-    step: "500",
-    value: String(contract.fee),
-    style: "width: 8em",
+  const margin = h("select", {
     onchange: () => {
-      const v = Number(fee.value);
-      contract.fee = Number.isFinite(v) ? Math.max(500, Math.min(100000, Math.round(v))) : 6000;
-      render();
+      contract.margin = Number(margin.value);
+    },
+  });
+  for (const [v, label] of [
+    [0, "a body hit"],
+    [0.25, "a near miss, a quarter of the margin"],
+    [0.5, "a near miss, half the margin"],
+    [1, "a near miss, all the margin"],
+  ] as const)
+    margin.append(h("option", { value: String(v), textContent: label }));
+  margin.value = String(contract.margin);
+  const check = (key: "tried" | "confirmed", label: string) => {
+    const box = h("input", {
+      type: "checkbox",
+      checked: contract[key],
+      onchange: () => {
+        contract[key] = box.checked;
+      },
+    });
+    return h("label", { class: "row", style: "margin: 2px 0" }, box, label);
+  };
+  const heard = h("input", {
+    type: "number",
+    min: "0",
+    max: "40",
+    step: "1",
+    value: String(contract.heard),
+    style: "width: 4em",
+    onchange: () => {
+      const v = Number(heard.value);
+      contract.heard = Number.isFinite(v) ? Math.max(0, Math.min(40, Math.round(v))) : 0;
     },
   });
   const result = h("select", {
@@ -319,9 +432,12 @@ function renderContract(): void {
   const items = carried(l);
   const problems = checkLoadout(l, career.owned);
   $("contract").replaceChildren(
-    h("div", { class: "row" }, "Fee ", fee),
     h("div", { class: "row" }, "Result ", result),
+    h("div", { class: "row" }, "The shot ", margin),
     h("div", { class: "row" }, "Done at ", done),
+    h("div", { class: "row" }, "Guests who heard ", heard),
+    check("tried", "The spy had tried its goal"),
+    check("confirmed", "The body was seen to fall and stay down"),
     ...(items.length ? [h("div", { class: "muted", textContent: "What you used of the kit:" })] : []),
     ...items.map((id) => {
       const box = h("input", {
@@ -343,10 +459,46 @@ function renderContract(): void {
   );
 }
 
-function settle(): void {
+/** The stand-in mission as a report: one shot at the spy, ending it as chosen. */
+function standInReport(): MissionReport {
   const l = loadout();
+  const d = dossier();
   const r = RESULTS[contract.result];
-  receipt = career.settle({ fee: contract.fee, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}` }, { ...r, doneAt: contract.done * 60 }, l, touched);
+  const failed = contract.result === "failed";
+  const kind = failed ? "miss" : contract.margin > 0 ? "margin" : "hit";
+  // A margin hit's miss, from the margin the career has now, at the lab's 183 m: what the receipt turns into centimetres.
+  const missMrad = kind === "margin" ? contract.margin * effectiveMargin(career.margin, l.rifle) : 0;
+  const shot: ShotReport = {
+    t: contract.done * 60,
+    at: "spy",
+    kind,
+    ...(failed ? {} : { outcome: contract.result as Exclude<ResultId, "failed"> }),
+    marginUsed: kind === "margin" ? contract.margin : 0,
+    fromChestMrad: kind === "hit" ? 0.3 : 1.6 + missMrad,
+    missMrad: kind === "miss" ? 2 : missMrad,
+    rangeM: 183,
+    sinceScopeInS: 20,
+    elevationDeg: 0,
+    throughGlass: false,
+    windMs: d.forecast.windMs,
+    heardBy: contract.heard,
+  };
+  return {
+    contract: { fee: BASE_FEE[d.house], terms: d.terms, grade: d.grade, house: d.house, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}`, calledFor: d.calledFor },
+    loadout: l,
+    shots: [shot],
+    result: { outcome: failed ? "failed" : (contract.result as Exclude<ResultId, "failed">), factor: r.factor },
+    usedItems: [...touched],
+    spyTriedGoal: contract.tried,
+    confirmedDown: contract.confirmed,
+    endedAt: new Date().toISOString(),
+    doneAt: contract.done * 60,
+  };
+}
+
+function settle(): void {
+  settled = career.settleReport(standInReport());
+  receipt = settled.receipt;
   touched = new Set();
   commit();
   showBalance();
@@ -363,12 +515,26 @@ function renderReceipt(): void {
   let i = 0;
   box.replaceChildren(
     h("h2", { textContent: "Receipt", style: "margin-top: 14px" }),
+    ...(r.feeLines ?? []).map((x) => line(x.label, x.amount, "muted", i++)),
     line(`${r.contract}: ${r.result}`, r.gross, "", i++),
     ...(r.early ? [line(r.early.label, r.early.amount, "", i++)] : []),
     ...(r.margin ? [line(r.margin.label, r.margin.amount, "", i++)] : []),
     ...r.kit.map((x) => line(x.label, x.amount, "muted", i++)),
     ...r.spotters.map((x) => line(x.label, x.amount, "muted", i++)),
     line("Paid in", r.total, "total", i++),
+    ...(r.bare !== undefined ? [line("Bare, the same shot would have paid", r.bare, "muted", i++)] : []),
+    ...(settled && settled.receipt === r
+      ? [
+          h("div", {
+            style: `animation-delay: ${i * 60}ms; display: block`,
+            textContent:
+              { clean: "Clean: the streak grows", margin: "A margin hit: the streak holds", broken: "The streak is broken", saved: "The fixer covered it: the streak holds" }[settled.run] +
+              ` (${settled.streak}, ${settled.grade}).` +
+              settled.medals.map((m) => ` ${MEDALS[m.id].name}, in ${m.material}.`).join("") +
+              (settled.serviceMark ? ` Service mark: ${settled.serviceMark.mark} contracts${settled.serviceMark.title ? `, ${settled.serviceMark.title}` : ""}.` : ""),
+          }),
+        ]
+      : []),
     ...(r.unused.length ? [h("div", { class: "muted", style: `animation-delay: ${i * 60}ms; display: block; margin-top: 6px`, textContent: "Carried and never used:" }), ...r.unused.map((x) => line(x.label, x.amount, "bad", ++i))] : []),
   );
 }
@@ -376,7 +542,9 @@ function renderReceipt(): void {
 function render(): void {
   renderLoadout();
   renderCatalogue();
+  renderDossier();
   renderContract();
+  renderRecord();
   $("storage").textContent = persistent ? "" : "Not saved between visits: this browser blocks storage.";
 }
 

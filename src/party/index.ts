@@ -34,6 +34,7 @@ export {
   DELAY_SEEN,
   DELAY_TOLD,
   NOTICE,
+  OUT_OF_SIGHT,
   type ActId,
   type Alibi,
   type AlibiKind,

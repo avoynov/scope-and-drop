@@ -30,7 +30,9 @@
  * its target it has seen with them, the step only names whose place it wants; the swap takes it
  * when its own moment comes, and the plan goes on from what is true then. Wearing the friend's
  * face, a word in private: it asks the target for a moment where they stand about, takes them to
- * a quiet room next door, and while they talk the kill runner watches for them alone.
+ * a guest bedroom with a bolt, draws it behind them, and while they talk the kill runner watches
+ * for them alone. A stranger to them, it may ask the same ("let me show you something upstairs"):
+ * half of those it asks come along, and twice told no it asks no more tonight.
  *
  * Playing a waiter (PR 5), it plans between its rounds (sim.ts), and dinner is work like any
  * other part of the evening.
@@ -42,7 +44,6 @@
  * move that was to bring it (looking away, the lights), so the planner tries the other next time.
  */
 import type { Rng } from "../../mansion/core/rng";
-import type { RoomType } from "../../mansion/core/types";
 import { TEST } from "../ident";
 import { VERBS, type Verb } from "../memory";
 import { yawTo, type RoomCells } from "../places";
@@ -121,15 +122,20 @@ const EMBRACE_WAY: ReadonlySet<PlanActionId> = new Set(["embrace", "inject", "wa
 const DARK_TRY = 30;
 /** Taking a bag up from its chair to carry it off (in-game s). */
 const TAKE_SECS = 2;
-/** A word in private (a friend's face on): asking for a moment, and then talking in the quiet room while it waits for them alone (in-game s); following at this (m). */
-const ASK_SECS: readonly [number, number] = [3, 5];
-const WORDS: readonly [number, number] = [30, 60];
-const ASIDE_GAP = 0.8;
+/** A word in private: asking for a moment, and then talking behind the bolt while it waits for them alone (in-game s); following at this (m). */
+export const ASK_SECS: readonly [number, number] = [3, 5];
+export const WORDS: readonly [number, number] = [30, 60];
+export const ASIDE_GAP = 0.8;
 /** Asked aside only between the programme's beats, when people wander off; and they stand this long for what it says next (in-game s). */
-const ASIDE_PHASES: ReadonlySet<string> = new Set(["arrival", "mingle", "dancing", "games"]);
-const REACH_PAUSE = 6;
-/** Never somewhere for a word in private: the bathrooms, the service rooms, the cloakroom and the halls. */
-const NOT_ASIDE: ReadonlySet<RoomType> = new Set(["bathroom", "kitchen", "pantry", "cloakroom", "service-stair", "corridor", "landing", "stair-hall", "entrance-hall", "hall-gallery"]);
+export const ASIDE_PHASES: ReadonlySet<string> = new Set(["arrival", "mingle", "dancing", "games"]);
+export const REACH_PAUSE = 6;
+/** A stranger asking for a word in private: the share who come along, and its target telling it no this often ends its asking for tonight. */
+export const COME_ALONG = 0.5;
+const LURE_ASKS = 2;
+/** The guest bedroom for a word in private: within this of them, by a straight line and 6 m a storey (m); there, it waits this long at most for them to catch up (in-game s), until they're this close (m). */
+export const LURE_WALK = 40;
+export const IN_WAIT = 90;
+export const IN_BESIDE = 2.5;
 
 /** The step under way: what it does, where, how long, and how far it has got. */
 interface Running {
@@ -166,6 +172,23 @@ export interface PlanRecord {
 
 const spotOf = (p: Person): Spot3 => ({ level: p.level, x: p.x, z: p.z, y: p.y, room: p.room });
 
+/** Somewhere for a word in private: the nearest guest bedroom with a bolt, empty and not bolted, within LURE_WALK of them; where in it, and its door (null: none). */
+export function boltedBedroom(h: StepsHost, p: Person, q: Person, rng: Rng): { at: Spot; door: number; room: number } | null {
+  let best: { at: Spot; door: number; room: number } | null = null;
+  let bd = LURE_WALK;
+  for (const r of h.places.guestBedrooms) {
+    const d = h.world.doors.find((x) => x.lock === "inside" && x.inner === r.index);
+    if (!d || d.locked || h.people.some((o) => o !== p && o !== q && o.present && !o.gone && o.room === r.index && (!o.down || o.down === "ill"))) continue;
+    const at = h.cells.random(r.index, rng, 0.8);
+    const dist = at ? Math.hypot(at.x - q.x, at.z - q.z) + 6 * Math.abs(at.level - q.level) : Infinity;
+    if (at && dist <= bd) {
+      best = { at, door: d.id, room: r.index };
+      bd = dist;
+    }
+  }
+  return best;
+}
+
 export class Plans {
   /** The plan as last made and the facts it was made from, and the last privacy check, for the lab. */
   steps: PlanActionId[] = [];
@@ -193,6 +216,8 @@ export class Plans {
   private readonly shut: Float32Array;
   /** Rooms it looked round for the bag's owner, and when. */
   private readonly searched = new Map<number, number>();
+  /** Times its target said no to a stranger's word in private. */
+  private refused = 0;
 
   constructor(
     private readonly h: StepsHost,
@@ -255,7 +280,7 @@ export class Plans {
     if (EMBRACE_WAY.has(a)) return true;
     if (a === "stash") return p.coat >= 0 && h.world.items.stateOf(p.coat) === "hung";
     if (a === "spill") return this.spillable() !== null;
-    if (a === "aside") return this.asideFor() !== null;
+    if (a === "aside" || a === "lure") return this.asideFor() !== null;
     return a === "find-bag" || a === "wait-owner" || a === "learn" || a === "tour-alone" || a === "go";
   }
 
@@ -351,9 +376,10 @@ export class Plans {
   }
 
   /**
-   * The planner's tactics its covers have on now: touring alone, other people's things, commotion,
-   * murder and poison (slipping in behind a tour waits for a fact of its own); and with murder on,
-   * someone else's place while one is to be had (swap.ts).
+   * The planner's tactics its covers have on now: touring alone, other people's things, commotion
+   * and murder (slipping in behind a tour waits for a fact of its own; poison was never built); and
+   * with murder on, someone else's place while one is to be had (swap.ts), and a stranger's word in
+   * private until its target has twice said no.
    */
   private tactics(): ReadonlySet<Tactic> {
     const c = this.spy.covers;
@@ -363,8 +389,8 @@ export class Plans {
     if (c.active("others-things")) on.add("things");
     if (c.active("commotion")) on.add("commotion");
     if (c.active("murder")) on.add("murder");
-    if (c.active("poison")) on.add("poison");
     if (c.active("murder") && (swap.offers("host-place") || swap.offers("friend-place"))) on.add("swap");
+    if (c.active("murder") && this.refused < LURE_ASKS) on.add("lure");
     return on;
   }
 
@@ -403,6 +429,7 @@ export class Plans {
     else if (st.label.startsWith("risky:")) this.watch(run, t, p);
     else if (st.label === "trail") this.trail(run, t, p);
     else if (st.label === "watch-bag") this.watchBag(run, t, p);
+    else if (st.label === "aside:in") this.inWith(t, p);
     else if (st.label === "aside:words") this.words(run, t, p);
   }
 
@@ -527,7 +554,8 @@ export class Plans {
       case "friend-place":
         return this.startPlace(a);
       case "aside":
-        return this.startAside(p);
+      case "lure":
+        return this.startAside(p, a);
       default:
         // A tour slipped into waits for a fact of its own.
         this.retryAt = this.h.t + LATER;
@@ -558,32 +586,36 @@ export class Plans {
   }
 
   /**
-   * A word in private, wearing the face of someone its target trusts: up to them, a word ("have you
-   * got a moment?"), and once they come along, to a quiet room next door where nobody is, to talk
-   * while it waits for them alone. Nowhere quiet to go, and that way has failed for now.
+   * A word in private, wearing the face of someone its target trusts (aside) or a stranger to them
+   * (lure): up to them, a word ("have you got a moment?"), and once they come along, to a guest
+   * bedroom with a bolt where nobody is, the bolt drawn behind them, to talk while it waits for them
+   * alone. Nowhere to take them, and that way has failed for now.
    */
-  private startAside(p: Person): boolean {
+  private startAside(p: Person, a: "aside" | "lure"): boolean {
     const h = this.h;
     const q = this.asideFor();
     if (!q) {
       this.retryAt = h.t + LATER;
       return false;
     }
-    const to = this.quietRoom(p, q);
+    const to = boltedBedroom(h, p, q, this.rng);
     if (!to) {
-      this.fail("aside", "no-room");
+      this.fail(a, "no-room");
       return false;
     }
-    this.run = { ...this.walk("aside", to.room), tryFor: this.rng.range(WORDS[0], WORDS[1]) };
+    this.run = { ...this.walk(a, to.room), tryFor: this.rng.range(WORDS[0], WORDS[1]) };
     this.stats.started++;
+    // Whoever comes along follows it (tasks.ts); the bolt is drawn back as the task ends, unless a kill keeps it.
     const t = h.tasks.spy(
       p,
-      "aside",
+      a,
       "talk",
       [
         { do: "meet", who: q.id, label: "to:aside" },
         { do: "say", who: q.id, s: this.rng.range(ASK_SECS[0], ASK_SECS[1]), pose: "talk", label: "aside:ask" },
-        { do: "goto", to, label: "aside:go" },
+        { do: "goto", to: to.at, label: "aside:go" },
+        { do: "wait", s: 99999, pose: "stand", label: "aside:in" },
+        { do: "bolt", door: to.door, room: to.room, label: "aside:bolt" },
         { do: "wait", s: 99999, pose: "talk", label: "aside:words" },
       ],
       [],
@@ -594,39 +626,31 @@ export class Plans {
     return true;
   }
 
-  /** Somewhere next door to talk in private: a room off theirs on the same storey, not a hall, a bathroom or a service room, with nobody in it (null: none). */
-  private quietRoom(p: Person, q: Person): Spot | null {
-    const h = this.h;
-    if (q.room < 0) return null;
-    let best: Spot | null = null;
-    let bd = Infinity;
-    for (const e of h.world.graph[q.room] ?? []) {
-      if (e.to < 0 || e.kind === "stair") continue;
-      const r = h.bp.rooms[e.to]!;
-      if (r.level !== q.level || NOT_ASIDE.has(r.type) || h.people.some((o) => o !== p && o !== q && o.present && !o.gone && o.room === r.index && (!o.down || o.down === "ill"))) continue;
-      const s = h.cells.random(r.index, this.rng, 0.8);
-      const d = s ? Math.hypot(s.x - q.x, s.z - q.z) : Infinity;
-      if (s && d < bd) {
-        best = s;
-        bd = d;
-      }
-    }
-    return best;
-  }
-
-  /** The word said: they come along if they don't doubt the face and are still free to; else it was only a word, and that way has failed for now. */
+  /** The word said: they come along if they don't doubt the face and are still free to, and from a stranger half the time; else it was only a word, and that way has failed for now. */
   private asked(t: Task, p: Person): void {
     const h = this.h;
+    const a = this.run!.action;
     const q = this.asideFor();
-    if (!q || q.level !== p.level || Math.hypot(q.x - p.x, q.z - p.z) > 3 || h.ident.doubtOf(q.id, p.id, h.t) >= TEST) {
-      this.fail("aside", "refused");
+    if (!q || q.level !== p.level || Math.hypot(q.x - p.x, q.z - p.z) > 3 || h.ident.doubtOf(q.id, p.id, h.t) >= TEST || (a === "lure" && !this.rng.chance(COME_ALONG))) {
+      if (a === "lure" && q) this.refused++;
+      this.fail(a, "refused");
       return this.stop(t, "refused");
     }
     h.tasks.join(t, q);
-    this.note(`aside:${q.id}`);
+    // Walking together: at the slower one's pace (the task puts its own back as it ends).
+    p.speed = Math.min(p.speed, q.speed);
+    this.note(`${a}:${q.id}`);
   }
 
-  /** Talking in the quiet room: alone with them, the grip (kill.ts); them gone off, or the words over with no moment, and that way has failed for now. */
+  /** In the room, waiting for them to catch up: in and beside it, the bolt; them gone off, or never come, and that's all it was. */
+  private inWith(t: Task, p: Person): void {
+    const h = this.h;
+    const q = h.people[this.spy.goal.target]!;
+    if (!q.present || q.gone || q.down || !t.party.includes(q.id) || h.t - t.stepAt > IN_WAIT) return this.stop(t, "gone");
+    if (q.level === p.level && q.room === p.room && Math.hypot(q.x - p.x, q.z - p.z) <= IN_BESIDE) h.tasks.next(t);
+  }
+
+  /** Talking behind the bolt: alone with them, the grip (kill.ts); them gone off, or the words over with no moment, and that way has failed for now. */
   private words(run: Running, t: Task, p: Person): void {
     const h = this.h;
     const spy = this.spy;
@@ -636,6 +660,8 @@ export class Plans {
     if (this.ticks % 2 === 0 && spy.covers.active("murder")) {
       const m = spy.kill.moment(p, q, { strangle: true, inject: false });
       if (m) {
+        // The bolt stays drawn for the kill behind it (a task's bolts are drawn back as it ends).
+        t.steps = t.steps.filter((s) => s.do !== "bolt");
         this.stop(t, "kill");
         // A pause in the talk: they stand a moment for what it says next.
         q.thinkAt = Math.max(q.thinkAt, h.t + REACH_PAUSE);
@@ -644,7 +670,7 @@ export class Plans {
       }
     }
     if (h.t - run.awaitFrom >= run.tryFor) {
-      this.fail("aside", "no-moment");
+      this.fail(run.action, "no-moment");
       this.stop(t, "not-yet");
     }
   }

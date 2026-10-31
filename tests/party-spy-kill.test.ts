@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
 import { yawTo } from "../src/party/places";
+import { TEST } from "../src/party/ident";
 import { Party } from "../src/party/sim";
 import { CHANGE, DRAG_BEHIND, FINISH, STRUGGLE, type KillStage } from "../src/party/spy";
 import type { Person } from "../src/party/types";
@@ -18,11 +19,11 @@ import { spyChecks, watch } from "./spy-watch";
 const MIN = 60;
 const bp = generateMansion({ seed: "gala-night" });
 
-/** A guest of gala-night's who came alone, for the spy to kill: nobody looks for them at dinner. */
+/** A guest of gala-night's who came alone, for the spy to kill: nobody looks for them at dinner. It takes nobody's place tonight, so the only body is theirs. */
 function alone(seed: string): { party: Party; q: Person } {
-  const probe = new Party(bp, { seed, spy: { setup: "self", goal: "kill" } });
+  const probe = new Party(bp, { seed, spy: { setup: "self", goal: "kill", swap: false } });
   const q = probe.people.find((o) => !o.staff && o.role === "guest" && o.partner === null && o.id !== probe.spyId)!;
-  const party = new Party(bp, { seed, spy: { setup: "self", goal: "kill", target: q.id, on: ["murder"] } });
+  const party = new Party(bp, { seed, spy: { setup: "self", goal: "kill", target: q.id, on: ["murder"], swap: false } });
   return { party, q: party.people[q.id]! };
 }
 
@@ -149,6 +150,73 @@ describe("killing", () => {
     expect(spy.bodies[0]).toMatchObject({ who: q.id, how: "injection" });
     for (const x of party.body.baths) expect(x.hold).toBe(-1);
     expect(party.world.doors.some((d) => d.locked && d.lockedBy === p.id)).toBe(false);
+  });
+
+  it("a stranger to its target, asks them for a word in private: up to a guest bedroom, the bolt drawn behind them, strangled there and hidden, and the bolt drawn back", () => {
+    const { party, q } = alone("lure-3");
+    const dancing = party.programme.find((ph) => ph.id === "dancing")!;
+    party.advance(dancing.start + 5 * MIN);
+    const spy = party.spy!;
+    const p = spy.record;
+    expect(p.present && q.present && q.down === null).toBe(true);
+    // Standing about in the drawing room, the spy at their side; waiting for them alone and the embrace have failed just now.
+    const at = spotIn(party, bp.rooms.find((r) => r.type === "drawing-room")!.index);
+    put(party, q, at, 0);
+    put(party, p, spotIn(party, at.room, 1), 0);
+    for (const a of ["wait-alone", "embrace"] as const) spy.plans.blocked.set(a, party.t + 15 * MIN);
+    expect(spy.plans.think(p)).toBe(true);
+    expect(spy.plans.steps).toContain("lure");
+    expect(party.tasks.of(p)?.what).toBe("lure");
+    let room = -1;
+    let bolted = false;
+    const stages = run(party, 15 * MIN, (s) => {
+      // Where the kill begins, as the talk does: behind the bolt it drew.
+      if (s === "close" && room < 0) {
+        room = p.room;
+        bolted = party.world.doors.some((d) => d.inner === room && d.locked && d.lockedBy === p.id) && q.room === room;
+      }
+    });
+    // They came along, upstairs to a guest bedroom with a bolt, drawn behind them before the kill.
+    expect(party.events.some((e) => e.kind === "spy" && e.note === `lure:${q.id}`)).toBe(true);
+    expect(party.places.guestBedrooms.map((r) => r.index)).toContain(room);
+    expect(bolted).toBe(true);
+    expect(stages.filter((s) => s !== "out")).toEqual(["close", "struggle", "drag", "finish", "hide"]);
+    expect(q.down).toBe("dead");
+    expect(spy.goal.doneAt).not.toBeNull();
+    // Hidden where they talked: under the bed, or in the wardrobe.
+    expect(spy.bodies[0]).toMatchObject({ who: q.id, how: "strangled" });
+    expect(["bed", "wardrobe"]).toContain(spy.bodies[0]!.kind);
+    expect(spy.bodies[0]!.at.room).toBe(room);
+    expect(party.world.doors.some((d) => d.locked && d.lockedBy === p.id)).toBe(false);
+  });
+
+  it("asks a target who doubts its face in vain: twice told no, it asks no more tonight", () => {
+    const { party, q } = alone("lure-3");
+    const dancing = party.programme.find((ph) => ph.id === "dancing")!;
+    party.advance(dancing.start + 5 * MIN);
+    const spy = party.spy!;
+    const p = spy.record;
+    const at = spotIn(party, bp.rooms.find((r) => r.type === "drawing-room")!.index);
+    // Each time beside them, the other ways dearer, its last refusal forgotten by the planner and its time back at the party over.
+    let asked = 0;
+    for (let k = 0; k < 3; k++) {
+      put(party, q, at, 0);
+      put(party, p, spotIn(party, at.room, 1), 0);
+      party.ident.addDoubt(q.id, p.id, 1, party.t);
+      expect(party.ident.doubtOf(q.id, p.id, party.t)).toBeGreaterThanOrEqual(TEST);
+      for (const a of ["wait-alone", "embrace"] as const) spy.plans.blocked.set(a, party.t + 15 * MIN);
+      spy.plans.blocked.delete("lure");
+      if (!spy.plans.think(p) || party.tasks.of(p)?.what !== "lure") break;
+      asked++;
+      // Told no, it stands where it is until its time between tries is over, so no other way of killing them comes first.
+      while (party.tasks.of(p)?.what === "lure") party.step();
+      put(party, p, { level: p.level, x: p.x, z: p.z, room: p.room }, p.yaw, 6 * MIN);
+      party.advance(6 * MIN);
+    }
+    expect(asked).toBe(2);
+    expect(party.events.filter((e) => e.kind === "spy" && e.note === "fail:lure:refused")).toHaveLength(2);
+    expect(spy.plans.steps).not.toContain("lure");
+    expect(q.down).toBeNull();
   });
 
   it("seen at a strangling, lets go once they're limp: the witness backs away to tell, and the victim comes to and tells too", () => {

@@ -99,7 +99,7 @@ export const GOAL_ACTIONS: Record<GoalPart, readonly PlanActionId[]> = {
   "bug-room": ["learn", "tour-alone", "go", "pick-lock", "slip-in", "host-place", "plant"],
   "bug-host": ["brush-host"],
   ledger: ["learn", "tour-alone", "go", "ledger"],
-  kill: ["follow", "wait-alone", "embrace", "inject", "walk-off", "strangle", "friend-place", "aside"],
+  kill: ["follow", "wait-alone", "embrace", "inject", "walk-off", "strangle", "friend-place", "aside", "lure"],
 };
 
 /** Someone was seen within this long (in-game s) for the spy to know where they and their bag are, and dancing or at the games this recently for it to know the bag is down. */
@@ -325,6 +325,7 @@ export class GoalThings {
           needs.embrace = F.close | F.stashed;
         } else needs.follow = F.stashed;
         needs.aside = F.trusted | F.close | F.stashed;
+        needs.lure = F.close | F.stashed;
       }
       const target = g.target >= 0 ? this.h.people[g.target]! : null;
       if (target) {

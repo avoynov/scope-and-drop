@@ -9,7 +9,7 @@
 import { PARTY_LENGTH, phaseIndexAt } from "../src/party/clock";
 import { LAST_TOAST } from "../src/party/mind";
 import { HURRY_OUT, STEP, type Party } from "../src/party/sim";
-import type { CueHow, GoalKind, SpySetup } from "../src/party/spy";
+import type { CueHow, GoalKind, HidePlace, KillHow, KillOutcome, KillWhy, SpyBody, SpySetup, SwapWhy } from "../src/party/spy";
 import { DELAY_TOLD } from "../src/party/spy/cues";
 import type { ActId } from "../src/party/spy/goals";
 import type { Habits } from "../src/party/spy/habits";
@@ -126,7 +126,10 @@ export function soberCheck(): Check {
     end(party) {
       const spy = party.spy;
       if (!spy) return null;
-      const led = party.dramas.episodes.filter((e) => e.cast[0] === spy.id && (e.kind === "drama" || (e.kind === "mishap" && e.what === "faint")));
+      // Each record it wore, from when it was its own: whatever a face it took mid-party did before was theirs.
+      const since = new Map<number, number>([[spy.selves[0]!, -Infinity]]);
+      for (const e of party.events) if (e.kind === "spy" && /^swap:\d+:\d+:/.test(e.note ?? "")) since.set(Number(e.note!.split(":")[2]), e.t);
+      const led = party.dramas.episodes.filter((e) => e.started >= (since.get(e.cast[0]!) ?? Infinity) && (e.kind === "drama" || (e.kind === "mishap" && e.what === "faint")));
       return led.length ? `led ${led.map((e) => e.what).join(", ")}` : null;
     },
   };
@@ -278,7 +281,9 @@ const capped = (spy: NonNullable<Party["spy"]>, c: Cover): boolean => !spy.cover
  * or the spy goes home, and then stays off at least 15 (keeping out of the picture while it plays
  * someone, at least 5); never more than three are on at once, none before it arrives, and none for
  * more than 90 minutes in all. A cover the options hold on is on from its arrival until it goes,
- * and keeping out of the picture while it plays someone is outside the caps.
+ * one held on mid-evening (PR 5: murder for a lone doubter) is on from then until it goes and
+ * before then keeps the rules, and keeping out of the picture while it plays someone is outside
+ * the caps.
  */
 export function coversCheck(): Check {
   let told = false;
@@ -302,12 +307,19 @@ export function coversCheck(): Check {
       const out: string[] = [];
       for (const c of COVERS) {
         const spells = spy.covers.spells.filter((x) => x.cover === c).map((x) => ({ from: x.from, to: x.to < 0 ? party.t : x.to }));
-        if (spy.covers.state[COVERS.indexOf(c)]!.forced) {
+        const st = spy.covers.state[COVERS.indexOf(c)]!;
+        const held = st.forced && st.heldAt > arrived;
+        if (st.forced && !held) {
           const x = spells[0];
           if (spells.length !== 1 || x!.from !== arrived || x!.to !== left) out.push(`${c}, held on, on ${spells.map((y) => `${mins(y.from)} to ${mins(y.to)}`).join(", ")} min`);
           continue;
         }
-        const caps = capped(spy, c);
+        // Held on mid-evening: its last spell runs from then (or before) to its going; the rest keep the rules.
+        if (held) {
+          const x = spells.pop();
+          if (!x || x.from > st.heldAt || x.to !== left) out.push(`${c}, held on at ${mins(st.heldAt)} min, last on ${x ? `${mins(x.from)} to ${mins(x.to)}` : "never"} min`);
+        }
+        const caps = held ? !(c === "out-of-picture" && spy.playing) : capped(spy, c);
         let total = 0;
         let last = -1;
         for (const x of spells) {
@@ -511,7 +523,7 @@ export interface SpyEvening {
   stashedAt: number;
   droppedAt: number;
   followedAt: number;
-  /** The cases the crowd opened over its work (something missed, a bug found), and its place among the ten most suspected as it set off home (0: not among them). */
+  /** The cases the crowd opened over its work (something missed, a bug found, someone missing), and its place among the ten most suspected as it set off home (0: not among them). */
   traces: number;
   rankAtGo: number;
   /**
@@ -524,11 +536,22 @@ export interface SpyEvening {
   watched: { glances: number; tests: number; hushes: number };
   /** The share of its time at the party it spent lying low (its habits paused, no risky step started). */
   lowShare: number;
+  /**
+   * Its killing (PR 5): each kill it set off on (why, how, and how it ended), the bodies it left
+   * tonight (where, and how well hidden), the doubters it followed to silence, the place it took
+   * mid-party (why, and when; -1 none) and the tries that went wrong, and the people the crowd
+   * missed (a search given up and said out loud).
+   */
+  kills: Array<{ why: KillWhy; how: KillHow; out: KillOutcome | null; t: number }>;
+  bodies: Array<{ kind: HidePlace; hides: number; how: SpyBody["how"] }>;
+  silenced: number;
+  swap: { why: SwapWhy | null; at: number; failed: number };
+  missed: number;
   /** Wall time of the evening (ms), monitors included. */
   ms: number;
 }
 
-/** What the crowd says on finding the spy's work, each opening a case: the papers or the phone gone, the statuette missed, a bug. */
+/** What the crowd says on finding the spy's work, each opening a case: the papers or the phone gone, the statuette missed, a bug; and since PR 5, someone missing. */
 const TRACES: ReadonlySet<string> = new Set(["gone:papers", "gone:phone", "statuette-gone", "bug"]);
 
 /** When the spy first noted something (-1 never). */
@@ -600,6 +623,8 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
   const challenge = (note: string, about: (e: (typeof ev)[number]) => boolean) => ev.filter((e) => e.kind === "challenge" && e.note === note && about(e)).length;
   const ofSpy = (e: (typeof ev)[number]) => e.actors[1] === me;
   const toldOf = (e: (typeof ev)[number]) => e.actors[2] === me;
+  /** Out as someone else mid-party: `swap:<old>:<new>:<why>`. */
+  const swapped = ev.find((e) => e.kind === "spy" && /^swap:\d+:\d+:/.test(e.note ?? ""));
   return {
     setup: spy.setup,
     goal: spy.goal.kind,
@@ -652,7 +677,7 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
     stashedAt: spyNote(ev, "stashed"),
     droppedAt: spyNote(ev, "drop-first"),
     followedAt: spyNote(ev, "task:follow"),
-    traces: ev.filter((e) => e.kind === "react" && TRACES.has(e.note ?? "")).length,
+    traces: ev.filter((e) => (e.kind === "react" && TRACES.has(e.note ?? "")) || (e.kind === "case" && e.note === "person-gone")).length,
     rankAtGo,
     covers: Object.fromEntries(
       COVERS.map((c) => {
@@ -664,6 +689,15 @@ export function watchSpy(party: Party, also: readonly Check[] = []): SpyEvening 
     tactics: { ...spy.tactics.stats },
     watched: { glances: spy.covers.stats.glances, tests: spy.covers.stats.tests, hushes: spy.answers.stats.hushes },
     lowShare: here ? low / here : 0,
+    kills: spy.kill.log.map((k) => ({ why: k.why, how: k.how, out: k.out, t: k.t })),
+    bodies: spy.bodies.filter((b) => b.how !== "before").map((b) => ({ kind: b.kind, hides: b.hides, how: b.how })),
+    silenced: ev.filter((e) => e.kind === "spy" && e.note?.startsWith("silence:follow:")).length,
+    swap: {
+      why: (swapped?.note?.split(":")[3] as SwapWhy | undefined) ?? null,
+      at: swapped?.t ?? -1,
+      failed: ev.filter((e) => e.kind === "spy" && e.note?.startsWith("swap:failed:")).length,
+    },
+    missed: ev.filter((e) => e.kind === "case" && e.note === "person-gone").length,
     ms,
   };
 }

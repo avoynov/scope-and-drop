@@ -2333,6 +2333,12 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.log("leave", [p.id], p.room);
   }
 
+  /** The perch's view of a spot now, with the curtains as they are (0 to 1); off the walk grid, out in the garden, half. */
+  viewAt(at: { level: number; x: number; z: number }): number {
+    const k = this.pf.cellOf(at.level, at.x, at.z);
+    return k >= 0 ? this.world.visAt(at.level, k) : 0.5;
+  }
+
   /** A body out of play (milestone 3, PR 5): present no more and gone, where it lies; its glass set down where it fell, its bag and coat left where they were. */
   leavePlay(p: Person): void {
     this.release(p);
@@ -3128,6 +3134,11 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     this.watching[i] = lead;
     const p = this.people[i]!;
     this.log("react", [i, lead, subject], p.room, "keep-in-view");
+  }
+
+  /** Whether someone would rather not go into a room (the spy playing someone: where it last saw anyone it keeps away from). */
+  keepsOut(p: Person, room: number): boolean {
+    return p.id === this.spyId && this.spy!.keepsOut(room);
   }
 
   /** The room where someone last saw whoever they keep in view (the spy: the lone doubter it means to silence, else the one whose place it means to take), or -1. */

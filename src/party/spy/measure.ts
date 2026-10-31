@@ -17,9 +17,9 @@ import type { Person } from "../types";
  * the crash and the held hand off alone, off to change, straight off for a lost thing, a phone to
  * the ear in an empty room, the bare hand and the clean shirt after, someone else's bag in its
  * hands, and the room gone dark; and the killing (PR 5): an embrace, the jab inside it, one figure
- * propping another, a struggle, a body dragged, a dose tipped into a glass or the bar's open red,
- * a tray waved off, the change of clothes behind a shut door, someone falling, and a body left where
- * it can be seen.
+ * propping another, a struggle, a body dragged, the change of clothes behind a shut door, and a
+ * body left where it can be seen. Poison's (a dose tipped into a glass or the bar's open red, a
+ * tray waved off, someone falling) are named but never given: poison was never built.
  */
 export type TellId =
   | "out-of-step"

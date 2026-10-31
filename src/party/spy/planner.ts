@@ -17,11 +17,12 @@ export const F = Object.fromEntries(FACTS.map((f, i) => [f, 1 << i])) as Record<
 
 /**
  * What switches an action on: touring alone, other people's things and commotion are PR 4's
- * tactics; murder (the kill's own, and a word aside) and poison PR 5's; swap (someone else's place:
- * the host's, a friend of the target's) is on while murder is and the spy may still take a place
- * tonight (swap.ts).
+ * tactics; murder (the kill's own, and a word aside) PR 5's, poison never built; swap (someone
+ * else's place: the host's, a friend of the target's) is on while murder is and the spy may still
+ * take a place tonight (swap.ts); lure (a stranger's word in private) while murder is and its
+ * target hasn't twice said no (steps.ts).
  */
-export type Tactic = "touring" | "things" | "commotion" | "murder" | "poison" | "swap" | "tour";
+export type Tactic = "touring" | "things" | "commotion" | "murder" | "swap" | "tour" | "lure";
 
 export type PlanActionId =
   | "learn"
@@ -52,7 +53,8 @@ export type PlanActionId =
   | "walk-off"
   | "strangle"
   | "friend-place"
-  | "aside";
+  | "aside"
+  | "lure";
 
 export interface PlanAction {
   id: PlanActionId;
@@ -100,6 +102,8 @@ export const ACTIONS: readonly PlanAction[] = [
   // Wearing the face of someone the target trusts (a swap into a friend of theirs it saw them with), a word in private takes them somewhere alone.
   { id: "friend-place", needs: 0, brings: F.trusted, cost: 4, tactic: "swap" },
   { id: "aside", needs: F.trusted | F.close, brings: F.alone, cost: 1, tactic: "murder" },
+  // A stranger to them, the same word in private ("let me show you something upstairs"): half of those it asks come along.
+  { id: "lure", needs: F.close, brings: F.alone, cost: 3, tactic: "lure" },
 ];
 export const ACTION_BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));
 

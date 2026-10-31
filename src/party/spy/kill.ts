@@ -1,6 +1,6 @@
 /**
  * The kill (milestone 3 technical plan: Killing, bodies and poison). One kill at a time, for its
- * goal (steps.ts), for a doubter it silences (answers.ts) or for the one whose place it takes
+ * goal (steps.ts), for a doubter it silences (silence.ts) or for the one whose place it takes
  * (swap.ts). Following its victim a step behind, the spy waits for one of two moments, and the
  * moment picks the method:
  *
@@ -43,7 +43,7 @@
  */
 import type { Rng } from "../../mansion/core/rng";
 import type { Prop, Room } from "../../mansion/core/types";
-import { TIME_SCALE } from "../clock";
+import { PARTY_LENGTH, TIME_SCALE } from "../clock";
 import { frontOf, yawTo } from "../places";
 import { FOV } from "../senses";
 import type { Step, Task } from "../tasks";
@@ -68,6 +68,8 @@ export interface KillHost extends StepsHost {
   walkAway(p: Person, rng: Rng): void;
   /** a saw the spy at a kill (the struggle, the drag, the holding on), or came to after it let them go: sure at once, and off to tell someone. */
   attacked?(a: Person, spy: Person, victim: number): void;
+  /** The perch's view of a spot now (0 to 1; off the walk grid, out in the garden, half). */
+  viewAt(at: { level: number; x: number; z: number }): number;
 }
 
 export type KillHow = "strangled" | "injection";
@@ -76,6 +78,8 @@ export type KillWhy = "goal" | "silence" | "swap";
 /** How a kill ended: dead, broken off before the point of no return, lost (the victim moved off, or something else took the spy away first), or survived (it let go after the point of no return, before they died). */
 export type KillOutcome = "dead" | "broken" | "lost" | "survived";
 export type HidePlace = "bath" | "bathroom" | "store" | "bed" | "wardrobe" | "outside" | "fell";
+/** Out of sight where it lies: in a bath behind its curtain, under a bed, in a wardrobe. */
+export const OUT_OF_SIGHT: ReadonlySet<HidePlace> = new Set(["bath", "bed", "wardrobe"]);
 
 /** Where a body goes. */
 export interface Hide {
@@ -144,13 +148,16 @@ const HIDE_OUT: readonly [number, number] = [10, 20];
 export const DRAG_SPEED = 0.8;
 export const WALK_OFF_SPEED = 0.9;
 const MAX_DRAG = 30;
-/** As far as they can be walked before the poison takes them (60 to 150 s at the walk off's pace). */
+/** As far as they can be walked before the injection takes them (60 to 150 s at the walk off's pace). */
 const MAX_WALK = 40;
 /** Closing in: from behind for the grip, at their side for the embrace (m), within reach to begin, and this long at most (in-game s). */
 const BEHIND = 0.6;
 const BESIDE = 0.9;
 const REACH = 1.5;
 const CLOSE_FOR = 20;
+/** Closing in, a quicker step than its own to catch up with someone walking (never a run: m per real s at most). */
+const BRISK = 1.3;
+const BRISK_MAX = 1.9;
 /** A step behind: the same room, within this (m), as goals.ts has it. */
 const CLOSE = 6;
 /** The injection: only those this close count, and the victim is standing about (or on their way to the bathroom, or dancing on their own). */
@@ -173,13 +180,15 @@ const PROP_SIDE = 0.45;
 const HUG = 0.35;
 /** A pantry, the spa, the gym: shut away. */
 const STORES: ReadonlySet<string> = new Set(["pantry", "spa", "gym"]);
-/** Where people pass through all evening: never somewhere to strangle anyone. */
-export const PASSAGES: ReadonlySet<string> = new Set(["corridor", "service-stair", "landing", "entrance-hall", "hall-gallery"]);
+/** Where people pass through all evening, or the party below can see: never somewhere to strangle anyone. An empty corridor will do. */
+export const PASSAGES: ReadonlySet<string> = new Set(["service-stair", "landing", "entrance-hall", "hall-gallery"]);
 
 const spot3 = (p: Person): Spot3 => ({ level: p.level, x: p.x, z: p.z, y: p.y, room: p.room });
 
 export class Killing {
   readonly stats = { strangled: 0, injected: 0, hugs: 0, broken: 0, lost: 0, left: 0, hidden: 0, seen: 0, survived: 0 };
+  /** Every kill it set off on tonight: why, how, whom, when, and how it ended (null while under way), for the lab and the sweep. */
+  readonly log: Array<{ why: KillWhy; how: KillHow; victim: number; t: number; out: KillOutcome | null }> = [];
   /** The last kill's hiding place considered, for the lab. */
   lastHide: Hide | null = null;
   private k: Kill | null = null;
@@ -223,10 +232,11 @@ export class Killing {
   /**
    * Following q a step behind: whether this is a moment, and for which method. Strangling first,
    * the quieter death, when alone with them; else the injection, when it's on. `shut`: only with
-   * a place it can bolt itself in with them (a swap).
+   * a place it can bolt itself in with them (a swap). Never with the spy at a flight's top or foot,
+   * about to climb: setting off ends its walk, which first sees it off the flight (sim.ts end).
    */
   moment(p: Person, q: Person, ways: { strangle: boolean; inject: boolean; shut?: boolean }): { how: KillHow; hide: Hide } | null {
-    if (!q.present || q.gone || q.down || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE) return null;
+    if (!q.present || q.gone || q.down || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE || p.path[p.pathIndex]?.climb) return null;
     if (ways.strangle) {
       const hide = this.strangling(p, q, ways.shut === true);
       if (hide) return { how: "strangled", hide };
@@ -291,6 +301,8 @@ export class Killing {
     const gap = m.how === "strangled" ? BEHIND : BESIDE;
     const t = h.tasks.spy(p, `kill:${m.how}`, "wander", [{ do: "shadow", who: q.id, gap, label: "kill:close" }]);
     if (t.outcome !== null) return false;
+    // The task puts its own pace back when it ends.
+    p.speed = Math.min(t.speed * BRISK, BRISK_MAX);
     this.k = {
       why,
       how: m.how,
@@ -311,6 +323,7 @@ export class Killing {
       laid: false,
       end: null,
     };
+    this.log.push({ why, how: m.how, victim: q.id, t: h.t, out: null });
     this.note(`kill:${m.how}:${q.id}`);
     return true;
   }
@@ -356,11 +369,11 @@ export class Killing {
     }
   }
 
-  /** Closing in: within reach and the moment still there, the point of no return (or the embrace first); them moving off, or too long, and it falls back. */
+  /** Closing in: within reach and the moment still there, the point of no return (or the embrace first); them moving off (through a doorway is no matter), or too long, and it falls back. */
   private closing(k: Kill, t: Task, p: Person, q: Person): void {
     const h = this.h;
     if (!q.present || q.gone || q.down) return this.end(t, "lost");
-    if (h.byeAt >= 0 || h.t - k.from > CLOSE_FOR || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE || this.bolted(q.room)) return this.end(t, "lost");
+    if (h.byeAt >= 0 || h.t - k.from > CLOSE_FOR || q.level !== p.level || Math.hypot(q.x - p.x, q.z - p.z) > CLOSE || this.bolted(q.room)) return this.end(t, "lost");
     if (this.ticks % 2 !== 0 || Math.hypot(q.x - p.x, q.z - p.z) > REACH) return;
     if (k.how === "strangled") {
       const hide = this.strangling(p, q, k.shut);
@@ -463,6 +476,7 @@ export class Killing {
     const h = this.h;
     const hide = k.hide!;
     if (hide.bath >= 0 && !h.body.holdBath(hide.bath, p)) k.hide = this.fell(q);
+    p.speed = t.speed;
     this.seize(k, t, p, q);
     const [lo, hi] = STRUGGLE;
     const secs = lo + (hi - lo) * this.rng.next() * (1 - 0.6 * this.spy.knack.kill);
@@ -495,6 +509,7 @@ export class Killing {
   private embrace(k: Kill, t: Task, p: Person, q: Person): void {
     const h = this.h;
     const secs = this.rng.range(EMBRACE[0], EMBRACE[1]);
+    p.speed = t.speed;
     h.tasks.join(t, q);
     p.yaw = yawTo(p.x, p.z, q.x, q.z);
     t.steps.splice(t.i + 1, t.steps.length, { do: "wait", s: secs, pose: "hug", label: "kill:embrace" });
@@ -736,6 +751,8 @@ export class Killing {
     if (k.deadAt < 0) this.dead(k, this.spy.record, q);
     const body: SpyBody = { who: q.id, at: { ...at }, yaw: q.yaw, place, kind, hides, t: k.deadAt, how: k.how, look: { ...q.look } };
     this.spy.bodies.push(body);
+    // Where it can be seen, a trace to the end of the evening: the perch's view of where it lies, less what hides it.
+    if (!OUT_OF_SIGHT.has(kind)) this.spy.measure.tell("body", h.t, PARTY_LENGTH, at.room, h.viewAt(at) * (1 - hides));
     h.leavePlay(q);
     h.log("down", [q.id], at.room, hides > 0.1 ? "hidden" : "left");
   }
@@ -767,6 +784,8 @@ export class Killing {
     const q = h.people[k.victim]!;
     this.k = null;
     if (k.hide && k.hide.bath >= 0) h.body.unholdBath(k.hide.bath);
+    // A bolt it drew for a word in private (steps.ts, swap.ts) goes back with the kill's own (tasks.ts).
+    for (const d of h.world.doors) if (d.lockedBy === this.spy.id) h.world.setLocked(d, false, this.spy.id);
     let out: KillOutcome;
     if (k.noReturn < 0) {
       out = k.end ?? "lost";
@@ -782,6 +801,7 @@ export class Killing {
       out = "survived";
       this.letGo(k, q);
     }
+    this.log[this.log.length - 1]!.out = out;
     this.note(`kill:end:${out}`);
     this.spy.killEnded(k.why, out, k.how);
   }
@@ -827,9 +847,9 @@ export class Killing {
 
   // ------------------------------------------------------------ hiding places
 
-  /** A room bolted from inside. */
+  /** A room bolted from inside, by anyone but the spy (a word in private behind its own bolt: swap.ts). */
   private bolted(room: number): boolean {
-    return room >= 0 && this.h.world.doors.some((d) => d.locked && d.lock === "inside" && d.inner === room);
+    return room >= 0 && this.h.world.doors.some((d) => d.locked && d.lock === "inside" && d.inner === room && d.lockedBy !== this.spy.id);
   }
 
   /** Where it fell: nowhere to take them. */

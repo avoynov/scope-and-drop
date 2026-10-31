@@ -329,8 +329,8 @@ export interface Person {
   /** A cut hand dressed: a bandage for the rest of the night. */
   bandage: boolean;
   /**
-   * Milestone 3: poisoned and feeling unwell ('ill'), fallen and not getting up ('collapsed'), injected and being walked off
-   * ('dying'), or killed ('dead'). Null for everyone else, and always without a spy.
+   * Milestone 3: injected and being walked off ('dying'), out cold where the spy let go of them ('collapsed'), or killed ('dead');
+   * poisoned and feeling unwell ('ill') is poison's, never built. Null for everyone else, and always without a spy.
    */
   down: Down | null;
 }
@@ -452,8 +452,9 @@ export type EventKind =
    */
   | "challenge"
   /**
-   * Someone down (milestone 3): poisoned and unwell ('ill'), fallen ('collapsed'), carried to a sofa or a bed ('carried', 'laid'), injected
-   * and walked off ('dying'), killed ('dead'), hidden ('hidden'). Actors: who is down, then whoever did it or helped.
+   * Someone down (milestone 3): injected and walked off ('dying'), killed ('dead'), hidden ('hidden') or left where they fell ('left'), out
+   * cold ('collapsed') and up again ('came-to'); poisoned and unwell ('ill') and carried to a sofa or a bed ('carried', 'laid') are poison's,
+   * never built. Actors: who is down, then whoever did it or helped.
    */
   | "down";
 

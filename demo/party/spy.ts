@@ -44,6 +44,7 @@ import {
   goalOdds,
   GOALS,
   nearRooms,
+  OUT_OF_SIGHT,
   PARTY_LENGTH,
   phaseIndexAt,
   rankOf,
@@ -138,6 +139,7 @@ const PLAN_LABEL: Record<PlanActionId, string> = {
   strangle: "strangle them from behind",
   "friend-place": "take a friend of theirs' place",
   aside: "a word in private",
+  lure: "a stranger's word in private",
 };
 /** Where a body went, for the log. */
 const HIDE_LABEL: Record<HidePlace, string> = {
@@ -151,8 +153,6 @@ const HIDE_LABEL: Record<HidePlace, string> = {
 };
 /** How a body came to be one, for the card and the bodies overlay (poison is never built). */
 const BODY_HOW: Record<SpyBody["how"], string> = { before: "killed before the party", injection: "the needle", strangled: "strangled", poison: "poisoned" };
-/** Out of sight where it lies: in a bath behind its curtain, under a bed, in a wardrobe. */
-const OUT_OF_SIGHT: ReadonlySet<HidePlace> = new Set(["bath", "bed", "wardrobe"]);
 /** Why it takes someone's place, for the card. */
 const SWAP_WHY: Record<SwapWhy, string> = {
   host: "the host's keys",
@@ -281,8 +281,8 @@ const COVER_LABEL: Record<Cover, string> = {
   alibi: "a false alibi",
   "others-things": "other people's things",
   commotion: "the lights",
-  poison: "poison (PR 5)",
-  murder: "murder (PR 5)",
+  poison: "poison (never built)",
+  murder: "murder",
 };
 /** The false alibi's openers, and where it has got to. */
 const ALIBI_LABEL: Record<AlibiKind, string> = { cut: "a cut hand", spill: "a spill down itself", lost: "a lost thing", call: "a phone call" };
@@ -541,7 +541,7 @@ const RANK_FLOOR = 10;
 const LEAD = 10;
 /** Ranks this far apart (in-game s) are a gap in the line: it was away, or the evening was skipped through. */
 const RANK_GAP = 2 * 60 + 1;
-/** The page's colours (index.html): habits in its grey, tactics in its accent, PR 5's covers and the hard tells in the spy's red. */
+/** The page's colours (index.html): habits in its grey, tactics in its accent, murder (and poison, never built) and the hard tells in the spy's red. */
 const INK = "#e9e4d8";
 const ACCENT = "#e0b56a";
 const RED = "#e2786a";
@@ -1631,7 +1631,6 @@ export class SpyLab {
     const spy = party.spy!;
     const pl = spy.plans;
     const t = party.t;
-    if (!spy.byCues) return void lines.push("plans nothing yet: keeps the staff's routine (PR 5)");
     const cur = pl.current;
     if (pl.steps.length && spy.goal.doneAt === null && !pl.parked) {
       const row = document.createElement("span");

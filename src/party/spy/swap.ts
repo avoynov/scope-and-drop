@@ -2,47 +2,56 @@
  * Moving the spy into another person's record (milestone 3 technical plan: What the swap moves).
  * The record keeps who the person is to everyone else: the name, the role, the clothes, the
  * partner and friends, the seat, the coat, and every memory of them. Its body and mind become
- * the spy's own. Before the party it has studied its victim, so it keeps the habits it could
- * copy: the smoking and the favourite drink.
+ * the spy's own. Before the party it has studied its victim, so it copies what it could: their
+ * mannerisms (the smoking among them) and glasses in place of its own, and the favourite drink.
  *
  * The voice and the temper live in `Ident` and `Bonds`; the party recasts those after `dress()`.
  *
- * Taking someone's place mid-party (PR 5, `Swapping`). Coming as itself, in some evenings (cast.ts
- * SWAP) it means to become someone else halfway through: whatever it does after, the face that
+ * Taking someone's place mid-party (PR 5, `Swapping`). Every evening it comes as itself (cast.ts),
+ * it means to become someone else when a good chance comes: whatever it does after, the face that
  * came in at the door isn't there to answer for it. Its plan can ask for a face: the host's keys
  * for the study and the safe, when nothing else gets it in (host-place), or a friend of its
- * target, to take them aside alone (friend-place, then a word in private). Otherwise it takes the
- * first good chance, and once two or more people about it have grown watchful of it (on its avoid
- * list) a new face also drops their doubt, at the cost of a second missing person.
+ * target, to take them aside alone (friend-place, then a word in private). Otherwise it picks a
+ * face of its own for the second half of the evening, and once two or more people about it have
+ * grown watchful of it (on its avoid list) a new face also drops their doubt, at the cost of a
+ * second missing person.
  *
  * Whom it plays: a guest casting would let it play (no archetype, not the host's partner, an
  * oddball or the stranger; the host only for the keys), not caught up in a drama, within 15 cm of
  * its own height (best within 8), of its own sex for the clothes nine times in ten, with as few
  * people it has seen close to them as it can find. It judges only from what it has seen tonight
  * (`pairs`: how close each pair has looked to it), so an old friend it never saw with them may be
- * here, and a friend of its target may turn out not to be one. The face its plan asks for it
- * keeps in view, and follows a step behind when it sees them set off somewhere quiet (the
- * bathroom, the terrace, a wander); with none asked for, anyone it could pass as whom it sees set
- * off so, the fewer it has seen close to them the likelier. A step behind, it waits for either
- * moment: alone with them, or close and unwatched (the needle, and walked off like a drunk
- * friend). It kills them either way, takes them somewhere it can bolt itself in with them (a
- * bathroom, a bedroom: kill.ts), changes behind the bolt for two to four minutes (their jacket or
- * dress, hat and main things on; its own clothes onto the body or into a wardrobe, half and
- * half), hides the body, and comes out as them (the party's swapSpy()). Its old self never comes
- * back: gone with no goodbye, a second missing person for whoever goes looking.
+ * here, and a friend of its target may turn out not to be one. With none asked for, it picks one
+ * of those it has seen in the last ten minutes, the better they'd pass and the fewer it has seen
+ * close to them the likelier, and goes after anyone else who would do as well when they set off
+ * first. Whoever it means to play it keeps in view, and follows a step behind when it sees them
+ * set off somewhere quiet (the bathroom, where it waits for them to come out; the terrace; a
+ * wander). Or, a stranger to them, it goes up to them for a word ("let me show you something
+ * upstairs"): half of those it asks come along, to a guest bedroom with a bolt, which it draws
+ * behind them. Three tries with no moment, and it lets them be for a while and picks again. A
+ * step behind, it waits for either moment: alone with them, or close and unwatched (the needle,
+ * and walked off like a drunk friend); behind the bolt, alone with them. It kills them either way,
+ * takes them somewhere it can bolt itself in with them (a bathroom, a bedroom: kill.ts), changes
+ * behind the bolt for two to four minutes (their jacket or dress, hat and main things on; its own
+ * clothes onto the body or into a wardrobe, half and half), hides the body, and comes out as them
+ * (the party's swapSpy()). Its old self never comes back: gone with no goodbye, a second missing
+ * person for whoever goes looking.
  *
  * It takes a place at most once an evening, never before 19:40, never once the farewell's first
- * goodbye is said, only with murder on, nothing of its goal in hand (a thing stashed in its old
- * coat would stay there) and no step of its plan begun. It draws only from its own fork.
+ * goodbye is said, only with murder on (held on all evening when it means to: index.ts), nothing
+ * of its goal in hand (a thing stashed in its old coat would stay there) and no step of its plan
+ * begun. At dinner, the house empty, someone it would play getting up from the table is the best
+ * chance of the evening, and it excuses itself a moment later. It draws only from its own fork.
  */
 import type { Rng } from "../../mansion/core/rng";
 import type { Dramas } from "../dramas";
-import type { Task } from "../tasks";
-import type { Group, Person } from "../types";
+import { TEST } from "../ident";
+import type { Step, Task } from "../tasks";
+import type { Group, Person, Quirk } from "../types";
 import type { SpyOwn } from "./cast";
 import type { Spy } from "./index";
 import type { KillHost, KillOutcome } from "./kill";
-import { AFTER_BREAK, LOOSE, OFF_ALONE, TRAIL_BETWEEN, TRAIL_GAP, TRAIL_TRY } from "./steps";
+import { AFTER_BREAK, ASIDE_GAP, ASIDE_PHASES, ASK_SECS, boltedBedroom, COME_ALONG, IN_BESIDE, IN_WAIT, LOOSE, OFF_ALONE, REACH_PAUSE, TRAIL_BETWEEN, TRAIL_GAP, TRAIL_TRY, WORDS } from "./steps";
 
 /**
  * Coming as itself, before anyone knows anyone (so before `Ident`): the record is its own, so
@@ -60,15 +69,16 @@ export function asItself(p: Person, own: SpyOwn, people: readonly Person[]): voi
   p.early = null;
 }
 
+/** What a spy who studied its victim copies, in place of its own: every habit but a limp (and never a cane). */
+export const COPIED: ReadonlySet<Quirk> = new Set<Quirk>(["glasses", "ear-scratch", "globe-pointer", "dances-after-drink", "hands-in-pockets", "tie-adjust", "big-laugh", "smoker", "watch-check"]);
+
 /** Put the spy's own body and mind into a record. `studied`: it watched the victim first, and copies what can be copied. */
 export function dress(p: Person, own: SpyOwn, studied: boolean): void {
   p.look.height = own.height;
   p.look.build = own.build;
   p.speed = own.speed;
-  // Its own habits, never a cane; a studied spy lights up where the victim would.
-  const quirks = [...own.quirks];
-  if (studied && p.quirks.includes("smoker") && !quirks.includes("smoker")) quirks.push("smoker");
-  p.quirks = quirks;
+  // Its own habits, never a cane; a studied spy has their mannerisms and glasses for its own, and lights up where they would.
+  p.quirks = studied ? [...own.quirks.filter((q) => !COPIED.has(q)), ...p.quirks.filter((q) => COPIED.has(q))] : [...own.quirks];
   p.traits = { ...own.traits };
   p.fluency = { ...own.fluency };
   p.fav = studied ? p.fav : own.fav;
@@ -78,7 +88,7 @@ export function dress(p: Person, own: SpyOwn, studied: boolean): void {
   p.early = null;
 }
 
-/** Why it takes someone's place: the host's keys, a friend of its target, a new face once people grow watchful, a face for the second half of the evening (the first good chance), or the lab's ask. */
+/** Why it takes someone's place: the host's keys, a friend of its target, a new face once people grow watchful, a face for the second half of the evening, or the lab's ask. */
 export type SwapWhy = "host" | "friend" | "face" | "halfway" | "lab";
 
 /** What taking someone's place needs from the party, besides what a kill does. */
@@ -93,14 +103,26 @@ export interface SwapHost extends KillHost {
 
 /** Never before 19:40 (in-game s from 19:00). */
 export const SWAP_FROM = 40 * 60;
-/** Between the programme's beats: when it can be away from the room. */
-const FREE: ReadonlySet<string> = new Set(["arrival", "mingle", "dancing", "games"]);
-/** It saw them set off within this long (in-game s): it knows where they're going. Let go by, someone isn't thought of again for PASSED. */
+/** Between the programme's beats, when it can be away from the room; and at dinner, when someone it would play gets up from the table, it can excuse itself too. */
+const FREE: ReadonlySet<string> = new Set(["arrival", "mingle", "dinner", "dancing", "games"]);
+/** It saw them set off within this long (in-game s): it knows where they're going. A face of its own is one it has seen within LATELY. */
 const SEEN = 10;
-const PASSED = 10 * 60;
+const LATELY = 10 * 60;
+/** A step behind someone in the bathroom, it waits for them to come out, this long at most from setting off (in-game s). */
+const WAIT_OUT = 12 * 60;
+/**
+ * Drawing a face of its own off, a stranger to them: up to them for a word ("let me show you
+ * something upstairs"), between the programme's beats, at most once in LURE_EVERY; they come along
+ * COME_ALONG of the time, unless they doubt it, and it has LURE_MAX to get the word said. The room
+ * it takes them to is the plan's for a word in private (steps.ts boltedBedroom).
+ */
+const LURE_EVERY: readonly [number, number] = [12 * 60, 20 * 60];
+const LURE_MAX = 90;
+/** Near enough to go up to them for a word: in the same room, within this (m). */
+const LURE_NEAR = 10;
 /** Lost them, or something else took it away: a minute or two before it follows anyone again (in-game s). */
 const AFTER_LOST: readonly [number, number] = [60, 120];
-/** Followed the face its plan asked for this many times with no moment: a while before it tries them again (in-game s). */
+/** Followed the face it means to play this many times with no moment: a while before it tries anyone again (in-game s). */
 const TRIES = 3;
 const AFTER_TRIES: readonly [number, number] = [10 * 60, 20 * 60];
 /** Two or more about it watchful of it (on its avoid list): time for a new face. */
@@ -124,7 +146,7 @@ const TALK_MAX = 0.7;
 const WEARS = 0.5;
 
 export class Swapping {
-  readonly stats = { picks: 0, trails: 0, moments: 0, swaps: 0, failed: 0 };
+  readonly stats = { picks: 0, trails: 0, lures: 0, moments: 0, swaps: 0, failed: 0 };
   /** How close each pair has looked to it tonight, from its own sightings (n × n, both ways). */
   readonly pairs: Float32Array;
   /** Whom it means to play (-1 nobody yet), and why: the one its plan asked for until it has them, or whoever it is after now. */
@@ -144,8 +166,10 @@ export class Swapping {
   private tries = 0;
   private nextAt = 0;
   private ticks = 0;
-  /** Until when it doesn't think of each person again, having let them go by. */
-  private readonly passed: Float32Array;
+  /** The task is a word in private (a lure), not a trail; when the talk in the quiet room began (-1 not yet); and when it may try a lure again. */
+  private luring = false;
+  private wordsFrom = -1;
+  private lureAt = 0;
 
   /** `cast` is casting's word (cast.ts): whether it means to take a place tonight, and whom it could play. */
   constructor(
@@ -156,7 +180,6 @@ export class Swapping {
   ) {
     const n = h.people.length;
     this.pairs = new Float32Array(n * n);
-    this.passed = new Float32Array(n);
     this.tonight = cast.may;
     this.playable = new Set(cast.playable);
   }
@@ -181,10 +204,10 @@ export class Swapping {
     return this.task >= 0 ? this.face : -1;
   }
 
-  /** The one its plan asked to play, kept in view meanwhile (-1 nobody): while it may, from 19:40, with murder on and before the first goodbye. */
+  /** The one it means to play, kept in view meanwhile (-1 nobody): while it may, from 19:40, with murder on and before the first goodbye. */
   get watching(): number {
     const h = this.h;
-    if (!this.may || !this.asked() || h.t < SWAP_FROM || h.byeAt >= 0 || !this.spy.covers.active("murder")) return -1;
+    if (!this.may || this.face < 0 || h.t < SWAP_FROM || h.byeAt >= 0 || !this.spy.covers.active("murder")) return -1;
     return this.face;
   }
 
@@ -252,12 +275,11 @@ export class Swapping {
     return this.playable.has(v.id) && v.id !== spy.id && v.present && !v.gone && !v.down && v.id !== spy.goal.target && !this.h.dramas.busy(v);
   }
 
-  /** Nothing of its goal on it or in its coat, which stays on its hook: a kill's theft first not under way. */
+  /** Nothing of its goal on it or in its coat, which stays on its hook: neither the thing it is after nor a kill's theft first in hand or stashed. */
   private clean(p: Person): boolean {
-    const spy = this.spy;
-    const thing = spy.things.thing(p);
-    if (thing >= 0 && (this.h.world.items.holder[thing] === p.id || spy.things.stashed(thing, p))) return false;
-    return !spy.stealing();
+    const things = this.spy.things;
+    for (const x of [things.thing(p), things.firstThing()]) if (x >= 0 && (this.h.world.items.holder[x] === p.id || things.stashed(x, p))) return false;
+    return true;
   }
 
   /** The friend of its target it would play: the one it has seen closest to them, if close enough and someone it could pass as (-1 none). */
@@ -324,12 +346,13 @@ export class Swapping {
     return c;
   }
 
-  /** The face its plan asked for holds while they're here and it hasn't followed them in vain too often; then a while before the plan may ask again. */
+  /** The face it means to play holds while they're here (one of its own, while it could still play them) and it hasn't followed them in vain too often; then a while before it, or the plan, picks again. Never while it kills. */
   private keep(): void {
     const h = this.h;
-    if (!this.asked()) return;
+    if (this.face < 0 || this.spy.kill.busy || this.ready >= 0) return;
     const v = h.people[this.face]!;
-    if (v.present && !v.gone && !v.down && (this.tries < TRIES || this.why === "lab")) return;
+    const here = this.asked() ? v.present && !v.gone && !v.down : this.candidate(v);
+    if (here && (this.tries < TRIES || this.why === "lab")) return;
     if (this.tries >= TRIES) this.nextAt = Math.max(this.nextAt, h.t + this.rng.range(AFTER_TRIES[0], AFTER_TRIES[1]));
     this.face = -1;
     this.why = null;
@@ -337,34 +360,58 @@ export class Swapping {
   }
 
   /**
-   * A good chance now, and whose: the face its plan asked for, seen setting off somewhere quiet;
-   * with none asked for, anyone it could pass as seen setting off somewhere quiet. Of those, the
-   * better they'd pass and the fewer it has seen close to them, the likelier it goes after them
-   * (a new face once two or more about it are watchful of it, else one for the second half of the
-   * evening); one it lets go by it doesn't think of again for ten minutes.
+   * A good chance now: the face it means to play (its plan's, else one of its own, picked now if
+   * need be) seen setting off somewhere quiet; with one of its own, anyone else it would pass as
+   * at least as well seen setting off so, whom it goes after instead.
    */
   private chance(p: Person): Person | null {
     const h = this.h;
     const n = h.people.length;
     const off = (q: Person) => this.offAlone(q) && h.memory.lastT[p.id * n + q.id]! >= h.t - SEEN;
-    if (this.asked()) {
-      const q = h.people[this.face]!;
-      return off(q) ? q : null;
+    if (this.face < 0) this.pick(p);
+    if (this.face < 0) return null;
+    const q = h.people[this.face]!;
+    if (off(q)) return q;
+    if (this.asked()) return null;
+    let best: Person | null = null;
+    let most = this.weight(q);
+    for (const v of h.people) {
+      if (v === q || !this.candidate(v) || !off(v)) continue;
+      const w = this.weight(v);
+      if (w > 0 && w >= most) {
+        best = v;
+        most = w;
+      }
     }
+    if (best) this.set(best.id, this.reason());
+    return best;
+  }
+
+  /** How much it would like to play v: the better they'd pass and the fewer it has seen close to them, the more. */
+  private weight(v: Person): number {
+    return this.fit(v) / (1 + this.known(v.id));
+  }
+
+  /**
+   * A face of its own: anyone it could pass as whom it has seen lately, the better they'd pass and
+   * the fewer it has seen close to them the likelier (a new face once two or more about it are
+   * watchful of it, else one for the second half of the evening).
+   */
+  private pick(p: Person): void {
+    const h = this.h;
+    const n = h.people.length;
     const pool: Array<readonly [Person, number]> = [];
     for (const v of h.people) {
-      if (!this.candidate(v) || h.t < this.passed[v.id]! || !off(v)) continue;
-      const w = this.fit(v) / (1 + this.known(v.id));
+      if (!this.candidate(v) || h.memory.lastT[p.id * n + v.id]! < h.t - LATELY) continue;
+      const w = this.weight(v);
       if (w > 0) pool.push([v, w]);
     }
-    if (!pool.length) return null;
-    const v = this.rng.weighted(pool);
-    if (!this.rng.chance(pool.find(([x]) => x === v)![1])) {
-      this.passed[v.id] = h.t + PASSED;
-      return null;
-    }
-    this.set(v.id, this.watchful() >= WATCHFUL ? "face" : "halfway");
-    return v;
+    if (pool.length) this.set(this.rng.weighted(pool).id, this.reason());
+  }
+
+  /** Why it wants a face of its own now: two or more about it watchful of it, or the second half of the evening. */
+  private reason(): SwapWhy {
+    return this.watchful() >= WATCHFUL ? "face" : "halfway";
   }
 
   // ------------------------------------------------------------- each step
@@ -398,21 +445,142 @@ export class Swapping {
   step(): void {
     const p = this.spy.record;
     this.ticks++;
-    if (this.task >= 0) return this.trail(p);
+    if (this.task >= 0) return this.luring ? this.words(p) : this.trail(p);
     if (!this.may || this.ticks % 4 !== 0 || this.h.t < SWAP_FROM) return;
     this.keep();
     if (!this.free(p)) return;
     const q = this.chance(p);
-    if (q) this.follow(p, q);
+    if (q) return this.follow(p, q);
+    const v = this.lurable(p);
+    if (v) this.lure(p, v);
   }
 
-  /** Free to go after them: murder on, no kill under way, nothing of its plan begun, nothing of its goal on it, no alibi out, between the programme's beats, only idling. */
+  /** A face of its own it could go up to for a word now: standing about near it in a beat of the evening that lets people wander off, in its view. */
+  private lurable(p: Person): Person | null {
+    const h = this.h;
+    if (this.face < 0 || this.asked() || h.t < this.lureAt || !ASIDE_PHASES.has(h.programme[this.spy.phase]?.id ?? "")) return null;
+    const q = h.people[this.face]!;
+    if (!this.candidate(q) || (q.action && !LOOSE.has(q.action.id)) || q.level !== p.level || q.room !== p.room || Math.hypot(q.x - p.x, q.z - p.z) > LURE_NEAR) return null;
+    return h.memory.lastT[p.id * h.people.length + q.id]! >= h.t - SEEN ? q : null;
+  }
+
+  /**
+   * Up to them for a word, and once they come along (stepDone), to a guest bedroom with nobody in
+   * it, the bolt drawn behind them, to talk while it waits for its moment; the talk over with none,
+   * the bolt back and out. No such room, and not now.
+   */
+  private lure(p: Person, q: Person): void {
+    const h = this.h;
+    this.lureAt = h.t + this.rng.range(LURE_EVERY[0], LURE_EVERY[1]);
+    const to = boltedBedroom(this.h, p, q, this.rng);
+    if (!to) return;
+    if (this.spy.plans.busy && !this.spy.plans.yieldStep()) return;
+    const steps: Step[] = [
+      { do: "meet", who: q.id, label: "swap:to" },
+      { do: "say", who: q.id, s: this.rng.range(ASK_SECS[0], ASK_SECS[1]), pose: "talk", label: "swap:ask" },
+      { do: "goto", to: to.at, label: "swap:go" },
+      { do: "wait", s: 99999, pose: "stand", label: "swap:in" },
+      { do: "bolt", door: to.door, room: to.room, label: "swap:bolt" },
+      { do: "wait", s: 99999, pose: "talk", label: "swap:words" },
+      { do: "unbolt", door: to.door, room: to.room, label: "swap:unbolt" },
+    ];
+    // Whoever comes along follows it, as on its plan's word in private (tasks.ts).
+    const t = h.tasks.spy(p, "swap-lure", "talk", steps, [], ASIDE_GAP);
+    if (t.outcome !== null) return;
+    this.task = t.id;
+    this.luring = true;
+    this.wordsFrom = -1;
+    this.from = h.t;
+    this.tryFor = this.rng.range(WORDS[0], WORDS[1]);
+    this.tries++;
+    this.stats.lures++;
+    this.note(`swap:lure:${q.id}`);
+  }
+
+  /** A step of its task done: the word said, they come along if they don't doubt it, are still free to, and will; else it was only a word. */
+  stepDone(t: Task, st: Step): void {
+    if (t.id !== this.task || !this.luring || st.label !== "swap:ask") return;
+    const h = this.h;
+    const p = this.spy.record;
+    const q = h.people[this.face]!;
+    const free = !q.action || LOOSE.has(q.action.id);
+    if (!this.candidate(q) || !free || q.level !== p.level || Math.hypot(q.x - p.x, q.z - p.z) > 3 || h.ident.doubtOf(q.id, p.id, h.t) >= TEST || !this.rng.chance(COME_ALONG)) {
+      this.nextAt = h.t + this.rng.range(AFTER_LOST[0], AFTER_LOST[1]);
+      return this.stop(t, "refused");
+    }
+    h.tasks.join(t, q);
+    // Walking together: at the slower one's pace (the task puts its own back as it ends).
+    p.speed = Math.min(p.speed, q.speed);
+    this.note(`swap:aside:${q.id}`);
+  }
+
+  /** A word in private: talking behind the bolt, the moment, the kill; them gone off, the beat over or the word never said, it lets them be; the talk over with no moment, the bolt back and back to the party a while. */
+  private words(p: Person): void {
+    const h = this.h;
+    const spy = this.spy;
+    const t = h.tasks.get(this.task);
+    if (!t) return;
+    const q = h.people[this.face]!;
+    const label = t.steps[t.i]?.label;
+    const talking = label === "swap:words";
+    const waitIn = label === "swap:in" && (!t.party.includes(q.id) || h.t - t.stepAt > IN_WAIT);
+    if (
+      !q.present ||
+      q.gone ||
+      q.down ||
+      h.byeAt >= 0 ||
+      h.t < spy.answers.lowUntil ||
+      !spy.covers.active("murder") ||
+      !ASIDE_PHASES.has(h.programme[spy.phase]?.id ?? "") ||
+      (talking && !t.party.includes(q.id)) ||
+      waitIn
+    ) {
+      this.nextAt = h.t + this.rng.range(AFTER_LOST[0], AFTER_LOST[1]);
+      return this.stop(t, "gone");
+    }
+    // In the room: once they've caught up, the bolt.
+    if (label === "swap:in") {
+      if (q.level === p.level && q.room === p.room && Math.hypot(q.x - p.x, q.z - p.z) <= IN_BESIDE) h.tasks.next(t);
+      return;
+    }
+    if (!talking) {
+      if (h.t - this.from >= LURE_MAX && !t.party.includes(q.id)) {
+        this.nextAt = h.t + this.rng.range(AFTER_LOST[0], AFTER_LOST[1]);
+        this.stop(t, "not-yet");
+      }
+      return;
+    }
+    if (this.wordsFrom < 0) this.wordsFrom = h.t;
+    if (this.ticks % 2 === 0) {
+      const m = spy.kill.moment(p, q, { strangle: true, inject: false, shut: true });
+      if (m) {
+        this.stats.moments++;
+        // The bolt stays drawn for the kill behind it (a task's bolts are drawn back as it ends).
+        t.steps = t.steps.filter((s) => s.do !== "bolt");
+        this.stop(t, "kill");
+        // A pause in the talk: they stand a moment for what it says next.
+        q.thinkAt = Math.max(q.thinkAt, h.t + REACH_PAUSE);
+        if (!this.asked()) this.why = this.reason();
+        if (spy.kill.begin(p, q, m, "swap")) return;
+        this.nextAt = h.t + this.rng.range(AFTER_LOST[0], AFTER_LOST[1]);
+        return;
+      }
+    }
+    if (h.t - this.wordsFrom >= this.tryFor) {
+      this.nextAt = h.t + this.rng.range(TRAIL_BETWEEN[0], TRAIL_BETWEEN[1]);
+      // The bolt back and out (the task's last step), as if it had only been a word.
+      this.wordsFrom = Infinity;
+      h.tasks.next(t);
+    }
+  }
+
+  /** Free to go after them: murder on, no kill under way, nothing of its plan begun, nothing of its goal on it, no alibi out, between the programme's beats or at dinner, only idling or at the table. */
   private free(p: Person): boolean {
     const h = this.h;
     const spy = this.spy;
     if (p.staff || h.byeAt >= 0 || h.t < this.nextAt || h.t < spy.answers.lowUntil || spy.kill.busy || spy.silence.busy || spy.tactics.alibi) return false;
     if (!spy.covers.active("murder") || (spy.plans.busy && !spy.plans.waiting) || !FREE.has(h.programme[spy.phase]?.id ?? "") || !this.clean(p)) return false;
-    return spy.plans.busy || !p.action || LOOSE.has(p.action.id);
+    return spy.plans.busy || !p.action || LOOSE.has(p.action.id) || p.action.id === "dinner";
   }
 
   /** Off somewhere quiet: the bathroom, the terrace, a wander, a search of the house. */
@@ -438,7 +606,7 @@ export class Swapping {
     this.note(`swap:follow:${q.id}`);
   }
 
-  /** A step behind: alone with them behind a door it can bolt, the kill; them gone, the beat over, murder off or feeling watched, it lets them go; the try over, back to the party a while. */
+  /** A step behind: alone with them behind a door it can bolt, the kill; them gone, the beat over, murder off or feeling watched, it lets them go; the try over (once they're out of the bathroom), back to the party a while. */
   private trail(p: Person): void {
     const h = this.h;
     const spy = this.spy;
@@ -454,13 +622,14 @@ export class Swapping {
       if (m) {
         this.stats.moments++;
         this.stop(t, "kill");
+        if (!this.asked()) this.why = this.reason();
         if (spy.kill.begin(p, q, m, "swap")) return;
         this.nextAt = h.t + this.rng.range(AFTER_LOST[0], AFTER_LOST[1]);
-        if (!this.asked()) this.drop();
         return;
       }
     }
-    if (h.t - this.from >= this.tryFor) {
+    // In the bathroom still, it waits for them to come out, up to a while.
+    if (h.t - this.from >= this.tryFor && (q.action?.id !== "toilet" || h.t - this.from >= WAIT_OUT)) {
       this.nextAt = h.t + this.rng.range(TRAIL_BETWEEN[0], TRAIL_BETWEEN[1]);
       this.stop(t, "not-yet");
     }
@@ -470,16 +639,12 @@ export class Swapping {
     this.h.tasks.finish(t, why);
   }
 
-  /** One of its tasks ended: the trail's, however it went. With no moment after someone it saw set off, the next good chance can be anyone's. */
+  /** One of its tasks ended: the trail's or the word's, however it went. */
   finished(t: Task): void {
     if (t.id !== this.task) return;
     this.task = -1;
-    if (t.outcome !== "kill" && !this.asked()) this.drop();
-  }
-
-  private drop(): void {
-    this.face = -1;
-    this.why = null;
+    this.luring = false;
+    this.wordsFrom = -1;
   }
 
   /**
@@ -505,13 +670,12 @@ export class Swapping {
     }
     const [lo, hi] = out === "broken" ? AFTER_BREAK : AFTER_LOST;
     this.nextAt = Math.max(this.nextAt, h.t + this.rng.range(lo, hi));
-    if (!this.asked()) this.drop();
   }
 
-  /** Its line in the spy's digest: faces picked, trails, moments, places taken, and swaps that went wrong. */
+  /** Its line in the spy's digest: faces picked, trails, words asked, moments, places taken, and swaps that went wrong. */
   digest(): string {
     const s = this.stats;
-    return `${s.picks},${s.trails},${s.moments},${s.swaps},${s.failed}`;
+    return `${s.picks},${s.trails},${s.lures},${s.moments},${s.swaps},${s.failed}`;
   }
 
   private note(s: string): void {

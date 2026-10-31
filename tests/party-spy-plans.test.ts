@@ -479,7 +479,8 @@ describe("what the crowd finds", () => {
       const spy = party.spy!;
       const target = party.people[spy.goal.target]!;
       party.advance(Math.max(25 * MIN, target.arriveAt + 60) - party.t);
-      // Taken, as the spy's act leaves it.
+      // Taken, as the spy's act leaves it; and it lies low from now on, so the kill after it never comes (PR 5) and the owner has
+      // the evening to find it gone.
       const items = party.world.items;
       const thing = spy.things.firstThing();
       const takenAt = party.t;
@@ -487,6 +488,7 @@ describe("what the crowd finds", () => {
       items.inside[thing] = -1;
       items.set(thing, "carried", party.t);
       items.place(thing, spy.record);
+      spy.answers.lowUntil = Infinity;
       const found = () => party.events.find((e) => e.kind === "react" && e.note === `gone:${items.kindOf(thing)}`);
       while (!party.over && !found()) party.advance(30);
       const e = found();

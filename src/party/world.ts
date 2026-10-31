@@ -177,7 +177,7 @@ export class Items {
   count = new Uint8Array(0);
   /** The bag or coat it is in (-1 none): papers in a bag, a phone in a coat pocket, what the spy stashed in its own coat. */
   inside = new Int16Array(0);
-  /** Glasses and trays (milestone 3): 1 poisoned, 2 its dose taken by whoever drank it; 0 for everything else. */
+  /** Glasses and trays (milestone 3): 1 poisoned, 2 its dose taken by whoever drank it; 0 for everything else. Poison was never built: always 0. */
   dosed = new Uint8Array(0);
 
   constructor(capacity = 512) {

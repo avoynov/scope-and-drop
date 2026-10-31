@@ -139,6 +139,8 @@ export interface TaskHost {
 
 /** A follower re-aims at the one ahead when this far behind (m). */
 const FOLLOW_GAP = 1.5;
+/** The spy's tasks whose party follows it: a word in private, its plan's (a friend's face on, or a stranger's) or the swap's (spy/steps.ts, spy/swap.ts). */
+const ASIDES: ReadonlySet<string> = new Set(["aside", "lure", "swap-lure"]);
 /** A search hurries after this long (in-game s), and gives up after GIVE_UP. */
 const HURRY = 180;
 const GIVE_UP = 480;
@@ -376,7 +378,7 @@ export class Tasks {
     return this.make("spy", owner, party, steps, { what, cover, gap });
   }
 
-  /** Someone fallen: fanned where they lie, then carried by two to a sofa or a bed (spy/poison.ts); `what` names which. */
+  /** Someone fallen: fanned where they lie, then carried by two to a sofa or a bed; `what` names which. Poison's, which was never built: nothing starts one. */
   carry(owner: Person, party: Person[], steps: Step[], what: string, gap?: number): Task {
     return this.make("carry", owner, party, steps, { what, gap, other: party[0]?.id ?? -1 });
   }
@@ -927,8 +929,8 @@ export class Tasks {
   /** Someone in the owner's party: follow in single file, or (the photo) take their place in line. */
   private member(t: Task, p: Person, a: ActionState): boolean {
     const h = this.host;
-    // Whoever the spy holds goes where it has them (spy/kill.ts); a friend it takes aside for a word follows like anyone (spy/steps.ts).
-    if (t.kind === "spy" && t.what !== "aside") return false;
+    // Whoever the spy holds goes where it has them (spy/kill.ts); someone it takes aside for a word follows like anyone (spy/steps.ts, spy/swap.ts).
+    if (t.kind === "spy" && !ASIDES.has(t.what ?? "")) return false;
     if (t.kind === "photo") {
       const s = t.slots?.get(p.id);
       if (!s || t.steps[t.i]!.label === "show") return false;
@@ -964,7 +966,7 @@ export class Tasks {
     const t = this.of(p);
     if (!t) return "stand";
     if (p.id !== t.owner) {
-      if (t.kind === "elope" || t.kind === "pull" || (t.kind === "spy" && t.what === "aside")) {
+      if (t.kind === "elope" || t.kind === "pull" || (t.kind === "spy" && ASIDES.has(t.what ?? ""))) {
         const st = t.steps[t.i];
         return st?.do === "wait" ? st.pose : "stand";
       }

@@ -71,6 +71,7 @@ export {
   EMBRACE,
   FINISH,
   Killing,
+  OUT_OF_SIGHT,
   STRUGGLE,
   WALK_OFF_SPEED,
   type Hide,
@@ -192,7 +193,9 @@ export class Spy {
     this.posing = new Posing(rng.fork("posing"));
     this.things = new GoalThings(host, this.goal, this.record, rng.fork("goal"));
     this.plans = new Plans(host, this, this.things, rng.fork("plan"));
-    this.covers = new Covers(host, this, on, rng.fork("covers"));
+    // A kill is what it came for, or a place it means to take tonight, which takes one: murder is on from the door to the end, whatever else comes and goes.
+    const murder = (this.goal.kind === "kill" || cast.swap.may) && !on.includes("murder");
+    this.covers = new Covers(host, this, murder ? [...on, "murder"] : on, rng.fork("covers"));
     this.habits = new Habits(host, this, rng.fork("habits"));
     this.tactics = new Tactics(host, this, rng.fork("tactics"));
     this.kill = new Killing(host, this, rng.fork("kill"));
@@ -227,6 +230,20 @@ export class Spy {
   /** Playing someone (the record isn't its own, killed before the party or taken mid-party): their face isn't its face. */
   get playing(): boolean {
     return this.victim >= 0 || this.id !== this.selves[0];
+  }
+
+  /** Playing someone, a room where it last saw anyone it keeps away from, still here: it would rather go elsewhere. */
+  keepsOut(room: number): boolean {
+    if (!this.playing || room < 0) return false;
+    const h = this.host;
+    const n = h.people.length;
+    for (const q of h.people) if (this.answers.avoids(q.id) && q.present && !q.gone && !q.down && h.memory.lastRoom[this.id * n + q.id] === room) return true;
+    return false;
+  }
+
+  /** Busy with something of its own: a step of its plan under way, a kill, a doubter or a face it follows. */
+  get busy(): boolean {
+    return this.plans.busy || this.kill.busy || this.silence.busy || this.swap.busy;
   }
 
   /** A kill's theft first still on: not done, not dropped. */
@@ -281,6 +298,7 @@ export class Spy {
   stepDone(t: Task, st: Step): void {
     this.tactics.stepDone(t, st);
     this.plans.stepDone(t, st);
+    this.swap.stepDone(t, st);
     this.kill.stepDone(t, st);
     this.habits.stepDone(t, st);
   }
@@ -347,7 +365,7 @@ export class Spy {
     return this.kill.victim;
   }
 
-  /** How someone down, or the spy itself, looks while a kill or a poisoning has them (null: as the rest of the sim has it). */
+  /** How someone down, or the spy itself, looks while a kill has them (null: as the rest of the sim has it). */
   pose(p: Person): Pose | null {
     const k = this.kill.pose(p);
     if (k) return k;
@@ -398,9 +416,9 @@ export class Spy {
     return small ? this.readsAct(a, b, -1, true) : true;
   }
 
-  /** A tell only someone close by can make out: a hand at a pocket, the statuette palmed, the bug slipped in. */
+  /** A tell only someone close by can make out: a hand at a pocket, the statuette palmed, the bug slipped in, the needle in an embrace. */
   private small(what: TellId): boolean {
-    return what === "pocket" || what === "palm" || (what === "plant" && this.things.spec("plant").within !== undefined);
+    return what === "pocket" || what === "palm" || what === "jab" || (what === "plant" && this.things.spec("plant").within !== undefined);
   }
 
   private readsAct(a: Person, b: Person, whose: number, small: boolean): boolean {

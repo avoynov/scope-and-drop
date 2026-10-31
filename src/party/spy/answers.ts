@@ -8,7 +8,9 @@
  *
  * Anyone past AVOID goes on its avoid list (milestone 2's `person:` key, which the mind and the
  * circles already honour), so it keeps out of their circle and turns down their dance, and when
- * one of them joins its circle it finds an excuse within a minute. Tested, it bluffs or fails,
+ * one of them joins its circle it finds an excuse within a minute. Playing someone, it sees one
+ * of them coming over to it (within DODGE_SEEN, in its view) and, when it is only standing about,
+ * slips off to another room before they reach it, once a person in DODGE_AGAIN (PR 5). Tested, it bluffs or fails,
  * laughs, changes the subject and leaves the circle within a minute. Confronted, it laughs it
  * off and walks to another room; it stays until the last half hour all the same. A circle going
  * quiet as it joins sends it back to ordinary life for 10 to 20 minutes (`lowUntil`, which PR 4's
@@ -29,8 +31,8 @@ export const DANGER_WHY: readonly DangerWhy[] = ["study", "with", "wave", "came"
 const SURE_WHY = (1 << DANGER_WHY.indexOf("challenge")) | (1 << DANGER_WHY.indexOf("witness")) | (1 << DANGER_WHY.indexOf("failed"));
 
 /** Bluffing a test: having studied its victim and knowing the tester from that study, else anyone. */
-export const BLUFF_KNOWN = 0.4;
-export const BLUFF = 0.1;
+export const BLUFF_KNOWN = 0.7;
+export const BLUFF = 0.3;
 /** Past this, someone goes on its avoid list. */
 export const AVOID = 0.5;
 /** A greeting raises danger, and how close it believes them, to at least this: a wave, coming over, a kiss. A name it didn't know, as a wave. */
@@ -47,6 +49,10 @@ const EXCUSE: readonly [number, number] = [20, 60];
 const LOW: readonly [number, number] = [10 * 60, 20 * 60];
 /** "He didn't know my name": a speaker turn in ten that involves one the victim knew and it doesn't know by name. */
 const NO_NAME = 0.1;
+/** Someone it keeps away from coming over to it: seen within this (m), it slips off, once a person in DODGE_AGAIN (in-game s), and only from standing about. */
+const DODGE_SEEN = 10;
+const DODGE_AGAIN = 10 * 60;
+const SLIPS_OFF: ReadonlySet<string> = new Set(["mingle", "drink", "art", "wander", "snack", "terrace", "use"]);
 
 /** What the answers need of the spy. */
 export interface AnswersSpy {
@@ -59,6 +65,8 @@ export interface AnswersSpy {
   readonly close: Float32Array;
   /** Whether the one it plays knew j before tonight. */
   knewVictim(j: number): boolean;
+  /** Busy with something of its own: a step of its plan, a kill, a doubter or a face it follows. */
+  readonly busy: boolean;
 }
 
 /** What the answers need of the party. */
@@ -75,6 +83,8 @@ export interface AnswersHost {
   leaveCircle(p: Person): void;
   /** Off to another room, drawn on the answers' own fork. */
   walkAway(p: Person, rng: Rng): void;
+  /** Whether a can see b now. */
+  canSee(a: Person, b: Person): boolean;
   /** The circle someone stands in, or undefined. */
   circleOf(p: Person): Group | undefined;
 }
@@ -92,13 +102,15 @@ export class Answers {
   readonly avoided: Uint8Array;
   /** Back to ordinary life until then, after a circle went quiet as it joined (-1 never). */
   lowUntil = -1;
-  readonly stats = { bluffed: 0, failed: 0, laughedOff: 0, hushes: 0, names: 0, excuses: 0 };
+  readonly stats = { bluffed: 0, failed: 0, laughedOff: 0, hushes: 0, names: 0, excuses: 0, dodges: 0 };
   /** A double take or a whisper showing toward it, by whom, and until when. */
   private readonly sig: Uint8Array;
   private readonly sigUntil: Float32Array;
   /** Out of its circle at this time (-1 none), and the circle it last made an excuse to leave. */
   private leaveAt = -1;
   private excusedFrom = -1;
+  /** When it last slipped off as each person came over (-Infinity never). */
+  private readonly dodged: Float32Array;
 
   constructor(
     private readonly host: AnswersHost,
@@ -111,6 +123,7 @@ export class Answers {
     this.avoided = new Uint8Array(n);
     this.sig = new Uint8Array(n);
     this.sigUntil = new Float32Array(n);
+    this.dodged = new Float32Array(n).fill(-Infinity);
     // Its study: those it watched with the one it plays.
     for (let j = 0; j < n; j++) if (spy.close[j]! > 0) this.raise(j, spy.close[j]!, "study");
   }
@@ -239,11 +252,33 @@ export class Answers {
       }
       return;
     }
-    if (this.leaveAt >= 0) return;
+    if (this.leaveAt >= 0 || this.dodge(me)) return;
     const g = h.circleOf(me);
     if (!g || g.id === this.excusedFrom || !g.members.some((m) => this.avoided[m] && m !== me.id)) return;
     this.excusedFrom = g.id;
     this.leaveAt = h.t + this.rng.range(EXCUSE[0], EXCUSE[1]);
+  }
+
+  /**
+   * Playing someone, one it keeps away from coming over to it, seen in time: only standing about
+   * (not at a post, at the table or the toast, on the floor, nor busy with a step of its own), it
+   * slips off to another room before they reach it. Once a person in DODGE_AGAIN: the next time
+   * they catch it.
+   */
+  private dodge(me: Person): boolean {
+    const h = this.host;
+    if (!this.spy.playing || this.spy.busy || (me.action && !SLIPS_OFF.has(me.action.id))) return false;
+    for (const q of h.people) {
+      const a = q.action;
+      if (!this.avoided[q.id] || a?.id !== "ask" || a.ref !== me.id || q.level !== me.level || h.t - this.dodged[q.id]! < DODGE_AGAIN) continue;
+      if (Math.hypot(q.x - me.x, q.z - me.z) > DODGE_SEEN || !h.canSee(me, q)) continue;
+      this.dodged[q.id] = h.t;
+      this.stats.dodges++;
+      h.walkAway(me, this.rng);
+      h.log("spy", [me.id, q.id], me.room, "dodge");
+      return true;
+    }
+    return false;
   }
 
   /**

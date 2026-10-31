@@ -58,12 +58,13 @@ import { DRINK_IDS, World } from "./world";
  * witness with their own eyes; it moves nobody. A spark draws the subject and the witness to
  * each other (they flirt when next together); a grudge is one the witness holds against the subject.
  * A mishap befalls the subject there and then; a drama is a card played now (dramas.ts). A test
- * sends the subject's closest tie who is here over to test them now (milestone 3).
+ * sends the subject's closest tie who is here over to test them now (milestone 3); a swap has the
+ * spy go after the subject's place at its first good chance, murder held on (spy/swap.ts).
  */
 export interface Provocation {
   /** It lands on the first step after this time, as one planted live at this time does. */
   t: number;
-  kind?: "fact" | "gone" | "seen" | "spark" | "grudge" | "mishap" | "drama" | "test";
+  kind?: "fact" | "gone" | "seen" | "spark" | "grudge" | "mishap" | "drama" | "test" | "swap";
   /** The mishap that befalls the subject, or the card played (with the subject, if one fits, else whoever the card picks; -1 lets it pick). */
   what?: MishapId | CardId;
   /** Defaults to a rumour (juicy, a little odd). */
@@ -3865,6 +3866,10 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       const sub = this.people[v.subject];
       if (v.kind === "test") {
         if (sub?.present && !sub.gone) this.forceTest(sub);
+        continue;
+      }
+      if (v.kind === "swap") {
+        if (sub?.present && !sub.gone && !sub.down) this.spy?.takePlace(sub);
         continue;
       }
       if (v.kind === "mishap") {

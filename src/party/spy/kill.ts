@@ -117,6 +117,9 @@ interface Kill {
   saw: Set<number>;
   /** Whoever saw the victim sober within the hour before the jab. */
   sober: ReadonlySet<number> | null;
+  /** On the drag: the victim's hips, then the spy's steps since, oldest first; and whether the pull has gone taut yet (dragged()). */
+  trail: Array<{ x: number; z: number }>;
+  taut: boolean;
   /** Out of play, hidden or left. */
   laid: boolean;
   /** How the runner itself ended it (null: it ran to its end, or something else ended it). */
@@ -163,9 +166,9 @@ const DARK = 0.2;
 const STRUGGLE_SOON = 10;
 /** A word and on, after it broke off (in-game s). */
 const WORD: readonly [number, number] = [4, 8];
-/** How far apart they are while it holds them (m): the victim in front during the struggle, behind on the drag, at its side on the walk off, facing it in the embrace. */
+/** How far apart they are while it holds them (m): the victim in front during the struggle, at its side on the walk off, facing it in the embrace; on the drag, pulled by the wrists, the victim's hips this far back along the way it came. */
 const HOLD_FRONT = 0.4;
-const DRAG_BEHIND = 0.7;
+export const DRAG_BEHIND = 1.5;
 const PROP_SIDE = 0.45;
 const HUG = 0.35;
 /** A pantry, the spa, the gym: shut away. */
@@ -303,6 +306,8 @@ export class Killing {
       seen: false,
       saw: new Set(),
       sober: null,
+      trail: [],
+      taut: false,
       laid: false,
       end: null,
     };
@@ -333,7 +338,7 @@ export class Killing {
         h.notable(p, "attacked", q.id, 3, p.room);
         return this.watch(k, p, q);
       case "drag":
-        this.hold(q, p, -DRAG_BEHIND, 0, p.yaw + Math.PI);
+        this.dragged(k, p, q);
         h.notable(p, "attacked", q.id, 3, p.room);
         this.spy.measure.tell("drag", h.t, h.t + 2, p.room, h.visibility(p));
         return this.watch(k, p, q);
@@ -367,6 +372,50 @@ export class Killing {
     if (!to) return this.breakOff(t, p, q);
     k.hide = to;
     this.embrace(k, t, p, q);
+  }
+
+  /**
+   * On the drag, the victim pulled by the wrists, head toward the spy, as on a rope from their
+   * hips: slack and straight while the spy is nearer than DRAG_BEHIND, so they lie where they
+   * fell; taut, their hips that far back along the way it has come since, so never across a wall
+   * at a corner. The trail starts at their hips; the spy's steps follow.
+   */
+  private dragged(k: Kill, p: Person, q: Person): void {
+    const tr = k.trail;
+    if (!k.taut) {
+      if (Math.hypot(p.x - tr[0]!.x, p.z - tr[0]!.z) < DRAG_BEHIND) {
+        tr[1] = { x: p.x, z: p.z };
+        return;
+      }
+      k.taut = true;
+    }
+    const last = tr[tr.length - 1]!;
+    if (Math.hypot(p.x - last.x, p.z - last.z) > 0.05) tr.push({ x: p.x, z: p.z });
+    let need = DRAG_BEHIND;
+    let a = { x: p.x, z: p.z };
+    for (let i = tr.length - 1; i >= 0; i--) {
+      const b = tr[i]!;
+      const d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d < need) {
+        need -= d;
+        a = b;
+        continue;
+      }
+      const x = a.x + ((b.x - a.x) * need) / d;
+      const z = a.z + ((b.z - a.z) * need) / d;
+      // Their hips head the trail now: what was behind them is behind them.
+      tr.splice(0, i + 1, { x, z });
+      const room = this.h.pf.roomAt(p.level, x, z);
+      q.level = p.level;
+      q.x = x;
+      q.z = z;
+      q.y = p.y;
+      q.room = room === -1 ? p.room : room;
+      // Feet away from the way to the spy: their head lies the other way.
+      q.yaw = Math.atan2(x - a.x, z - a.z);
+      return;
+    }
+    // Slack along a way that doubled back: they lie where they are.
   }
 
   /** The victim where the kill has them: `along` ahead of the spy (behind when negative), `side` to its right, facing `yaw`. */
@@ -607,6 +656,8 @@ export class Killing {
     const hide = k.hide!;
     p.speed = DRAG_SPEED;
     t.steps.splice(t.i + 1, t.steps.length, { do: "goto", to: hide.to, label: "kill:drag" }, { do: "wait", s: 0, pose: "serve", label: "kill:in" }, ...this.inside(hide, "strangled", k.shut));
+    k.trail = [{ x: q.x, z: q.z }];
+    k.taut = false;
     k.stage = "drag";
     h.notable(p, "attacked", q.id, 3, p.room);
     this.note(`kill:drag:${hide.place}`);
@@ -627,7 +678,7 @@ export class Killing {
   private hidden(k: Kill, q: Person, hide: Hide): void {
     if (k.laid) return;
     this.stats.hidden++;
-    this.out(k, q, hide.place === "outside" ? hide.lay : { level: q.level, x: q.x, z: q.z, room: q.room }, hide.name, hide.hides);
+    this.out(k, q, hide.place === "outside" ? hide.lay : { level: q.level, x: q.x, z: q.z, room: q.room }, hide.name, hide.place, hide.hides);
     this.note(`kill:hidden:${hide.place}`);
   }
 
@@ -638,7 +689,7 @@ export class Killing {
     if (k.deadAt < 0) this.letGo(k, q);
     else if (!k.laid) {
       this.stats.left++;
-      this.out(k, q, { level: q.level, x: q.x, z: q.z, room: q.room }, why === "dropped" ? "dropped where it was dragged" : "where it fell", 0.1);
+      this.out(k, q, { level: q.level, x: q.x, z: q.z, room: q.room }, why === "dropped" ? "dropped where it was dragged" : "where it fell", "fell", 0.1);
     }
     if (k.hide && k.hide.bath >= 0) h.body.unholdBath(k.hide.bath);
     if (t) this.end(t, k.deadAt >= 0 ? "dead" : "survived");
@@ -678,12 +729,12 @@ export class Killing {
     }
   }
 
-  /** Out of play, into the bodies list. */
-  private out(k: Kill, q: Person, at: { level: number; x: number; z: number; room: number }, place: string, hides: number): void {
+  /** Out of play, into the bodies list, as they look and lie. */
+  private out(k: Kill, q: Person, at: { level: number; x: number; z: number; room: number }, place: string, kind: HidePlace, hides: number): void {
     const h = this.h;
     k.laid = true;
     if (k.deadAt < 0) this.dead(k, this.spy.record, q);
-    const body: SpyBody = { who: q.id, at: { ...at }, place, hides, t: k.deadAt, how: k.how };
+    const body: SpyBody = { who: q.id, at: { ...at }, yaw: q.yaw, place, kind, hides, t: k.deadAt, how: k.how, look: { ...q.look } };
     this.spy.bodies.push(body);
     h.leavePlay(q);
     h.log("down", [q.id], at.room, hides > 0.1 ? "hidden" : "left");
@@ -724,7 +775,7 @@ export class Killing {
       out = "dead";
       if (!k.laid) {
         this.stats.left++;
-        this.out(k, q, { level: q.level, x: q.x, z: q.z, room: q.room }, "where it fell", 0.1);
+        this.out(k, q, { level: q.level, x: q.x, z: q.z, room: q.room }, "where it fell", "fell", 0.1);
       }
     } else {
       // Taken off it from outside before they died: it let go.

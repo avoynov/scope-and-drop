@@ -65,6 +65,7 @@ export { Habits, outOfStep, type Deed, type HabitsHost } from "./habits";
 export { ALIBI_KINDS, Tactics, type Alibi, type AlibiKind, type TacticsHost } from "./tactics";
 export {
   CHANGE,
+  DRAG_BEHIND,
   DRAG_SPEED,
   DYING,
   EMBRACE,
@@ -332,6 +333,13 @@ export class Spy {
       this.close[j] = j === v ? 0 : this.swap.pairs[v * n + j]!;
     }
     this.answers.anew();
+  }
+
+  /** The lab's ask (a provocation): take v's place at the first good chance, murder held on until then. */
+  takePlace(v: Person): void {
+    if (this.swap.done || v.id === this.id || v.staff) return;
+    this.covers.hold("murder");
+    this.swap.ask(v);
   }
 
   /** Whom a kill holds now, besides the spy (-1 nobody): their pose is the kill's. */

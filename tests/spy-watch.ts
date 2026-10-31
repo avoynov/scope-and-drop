@@ -3,7 +3,7 @@
  * itself: the spy tests and the sweep share it. `watch()` runs an evening one step at a time and
  * asks each check after every step, so a failure names the moment to open in the lab. Each pull
  * request adds the checks for its part; PR 1 has the exit, the programme and staying sober, PR 2
- * the tests, PR 3 the plan's privacy and steps, PR 4 the covers.
+ * the tests, PR 3 the plan's privacy and steps, PR 4 the covers, PR 5 the silencing and the bodies.
  * `watchSpy()` runs an evening under them all and measures it, for the tests and the sweep alike.
  */
 import { PARTY_LENGTH, phaseIndexAt } from "../src/party/clock";
@@ -345,7 +345,72 @@ export function silenceCheck(): Check {
   });
 }
 
-/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps; PR 4: covers; PR 5: silencing), fresh for one evening. */
+/** Where each hiding place (kill.ts) is: a store is the pantry, the spa or the gym; a bed or a wardrobe is in a bedroom or a dressing room. */
+const STORE_ROOMS: ReadonlySet<string> = new Set(["pantry", "spa", "gym"]);
+const BED_ROOMS: ReadonlySet<string> = new Set(["bedroom", "dressing-room"]);
+
+/**
+ * Bodies (PR 5): each lies in a hiding place from the table, in the room it names (a bath or a
+ * bathroom floor in a bathroom, shut in the pantry, the spa or the gym, under a bed or in a
+ * wardrobe in a bedroom or a dressing room, behind a hedge in the garden, or where it fell), and
+ * out of play unless the spy has come out in its record since. Nobody dies but its target, at
+ * most one doubter it went after to silence and at most one whose place it went after.
+ */
+export function bodiesCheck(): Check {
+  let hooked: Party | null = null;
+  let laid = 0;
+  const doubters = new Set<number>();
+  const faces = new Set<number>();
+  const dead = { goal: 0, doubter: 0, face: 0 };
+  const died = new Set<number>();
+  return {
+    name: "bodies",
+    step(party) {
+      const spy = party.spy;
+      if (!spy) return null;
+      if (hooked !== party) {
+        hooked = party;
+        onSpyNote(party, (note) => {
+          const [k, what, who] = note.split(":");
+          if (k === "silence" && what === "follow") doubters.add(Number(who));
+          else if (k === "swap" && what === "face") faces.add(Number(who));
+        });
+      }
+      const out: string[] = [];
+      const { bp } = party;
+      while (laid < spy.bodies.length) {
+        const b = spy.bodies[laid++]!;
+        const type = b.at.room >= 0 ? (bp.rooms[b.at.room]?.type ?? "") : "";
+        const fits =
+          b.kind === "bath" || b.kind === "bathroom"
+            ? party.places.bathrooms.some((x) => x.room.index === b.at.room)
+            : b.kind === "store"
+              ? STORE_ROOMS.has(type)
+              : b.kind === "bed" || b.kind === "wardrobe"
+                ? BED_ROOMS.has(type)
+                : b.kind === "outside"
+                  ? b.at.room === -1
+                  : b.kind === "fell";
+        if (!fits) out.push(`${b.who}'s body ${b.kind} (${b.place}) in ${type || `room ${b.at.room}`}`);
+        if (!(b.hides > 0 && b.hides <= 1)) out.push(`${b.who}'s body hides ${b.hides}`);
+      }
+      for (const b of spy.bodies) {
+        const q = party.people[b.who]!;
+        if (q.id !== spy.id && q.present && !q.gone) out.push(`${q.id}'s body is up and about`);
+      }
+      for (const q of party.people) {
+        if (q.down !== "dead" || died.has(q.id)) continue;
+        died.add(q.id);
+        const why = spy.goal.kind === "kill" && q.id === spy.goal.target ? "goal" : doubters.has(q.id) ? "doubter" : faces.has(q.id) ? "face" : null;
+        if (!why) out.push(`${q.id} died: not its target, nor anyone it went after to silence or for their place`);
+        else if (++dead[why] > 1) out.push(`a second ${why === "goal" ? "death of its target" : why === "doubter" ? "doubter silenced" : "face it took"}: ${q.id}`);
+      }
+      return out.length ? out.join("; ") : null;
+    },
+  };
+}
+
+/** Every check so far (PR 1: the exit, the programme, staying sober; PR 2: tests; PR 3: privacy and steps; PR 4: covers; PR 5: silencing and bodies), fresh for one evening. */
 export function spyChecks(): {
   exit: Check;
   programme: ReturnType<typeof programmeCheck>;
@@ -355,6 +420,7 @@ export function spyChecks(): {
   steps: Check;
   covers: Check;
   silence: Check;
+  bodies: Check;
   all: Check[];
 } {
   const exit = exitCheck();
@@ -365,7 +431,8 @@ export function spyChecks(): {
   const steps = stepsCheck();
   const covers = coversCheck();
   const silence = silenceCheck();
-  return { exit, programme, sober, tests, privacy, steps, covers, silence, all: [exit, programme, sober, tests, privacy, steps, covers, silence] };
+  const bodies = bodiesCheck();
+  return { exit, programme, sober, tests, privacy, steps, covers, silence, bodies, all: [exit, programme, sober, tests, privacy, steps, covers, silence, bodies] };
 }
 
 /** The reactions to someone out of step (PR 1): brought a flute, beckoned in, pointed the way. */

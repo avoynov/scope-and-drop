@@ -223,6 +223,21 @@ export class Covers {
     return COVERS.map((c, k) => `${this.state[k]!.on ? 1 : 0}${Math.round(this.totalOf(c) / 60)}`).join(".");
   }
 
+  /** Held on from now to the end of the evening, past the caps, as one the options hold on (the lab's ask to take a place needs murder). */
+  hold(c: Cover): void {
+    const t = this.host.t;
+    const s = this.state[COVERS.indexOf(c)]!;
+    s.forced = true;
+    s.next = Infinity;
+    if (!s.on) {
+      s.on = true;
+      s.since = t;
+      this.spells.push({ cover: c, from: t, to: -1 });
+      this.host.log("spy", [this.spy.record.id], this.spy.record.room, `cover:${c}:on`);
+    }
+    this.refreshNext();
+  }
+
   /** Gone home: every spell still running ends now. */
   left(): void {
     const t = this.host.t;

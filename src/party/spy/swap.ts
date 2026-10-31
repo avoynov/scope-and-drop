@@ -78,8 +78,8 @@ export function dress(p: Person, own: SpyOwn, studied: boolean): void {
   p.early = null;
 }
 
-/** Why it takes someone's place: the host's keys, a friend of its target, a new face once people grow watchful, or a face for the second half of the evening (the first good chance). */
-export type SwapWhy = "host" | "friend" | "face" | "halfway";
+/** Why it takes someone's place: the host's keys, a friend of its target, a new face once people grow watchful, a face for the second half of the evening (the first good chance), or the lab's ask. */
+export type SwapWhy = "host" | "friend" | "face" | "halfway" | "lab";
 
 /** What taking someone's place needs from the party, besides what a kill does. */
 export interface SwapHost extends KillHost {
@@ -134,7 +134,7 @@ export class Swapping {
   done = false;
   /** Whom casting would let it play (cast.ts). */
   private readonly playable: ReadonlySet<number>;
-  private readonly tonight: boolean;
+  private tonight: boolean;
   /** The kill behind the bolt over and the body hidden: whose place it comes out in, at its next step (-1 none). */
   private ready = -1;
   /** The trail's task (-1 none), when it set off and for how long, how many trails after this face, and when it may set off again. */
@@ -188,9 +188,9 @@ export class Swapping {
     return this.face;
   }
 
-  /** Its plan asked for this face: the host's, or a friend's of its target. */
+  /** Its plan asked for this face (the host's, or a friend's of its target), or the lab did. */
   private asked(): boolean {
-    return this.face >= 0 && (this.why === "host" || this.why === "friend");
+    return this.face >= 0 && (this.why === "host" || this.why === "friend" || this.why === "lab");
   }
 
   // ------------------------------------------------------------ what it sees
@@ -298,6 +298,17 @@ export class Swapping {
     return true;
   }
 
+  /**
+   * The lab's ask (a provocation): v's place at its first good chance from now, whatever casting
+   * said and whoever v is, followed as a face its plan asked for and never let go until taken or
+   * v is gone. Nothing once it has taken a place.
+   */
+  ask(v: Person): void {
+    if (this.done || v.id === this.spy.id || v.staff) return;
+    this.tonight = true;
+    this.set(v.id, "lab");
+  }
+
   private set(v: number, why: SwapWhy): void {
     this.face = v;
     this.why = why;
@@ -318,7 +329,7 @@ export class Swapping {
     const h = this.h;
     if (!this.asked()) return;
     const v = h.people[this.face]!;
-    if (v.present && !v.gone && !v.down && this.tries < TRIES) return;
+    if (v.present && !v.gone && !v.down && (this.tries < TRIES || this.why === "lab")) return;
     if (this.tries >= TRIES) this.nextAt = Math.max(this.nextAt, h.t + this.rng.range(AFTER_TRIES[0], AFTER_TRIES[1]));
     this.face = -1;
     this.why = null;
@@ -369,7 +380,15 @@ export class Swapping {
     this.done = true;
     // Their jacket or dress on it now: its own clothes onto the body half the time, else into a wardrobe, the body left in shirtsleeves or a slip.
     const body = spy.bodies[spy.bodies.length - 1];
-    if (body?.who === v.id && this.rng.chance(WEARS)) body.wears = a.id;
+    if (body?.who === v.id) {
+      if (this.rng.chance(WEARS)) {
+        body.wears = a.id;
+        body.look = { ...body.look, outfit: a.look.outfit, color: a.look.color, accent: a.look.accent, hat: a.look.hat };
+      } else {
+        body.stripped = true;
+        body.look = { ...body.look, hat: false };
+      }
+    }
     this.stats.swaps++;
     h.swapSpy(v);
     h.log("spy", [v.id, a.id], v.room, `swap:${a.id}:${v.id}:${this.why}`);

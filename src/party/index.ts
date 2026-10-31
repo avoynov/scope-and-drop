@@ -28,6 +28,7 @@ export {
   GOAL_SHARES,
   SETUPS,
   STEAL,
+  SWAP_FROM,
   TELLS,
   DELAY_HEARD,
   DELAY_SEEN,
@@ -53,6 +54,7 @@ export {
   type SpyOptions,
   type SpySetup,
   type Spell,
+  type SwapWhy,
   type Tell,
   type TellId,
 } from "./spy";

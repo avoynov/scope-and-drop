@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
 import { yawTo } from "../src/party/places";
 import { Party } from "../src/party/sim";
-import { CHANGE, FINISH, STRUGGLE, type KillStage } from "../src/party/spy";
+import { CHANGE, DRAG_BEHIND, FINISH, STRUGGLE, type KillStage } from "../src/party/spy";
 import type { Person } from "../src/party/types";
 import { spyChecks, watch } from "./spy-watch";
 
@@ -89,10 +89,16 @@ describe("killing", () => {
     const t0 = party.t;
     let gripAt = -1;
     let deadAt = -1;
+    let far = 0;
     const stages = run(party, 15 * MIN, (s) => {
       if (s === "struggle" && gripAt < 0) gripAt = party.t;
       if (q.down === "dead" && deadAt < 0) deadAt = party.t;
+      if (s !== "drag") return;
+      // Pulled by the wrists along the way it came: never further behind than that, never in a wall.
+      far = Math.max(far, Math.hypot(q.x - p.x, q.z - p.z));
+      expect(party.pf.walkable(q.level, q.x, q.z)).toBe(true);
     });
+    expect(far).toBeLessThanOrEqual(DRAG_BEHIND + 0.05);
     // Stepping out, when there's a door to step out of, ends with the task.
     expect(stages.filter((s) => s !== "out")).toEqual(["close", "struggle", "drag", "finish", "hide"]);
     // Out cold after the struggle, dead only after holding on.
@@ -101,7 +107,9 @@ describe("killing", () => {
     expect(q.down).toBe("dead");
     expect(q.present).toBe(false);
     expect(spy.bodies).toHaveLength(1);
-    expect(spy.bodies[0]).toMatchObject({ who: q.id, how: "strangled", hides: m!.hide.hides });
+    // As it lies: the hiding place's kind, the clothes it died in.
+    expect(spy.bodies[0]).toMatchObject({ who: q.id, how: "strangled", hides: m!.hide.hides, kind: m!.hide.place, look: q.look });
+    expect(spy.bodies[0]!.stripped).toBeUndefined();
     expect(spy.goal.triedAt).not.toBeNull();
     expect(spy.goal.doneAt).toBe(deadAt);
     const notes = party.events.filter((e) => e.kind === "down" && e.actors[0] === q.id).map((e) => e.note);

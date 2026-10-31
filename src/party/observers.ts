@@ -20,12 +20,13 @@
  * draws come from the party's own fork, `root.fork("observers")`.
  */
 import { SPOTTERS, type SpotterTier } from "../armoury/catalogue";
+import type { SpotterHire } from "../armoury/loadout";
 import { collectOccluders } from "../mansion/analysis/occluders";
 import { SightlineTracer } from "../mansion/analysis/sightlines";
 import type { Vec3 } from "../mansion/core/geom";
 import type { Rng } from "../mansion/core/rng";
 import type { MansionBlueprint } from "../mansion/core/types";
-import { perchEyeAt } from "../mansion/site/perch";
+import { PERCH_ARC_DEG, perchEyeAt } from "../mansion/site/perch";
 import { Radio, type CallKind, type RadioCall } from "../scope/radio";
 import type { Verb } from "./memory";
 import { describeLooks, F_BUILD, F_COLOUR, F_HEIGHT, F_QUIRKS, F_SEX, LOOKS_D, QUIRK_SEEN } from "./register";
@@ -100,6 +101,9 @@ export interface ObserverHire {
   azDeg: number;
 }
 
+/** The observers a loadout hires: its spotters placed on a bearing (those beside the sniper are the scope lab's). */
+export const hiredObservers = (spotters: readonly SpotterHire[]): ObserverHire[] => spotters.filter((s) => s.place === "bearing").map((s) => ({ tier: s.tier, azDeg: s.azDeg ?? 0 }));
+
 /** What the sniper says on the radio wheel, at a time (in-game s), to one observer (`to`) or all (-1). */
 export type ObserverOrder = { t: number; to: number; kind: "watch"; who: number } | { t: number; to: number; kind: "report"; room: number } | { t: number; to: number; kind: "quiet"; on: boolean };
 
@@ -166,7 +170,9 @@ class View {
   ) {
     const bp = h.bp;
     const zGarden = bp.site.perch.target.z;
-    this.eye = perchEyeAt(bp.site.terrain, zGarden, bp.groundFloorY, azDeg, 0, bp.site.perch.distance);
+    // On the treeline arc, at ground level, at the perch's range.
+    const az = Math.max(-PERCH_ARC_DEG, Math.min(PERCH_ARC_DEG, azDeg));
+    this.eye = perchEyeAt(bp.site.terrain, zGarden, bp.groundFloorY, az, 0, bp.site.perch.distance);
     this.tracer = new SightlineTracer(this.eye, this.occluders(null));
     // Which windows face this eye, as World works it out for the perch's.
     const byOpening = new Map<string, number>();
@@ -474,6 +480,15 @@ export class Observers {
     }
   }
 
+  /**
+   * The first call about someone that went out on the radio (or null): when an observer first named them. For the
+   * mission report's "Second Bearing" (the spy first named by an observer) once the mission joins the party.
+   */
+  firstNamed(who: number): { call: ObserverCall; start: number } | null {
+    const a = this.radio.log.find((a) => (a.call as ObserverCall).about === who);
+    return a ? { call: a.call as ObserverCall, start: a.start } : null;
+  }
+
   /** A short digest of everything they said (determinism tests). */
   digest(): string {
     let h = 0;
@@ -500,8 +515,8 @@ export class Observers {
   }
 
   private watch(o: Observer, who: number, t: number): void {
-    o.watch = who;
     const p = this.h.people[who];
+    o.watch = p ? who : -1;
     if (!p) return;
     o.watchSeen = o.view.person(p) >= SEEN;
     o.watchRoom = p.room;
@@ -527,7 +542,7 @@ export class Observers {
     let text: string;
     if (!seen.length) text = any ? `${Where}, nobody I can make out.` : `No view into ${where}.`;
     else {
-      const ds = seen.slice(0, 4).map((p) => this.describe(o, p).text);
+      const ds = seen.slice(0, 4).map((p) => `a ${this.describe(o, p).text}`);
       const more = seen.length > 4 ? `; ${count(seen.length - 4)} more` : "";
       text = `${Where}, ${count(seen.length)}: ${ds.join("; ")}${more}.`;
     }

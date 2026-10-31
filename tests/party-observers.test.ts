@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { generateMansion } from "../src/mansion";
 import type { MansionBlueprint } from "../src/mansion/core/types";
 import { PARTY_LENGTH } from "../src/party/clock";
-import { BACK_AFTER, colourName, LOST_AFTER, Observers, SEEN, sayLooks, type ObserverCall, type ObserverHire } from "../src/party/observers";
+import { BACK_AFTER, colourName, hiredObservers, LOST_AFTER, Observers, SEEN, sayLooks, type ObserverCall, type ObserverHire } from "../src/party/observers";
 import { describeLooks, F_BUILD, F_COLOUR, F_HEIGHT, F_QUIRKS, F_SEX, LOOKS_D } from "../src/party/register";
 import { chestOf, straightShot } from "../src/party/shot";
 import { Party } from "../src/party/sim";
@@ -109,6 +109,21 @@ describe("observers' words", () => {
 });
 
 describe("observers on other bearings", () => {
+  it("are the loadout's spotters on a bearing; whoever they name first is on the radio log", () => {
+    expect(
+      hiredObservers([
+        { tier: "veteran", place: "beside" },
+        { tier: "rookie", place: "bearing", azDeg: -20 },
+      ]),
+    ).toEqual([{ tier: "rookie", azDeg: -20 }]);
+    const e = evenings[0]!;
+    const id = e.watched.find((w) => w >= 0)!;
+    const first = e.obs.firstNamed(id)!;
+    expect(first.call.about).toBe(id);
+    expect(e.obs.radio.log.find((a) => (a.call as ObserverCall).about === id)!.start).toBe(first.start);
+    expect(e.obs.firstNamed(-5)).toBeNull();
+  });
+
   it("found guests to watch and somewhere to shoot", () => {
     for (const e of evenings) expect(e.watched.filter((w) => w >= 0).length).toBeGreaterThan(0);
     expect(evenings.filter((e) => e.shotAt >= 0).length).toBeGreaterThan(5);

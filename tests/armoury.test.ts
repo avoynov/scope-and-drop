@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Career, earlyBoost, settleContract } from "../src/armoury/career";
-import { EARLY_MAX, ISSUED, ITEMS, ITEM_IDS, MARKUP, RETAINER, SLOTS, SPOTTERS, START_BALANCE, fits, type ItemId } from "../src/armoury/catalogue";
+import { EARLY_BEND, EARLY_MAX, ISSUED, ITEMS, ITEM_IDS, MARKUP, RETAINER, SLOTS, SPOTTERS, START_BALANCE, fits, type ItemId } from "../src/armoury/catalogue";
 import { carried, checkLoadout, decodeKit, emptyLoadout, encodeKit, kitFactor, payFactor, type Loadout } from "../src/armoury/loadout";
 import { issuedRig, rigFor } from "../src/armoury/rig";
 import { ROUNDS } from "../src/scope/ballistics";
@@ -120,22 +120,32 @@ describe("the career", () => {
     expect(earlyBoost(end + 600)).toBe(0);
     expect(earlyBoost(0)).toBe(EARLY_MAX);
     expect(earlyBoost(-600)).toBe(EARLY_MAX);
+    // Rises the earlier the job is done, and ever faster (a softened 1/x): each step earlier adds more than the last.
     let last = -1;
+    let lastStep = 0;
     for (let t = end; t >= 0; t -= 300) {
       const b = earlyBoost(t);
       expect(b).toBeGreaterThan(last);
+      if (last >= 0) {
+        expect(b - last).toBeGreaterThan(lastStep);
+        lastStep = b - last;
+      }
       last = b;
     }
+    // Below the straight line, but not by much: halfway it pays more than a third of the straight line's boost.
+    expect(earlyBoost(end / 2)).toBeLessThan(EARLY_MAX / 2);
+    expect(earlyBoost(end / 2)).toBeGreaterThan(EARLY_MAX / 2 / 3);
     const l = loadout("vss", ["atlas", "bag"], [{ tier: "veteran", place: "beside" }]);
     const plain = settleContract({ fee: 6000 }, { factor: 1, label: "killed" }, l);
     const late = settleContract({ fee: 6000 }, { factor: 1, label: "killed", doneAt: end }, l);
     const early = settleContract({ fee: 6000 }, { factor: 1, label: "killed", doneAt: end / 2 }, l);
     expect(late.total).toBe(plain.total);
     expect(late.early).toBeUndefined();
-    expect(early.early!.amount).toBe(Math.round(6000 * EARLY_MAX * 0.5));
-    expect(early.early!.label).toBe("Done 1 h 30 min before the evening's end: +25%");
+    const half = (EARLY_MAX * 0.5) / (1 + EARLY_BEND * 0.5);
+    expect(early.early!.amount).toBe(Math.round(6000 * half));
+    expect(early.early!.label).toBe(`Done 1 h 30 min before the evening's end: +${Math.round(half * 100)}%`);
     expect(early.total).toBe(early.gross + early.early!.amount + [...early.kit, ...early.spotters].reduce((s, x) => s + x.amount, 0));
-    expect(early.total).toBeCloseTo(6000 * (1 + EARLY_MAX * 0.5) * payFactor(l), -1);
+    expect(early.total).toBeCloseTo(6000 * (1 + half) * payFactor(l), -1);
     // A failure stays a failure, however early.
     expect(settleContract({ fee: 6000 }, { factor: 0, label: "failed", doneAt: 0 }, l).total).toBe(-RETAINER);
   });

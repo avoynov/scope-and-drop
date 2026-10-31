@@ -9,7 +9,7 @@
  * ln(1 − decay), which is fair whatever the order and sums to the total exactly.
  */
 import { PARTY_LENGTH } from "../party/clock";
-import { EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
+import { EARLY_BEND, EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
 import { carried, checkLoadout, kitFactor, type Loadout } from "./loadout";
 
 export interface Contract {
@@ -60,13 +60,15 @@ export interface CareerData {
 const round = (x: number) => Math.round(x);
 
 /**
- * The early-finish boost, as a fraction of the pay: EARLY_MAX for a job done as the evening starts, falling in a straight line
- * to 0 at its end. Never below 0, whatever the clock says.
+ * The early-finish boost, as a fraction of the pay: EARLY_MAX for a job done as the evening starts, 0 at its end. In between a
+ * softened 1/x: with f the share of the evening left, EARLY_MAX × f / (1 + EARLY_BEND × (1 − f)). Small for a job done late,
+ * climbing faster the earlier it is done. Never below 0, whatever the clock says.
  */
 export function earlyBoost(doneAt: number | undefined, evening = PARTY_LENGTH): number {
   if (doneAt === undefined || !Number.isFinite(doneAt) || evening <= 0) return 0;
   const left = Math.max(0, Math.min(evening, evening - doneAt));
-  return EARLY_MAX * (left / evening);
+  const f = left / evening;
+  return (EARLY_MAX * f) / (1 + EARLY_BEND * (1 - f));
 }
 
 /** "Done 1 h 30 min before the evening's end", "Done 40 min before the evening's end". */

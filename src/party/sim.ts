@@ -21,6 +21,7 @@ import { HOUSE, Ident, PASSED, SLIP_SKILLS, TEST, TIE_WEIGHT, type IdentEvent, t
 import { Memory, KNOWN, PASS_ON, SUSPICIOUS, VERBS, type MemoryHost, type Verb } from "./memory";
 import { beside, choose, decay, destination, LAST_TOAST, PHASE_WEIGHTS, spotKey, toAction, type Candidate, type MindWorld } from "./mind";
 import { Mood, type MoodOverride } from "./mood";
+import { Observers, type ObserverOptions } from "./observers";
 import { Pathfinder } from "./path";
 import { facing, resolvePlaces, RoomCells, yawTo, type Places } from "./places";
 import { Practices, type PracticesHost } from "./practices";
@@ -89,6 +90,8 @@ export interface PartyOptions extends CastOptions {
   profile?: boolean;
   /** A spy among the guests (milestone 3): off by default; `true` draws everything, options pin parts of it. */
   spy?: boolean | SpyOptions;
+  /** Observers hired on other bearings (armoury task 7, observers.ts): their calls never reach anyone's mind. */
+  observers?: ObserverOptions;
 }
 
 /** What the party has noticed so far, for the lab and the tests. */
@@ -341,6 +344,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   readonly rng: Rng;
   /** The evening's own stream for a shot from the treeline (shot.ts), forked by the shot's time: a shot heard draws nothing from the evening. */
   readonly shots: Rng;
+  /** Observers on other bearings, when hired: they look right after everyone else, and nothing they say reaches the party. */
+  readonly observers: Observers | null;
   t = 0;
   private phaseIdx = 0;
   private reserved = new Map<string, number>();
@@ -455,6 +460,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     };
     this.senses = new Senses(this, root.fork("senses"));
     this.shots = root.fork("shot");
+    this.observers = opts.observers?.hires.length ? new Observers(this, opts.observers, root.fork("observers")) : null;
     this.offers = resolveOffers(bp, this.pf, this.cells, this.places);
     this.circles = new Groups(this, root.fork("circles"));
     this.tasks = new Tasks(this, root.fork("tasks"));
@@ -690,6 +696,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
     if (this.stepNo % 20 === 0) this.reactions.step();
     lap("spy");
     this.senses.step(this.stepNo);
+    this.observers?.step();
     lap("senses");
     this.mood.applyOverrides(this.t);
     if (this.stepNo % 2 === 0) {

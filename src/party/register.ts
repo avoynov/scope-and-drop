@@ -77,12 +77,14 @@ const E = SIGHTINGS + CLAIMS;
 export const CASE_SLOTS = 8;
 export const CANDIDATES = 6;
 /** Features in a description: sex, height (cm), build, colour (r, g, b), visible quirks (bits). */
-const D = 7;
-const F_SEX = 1;
-const F_HEIGHT = 2;
-const F_BUILD = 4;
-const F_COLOUR = 8;
-const F_QUIRKS = 16;
+export const LOOKS_D = 7;
+const D = LOOKS_D;
+/** The features a description keeps, as a mask (a feature left out is one forgotten or never made out). */
+export const F_SEX = 1;
+export const F_HEIGHT = 2;
+export const F_BUILD = 4;
+export const F_COLOUR = 8;
+export const F_QUIRKS = 16;
 const ALL = F_SEX | F_HEIGHT | F_BUILD | F_COLOUR | F_QUIRKS;
 /** What drink takes first from a description. */
 const FORGET_ORDER = [F_COLOUR, F_BUILD, F_HEIGHT] as const;
@@ -486,7 +488,7 @@ export class Register {
 
   /** How someone looks, as a description (call again when it changes). */
   refreshLook(p: Person): void {
-    describe(p, this.looks, p.id * D);
+    describeLooks(p, this.looks, p.id * D);
   }
 
   /** How well a description fits someone's looks, 0 to 1. */
@@ -595,7 +597,7 @@ export class Register {
     const s = this.newEntry(i, false);
     if (this.host.ident.tieOf(i, b.id) >= 1) this.who[s] = b.id;
     else {
-      describe(b, this.desc, s * D);
+      describeLooks(b, this.desc, s * D);
       this.mask[s] = ALL;
     }
     this.verb[s] = VERB_IDS.indexOf(verb);
@@ -1420,7 +1422,7 @@ export class Register {
     const s = this.newEntry(i, false);
     if (this.host.ident.tieOf(i, j) >= 1) this.who[s] = j;
     else {
-      describe(b, this.desc, s * D);
+      describeLooks(b, this.desc, s * D);
       this.mask[s] = ALL;
     }
     this.verb[s] = VERB_IDS.indexOf("was-in");
@@ -1526,10 +1528,14 @@ export class Register {
 
 // ------------------------------------------------------------------ descriptions
 
-const QUIRK_SEEN = ["glasses", "limp", "cane"] as const;
+/** The quirks one can see, in the order of the description's bits. */
+export const QUIRK_SEEN = ["glasses", "limp", "cane"] as const;
 
-/** Write someone's looks as a description: sex, height (cm), build, outfit colour, visible quirks. */
-function describe(p: Person, out: Float32Array, o: number): void {
+/**
+ * Write someone's looks as a description: sex, height (cm), build, outfit colour, visible quirks,
+ * LOOKS_D numbers from `o`. A spotter's sighting (observers.ts) is a copy of this with its noise.
+ */
+export function describeLooks(p: Person, out: Float32Array, o: number): void {
   const L = p.look;
   const v = parseInt(L.color.slice(1), 16);
   out[o] = L.sex === "f" ? 1 : 0;

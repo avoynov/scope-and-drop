@@ -99,6 +99,17 @@ describe("the ground", () => {
     expect(speed(w, 0, 10, 0, 0)).toBeGreaterThan(6);
   });
 
+  it("blows harder at a tower's platform: about 1.56× the 3 m wind at 40 m, so about 2.4× the push", () => {
+    const w = still(flat);
+    const at40 = speed(w, 0, 40, 0, 0) / speed(w, 0, 3, 0, 0);
+    expect(at40).toBeCloseTo(Math.log(40 / 0.03) / Math.log(3 / 0.03), 6);
+    expect(at40).toBeCloseTo(1.56, 2);
+    expect(at40 ** 2).toBeCloseTo(2.44, 1);
+    // Higher still it grows with the log of the height (held at 1.6× above about 48 m).
+    expect(speed(w, 0, 20, 0, 0)).toBeLessThan(speed(w, 0, 30, 0, 0));
+    expect(speed(w, 0, 30, 0, 0)).toBeLessThan(speed(w, 0, 40, 0, 0));
+  });
+
   // A ridge across the wind from 9 o'clock: 20 m high, crest at x = 0, slopes ±10° or so.
   const ridgeH = (x: number) => 20 * Math.exp(-((x / 80) ** 2));
   const ridge = terrainWind((x) => ridgeH(x), -600, -300, 600, 300, 5);

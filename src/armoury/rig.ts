@@ -78,8 +78,12 @@ export interface Rig {
 
 const effectsOf = (l: Loadout): ItemEffects => Object.assign({}, ...carried(l).map((id: ItemId) => ITEMS[id].effects));
 
-/** The rig for a loadout. `lab` keeps the scope lab's own rest and hold, whatever the front rest. */
-export function rigFor(l: Loadout, opts: { lab?: boolean } = {}): Rig {
+/**
+ * The rig for a loadout. `lab` keeps the scope lab's own rest and hold, whatever the front rest. `tower` puts the
+ * shooter on a tower's platform: seated behind the tripod if one is carried, otherwise on the railing (a bipod can't
+ * be laid 30–55° down, and the lab's own bipod hold gives way to these too).
+ */
+export function rigFor(l: Loadout, opts: { lab?: boolean; tower?: boolean } = {}): Rig {
   const id = l.rifle;
   const base = RIFLES[id];
   const fx = effectsOf(l);
@@ -112,8 +116,9 @@ export function rigFor(l: Loadout, opts: { lab?: boolean } = {}): Rig {
   const addedKg = muzzleKg + (fx.mag20 ? 0.35 : 0);
   const recoil = scaleRecoil(id, { round, gas, addedKg, muzzleKg, pad: !!fx.fit && id === "svd" });
 
-  const restKind: RestKind = fx.rest ?? "pack";
-  const hold = cloneHold(opts.lab ? HOLD.harris : HOLD[restKind]);
+  const restKind: RestKind = opts.tower ? (fx.rest === "tripod" ? "towerTripod" : "railing") : (fx.rest ?? "pack");
+  const lab = !!opts.lab && !opts.tower;
+  const hold = cloneHold(lab ? HOLD.harris : HOLD[restKind]);
   if (fx.bag) {
     hold.breath[1] *= 0.5;
     hold.wander[1] *= 0.7;
@@ -128,7 +133,7 @@ export function rigFor(l: Loadout, opts: { lab?: boolean } = {}): Rig {
     hold.pulse *= k;
     hold.tremor *= k;
   }
-  const restBase = opts.lab ? LAB_REST : REST[restKind];
+  const restBase = lab ? LAB_REST : REST[restKind];
   const rest: RestSpec = { ...restBase, panLag: restBase.panLag * fit.panLag, bag: fx.bag ? BAG : null, muzzleKg };
 
   const report: Report = id === "vss" ? "integral" : can ? (subsonic ? "can-sub" : "can") : "open";
@@ -139,7 +144,7 @@ export function rigFor(l: Loadout, opts: { lab?: boolean } = {}): Rig {
     recoil,
     hold,
     rest,
-    restKind: opts.lab ? "lab" : restKind,
+    restKind: lab ? "lab" : restKind,
     bag: !!fx.bag,
     fit,
     can,

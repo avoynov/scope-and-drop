@@ -7,11 +7,11 @@ import { RestDynamics, dynamicPressure, holdAt, mastSwayAt, type RestState } fro
 import { rigFor, type Rig } from "../../src/armoury/rig";
 import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
 import { ACSS_RANGES, PSO_CHEVRON_RANGES, RETICLES, TREMOR_ROWS, VSS_CHEVRON_RANGES, acssReticle, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
-import { STEEP_DEG, comeUps, dotValues, loadCard, loadCardNeeded, steepCard } from "../../src/scope/cards";
+import { comeUps, dotValues, loadCard, loadCardNeeded } from "../../src/scope/cards";
 import { speedDrop, windHoldMil, type AimAid } from "../../src/scope/aids";
 import { BEAM_RAYS, KILO8K, Kilo, PLAIN_LRF, PLAIN_RAYS, handShakeMrad, pickReturn, rangeSigmaM, type KiloReticle, type RayHit, type TargetMode } from "../../src/scope/kilo";
 import { compose, invert, qRot } from "../../src/scope/handling";
-import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltLoaded, type Dial, type Rifle, type RifleId } from "../../src/scope/shot";
+import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltLoaded, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
 import { createComposite } from "./composite";
@@ -511,22 +511,12 @@ const offChevron = (c: number) => (Math.abs(c) < 0.05 ? "on" : `${c > 0 ? "▼" 
  *  - a reticle cut for another load than the one in the rifle (the PSO's chevrons, the ACSS's): a load card, how
  *    far below or above each chevron to hold, with the drum on 1.
  */
-/** On a tower: the card of elevations by slant range and angle down, since past 30° the cosine rule holds high. */
-function steepTable(rf: Rifle): string {
-  const cell = (m: number) => (m < -0.05 ? `▼${(-m).toFixed(1)}` : Math.max(0, m).toFixed(1));
-  const rows = steepCard(rf);
-  return (
-    `<div class="dope-head" style="margin-top:10px"><b>TOWER</b> slant range, angle down<span>mil</span></div>` +
-    `<table><tr><th>m</th>${STEEP_DEG.map((d) => `<td>${d}°</td>`).join("")}</tr>${rows.map((r) => `<tr><th>${r.rangeM}</th>${r.mil.map((m) => `<td>${cell(m)}</td>`).join("")}</tr>`).join("")}</table>` +
-    `<div class="card-note">Steeper than 30°: read this, not the cosine. ▼ under the zero: hold under, the turret stops at 0.</div>`
-  );
-}
 function syncDope(): void {
   const ret = currentReticle();
   const rf = rig.rifle;
   const r = ROUNDS[rf.round];
   const kind = state.reticle === "tree" ? (state.aid === "manual" ? "drop" : null) : rf.round !== ret.round ? "load" : null;
-  const key = `${kind}|${rf.round}|${ret.name}|${towerM}`;
+  const key = `${kind}|${rf.round}|${ret.name}`;
   if (key === dopeFor) return;
   dopeFor = key;
   dope.innerHTML = "";
@@ -549,7 +539,6 @@ function syncDope(): void {
         `<tr><th>m</th>${rows.slice(4).map((d) => `<td>${d}</td>`).join("")}</tr><tr><th>mil</th>${rows.slice(4).map((d) => `<td>${elev(d)}</td>`).join("")}</tr></table>` +
         `<div class="card-note">No Speed Drop factor holds for this load: range it closely.<br>1 click = 0.1 mil · up or downhill: × the ACI's cosine</div>`;
     }
-    if (towerM !== null) dope.innerHTML += steepTable(rf);
   } else if (kind === "load") {
     const ranges = vssStyle === "acss" && state.reticle === "vss" ? ACSS_RANGES : state.reticle === "vss" ? VSS_CHEVRON_RANGES : PSO_CHEVRON_RANGES;
     const rows = loadCard(rf, ret.round, ranges, ret.unitRad);

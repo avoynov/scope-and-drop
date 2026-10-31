@@ -6,12 +6,9 @@
  *    chevron, how far below (+) or above (−) it to hold, in the reticle's unit, with the drum on 1.
  *  - `comeUps`: the elevation (mil over the 100 m zero) by range, for a turret: past a Speed Drop band, or for a load
  *    with no useful band at all (the subsonic one).
- *  - `steepCard`: from a tower, the elevation (mil over the 100 m zero) by slant range and angle down, flown for the
- *    load: past 30° the cosine rule holds high by up to half a mil.
  *  - `dotValues`: what one wind dot of the TReMoR3-style grid is worth for the load (m/s of full-value crosswind),
  *    row by row.
  */
-import { solveElevationMil } from "./aids";
 import { ROUNDS, holdRad, type RoundId } from "./ballistics";
 import { MRAD } from "./optics";
 import { tremorDotMil } from "./reticles";
@@ -62,16 +59,4 @@ export function dotValues(rf: Rifle, rows: readonly number[]): { row: number; ra
     const milPerMs = crossDriftPerMs(ROUNDS[rf.round], [rangeM])[0]! / rangeM / MRAD;
     return { row, rangeM, msPerDot: tremorDotMil(row) / milPerMs };
   });
-}
-
-/** The tower card's angles (° down) and slant ranges (m); a slow load's ranges stop at 300 m. */
-export const STEEP_DEG = [30, 40, 50, 55] as const;
-export const steepRanges = (rf: Rifle): number[] => (ROUNDS[rf.round].mv < 330 ? [150, 200, 250, 300] : [150, 200, 300, 400]);
-
-/**
- * Elevation (mil over the 100 m zero) for each slant range and angle down, as a solver flies it for the load: rows
- * by range, columns by angle. Short and steep it falls below the zero (negative: hold under, the turret stops at 0).
- */
-export function steepCard(rf: Rifle, ranges: readonly number[] = steepRanges(rf), degs: readonly number[] = STEEP_DEG): { rangeM: number; mil: number[] }[] {
-  return ranges.map((rangeM) => ({ rangeM, mil: degs.map((d) => solveElevationMil(rf, rangeM, (-d * Math.PI) / 180)) }));
 }

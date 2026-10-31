@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { speedDrop } from "../src/scope/aids";
 import { ROUNDS, type RoundId } from "../src/scope/ballistics";
-import { STEEP_DEG, comeUps, dotValues, loadCard, steepCard } from "../src/scope/cards";
+import { comeUps, dotValues, loadCard } from "../src/scope/cards";
 import { solveFiring } from "../src/scope/kilo";
 import { MRAD, THOUSANDTH } from "../src/scope/optics";
 import { ACSS, ACSS_RANGES, PSO_CHEVRON_RANGES, VSS_CHEVRON_RANGES, acssChevronY, acssWindX, tremorDotMil } from "../src/scope/reticles";
@@ -143,14 +143,5 @@ describe("the aids tell the truth", () => {
             expect(Math.abs(impact(rf, losM, sol.elevMil * MRAD, { slopeRad })[1]), `${rf.round} ${losM} m ${-d}°`).toBeLessThan(0.01);
           }
       }
-  });
-
-  it("the tower card, 30–55° down, for every load the bolt rifle takes", () => {
-    for (const rf of loads("bolt"))
-      for (const row of steepCard(rf))
-        row.mil.forEach((mil, i) => {
-          const slopeRad = (-STEEP_DEG[i]! * Math.PI) / 180;
-          expect(Math.abs(impact(rf, row.rangeM, mil * MRAD, { slopeRad })[1]), `${rf.round} ${row.rangeM} m ${STEEP_DEG[i]}°`).toBeLessThan(0.01);
-        });
   });
 });

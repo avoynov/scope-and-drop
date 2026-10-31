@@ -98,7 +98,7 @@ const ITEM_LIST = [
     id: "harris",
     slot: "front",
     name: "Harris bipod",
-    model: "Harris S-BRM 6–9\", 13 oz",
+    model: 'Harris S-BRM 6–9", 13 oz',
     streetUsd: 150,
     decay: all(0.05),
     does: "The lab's hold: breathing and tremor at two thirds of the pack's.",
@@ -367,3 +367,17 @@ export const SPOTTERS: Record<SpotterTier, { share: number; notices: number; win
   veteran: { share: 0.35, notices: 0.95, windError: 0.15, delayS: [1, 2] },
 };
 export const MAX_SPOTTERS = 2;
+
+/** Money sinks for players who own it all (task 10; placeholder prices). Changing nothing in the simulation. */
+export const BROKER_PRICE = 2000;
+export const FIXER_PRICE = 5000;
+/** Finishes for owned kit: a refinish keeps an item's use count and its lower decay; the rest only change its look. */
+export const FINISHES = {
+  refinish: { name: "Refinished", price: 300 },
+  black: { name: "Matt black", price: 400 },
+  fde: { name: "Flat dark earth", price: 400 },
+  woodland: { name: "Woodland camouflage", price: 600 },
+  urban: { name: "Urban camouflage", price: 600 },
+} as const;
+export type FinishId = keyof typeof FINISHES;
+export const isFinishId = (s: string): s is FinishId => Object.hasOwn(FINISHES, s);

@@ -144,8 +144,10 @@ export interface ShotHeard {
   ears: (Ear | null)[];
   /** Who heard each sound (ids, in order). */
   heard: Record<ShotSound, number[]>;
-  /** How many heard any of it (ShotReport.heardBy). */
+  /** How many heard a shot, the report or the crack (ShotReport.heardBy: the client's "Quiet job", the medal "Nobody Heard"). */
   heardBy: number;
+  /** How many heard anything of it, the strike or a pane breaking near them included. */
+  heardAny: number;
   /** The report at 1 m (dB peak), and whether the bullet left the muzzle faster than sound (it cracks along its path). */
   reportDb: number;
   cracked: boolean;
@@ -284,7 +286,7 @@ export function reportDb(report: Report, round: RoundId): number {
 }
 
 /** A point source outdoors at `r` metres: spreading and the air (dB). */
-const outdoors = (db1m: number, r: number): number => db1m - 20 * Math.log10(Math.max(1, r)) - AIR_DB_M * r;
+export const outdoors = (db1m: number, r: number): number => db1m - 20 * Math.log10(Math.max(1, r)) - AIR_DB_M * r;
 
 /** The bullet's path: from the muzzle, its direction, length, and the load's speed along it. */
 class Path {
@@ -294,8 +296,6 @@ class Path {
   readonly len: number;
   /** Horizontal metres per metre along the path (the ballistics are tabled by horizontal range). */
   private readonly flat: number;
-  private readonly d: number;
-  private readonly l: number;
 
   constructor(
     readonly from: Vec3,
@@ -307,9 +307,6 @@ class Path {
     this.uy = (to.y - from.y) / this.len;
     this.uz = (to.z - from.z) / this.len;
     this.flat = Math.hypot(this.ux, this.uz);
-    const b = GLASS_BULLET[round];
-    this.d = b.diaM;
-    this.l = b.lenM;
   }
 
   point(s: number): Vec3 {
@@ -341,11 +338,22 @@ class Path {
       m = this.mach(se);
       if (m <= 1) return null;
     }
-    const k = m * m - 1;
-    const dp = (0.53 * P0 * k ** 0.125 * this.d) / (b ** 0.75 * this.l ** 0.25);
-    const T = (1.82 * m * b ** 0.25 * this.d) / (AIR.sound * k ** 0.375 * this.l ** 0.25);
-    return { db: 20 * Math.log10(dp / P_REF) + 10 * Math.log10(T / (3 * EAR_S)), s: se };
+    return { db: nWave(this.round, m, b).db, s: se };
   }
+}
+
+/**
+ * A bullet's shock at Mach `m`, `b` metres from its path (Whitham): its peak (dB), how long it lasts (s), and
+ * how loud it is heard, as the steady sound of its energy over the ear's 0.2 s (dB).
+ */
+export function nWave(round: RoundId, m: number, b: number): { peak: number; T: number; db: number } {
+  const { diaM: d, lenM: l } = GLASS_BULLET[round];
+  const k = m * m - 1;
+  const r = Math.max(NEAR_M, b);
+  const dp = (0.53 * P0 * k ** 0.125 * d) / (r ** 0.75 * l ** 0.25);
+  const T = (1.82 * m * r ** 0.25 * d) / (AIR.sound * k ** 0.375 * l ** 0.25);
+  const peak = 20 * Math.log10(dp / P_REF);
+  return { peak, T, db: peak + 10 * Math.log10(T / (3 * EAR_S)) };
 }
 
 /** Ear height over the floor. */
@@ -430,6 +438,7 @@ export function hearShot(h: ShotHost, shot: ShotIn): ShotHeard {
   const ears: (Ear | null)[] = [];
   const heard: Record<ShotSound, number[]> = { report: [], crack: [], strike: [] };
   let heardBy = 0;
+  let heardAny = 0;
   for (const p of h.people) {
     // Every person's draws are made, there or not, so nobody's depend on anyone else's.
     const z: Record<ShotSound, number> = { report: rng.normal(0, 1), crack: rng.normal(0, 1), strike: rng.normal(0, 1) };
@@ -465,10 +474,11 @@ export function hearShot(h: ShotHost, shot: ShotIn): ShotHeard {
       got[k] = db[k] > over + Z_DB * z[k];
       if (got[k]) heard[k].push(p.id);
     }
-    if (got.report || got.crack || got.strike) heardBy++;
+    if (got.report || got.crack) heardBy++;
+    if (got.report || got.crack || got.strike) heardAny++;
     ears.push({ db, heard: got });
   }
-  return { ears, heard, heardBy, reportDb: rep, cracked };
+  return { ears, heard, heardBy, heardAny, reportDb: rep, cracked };
 }
 
 const NONE: ReadonlySet<string> = new Set();

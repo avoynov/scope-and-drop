@@ -171,7 +171,7 @@ export class FireLab {
       const sounds = SHOT_SOUNDS.filter((k) => k !== "crack" || h.cracked)
         .map(n)
         .join(", ");
-      out.push({ t: s.t, text: `shot from the perch (${s.label}) at ${s.at}, ${what}: heard by ${h.heardBy} (${sounds}${h.cracked ? "" : "; no crack"})` });
+      out.push({ t: s.t, text: `shot from the perch (${s.label}) at ${s.at}, ${what}: ${h.heardBy} heard a shot, ${h.heardAny} anything (${sounds}${h.cracked ? "" : "; no crack"})` });
     }
     return out;
   }

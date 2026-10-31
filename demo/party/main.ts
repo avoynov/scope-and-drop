@@ -987,7 +987,7 @@ function drawOverlays(states: FrameState[]): void {
         octx.beginPath();
         octx.arc(at[0], at[1], 0.8 * pxPerM, 0, Math.PI * 2);
         octx.stroke();
-        chip(s.blocked ? "struck the wall" : "struck", at[0], at[1] - 14, `rgba(${SHOT_RGB.strike}, ${Math.max(0.4, a)})`);
+        chip(s.blocked ? "struck the wall" : "struck", at[0], at[1] + 16, `rgba(${SHOT_RGB.strike}, ${Math.max(0.4, a)})`);
       }
       SHOT_SOUNDS.forEach((k, j) => {
         for (const i of f.heard.heard[k]) {

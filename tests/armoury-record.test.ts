@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Career, settleContract, type Receipt } from "../src/armoury/career";
 import { BROKER_PRICE, FIXER_PRICE, ITEMS, START_BALANCE, type ItemId } from "../src/armoury/catalogue";
-import { BASE_FEE, GRADE_MULT, TERMS, calledFor, feeFor, gradeAbove, gradeFor, judgeTerms, makeDossier } from "../src/armoury/dossier";
+import { BASE_FEE, GRADE_MULT, SHOT_REF_M, baseFee, TERMS, calledFor, feeFor, gradeAbove, gradeFor, judgeTerms, makeDossier } from "../src/armoury/dossier";
 import { emptyLoadout, kitFactor, type Loadout } from "../src/armoury/loadout";
 import { MARGIN, freshMargin } from "../src/armoury/margin";
 import { MEDAL_IDS, medalLevel, medalMaterial, serviceMark, wearFactor, wearLook } from "../src/armoury/record";
@@ -84,12 +84,20 @@ describe("the dossier", () => {
       }
       if (d.forecast.windMs >= 8) expect(d.terms).toContain("storm");
       if (d.terms.includes("blind")) expect(d.glassRoof && d.treelineSees < 0.25).toBe(true);
-      expect(d.fee).toBe(feeFor(BASE_FEE[d.house], d.grade, d.terms));
+      expect(d.fee).toBe(feeFor(baseFee(d.house, d.distanceM), d.grade, d.terms));
+      expect(d.distanceM >= 135 && d.distanceM <= 205).toBe(true);
       expect(d.calledFor).toEqual(calledFor(d.terms));
       expect(d.forecast.gustMs).toBeGreaterThan(d.forecast.windMs - 1e-9);
     }
     expect(storms).toBeGreaterThan(20);
     expect(makeDossier({ seed: "a", streak: 4, brokered: true }).grade).toBe("critical");
+  });
+
+  it("pays a longer shot more: the house's fee in proportion to the distance", () => {
+    expect(baseFee("grand", SHOT_REF_M)).toBe(BASE_FEE.grand);
+    expect(baseFee("grand", 2 * SHOT_REF_M)).toBe(2 * BASE_FEE.grand);
+    expect(baseFee("small", 135)).toBeLessThan(baseFee("small", 205));
+    expect(makeDossier({ seed: "x", streak: 0, distanceM: 190 }).distanceM).toBe(190);
   });
 
   it("calls for kit by its terms", () => {

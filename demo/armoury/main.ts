@@ -6,7 +6,7 @@
  */
 import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt, type Settled } from "../../src/armoury/career";
 import { BROKER_PRICE, FINISHES, FIXER_PRICE, ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type FinishId, type ItemId, type Slot } from "../../src/armoury/catalogue";
-import { BASE_FEE, TERMS, gradeFor, makeDossier } from "../../src/armoury/dossier";
+import { TERMS, gradeFor, makeDossier } from "../../src/armoury/dossier";
 import { MEDALS, MEDAL_IDS, medalMaterial, serviceMark, wearLook } from "../../src/armoury/record";
 import type { MissionReport, ShotReport } from "../../src/armoury/report";
 import { carried, checkLoadout, decodeKit, encodeKit, payFactor } from "../../src/armoury/loadout";
@@ -216,7 +216,7 @@ function renderLoadout(): void {
   const d = dossier();
   const called = new Set(d.calledFor);
   const f = payFactor(l, called, career.uses);
-  const preview = settleContract({ fee: BASE_FEE[d.house], grade: d.grade, terms: d.terms, calledFor: d.calledFor }, RESULTS.killed, l, undefined, 0, career.uses);
+  const preview = settleContract({ fee: d.baseFee, grade: d.grade, terms: d.terms, calledFor: d.calledFor }, RESULTS.killed, l, undefined, 0, career.uses);
   const stake =
     career.streak === 0
       ? "No streak at stake yet."
@@ -307,7 +307,7 @@ function renderDossier(): void {
   const broker = career.canBroker();
   const fix = career.canFix();
   $("dossier").replaceChildren(
-    h("div", {}, h("b", { textContent: `${d.grade[0]!.toUpperCase()}${d.grade.slice(1)} grade` }), ` · a ${d.house} house · `, h("b", { textContent: euro(d.fee) })),
+    h("div", {}, h("b", { textContent: `${d.grade[0]!.toUpperCase()}${d.grade.slice(1)} grade` }), ` · a ${d.house} house, ${d.distanceM} m from the treeline · `, h("b", { textContent: euro(d.fee) })),
     h(
       "div",
       { class: "muted" },
@@ -466,7 +466,7 @@ function standInReport(): MissionReport {
   const r = RESULTS[contract.result];
   const failed = contract.result === "failed";
   const kind = failed ? "miss" : contract.margin > 0 ? "margin" : "hit";
-  // A margin hit's miss, from the margin the career has now, at the lab's 183 m: what the receipt turns into centimetres.
+  // A margin hit's miss, from the margin the career has now, at the dossier's distance: what the receipt turns into centimetres.
   const missMrad = kind === "margin" ? contract.margin * effectiveMargin(career.margin, l.rifle) : 0;
   const shot: ShotReport = {
     t: contract.done * 60,
@@ -476,7 +476,7 @@ function standInReport(): MissionReport {
     marginUsed: kind === "margin" ? contract.margin : 0,
     fromChestMrad: kind === "hit" ? 0.3 : 1.6 + missMrad,
     missMrad: kind === "miss" ? 2 : missMrad,
-    rangeM: 183,
+    rangeM: d.distanceM + 15,
     sinceScopeInS: 20,
     elevationDeg: 0,
     throughGlass: false,
@@ -484,7 +484,7 @@ function standInReport(): MissionReport {
     heardBy: contract.heard,
   };
   return {
-    contract: { fee: BASE_FEE[d.house], terms: d.terms, grade: d.grade, house: d.house, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}`, calledFor: d.calledFor },
+    contract: { fee: d.baseFee, terms: d.terms, grade: d.grade, house: d.house, label: `Stand-in, ${RIFLE_NAMES[l.rifle]}`, calledFor: d.calledFor },
     loadout: l,
     shots: [shot],
     result: { outcome: failed ? "failed" : (contract.result as Exclude<ResultId, "failed">), factor: r.factor },

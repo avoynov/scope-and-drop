@@ -55,8 +55,8 @@ export const SKILLS: Skill[] = [
   { name: "expert", wind: 0.1, trigger: 0.08e-3, pause: true },
 ];
 
-/** The ranges each rifle's contracts are shot at (m): the VSS near its 183 m game range, the SVD and the Sako further out. */
-export const RANGES: Record<RifleId, [number, number]> = { vss: [130, 240], svd: [250, 450], bolt: [300, 650] };
+/** The ranges a contract is shot at (m): the treeline perch is 135–205 m from the house (src/mansion/site/site.ts), and the spy up to about 30 m inside it. */
+export const RANGES: Record<RifleId, [number, number]> = { vss: [135, 235], svd: [135, 235], bolt: [135, 235] };
 
 const CHEST_M = 1.15;
 const ZERO_M = 100;
@@ -215,17 +215,15 @@ export function checks(rows: Row[]): { name: string; ok: boolean; detail: string
   return out;
 }
 
-/** Pacing: contracts to buy everything that fits the rifle, at the typical (novice with a sensible kit) pay at streak 0 to 5. */
-export function pacing(rows: Row[]): Record<RifleId, number> {
-  const out = {} as Record<RifleId, number>;
-  for (const rifle of ["vss", "svd", "bolt"] as const) {
-    const cost = ITEM_IDS.filter((id) => fits(id, rifle)).reduce((s, id) => s + ITEMS[id].price, 0);
+/** Pacing: contracts to buy the whole catalogue at a typical pay (a novice with a sensible kit, the three rifles' mean, at priority grade). */
+export function pacing(rows: Row[], fee = BASE_FEE.grand): number {
+  const cost = ITEM_IDS.reduce((s, id) => s + ITEMS[id].price, 0);
+  const pays = (["vss", "svd", "bolt"] as const).map((rifle) => {
     const row = rows.find((r) => r.rifle === rifle && r.skill === "novice" && r.kit === "rest+bag+lrf")!;
-    // Mean pay per contract, without the streak's loss (money in hand, not its expectation).
-    const pay = (row.odds.killed + 0.6 * row.odds.downed + 0.2 * row.odds.wounded) * BASE_FEE.grand * GRADE_MULT[gradeFor(3)] * row.payFactor;
-    out[rifle] = Math.round((cost / pay) * 10) / 10;
-  }
-  return out;
+    // Money in hand per contract, without the streak's loss.
+    return (row.odds.killed + 0.6 * row.odds.downed + 0.2 * row.odds.wounded) * fee * GRADE_MULT[gradeFor(3)] * row.payFactor;
+  });
+  return Math.round((cost / (pays.reduce((a, b) => a + b, 0) / pays.length)) * 10) / 10;
 }
 
 const direct = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
@@ -241,11 +239,8 @@ if (direct) {
     console.log("");
     for (const c of checks(rows)) console.log(`${c.ok ? "ok  " : "FAIL"} ${c.name}: ${c.detail}`);
     console.log("");
-    console.log(
-      `contracts to buy everything that fits: ${Object.entries(pacing(rows))
-        .map(([k, v]) => `${k} ${v}`)
-        .join(", ")}`,
-    );
+    const n = pacing(rows);
+    console.log(`contracts to buy the whole catalogue (€${ITEM_IDS.reduce((s, id) => s + ITEMS[id].price, 0).toLocaleString("en-GB")}) at €${BASE_FEE.grand}: ${n}; 11 needs fees ×${(n / 11).toFixed(2)}`);
     console.log(`failure cost by streak: ${STREAKS.map((s) => `${s}: €${Math.round(failureCost(s, BASE_FEE.grand))}`).join(", ")}`);
   }
 }

@@ -27,6 +27,12 @@ export const gradeAbove = (g: Grade): Grade => GRADES[Math.min(GRADES.length - 1
 /** The client's fee for a clean job at routine grade, by house (€; placeholders until the sweep). */
 export const BASE_FEE: Record<HouseSize, number> = { small: 5000, grand: 6000, palatial: 7500 };
 
+/** The shot distance a base fee is quoted for (m): the middle of the treeline's 135–205 m (src/mansion/site/site.ts). */
+export const SHOT_REF_M = 170;
+
+/** The client's fee for the house and the shot: the house's fee in proportion to the distance, to €50. A longer shot pays more. */
+export const baseFee = (house: HouseSize, distanceM: number): number => Math.round((BASE_FEE[house] * Math.max(0, distanceM)) / SHOT_REF_M / 50) * 50;
+
 export interface TermSpec {
   name: string;
   /** What the client wants, as the dossier says it. */
@@ -79,6 +85,10 @@ export interface Dossier {
   house: HouseSize;
   /** Share of the party floor the treeline sees (0–1). */
   treelineSees: number;
+  /** The shot's distance from the perch to the house (m). */
+  distanceM: number;
+  /** The fee for the house and the distance, before grade and terms (€). */
+  baseFee: number;
   /** The house has a glass roof (the orangery's, the dome hall's). */
   glassRoof: boolean;
   forecast: Forecast;
@@ -97,6 +107,8 @@ export interface DossierOptions {
   brokered?: boolean;
   /** From the mansion, when the house is known; otherwise drawn. */
   house?: HouseSize;
+  /** The perch's distance (the mansion's `site.perch.distance`); otherwise drawn from the treeline's 135–205 m. */
+  distanceM?: number;
   treelineSees?: number;
   glassRoof?: boolean;
 }
@@ -130,9 +142,12 @@ export function makeDossier(o: DossierOptions): Dossier {
     const left = possible.filter((t) => !terms.includes(t));
     if (left.length) terms.push(rng.pick(left));
   }
-  const base = gradeFor(Math.max(0, o.streak));
-  const grade = o.brokered ? gradeAbove(base) : base;
-  return { seed: o.seed, house, treelineSees, glassRoof, forecast, grade, terms, fee: feeFor(BASE_FEE[house], grade, terms), calledFor: calledFor(terms) };
+  const streakGrade = gradeFor(Math.max(0, o.streak));
+  const grade = o.brokered ? gradeAbove(streakGrade) : streakGrade;
+  // Drawn last, so it leaves every other draw as it was.
+  const distanceM = o.distanceM ?? Math.round(rng.range(135, 205));
+  const base = baseFee(house, distanceM);
+  return { seed: o.seed, house, distanceM, baseFee: base, treelineSees, glassRoof, forecast, grade, terms, fee: feeFor(base, grade, terms), calledFor: calledFor(terms) };
 }
 
 /** fee × grade multiplier × (1 + Σ term premiums), to the euro. */

@@ -10,9 +10,8 @@ export interface SpotterHire {
   tier: SpotterTier;
   /** Beside you (wind, range and shot calls), or on another bearing on the perch arc (an observer). */
   place: "beside" | "bearing";
-  /** An observer's bearing off the garden axis and elevation (deg). */
+  /** An observer's bearing off the garden axis (deg), on the treeline arc (±PERCH_ARC_DEG) at ground level. */
   azDeg?: number;
-  elDeg?: number;
 }
 
 export interface Loadout {

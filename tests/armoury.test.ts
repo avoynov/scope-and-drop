@@ -108,7 +108,7 @@ describe("the career", () => {
   });
 
   it("pays nothing for a failed contract and still owes the spotters their retainer", () => {
-    const l = loadout("svd", [], [{ tier: "rookie", place: "beside" }, { tier: "veteran", place: "bearing", azDeg: -20, elDeg: 0 }]);
+    const l = loadout("svd", [], [{ tier: "rookie", place: "beside" }, { tier: "veteran", place: "bearing", azDeg: -20 }]);
     const r = settleContract({ fee: 8000 }, { factor: 0, label: "failed" }, l);
     expect(r.total).toBe(-2 * RETAINER);
   });

@@ -55,7 +55,7 @@ describe("the armoury's store", () => {
     expect(c.rifle).toBe("vss");
     expect(c.kits).toEqual({ vss: "atlas", svd: "", bolt: "" });
     expect(c.spotters).toEqual([
-      { tier: "rookie", place: "bearing", azDeg: 60, elDeg: 0 },
+      { tier: "rookie", place: "bearing", azDeg: 38 },
       { tier: "veteran", place: "beside" },
     ]);
   });

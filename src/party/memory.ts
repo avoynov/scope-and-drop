@@ -63,7 +63,11 @@ export type Verb =
   | "at-safe"
   | "in-bag"
   | "pocket"
-  | "planted";
+  | "planted"
+  | "no-stain"
+  | "found-at-once"
+  | "followed"
+  | "abandoned";
 
 export interface VerbSpec {
   kind: FactKind;
@@ -146,6 +150,13 @@ export const VERBS: Record<Verb, VerbSpec> = {
   "in-bag": { kind: "odd", juicy: 0.8, odd: 0.3, halfLife: 45 * MIN, thing: true },
   pocket: { kind: "odd", juicy: 0.8, odd: 0.3, halfLife: 45 * MIN },
   planted: { kind: "case", juicy: 1, odd: 0, halfLife: 90 * MIN, thing: true, elsewhere: true },
+  // The spy's covers (milestone 3, PR 4): clean again in the same clothes after a spill the witness saw, a lost thing back with no
+  // search, a step behind someone for over 10 s in a quiet room (the object is whom), and what they were fetching left somewhere
+  // odd (the object is the thing).
+  "no-stain": { kind: "odd", juicy: 0.6, odd: 0.2, halfLife: 45 * MIN },
+  "found-at-once": { kind: "odd", juicy: 0.4, odd: 0.1, halfLife: 45 * MIN },
+  followed: { kind: "odd", juicy: 0.5, odd: 0.08, halfLife: 45 * MIN },
+  abandoned: { kind: "odd", juicy: 0.5, odd: 0.1, halfLife: 45 * MIN, thing: true },
 };
 export const VERB_IDS = Object.keys(VERBS) as Verb[];
 
@@ -373,6 +384,18 @@ export class Memory {
     for (let s = base; s < base + this.held[i]!; s++) {
       const f = this.sFact[s]!;
       if (this.verb[f] === v && this.subject[f] === subject && this.confAt(i, s) > PASS_MIN) return true;
+    }
+    return false;
+  }
+
+  /** Whether i saw this of someone with their own eyes (not told it), and still remembers it: since a time, and with this object if one is given. */
+  witnessed(i: number, verb: Verb, subject: number, since = -Infinity, obj?: number): boolean {
+    const v = VERB_IDS.indexOf(verb);
+    const base = i * SLOTS;
+    for (let s = base; s < base + this.held[i]!; s++) {
+      const f = this.sFact[s]!;
+      if (this.verb[f] !== v || this.subject[f] !== subject || this.sHops[s] !== 0 || this.t[f]! < since || (obj !== undefined && this.object[f] !== obj)) continue;
+      if (this.confAt(i, s) > PASS_MIN) return true;
     }
     return false;
   }

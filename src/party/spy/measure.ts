@@ -8,12 +8,41 @@ import type { Memory, Verb } from "../memory";
 import type { Person } from "../types";
 
 /**
- * The tells so far: being out of step with the programme and the garment left outside (PR 1), and
- * the hard tells of the plan's acts (PR 3): on one knee at a locked door, crouched at the safe,
- * going through a bag or a coat, a hand in a pocket, the statuette palmed, the bug planted, the
- * ledger photographed. Later PRs add the rest of the plan's catalogue.
+ * The tells so far: being out of step with the programme and the garment left outside (PR 1); the
+ * hard tells of the plan's acts (PR 3): on one knee at a locked door, crouched at the safe, going
+ * through a bag or a coat, a hand in a pocket, the statuette palmed, the bug planted, the ledger
+ * photographed; and its covers' (PR 4): back in the same out-of-the-way room, coming out of a
+ * bedroom, a step behind someone in a quiet room, a jerk and a step back, alone upstairs trying
+ * handles, out of the room as the photographer comes in, what it was fetching left on a stair,
+ * the crash and the held hand off alone, off to change, straight off for a lost thing, a phone to
+ * the ear in an empty room, the bare hand and the clean shirt after, someone else's bag in its
+ * hands, and the room gone dark.
  */
-export type TellId = "out-of-step" | "garment" | "lock" | "safe" | "bag" | "pocket" | "palm" | "plant" | "ledger";
+export type TellId =
+  | "out-of-step"
+  | "garment"
+  | "lock"
+  | "safe"
+  | "bag"
+  | "pocket"
+  | "palm"
+  | "plant"
+  | "ledger"
+  | "returns"
+  | "odd-place"
+  | "followed"
+  | "startled"
+  | "touring"
+  | "camera-shy"
+  | "abandoned"
+  | "cut-off"
+  | "spill-off"
+  | "lost-off"
+  | "call"
+  | "bare-hand"
+  | "clean-shirt"
+  | "their-bag"
+  | "dark";
 
 /** A cover is a soft tell an innocent can give too, a trace is something left behind, a hard tell is an act only the spy does. */
 export type TellKind = "cover" | "trace" | "hard";
@@ -33,10 +62,43 @@ export const TELLS: Record<TellId, { kind: TellKind; zoom: number }> = {
   palm: { kind: "hard", zoom: 10 },
   plant: { kind: "hard", zoom: 10 },
   ledger: { kind: "hard", zoom: 8 },
+  returns: { kind: "cover", zoom: 4 },
+  "odd-place": { kind: "cover", zoom: 4 },
+  followed: { kind: "cover", zoom: 4 },
+  startled: { kind: "cover", zoom: 6 },
+  touring: { kind: "cover", zoom: 4 },
+  "camera-shy": { kind: "cover", zoom: 4 },
+  abandoned: { kind: "trace", zoom: 8 },
+  "cut-off": { kind: "cover", zoom: 4 },
+  "spill-off": { kind: "cover", zoom: 4 },
+  "lost-off": { kind: "cover", zoom: 4 },
+  call: { kind: "cover", zoom: 6 },
+  "bare-hand": { kind: "trace", zoom: 8 },
+  "clean-shirt": { kind: "trace", zoom: 8 },
+  "their-bag": { kind: "cover", zoom: 8 },
+  dark: { kind: "cover", zoom: 4 },
 };
 
-/** The verbs of innocents' notables that look like a tell: the innocent twins. */
-export const TWIN_VERBS: ReadonlySet<Verb> = new Set<Verb>(["out-of-step", "camera-shy", "startled", "wrong-turn", "locked-door", "fumbled", "bandage-gone", "snooping"]);
+/**
+ * The verbs of innocents' notables that look like a tell: the innocent twins. Coming out of a
+ * bedroom (couples, a change after a spill, the wanderer's peek), hovering close (the creep), a
+ * real cut, a real spill and a real search for a lost thing are the covers' (PR 4).
+ */
+export const TWIN_VERBS: ReadonlySet<Verb> = new Set<Verb>([
+  "out-of-step",
+  "camera-shy",
+  "startled",
+  "wrong-turn",
+  "locked-door",
+  "fumbled",
+  "bandage-gone",
+  "snooping",
+  "left-bedroom",
+  "hovering",
+  "cut",
+  "spill",
+  "lost-thing",
+]);
 
 /** A tell, written by the spy's own code at the moment it acts. */
 export interface Tell {
@@ -132,4 +194,11 @@ export function ranks(people: readonly Person[], memory: Memory, ident: Ident, t
     out.push({ id: j, score: c ? s / c : 0 });
   }
   return out.sort((a, b) => b.score - a.score || a.id - b.id).slice(0, top);
+}
+
+/** Someone's place among everyone the crowd suspects, by the same measure (1 the most, sharing a place with any as suspected; 0 when they're not at the party), and their score. */
+export function rankOf(people: readonly Person[], memory: Memory, ident: Ident, t: number, id: number): { rank: number; score: number } {
+  const all = ranks(people, memory, ident, t, people.length);
+  const me = all.find((r) => r.id === id);
+  return me ? { rank: 1 + all.filter((r) => r.score > me.score).length, score: me.score } : { rank: 0, score: 0 };
 }

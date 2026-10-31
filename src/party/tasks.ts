@@ -72,8 +72,12 @@ export interface Task {
   speed: number;
   /** How close the party follows (m); FOLLOW_GAP when not set. */
   gap?: number;
-  /** A search meant to have it out with the one it finds (bonds.ts), or for the real one behind a face someone is sure isn't theirs (sim.ts): no sighting of that face ends it. */
-  intent?: "confront" | "real";
+  /**
+   * A search meant to have it out with the one it finds (bonds.ts), for the real one behind a face
+   * someone is sure isn't theirs (sim.ts: no sighting of that face ends it), or for whoever went for
+   * a drink and never came back with it (spy/habits.ts).
+   */
+  intent?: "confront" | "real" | "errand";
   /** Which mishap, drama or habit a dramas.ts task belongs to, or which of the spy's actions. */
   what?: string;
   /** What a spy's task looks like to anyone watching (the lab shows it before the reveal): to the bathroom, a look at the paintings. */
@@ -116,8 +120,8 @@ export interface TaskHost {
   depart(p: Person): void;
   /** A step finished that the party acts on (looking in the cabinet). */
   stepDone(t: Task, p: Person, st: Step): void;
-  /** Put down the glass in hand before picking something up. */
-  setDown?(p: Person): void;
+  /** Put down the glass in hand before picking something up (`here`: where they stand). */
+  setDown?(p: Person, here?: boolean): void;
   /** A search with intent found who it looked for. */
   found?(t: Task, p: Person): void;
   /** A task ended, however it went. */
@@ -374,11 +378,11 @@ export class Tasks {
 
   // ---------------------------------------------------------------- searches
 
-  /** Looking for a partner not seen for a while: where they were last seen, then asking round (with `intent`, to have it out, or for the real one). */
-  search(p: Person, q: Person, intent?: "confront" | "real"): Task | null {
+  /** Looking for a partner not seen for a while: where they were last seen (or `first`), then asking round (with `intent`, to have it out, for the real one, or for a drink never brought). */
+  search(p: Person, q: Person, intent?: "confront" | "real" | "errand", first?: Spot): Task | null {
     const h = this.host;
     const room = h.memory.lastRoom[p.id * h.people.length + q.id]!;
-    const s = room !== -1 ? h.cells.random(room, this.rng, 0.8) : null;
+    const s = first ?? (room !== -1 ? h.cells.random(room, this.rng, 0.8) : null);
     if (!s) return null;
     this.stats.searches++;
     return this.make(

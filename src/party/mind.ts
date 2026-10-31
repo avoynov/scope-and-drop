@@ -116,6 +116,10 @@ export interface MindWorld {
   danceNear(p: Person): { who: number; k: number; mode: "beside" | "face" | "front" } | null;
   /** Whether this person stays off something they'd be expected to do well (the spy, playing someone known for it). */
   dodges?(p: Person, skill: Skill): boolean;
+  /** The phase weights this person chooses by, when not the table's (the spy out of step). */
+  phaseWeights?(p: Person, phase: PhaseId): Partial<Record<ActionId, number>>;
+  /** Wanders of their own to odd places (the spy's habit), scored with the rest. */
+  oddPlaces?(p: Person): readonly Candidate[];
 }
 
 /** Actions that go wherever the evening or the crowd goes, known room or not. */
@@ -169,7 +173,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
   const { rng, places, cells, people } = w;
   const out: Candidate[] = [];
   const phase = w.phaseOf(p);
-  const W = PHASE_WEIGHTS[phase.id];
+  const W = w.phaseWeights?.(p, phase.id) ?? PHASE_WEIGHTS[phase.id];
   const has = (a: ActionId) => (W[a] ?? 0) > 0;
   const tension = w.tension(p);
 
@@ -256,6 +260,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
   if (has("wander")) {
     const s = cells.random(rng.pick(places.mingleRooms.length ? places.mingleRooms : [places.toastRoom.index]), rng);
     if (s) out.push({ id: "wander", target: s, duration: rng.range(20, 60), pose: "look", gain: { curiosity: 0.15 }, mod: 0.4 + p.traits.curiosity * 0.6 });
+    if (w.oddPlaces) out.push(...w.oddPlaces(p));
   }
   if (has("toast") && (phase.id === "toast" || phase.progress < LAST_TOAST)) {
     const s = toastSpot(w);
@@ -282,7 +287,7 @@ function allCandidates(p: Person, w: MindWorld): Candidate[] {
  * use the same corner) keeps the best few for full scoring.
  */
 function offerCandidates(p: Person, w: MindWorld, phase: PhaseId): Candidate[] {
-  const W = PHASE_WEIGHTS[phase];
+  const W = w.phaseWeights?.(p, phase) ?? PHASE_WEIGHTS[phase];
   const pre: Array<{ o: Offer; s: Spot; spot: number; v: number }> = [];
   for (const o of w.offers) {
     const ad = o.ad;
@@ -389,7 +394,7 @@ export function toastSpot(w: MindWorld): Spot | null {
 
 export function score(p: Person, c: Candidate, w: MindWorld): number {
   const phase = w.phaseOf(p);
-  const W = PHASE_WEIGHTS[phase.id][c.id === "ask" ? "toilet" : c.id] ?? 0;
+  const W = (w.phaseWeights?.(p, phase.id) ?? PHASE_WEIGHTS[phase.id])[c.id === "ask" ? "toilet" : c.id] ?? 0;
   if (W <= 0) return 0;
   const needs = c.programme ? 1 : needTerm(p, c.gain);
   const d = distance(p, c.target);

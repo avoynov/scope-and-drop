@@ -406,14 +406,14 @@ export class Body {
     }
   }
 
-  /** Put down whatever glass or tray is in hand, on the nearest surface, drink and all. */
-  setDown(p: Person): void {
+  /** Put down whatever glass or tray is in hand, on the nearest surface, drink and all; `here`, where they stand (a stair, a windowsill). */
+  setDown(p: Person, here = false): void {
     const { world, places, t } = this.host;
     const id = p.item;
     if (id < 0) return;
     const items = world.items;
     let spot: { level: number; x: number; z: number; room: number } = p;
-    let best = 5;
+    let best = here ? 0 : 5;
     for (const s of places.surfaces) {
       if (s.level !== p.level) continue;
       const d = Math.hypot(s.x - p.x, s.z - p.z);

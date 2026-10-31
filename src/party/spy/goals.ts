@@ -350,9 +350,11 @@ export class GoalThings {
     if (this.safeOpen) m |= F.safe;
     const target = g.target >= 0 ? h.people[g.target]! : null;
     if (target && memory.lastT[spy.id * n + target.id]! > h.t - FOUND_FOR) m |= F.found;
-    // The bag down where they left it, as far as the spy knows: in its view, or its owner seen dancing or at the games just now.
+    // The bag down where they left it, as far as the spy knows: in its view, or its owner seen dancing or at the games just now;
+    // or in its own hands, carried off to go through somewhere quiet (tactics.ts).
     const bag = target ? this.bagOf(target) : -1;
-    if (bag >= 0 && items.holder[bag] === -1 && items.stateOf(bag) === "down") {
+    if (bag >= 0 && items.holder[bag] === spy.id) m |= F.free;
+    else if (bag >= 0 && items.holder[bag] === -1 && items.stateOf(bag) === "down") {
       const k = spy.id * n + target!.id;
       const room = items.room[bag]!;
       const at = { level: items.level[bag]!, x: items.x[bag]!, z: items.z[bag]!, y: room >= 0 ? h.bp.rooms[room]!.floorY : spy.y, room };

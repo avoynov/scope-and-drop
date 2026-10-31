@@ -7,10 +7,11 @@
  * game's own pace, where 1x plays the three-hour party in one real hour. ov turns on
  * plan overlays (sight, sound, gossip, suspicion, map, mood); tension= sets everyone's
  * tension and energy= scales everyone's energy at time t. The spy is on: spy=0 turns it off,
- * and setup=, goal=, odds=, steal=, target= and reveal=1 pin its draws and show it (see spy.ts).
- * Once it is revealed, the privacy overlay shades where an act could begin near it now (green
- * alone, amber only unwatched) and the spy overlay draws its route, its goal's things and a line
- * to its target.
+ * and setup=, goal=, odds=, steal=, target=, on= and reveal=1 pin its draws, hold covers on and
+ * show it (see spy.ts). Once it is revealed, the privacy overlay shades where an act could begin
+ * near it now (green alone, amber only unwatched), the spy overlay draws its route, its goal's
+ * things and a line to its target, a strip under the programme shows its whole evening (from a
+ * look-ahead worker, ahead.ts), and the log's tells filter lists its tells.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -102,9 +103,21 @@ const spyLab = new SpyLab(
     pause: () => {
       speed = 0;
     },
+    seek: (t) => seekSoon(t),
+    // The evening as newParty() builds it, for the look-ahead (ahead.ts).
+    evening: () => ({
+      seed: bp.seed,
+      size: (params.get("size") as MansionOptions["size"]) ?? undefined,
+      party: params.get("party") ?? bp.seed,
+      guests: params.has("guests") ? Number(params.get("guests")) : undefined,
+      provoke: planted,
+      mood: nudges,
+      spy: spyLab.option(),
+    }),
   },
   $("spy"),
   $("spycard"),
+  $("spyline"),
 );
 
 const LEVEL_NAMES = ["ground", "first", "second", "third"];
@@ -1434,6 +1447,8 @@ const LOG_FILTERS: Record<string, Kinds> = {
   "mishaps & dramas": new Set(["mishap", "drama", "habit", "light"]),
   "the spy": new Set(["spy", "react"]),
   "seen through": new Set(["double-take", "test", "challenge", "react"]),
+  // The spy's tells, from its record rather than the log (spy.ts), once it is revealed.
+  tells: new Set(),
 };
 let logFilter = params.get("log") ?? "the evening";
 if (!LOG_FILTERS[logFilter]) logFilter = "the evening";
@@ -1685,8 +1700,8 @@ function refreshPanel(): void {
   if (cur) cur.style.left = `${(t / PARTY_LENGTH) * 100}%`;
   for (const b of document.querySelectorAll<HTMLButtonElement>("#speeds button[data-speed]")) b.classList.toggle("on", Number(b.dataset.speed) === speed);
 
-  // The latest few events worth reading.
-  const lines: string[] = [];
+  // The latest few events worth reading (the spy's tells from its own record).
+  const lines: string[] = logFilter === "tells" ? spyLab.tellLines(party, 7) : [];
   const kinds = LOG_FILTERS[logFilter]!;
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
@@ -1707,11 +1722,12 @@ function refreshPanel(): void {
     `${st.greetings} hellos · ${st.joins} joined a conversation · ${st.rebuffs} turned away · ${st.splits} splits · ${st.breaches} breaches`,
     `${st.couples} couples · ${st.friendships} friendships · ${st.flirtations} flirtations (${st.rebuffed} cooled) · ${st.affairs} affairs · ${st.foundOut} found out · ${st.confrontations} confrontations`,
     `${st.spats} spats · ${st.rows} rows · ${st.fellOut} fell out · ${st.madeUp} made up · ${st.pulled} pulled onto the floor · ${st.staffFriends} staff friendships · ${st.slipAways} slipped away`,
-    `${st.tours} tours · ${st.errands} errands · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
+    `${st.tours} tours · ${st.errands} errands${st.fetched ? ` (${st.fetched} drinks for a friend)` : ""} · ${st.searches} searches (${st.found} found) · ${st.photos} group photo${st.photos === 1 ? "" : "s"} · ${st.candids} candids · ${st.leaves} gone home with goodbyes`,
     troubleStats(),
     `${st.late} late for the programme · ${st.beckons} beckoned in · ${st.points} pointed the way · ${st.flutes} brought a flute · ${st.prompts} host prompted`,
     `${st.frowns} fumbles frowned at (${st.helps} helped) · ${st.shrugs} shrugs · ${st.cool} cool hellos · ${st.compared} notes compared · ${st.sure} sure · ${st.challenges} had it out · ${st.tourAsks} tours asked${st.finds ? ` · ${st.finds} found something in the garden` : ""}`,
     `${bp.style.name} · ${bp.levels.length} storeys · perch ${bp.site.perch.distance} m · coats: ${party.places.chains.coats.link} · whisky: ${party.places.chains.spirits.link}`,
+    spyLab.statsLine(party),
     // With profile in the URL: ms spent in each stage of the step so far.
     party.profile
       ? `ms ${Object.entries(party.profile)
@@ -2027,6 +2043,7 @@ function loop(now: number): void {
     for (let n = 0; acc >= STEP && n < 1200 && !party.over; n++) {
       snapshot();
       party.step();
+      spyLab.stepped(party);
       acc -= STEP;
     }
     if (acc >= STEP || party.over) acc = 0;
@@ -2040,7 +2057,8 @@ function loop(now: number): void {
     refreshPanel();
   }
   frames++;
-  if (shot && frames === Number(params.get("frames") ?? 2)) {
+  // A headless render waits for the look-ahead too, so the spy's strip shows the whole evening.
+  if (shot && frames >= Number(params.get("frames") ?? 2) && spyLab.settled) {
     refreshPanel();
     (window as unknown as { __ready: boolean }).__ready = true;
     return;

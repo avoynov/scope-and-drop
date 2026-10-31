@@ -233,6 +233,18 @@ export class Ident {
     this.refresh(p);
   }
 
+  /**
+   * j has their spectacles back on: whoever knows them knows them in glasses, so a picture taken
+   * while they were off (a test passed meanwhile) has them back.
+   */
+  glassesBack(j: number): void {
+    const bit = 1 << QUIRK_BITS.indexOf("glasses");
+    for (let i = 0; i < this.n; i++) {
+      const m = (i * this.n + j) * FEATURES + F_QUIRKS;
+      if (this.tie[i * this.n + j]) this.memLook[m] = this.memLook[m]! | bit;
+    }
+  }
+
   /** i takes a fresh mental picture of j. */
   private remember(i: number, j: number): void {
     const m = (i * this.n + j) * FEATURES;

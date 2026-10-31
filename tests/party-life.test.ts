@@ -109,8 +109,11 @@ describe("everyday evenings", () => {
       const st = party.stats;
       const seed = party.bp.seed;
       expect(st.tours, seed).toBeLessThanOrEqual(4);
-      expect(st.errands, seed).toBeGreaterThanOrEqual(4);
-      expect(st.errands, seed).toBeLessThanOrEqual(12);
+      // Milestone 2's errands, and besides them the drinks guests fetch for a friend in their circle (milestone 3 PR 4: the twin of the spy's dropped errand).
+      expect(st.errands - st.fetched, seed).toBeGreaterThanOrEqual(4);
+      expect(st.errands - st.fetched, seed).toBeLessThanOrEqual(12);
+      expect(st.fetched, seed).toBeGreaterThanOrEqual(1);
+      expect(st.fetched, seed).toBeLessThanOrEqual(12);
       expect(st.searches, seed).toBeGreaterThanOrEqual(1);
       expect(st.searches, seed).toBeLessThanOrEqual(15);
       expect(st.photos, seed).toBe(1);

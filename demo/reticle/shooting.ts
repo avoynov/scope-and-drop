@@ -823,6 +823,16 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     busy: () => !!handling,
     /** The suppressor's heat, if there is one. */
     can: (): CanHeat | null => can,
+    /**
+     * The last shot, for the spotter: its number, when it landed, whether it hit a mannequin, where it crossed the
+     * nearest mannequin's plane against the chest (m right, m up; null if it never got that far), and that mannequin.
+     */
+    last() {
+      const l = shots[shots.length - 1];
+      if (!l) return null;
+      const pane = l.glass.at(-1)?.th.outcome;
+      return { n: l.n, landAt: l.exit + l.hit.t, hit: l.kind === "plastic", miss: l.miss, target: l.target, stopped: pane === "stopped" };
+    },
     status(now: number) {
       const last = shots[shots.length - 1];
       let shot = "–";

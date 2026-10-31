@@ -45,7 +45,7 @@
  *    standard normal drawn for each person and sound from the evening's shot stream, forked by the shot's time.
  *
  * Checked at 170 m: an open report reaches a garden window at 120 dB, 95 inside single glazing, 80 heard as a
- * steady sound: every garden-side room hears it, the dance floor about half the time (band 75 + 6). Through a
+ * steady sound: every garden-side room hears it, the dance floor about one time in four (band 75 + 6). Through a
  * can 50 inside: only a quiet room with a window open. The subsonic package 43: almost nobody.
  */
 import type { Vec3 } from "../mansion/core/geom";

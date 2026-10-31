@@ -13,7 +13,8 @@
  * (green alone, amber only unwatched), the spy overlay draws its route, its goal's things and a
  * line to its target, the bodies overlay marks every body with whose it is, a strip under the
  * programme shows its whole evening (from a look-ahead worker, ahead.ts), and the log's tells
- * filter lists its tells.
+ * filter lists its tells. fire= fires a shot from the perch at the picked person once at t= (fire.ts): who heard
+ * it goes in the log, and the sound overlay draws its path and a ring round each who heard it.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -31,6 +32,7 @@ import { KNOWN, SLOTS, SUSPICIOUS, VERBS, type FactKind, type Verb } from "../..
 import type { MoodOverride, RoomMood } from "../../src/party/mood";
 import { DETAIL_FOV, DETAIL_RANGE, FOV } from "../../src/party/senses";
 import { CASES, type CaseKind } from "../../src/party/register";
+import { SHOT_SOUNDS } from "../../src/party/shot";
 import type { Provocation } from "../../src/party/sim";
 import { ringRadius } from "../../src/party/groups";
 import { Crowd, type Flash, type FrameState, type Litter, type LitterKind } from "../../src/party/render/crowd";
@@ -38,6 +40,7 @@ import { Fixtures } from "../../src/party/render/fixtures";
 import type { TaskKind } from "../../src/party/tasks";
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
 import { labelForms } from "../briefing";
+import { FireLab, SHOT_RGB } from "./fire";
 import { SpyLab } from "./spy";
 
 type View = "scope" | "wide" | "plan" | "orbit";
@@ -122,6 +125,9 @@ const spyLab = new SpyLab(
   $("spycard"),
   $("spyline"),
 );
+
+// A shot from the perch: a query, so firing it changes nothing in the evening (fire.ts).
+const fireLab = new FireLab(params, { party: () => party, bp: () => bp, selected: () => selected, changed: () => refreshPanel() }, $("fire"));
 
 const LEVEL_NAMES = ["ground", "first", "second", "third"];
 const PHASE_COLOR: Record<PhaseId, string> = {
@@ -526,6 +532,7 @@ function newParty(): void {
     profile: params.has("profile"),
     spy: spyLab.option(),
   });
+  fireLab.reset();
   if (crowd) {
     scene.remove(crowd.root);
     crowd.dispose();
@@ -822,6 +829,8 @@ const CASE_LABEL: Record<CaseKind, string> = {
 };
 /** How long a sound or a piece of gossip stays drawn (in-game s). */
 const SOUND_FADE = 20;
+/** How long a shot from the perch stays drawn (in-game s). */
+const SHOT_FADE = 60;
 const GOSSIP_FADE = 40;
 
 /** Screen position of a point on the plan. */
@@ -965,6 +974,32 @@ function drawOverlays(states: FrameState[]): void {
         if (to) line(at, to, `rgba(143, 199, 229, ${0.6 * (1 - age)})`, 1, [2, 3]);
       }
       chip(snd.kind.replace("-", " "), at[0], at[1] - 14, `rgba(143, 199, 229, ${Math.max(0.4, 1 - age)})`);
+    }
+    // Shots from the perch: the bullet's line, where it struck, and a ring for each sound round everyone who heard it.
+    for (const f of fireLab.recent(t, SHOT_FADE)) {
+      const a = 1 - (t - f.t) / SHOT_FADE;
+      const s = f.shot;
+      line(planPx(s.from.x, s.from.z), planPx(s.to.x, s.to.z), `rgba(${SHOT_RGB.crack}, ${0.7 * a})`, 1.5, [6, 4]);
+      if (s.level === planLevel) {
+        const at = planPx(s.to.x, s.to.z);
+        octx.strokeStyle = `rgba(${SHOT_RGB.strike}, ${a})`;
+        octx.lineWidth = 2;
+        octx.beginPath();
+        octx.arc(at[0], at[1], 0.8 * pxPerM, 0, Math.PI * 2);
+        octx.stroke();
+        chip(s.blocked ? "struck the wall" : "struck", at[0], at[1] - 14, `rgba(${SHOT_RGB.strike}, ${Math.max(0.4, a)})`);
+      }
+      SHOT_SOUNDS.forEach((k, j) => {
+        for (const i of f.heard.heard[k]) {
+          const to = here(i);
+          if (!to) continue;
+          octx.strokeStyle = `rgba(${SHOT_RGB[k]}, ${0.9 * a})`;
+          octx.lineWidth = 1.5;
+          octx.beginPath();
+          octx.arc(to[0], to[1], (0.55 + 0.25 * j) * pxPerM + 3, 0, Math.PI * 2);
+          octx.stroke();
+        }
+      });
     }
   }
 
@@ -1727,11 +1762,15 @@ function refreshPanel(): void {
   // The latest few events worth reading (the spy's tells from its own record).
   const lines: string[] = logFilter === "tells" ? spyLab.tellLines(party, 7) : [];
   const kinds = LOG_FILTERS[logFilter]!;
+  // Shots from the perch are the lab's own, merged in by time (newest first, as the events).
+  const shots = logFilter === "tells" ? [] : fireLab.lines(party.t);
   for (let i = party.events.length - 1; i >= 0 && lines.length < 7; i--) {
     const e = party.events[i]!;
+    while (shots.length && shots[0]!.t >= e.t && lines.length < 7) lines.push(`${clockLabel(shots[0]!.t)}  ${shots.shift()!.text}`);
     // Bumps are many; only one that slops a drink is worth a line. The spy's own doings wait for its reveal.
-    if (kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop") && !spyLab.hides(e, logFilter === "the spy")) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
+    if (lines.length < 7 && kinds.has(e.kind) && (e.kind !== "bump" || e.note === "slop") && !spyLab.hides(e, logFilter === "the spy")) lines.push(`${clockLabel(e.t)}  ${eventText(e)}`);
   }
+  while (shots.length && lines.length < 7) lines.push(`${clockLabel(shots[0]!.t)}  ${shots.shift()!.text}`);
   $("events").textContent = lines.join("\n");
 
   const count = (f: (p: Person) => boolean) => guests.filter((p) => p.present && f(p)).length;
@@ -2049,6 +2088,7 @@ addEventListener("resize", () => {
 
 build();
 if (params.has("t")) seek(parseTime(params.get("t")));
+fireLab.fireFromUrl(params);
 if (params.has("zoom") && params.has("px")) {
   planPan.x = Number(params.get("px"));
   planPan.z = Number(params.get("pz") ?? 0);

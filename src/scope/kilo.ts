@@ -176,7 +176,9 @@ export function solveFiring(rf: Rifle, losM: number, slopeRad: number, wind: Kil
     losM,
     slopeDeg: (a * 180) / Math.PI,
     amrM: (lo + hi) / 2,
-    elevMil: Math.max(0, elev),
+    // Under the zero (short and steep, as from a tower) the hold is below the zero: shown with a down arrow, held
+    // under with the reticle, since the turret stops at 0.
+    elevMil: elev,
     windMil: (-h.pos[0] / losM) * 1000,
     velMs: h.speed,
     energyJ: 0.5 * massKg * h.speed * h.speed,
@@ -448,7 +450,7 @@ export class Kilo {
     text(one(sol.amrM), 152, 150, 3, "c");
     text("M", 152 + 52, 158, 1);
     text("ELV MIL", 34, 106);
-    text(`^${sol.elevMil.toFixed(1)}`, 34, 116, 2);
+    text(`${sol.elevMil < -0.05 ? "v" : "^"}${Math.abs(sol.elevMil).toFixed(1)}`, 34, 116, 2);
     const wd = sol.windMil;
     text("WND MIL", 270, 106, 1, "r");
     text(`${wd > 0.05 ? ">" : wd < -0.05 ? "<" : ""}${Math.abs(wd).toFixed(1)}`, 270, 116, 2, "r");

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BAG, HOLD, LAB_REST, REST, RestDynamics, cloneHold, dynamicPressure, holdAt, muzzleInertia, type RestSpec } from "../src/scope/hold";
+import { BAG, HOLD, LAB_REST, MAST, REST, RestDynamics, cloneHold, dynamicPressure, holdAt, mastSwayAt, muzzleInertia, type RestSpec } from "../src/scope/hold";
+import { rigFor } from "../src/armoury/rig";
+import { decodeKit } from "../src/armoury/loadout";
 
 /** The lab's hold before hold.ts: breathing, wander and the heartbeat, on a bipod. */
 function oldSway(t: number): [number, number] {
@@ -42,6 +44,49 @@ describe("the hold", () => {
     expect(at(2.5) / at(8)).toBeCloseTo((2.5 / 8) ** 2, 6);
     // In the hide the wind there is a fifth: a twenty-fifth of the push.
     expect(at(8 * 0.2) / at(8)).toBeCloseTo(0.04, 6);
+  });
+});
+
+describe("the tower", () => {
+  const q8 = dynamicPressure([8, 0, 0]);
+  const sway = (h: (typeof HOLD)[keyof typeof HOLD], q = 0) =>
+    Math.hypot(
+      rms((t) => holdAt(h, t, q)[0]),
+      rms((t) => holdAt(h, t, q)[1]),
+    );
+
+  it("holds steadier seated behind the tripod than on the railing, in still air and in a wind", () => {
+    expect(sway(HOLD.towerTripod)).toBeLessThan(sway(HOLD.railing) / 2);
+    expect(sway(HOLD.towerTripod, q8 * 2.4)).toBeLessThan(sway(HOLD.railing, q8 * 2.4) / 2);
+    // Seated behind the tripod: 0.9× the pack. On the railing: 2.5×, and the buffet 1.5×.
+    expect(sway(HOLD.towerTripod) / sway(HOLD.pack)).toBeCloseTo(0.9, 2);
+    expect(sway(HOLD.railing) / sway(HOLD.pack)).toBeCloseTo(2.5, 2);
+    expect(HOLD.towerTripod.buffet).toBe(HOLD.pack.buffet);
+    expect(HOLD.railing.buffet).toBeCloseTo(1.5 * HOLD.pack.buffet, 12);
+  });
+
+  it("puts the rifle on the tripod if it is carried, otherwise on the railing; never on a bipod", () => {
+    expect(rigFor(decodeKit("bolt", "tripod"), { tower: true }).restKind).toBe("towerTripod");
+    expect(rigFor(decodeKit("bolt", "atlas"), { tower: true }).restKind).toBe("railing");
+    expect(rigFor(decodeKit("svd", ""), { lab: true, tower: true }).restKind).toBe("railing");
+    expect(rigFor(decodeKit("svd", ""), { lab: true }).restKind).toBe("lab");
+    const t = rigFor(decodeKit("bolt", "tripod"), { tower: true });
+    expect(t.rest.panRate).toBe(REST.tripod.panRate);
+  });
+
+  it("sways with the mast at 0.25 Hz, 0.1 mrad at 39 Pa, in proportion to the platform's dynamic pressure", () => {
+    expect(mastSwayAt(3, 0)).toEqual([0, 0]);
+    let peak = 0;
+    for (let t = 0; t < 8; t += 0.01) peak = Math.max(peak, Math.abs(mastSwayAt(t, MAST.refPa)[0]), Math.abs(mastSwayAt(t, MAST.refPa)[1]));
+    expect(peak).toBeCloseTo(0.0001, 6);
+    // It repeats every 4 s.
+    for (const t of [0.3, 1.7, 2.9]) {
+      expect(mastSwayAt(t + 4, 20)[0]).toBeCloseTo(mastSwayAt(t, 20)[0], 12);
+      expect(mastSwayAt(t + 4, 20)[1]).toBeCloseTo(mastSwayAt(t, 20)[1], 12);
+    }
+    // Twice the pressure, twice the sway: at 40 m the wind is 1.56×, the push 2.44×.
+    const ratio = mastSwayAt(1.1, q8 * 2.44)[0] / mastSwayAt(1.1, q8)[0];
+    expect(ratio).toBeCloseTo(2.44, 6);
   });
 });
 

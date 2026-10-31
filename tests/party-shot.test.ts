@@ -9,6 +9,7 @@ import type { RoundId } from "../src/scope/ballistics";
 import { AIR, at, ROUNDS } from "../src/scope/ballistics";
 import { chestOf, GLAZING_DB, hearShot, nWave, outdoors, REPORT_STEP, reportDb, straightShot, type ShotHeard, type ShotIn } from "../src/party/shot";
 import { Party } from "../src/party/sim";
+import type { ShotReport } from "../src/armoury/report";
 import type { Person } from "../src/party/types";
 
 const KITS = { open: ["open", "m118lr"], can: ["can", "m118lr"], sub: ["can-sub", "sub200"], vss: ["integral", "sp5"], svd: ["open", "7n1"] } as const satisfies Record<
@@ -233,5 +234,8 @@ describe("the shot heard", () => {
         expect(h.heardAny).toBe(h.ears.filter((x) => x && (x.heard.report || x.heard.crack || x.heard.strike)).length);
         expect(h.ears.length).toBe(e.party.people.length);
       }
+    // The mission report takes it as it is.
+    const r: Pick<ShotReport, "heardBy"> = { heardBy: evenings[0]!.shots[0]!.heard.heardBy };
+    expect(r.heardBy).toBeGreaterThanOrEqual(0);
   });
 });

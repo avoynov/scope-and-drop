@@ -83,6 +83,14 @@
       #fire { border-top: 1px solid var(--line); padding-top: 8px; margin-bottom: 8px; }
       #fire .row { margin-bottom: 4px; }
       #fire select { padding: 2px 4px; }
+      #observe { border-top: 1px solid var(--line); padding-top: 8px; margin-bottom: 4px; }
+      #observe .row { margin-bottom: 4px; }
+      #observe .row[hidden] { display: none; }
+      #observe select, #observe input[type='number'] { padding: 2px 4px; }
+      #observe input[type='number'] { width: 3.5em; }
+      #observe label { color: var(--muted); }
+      #radiolog { margin: 0 0 8px; white-space: pre-wrap; color: var(--muted); font: inherit; font-size: 11px; max-height: 9em; overflow: auto; }
+      #radiolog[hidden] { display: none; }
       #spy .row { margin-bottom: 4px; }
       #spy .row[hidden] { display: none; }
       #spy .odds { display: grid; grid-template-columns: 14px 1fr 54px 6.5em; gap: 3px 6px; align-items: center; margin-top: 6px; }
@@ -130,6 +138,8 @@
       <div class="row" id="mood" title="Nudge the mood from now on; the evening's own rules take over after"><span class="label">mood</span></div>
       <div id="spy" title="The spy: who it is stays hidden until you reveal it"></div>
       <div id="fire" title="A shot from the perch: who in the house hears it (nothing in the evening reacts yet)"></div>
+      <div id="observe" title="Observers on other bearings: spotters in the treeline who call what they see over the radio (nothing in the evening hears them)"></div>
+      <pre id="radiolog" hidden></pre>
       <div class="row"><span class="label">log</span><select id="evfilter" aria-label="Which events to show"></select></div>
       <div id="events"></div>
       <div id="stats"></div>

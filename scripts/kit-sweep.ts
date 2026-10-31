@@ -9,7 +9,8 @@
  *
  * The two checks the decay is tuned against (handover, task 10):
  *  - a novice with a streak of two or more at stake earns more with a sensible kit (rest, bag, rangefinder) than bare;
- *  - an expert always earns most bare.
+ *  - an expert with no streak at stake earns most bare (the user's call, 2026-10-31: always is out of reach, since a
+ *    rest and bag lift even an expert's kills at the SVD's and the Sako's ranges).
  * And pacing: the full catalogue in about 10–12 contracts at a typical hit rate.
  *
  * The shooter (all angles in rad, at the aim point):
@@ -205,7 +206,8 @@ export function checks(rows: Row[]): { name: string; ok: boolean; detail: string
       const kit = of("novice", "rest+bag+lrf").ev[s]!;
       out.push({ name: `${rifle}: novice, streak ${s}: kit beats bare`, ok: kit > bare, detail: `€${kit} vs €${bare}` });
     }
-    for (const s of STREAKS) {
+    // The user's rule (2026-10-31): with nothing at stake an expert does best bare; with a streak at stake kit may pay.
+    for (const s of [0]) {
       const best = rows.filter((r) => r.rifle === rifle && r.skill === "expert").sort((a, b) => b.ev[s]! - a.ev[s]!)[0]!;
       out.push({ name: `${rifle}: expert, streak ${s}: bare pays most`, ok: best.kit === "bare", detail: `best ${best.kit} €${best.ev[s]} vs bare €${of("expert", "bare").ev[s]}` });
     }

@@ -6,6 +6,7 @@
 import { Career } from "../../src/armoury/career";
 import { ITEMS, MAX_SPOTTERS, SPOTTERS, type ItemId, type SpotterTier } from "../../src/armoury/catalogue";
 import { carried, decodeKit, encodeKit, type Loadout, type SpotterHire } from "../../src/armoury/loadout";
+import { PERCH_ARC_DEG } from "../../src/mansion/site/perch";
 import type { RifleId } from "../../src/scope/shot";
 
 const CAREER_KEY = "scope-and-drop.career.v1";
@@ -64,7 +65,7 @@ export function loadChosen(owned?: ReadonlySet<ItemId>): Chosen {
     .slice(0, MAX_SPOTTERS)
     .map((s) =>
       s.place === "bearing"
-        ? { tier: s.tier as SpotterTier, place: "bearing" as const, azDeg: clampNum(s.azDeg, -60, 60, 0), elDeg: clampNum(s.elDeg, 0, 25, 0) }
+        ? { tier: s.tier as SpotterTier, place: "bearing" as const, azDeg: clampNum(s.azDeg, -PERCH_ARC_DEG, PERCH_ARC_DEG, 0) }
         : { tier: s.tier as SpotterTier, place: "beside" as const },
     );
   return { rifle, kits, spotters };

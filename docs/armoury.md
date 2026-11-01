@@ -10,7 +10,7 @@ Money from contracts buys kit, kit makes the shot easier, and each item carried 
 | `src/armoury/loadout.ts` | A loadout: the rifle, at most one item a slot, up to two spotters. `checkLoadout` says what is wrong with one (wrong rifle or slot, not owned, a sleeve without its can, too many spotters). `payFactor` is the pay meter. `encodeKit`/`decodeKit` turn the kit into `kit=atlas,bag,kilo` and back, forgivingly. |
 | `src/armoury/career.ts` | The career: balance, kit owned for good, receipts, and (version 2) counters that outlive the last 50 receipts: contracts, the streak, clean contracts in a row, medals, each item's uses and the safety margin. `settleContract` turns a contract, its result and the loadout into a receipt whose lines add up; `Career.fromJSON` checks whatever comes back from storage. |
 | `src/armoury/report.ts` | What a contract reports: `ShotReport` per round and `MissionReport` for the job (tasks 10 and 11 read them; the joined mission, a test or the kit sweep fills them in). Also the grades and client terms. |
-| `src/armoury/margin.ts` | The new player's safety margin (task 11): its constants and a new career's starting margin. |
+| `src/armoury/margin.ts` | The new player's safety margin (task 11): `judgeShot`, `afterContract`, the receipt's words and the armoury's hint. Pure; matches `scripts/margin-sim.ts` on the same seeds. |
 | `src/armoury/rig.ts` | `rigFor(loadout)`: the loadout made into what the simulation reads: the rifle as loaded (round, precision, magazine, barrel, muzzle dust), its recoil, hold, rest and stock fit, the report, the aids, the optic and the hide. With nothing carried it is the issued rifle on its pack; `rigFor(l, { lab: true })` keeps the scope lab's own bipod hold. |
 | `src/scope/hold.ts` | The hold by rest (breathing, wander, heartbeat, tremor, wind buffet ∝ ½ρv²) and `RestDynamics`, how the rifle swings on its rest. |
 | `src/scope/can.ts` | A suppressor's heat, its cold first shot and first-round pop, and its shimmer. |
@@ -21,9 +21,19 @@ Money from contracts buys kit, kit makes the shot easier, and each item carried 
 
 pay = fee × G × (1 + Σ premiums) × R × E × M × Π(1 − decayᵢ) × (1 − Σ sharesⱼ)
 
-Worked in that order: the fee with the grade's multiplier G and the client terms' premiums, then the result, then the early-finish boost, then the safety margin's factor M, then kit decay, then the spotters' shares. G, the premiums and M are 1, 0 and 1 until tasks 10 and 11 land.
+Worked in that order: the fee with the grade's multiplier G and the client terms' premiums, then the result, then the early-finish boost, then the safety margin's factor M, then kit decay, then the spotters' shares. G and the premiums are 1 and 0 until task 10 lands. M = 1 − k·u (k 0.35), u the largest share of the safety margin used among the contract's margin hits at the spy; 1 for a clean hit.
 
 R is the contract's result (1 killed, 0.6 down, 0.2 wounded and gone, 0 failed; the mission will report it). E is the early-finish boost, a softened 1/x: with f the share of the evening left, `E = 1 + EARLY_MAX × f / (1 + EARLY_BEND × (1 − f))` (`earlyBoost` in career.ts; `EARLY_MAX` = 0.5 and `EARLY_BEND` = 1.5 in the catalogue, where a bend of 0 is a straight line). On the 19:00–22:00 party: done at 21:30 +4%, 21:00 +8%, 20:30 +14%, 20:00 +22%, 19:30 +33%, 19:00 +50%. Done at the end it pays as before, and it never takes anything off. The mission reports when the job was done as `doneAt` on the result (in-game seconds after the evening started); left out, there is no boost. Kit and spotters come off the boosted pay, and the receipt shows the boost on its own line. Items the dossier calls for decay at half rate. A failed contract pays nothing and still owes each spotter the retainer. The receipt shares the kit's cost between the items by ln(1 − decay), which is fair whatever the order and sums exactly, and lists what was carried and never used.
+
+## The safety margin (task 11)
+
+An invisible zone round the spy's torso, in mrad, that counts a near miss on the spy (only the spy) as a hit. Its size is a career part (starts at 1.1 mrad) plus the rifle's part (0.4 each): 1.5 mrad on a first contract, 27 cm at 183 m.
+
+- `judgeShot({ missMrad, fromChestMrad, rangeM }, margin, rng)`: a body hit uses none of it; a miss within it is a margin hit using u = miss ÷ margin, whose outcome is drawn (killed 1 − 0.6u, downed 0.45u, wounded 0.15u) and whose pay factor is 1 − 0.35u; beyond it, a miss. Quality q = 1 − (angle from the chest centre) ÷ (the chest's half-width, 0.2 m, as an angle, + the margin), 0 for a miss.
+- `afterContract(state, rifle, firstShotAtSpy, endedAt)`, only from the contract's first shot at the spy, in order: (a) a break gives back 5% of each part's start per full 14 days, at most 15% (every rifle's part too); (b) the 2nd miss in a row gives back 10% of the career part's start and each further one 5%, never above half its start by this route; (c) M ← M·(1 − 0.3q) − 0.02·M₀; (d) clamp to [0, M₀]; (e) under 0.05 mrad it is gone. With no shot at the spy the margin is left as it was. The clock is never read: the end date is passed in.
+- It lasts about 12 contracts for a quick learner, 16 for a typical player, 31 for one who isn't improving (`npx tsx scripts/margin-sim.ts`; `tests/margin.test.ts` checks margin.ts against the simulation contract by contract).
+- The player never sees it before the shot. The receipt says what happened after it ("Counted as a hit: 14 cm wide of him, half the margin used, pay ×0.82"), and each rifle on the armoury page says in words while it lasts: Forgiving (above two-thirds of 1.5 mrad), Steadying (above a fifth), Almost on your own (below), nothing once it is gone.
+- The hit test that fills `ShotReport.kind`, `missMrad` and `fromChestMrad` (closest approach to the torso, the cover check, the redirect) and the training switch belong to the scope lab.
 
 ## The career's storage
 

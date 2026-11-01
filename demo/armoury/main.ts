@@ -7,6 +7,7 @@
 import { SPOTTER_TIERS, earlyBoost, settleContract, type Receipt } from "../../src/armoury/career";
 import { ISSUED, ITEMS, ITEM_IDS, MAX_SPOTTERS, RETAINER, SLOTS, SLOT_NAMES, SPOTTERS, fits, type ItemId, type Slot } from "../../src/armoury/catalogue";
 import { carried, checkLoadout, decodeKit, encodeKit, payFactor } from "../../src/armoury/loadout";
+import { marginHint } from "../../src/armoury/margin";
 import { PERCH_ARC_DEG } from "../../src/mansion/site/perch";
 import { ROUNDS } from "../../src/scope/ballistics";
 import type { RifleId } from "../../src/scope/shot";
@@ -94,17 +95,23 @@ function setSlot(slot: Slot, id: ItemId | null): void {
 function renderLoadout(): void {
   const rf = chosen.rifle;
   $("rifles").replaceChildren(
-    ...RIFLE_IDS.map((id) =>
-      h("button", {
-        textContent: RIFLE_NAMES[id],
-        class: id === rf ? "on" : "",
-        onclick: () => {
-          chosen.rifle = id;
-          touched = new Set();
-          commit();
+    ...RIFLE_IDS.map((id) => {
+      // The safety margin, in words only while it lasts (never a number, never on anything read before the shot).
+      const hint = marginHint(career.margin, id);
+      return h(
+        "button",
+        {
+          class: id === rf ? "on" : "",
+          onclick: () => {
+            chosen.rifle = id;
+            touched = new Set();
+            commit();
+          },
         },
-      }),
-    ),
+        RIFLE_NAMES[id],
+        hint ? h("span", { class: "muted", textContent: ` · ${hint}` }) : null,
+      );
+    }),
   );
   const iss = ISSUED[rf];
   $("issued").textContent = `Issued, free: ${OPTIC_NAMES[iss.optic]}, ${ROUNDS[iss.round].name}, ${iss.magazine} rounds, ${iss.muzzle.toLowerCase()}, ${iss.stock.toLowerCase()}, a rolled pack to rest it on.`;
@@ -358,6 +365,7 @@ function renderReceipt(): void {
     h("h2", { textContent: "Receipt", style: "margin-top: 14px" }),
     line(`${r.contract}: ${r.result}`, r.gross, "", i++),
     ...(r.early ? [line(r.early.label, r.early.amount, "", i++)] : []),
+    ...(r.margin ? [line(r.margin.label, r.margin.amount, "", i++)] : []),
     ...r.kit.map((x) => line(x.label, x.amount, "muted", i++)),
     ...r.spotters.map((x) => line(x.label, x.amount, "muted", i++)),
     line("Paid in", r.total, "total", i++),

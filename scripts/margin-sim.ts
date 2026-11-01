@@ -13,7 +13,11 @@
  *  - the target is an ellipse round the chest centre standing in for the torso, 45 cm wide and 90 cm tall; the chest's
  *    half-width for the quality measure is 20 cm;
  *  - the miss beyond the outline is measured along the ray from the chest centre to the impact.
+ *
+ * Importable (tests/margin.test.ts checks margin.ts against `career` here); it prints only when run directly.
  */
+import { fileURLToPath } from "node:url";
+
 const MARGIN = {
   career0: 1.1, // starting career margin
   rifle0: 0.4, // starting margin of each rifle
@@ -24,13 +28,13 @@ const MARGIN = {
   missGrow: [0.1, 0.05], // share of career0 given back on the 2nd miss in a row, and on each further one
   growCap: 0.5, // growth from misses never takes the career margin above this share of career0
 };
-const RANGE_M = 183;
+export const RANGE_M = 183;
 const SEMI_W = 0.225; // torso stand-in: semi-axes (m)
 const SEMI_H = 0.45;
 const CHEST_HALF_M = 0.2;
 
 /** Mulberry32 and Box–Muller: the same draws on every machine for a seed. */
-function rng(seed: number) {
+export function rng(seed: number) {
   let a = seed >>> 0;
   const u = () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -44,7 +48,7 @@ function rng(seed: number) {
 }
 
 /** Angular miss beyond the ellipse's outline (0 inside), along the ray from its centre. */
-function missBeyond(dx: number, dy: number): number {
+export function missBeyond(dx: number, dy: number): number {
   const a = (SEMI_W / RANGE_M) * 1000;
   const b = (SEMI_H / RANGE_M) * 1000;
   const r = Math.hypot(dx / a, dy / b);
@@ -59,25 +63,25 @@ function outcomeFactor(u: number, x: number): number {
 }
 
 type Kind = "hit" | "margin" | "miss";
-interface Profile {
+export interface Profile {
   name: string;
   s0: number;
   sInf: number;
   alpha: number;
 }
-const PROFILES: Profile[] = [
+export const PROFILES: Profile[] = [
   { name: "Quick learner", s0: 1.6, sInf: 0.25, alpha: 0.8 },
   { name: "Typical", s0: 1.6, sInf: 0.4, alpha: 0.45 },
   { name: "Stagnant", s0: 1.6, sInf: 1.2, alpha: 0.1 },
 ];
 
 /** One career of `n` contracts with one rifle: the margin before each contract, what the shot was and what it paid. */
-function career(p: Profile, n: number, seed: number) {
+export function career(p: Profile, n: number, seed: number) {
   const r = rng(seed * 7919 + 17);
   let mc = MARGIN.career0;
   let mr = MARGIN.rifle0;
   let missesInRow = 0;
-  const out: { margin: number; kind: Kind; pay: number }[] = [];
+  const out: { margin: number; kind: Kind; pay: number; dx: number; dy: number; marginAfter: number }[] = [];
   for (let i = 1; i <= n; i++) {
     const s = p.sInf + (p.s0 - p.sInf) * i ** -p.alpha;
     const dx = r.gauss() * s;
@@ -103,7 +107,6 @@ function career(p: Profile, n: number, seed: number) {
       pay = 0;
       q = 0;
     }
-    out.push({ margin: m, kind, pay });
     // 1. Misses in a row give some back (career margin only), never above growCap × career0.
     if (kind === "miss") {
       missesInRow++;
@@ -118,6 +121,7 @@ function career(p: Profile, n: number, seed: number) {
     // 3. Each part snaps to 0 below the snap.
     if (mc < MARGIN.snap) mc = 0;
     if (mr < MARGIN.snap) mr = 0;
+    out.push({ margin: m, kind, pay, dx, dy, marginAfter: mc + mr });
   }
   return out;
 }
@@ -130,18 +134,19 @@ const quantile = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math
 
 const CAREERS = 400;
 const N = 60;
-if (process.argv.includes("--series")) {
+const direct = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (direct && process.argv.includes("--series")) {
   const rows: { contract: number; player: string; margin: number }[] = [];
   for (const p of PROFILES) {
     const cs = Array.from({ length: CAREERS }, (_, s) => career(p, 40, s));
     for (let i = 0; i < 40; i++) rows.push({ contract: i + 1, player: p.name, margin: Math.round(median(cs.map((c) => c[i]!.margin)) * 1000) / 1000 });
   }
   console.log(JSON.stringify(rows));
-} else {
+} else if (direct) {
   for (const p of PROFILES) {
     const cs = Array.from({ length: CAREERS }, (_, s) => career(p, N, s));
     // The first contract that starts with no margin left (N + 1 if it never runs out).
-    const gone = cs.map((c) => (c.findIndex((x) => x.margin < 0.01) + 1 || N + 1));
+    const gone = cs.map((c) => c.findIndex((x) => x.margin < 0.01) + 1 || N + 1);
     const first20 = cs.flatMap((c) => c.slice(0, 20));
     const share = (k: Kind) => (first20.filter((x) => x.kind === k).length / first20.length).toFixed(2);
     const at = (i: number) => median(cs.map((c) => c[i - 1]!.margin)).toFixed(2);

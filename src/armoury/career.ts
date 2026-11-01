@@ -5,8 +5,8 @@
  *
  * Pay for a contract, in this order: the fee × the grade's multiplier × (1 + the client terms' premiums), then × the result R,
  * then × the early-finish boost, then × the safety margin's factor, then × the loadout's kit factor (kit the dossier calls
- * for decays at half rate), then less each spotter's share of that. (Grades, terms and the margin are 1 for now: task 10
- * and task 11 fill them in.) A failed contract
+ * for decays at half rate), then less each spotter's share of that. (Grades and terms are 1 for now: task 10 fills them
+ * in.) A failed contract
  * (result 0) pays nothing and still owes each spotter a retainer. The receipt has a line for each item: what its
  * decay cost tonight. Decay multiplies, so how the total splits between items is shared out by each item's
  * ln(1 − decay), which is fair whatever the order and sums to the total exactly.
@@ -14,7 +14,9 @@
 import { PARTY_LENGTH } from "../party/clock";
 import { EARLY_BEND, EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
 import { carried, checkLoadout, kitFactor, type Loadout } from "./loadout";
-import { freshMargin, MARGIN, type MarginState } from "./margin";
+import { afterContract, freshMargin, MARGIN, usedInWords, type MarginState } from "./margin";
+import type { ShotReport } from "./report";
+import type { RifleId } from "../scope/shot";
 
 export interface Contract {
   /** What the client pays for a clean job (€). */
@@ -30,6 +32,11 @@ export interface ContractResult {
   label: string;
   /** When the job was done, in in-game seconds after the evening started (the party clock). Left out: no boost. */
   doneAt?: number;
+  /**
+   * The safety margin, when a margin hit counted (task 11): the largest share of the margin used among the contract's
+   * margin hits at the spy, and how far wide of the torso that shot passed (cm). Pay × (1 − k·used).
+   */
+  margin?: { used: number; wideCm: number; spy?: "him" | "her" };
 }
 
 export interface ReceiptLine {
@@ -46,6 +53,8 @@ export interface Receipt {
   gross: number;
   /** The boost for finishing before the evening's end (never negative); kit and spotters come off the boosted pay. Absent on older receipts. */
   early?: ReceiptLine;
+  /** What a margin hit took off: "Counted as a hit: 14 cm wide of him, half the margin used, pay ×0.83". Absent on a clean hit. */
+  margin?: ReceiptLine;
   /** One line per carried item, then one per spotter (share or retainer). */
   kit: ReceiptLine[];
   spotters: ReceiptLine[];
@@ -109,10 +118,11 @@ function earlyLabel(secondsLeft: number): string {
 
 /** A contract settled: the receipt, with nothing changed yet (`Career.settle` books it). */
 export function settleContract(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>, balance = 0): Receipt {
-  // Task 10's grade and client terms, then task 11's margin: 1 until they land.
+  // Task 10's grade and client terms: 1 until they land.
   const gradeMult = 1;
   const termPremiums = 0;
-  const marginFactor = 1;
+  const used = result.margin ? Math.max(0, Math.min(1, result.margin.used)) : 0;
+  const marginFactor = 1 - MARGIN.k * used;
   const fee = contract.fee * gradeMult * (1 + termPremiums);
   const gross = fee * Math.max(0, result.factor);
   // A failed job earns no boost.
@@ -133,7 +143,8 @@ export function settleContract(contract: Contract, result: ContractResult, loado
     return failed ? { label: `${name}: retainer`, amount: -RETAINER } : { label: `${name}: ${Math.round(SPOTTERS[s.tier].share * 100)}%`, amount: -round(afterKit * SPOTTERS[s.tier].share) };
   });
   // The total is worked out once and the lines rounded to it, so they always add up.
-  const total = boosted - round(boosted - afterMargin) + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
+  const marginCut = -round(boosted - afterMargin);
+  const total = boosted + marginCut + kit.reduce((s, l) => s + l.amount, 0) + spotters.reduce((s, l) => s + l.amount, 0);
   const unused = touched ? items.filter((id) => !touched.has(id)).map((id) => ({ label: `${ITEMS[id].name}: carried, never used`, amount: kit[items.indexOf(id)]!.amount })) : [];
   const early = bonus > 0 ? { label: `${earlyLabel(PARTY_LENGTH - (result.doneAt ?? PARTY_LENGTH))}: +${Math.round(boost * 100)}%`, amount: bonus } : undefined;
   return {
@@ -142,6 +153,14 @@ export function settleContract(contract: Contract, result: ContractResult, loado
     fee: contract.fee,
     gross: round(gross),
     ...(early ? { early } : {}),
+    ...(result.margin && gross > 0
+      ? {
+          margin: {
+            label: `Counted as a hit: ${Math.round(result.margin.wideCm)} cm wide of ${result.margin.spy ?? "him"}, ${usedInWords(used)} used, pay ×${marginFactor.toFixed(2)}`,
+            amount: marginCut,
+          },
+        }
+      : {}),
     kit,
     spotters,
     total,
@@ -204,6 +223,14 @@ export class Career {
     this.contracts++;
     for (const id of carried(loadout)) if (!touched || touched.has(id)) this.uses[id] = (this.uses[id] ?? 0) + 1;
     return r;
+  }
+
+  /**
+   * The safety margin after a contract with `rifle`, from its first shot at the spy (null when it had none: the margin
+   * stays as it was). `endedAt` is the contract's end (ISO), never read from the clock.
+   */
+  updateMargin(rifle: RifleId, firstShotAtSpy: Pick<ShotReport, "kind" | "fromChestMrad" | "rangeM"> | null, endedAt: string): void {
+    this.margin = afterContract(this.margin, rifle, firstShotAtSpy, endedAt);
   }
 
   toJSON(): CareerData {

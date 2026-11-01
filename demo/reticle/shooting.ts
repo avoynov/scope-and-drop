@@ -25,6 +25,9 @@ import { cycle, latch, loaded, pull, setSafe, unlatch, type ActionState } from "
 import { SCOPE } from "../../src/scope/optics";
 import { CanHeat, type Report } from "../../src/scope/can";
 import { assess, type Wound } from "../../src/body/wound";
+import { CHEST, angleMrad, closestApproach, densify, nearestTo, redirectEntries } from "../../src/scope/hit-test";
+import { judgeShot, marginRng } from "../../src/armoury/margin";
+import type { ShotReport } from "../../src/armoury/report";
 import { dragAfter, throughGlass, yawAfter, type Through } from "../../src/scope/glass";
 import { RANGE_SPIN, RIFLES, aeroJumpRad, dispersion, firstHit, fly, millerStability, pathAt, type Hit, type Path, type Rifle, type Vec3 } from "../../src/scope/shot";
 import { windAt, type Wind } from "../../src/scope/wind";
@@ -73,7 +76,19 @@ interface Shot {
   wound: Wound | null;
   /** The panes it met on the way, in order. */
   glass: GlassPass[];
+  /** The safety margin's hit test against the nearest mannequin (task 11); null if it never came near one. */
+  marginTest: MarginTest | null;
 }
+
+/** What the margin's hit test made of a shot, as the mission report has it, and what the readout says after it. */
+type MarginTest = Pick<ShotReport, "kind" | "marginUsed" | "missMrad" | "fromChestMrad" | "rangeM" | "outcome"> & {
+  /** A margin was on for this shot. */
+  margin: boolean;
+  /** Within the margin, but something stood between the path and the torso. */
+  covered: boolean;
+  /** How far wide of the torso it passed (m), across the path. */
+  wideM: number;
+};
 
 interface Handling {
   kind: "cycle" | "reload";
@@ -262,6 +277,8 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
   let handlingCount = 0;
   /** How far the elevation dial tilts the bore up from the line of sight (shot.ts `dialTiltRad`). */
   let tiltRad = 0;
+  /** The safety margin round the mannequins' torsos (mrad), 0 for none: practice only, never the career's. */
+  let marginMrad = 0;
 
   // ---- what a bullet can hit ----
   const ray = new THREE.Raycaster();
@@ -277,7 +294,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     const f = Math.max(0, Math.min(1, D.dot(B.copy(c).sub(a)) / Math.max(1e-9, D.lengthSq())));
     return B.copy(a).addScaledVector(D, f).distanceTo(c);
   };
-  const solid = (a: Vec3, b: Vec3): { f: number; what: string } | null => {
+  const solid = (a: Vec3, b: Vec3, skipTarget = -1): { f: number; what: string } | null => {
     A.set(a[0], a[1], a[2]);
     const Bv = new THREE.Vector3(b[0], b[1], b[2]);
     const len = A.distanceTo(Bv);
@@ -288,7 +305,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       hits.push(...ray.intersectObjects(objs, recursive));
     };
     range.targets.forEach((m, i) => {
-      if (segDist(A, Bv, targetCentres[i]!) < 1.6) cast([m.group], true);
+      if (i !== skipTarget && segDist(A, Bv, targetCentres[i]!) < 1.6) cast([m.group], true);
     });
     if (segDist(A, Bv, boulderCentre) < 6.5) cast([range.boulder], false);
     // The fence runs z = −360 − 0.12·x for |x| ≤ 350.
@@ -525,7 +542,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         }
       }
     });
-    const kind = KIND[hit.what] ?? null;
+    let kind: Kind | null = KIND[hit.what] ?? null;
     if (kind === "plastic" || hit.what === "stake" || hit.what === "tripod") target = nearestTarget(hit.pos[0], hit.pos[2]);
     // The mannequin stands in for a person facing the shooter: the wound track runs in its own frame.
     let wound: Wound | null = null;
@@ -538,7 +555,100 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       const after = carry ? { yawRad: yawAfter(carry.yawMax, carry.swingM, Math.hypot(hit.pos[0] - carry.pos[0], hit.pos[1] - carry.pos[1], hit.pos[2] - carry.pos[2])), massKg: carry.massKg } : {};
       wound = assess({ entry: [entry.x, entry.y, entry.z], dir: [dirL.x, dirL.y, dirL.z], speed: hit.speed, round: rifle.round, seed: n, ...after });
     }
-    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false, wound, glass: passes };
+    // The safety margin's hit test (task 11), against the mannequin the bullet hit or came closest to.
+    let marginTest: MarginTest | null = null;
+    if (target >= 0) {
+      const m = range.targets[target]!.group;
+      const inv = m.quaternion.clone().invert();
+      const toBody = (p: ArrayLike<number>, i = 0): Vec3 => {
+        const v = new THREE.Vector3(p[i]!, p[i + 1]!, p[i + 2]!).sub(m.position).applyQuaternion(inv);
+        return [v.x, v.y, v.z];
+      };
+      const toWorld = (p: Vec3): Vec3 => {
+        const v = new THREE.Vector3(...p).applyQuaternion(m.quaternion).add(m.position);
+        return [v.x, v.y, v.z];
+      };
+      const muzzle = toBody(path.pos, 0);
+      // The flight up to where it struck, near the mannequin, in its frame and a centimetre apart.
+      const near: Vec3[] = [];
+      let lastI = 0;
+      for (let i = 0; i < path.n && i * path.dt <= hit.t + 1e-9; i++) {
+        lastI = i;
+        const b = toBody(path.pos, i * 3);
+        if (Math.hypot(b[0], b[1] - 1.15, b[2]) < 4) near.push(b);
+      }
+      if (near.length === 1) near.push(toBody(path.pos, Math.min(path.n - 1, lastI + 1) * 3));
+      const dense = densify(near);
+      if (kind === "plastic") {
+        const entry = toBody(hit.pos);
+        marginTest = {
+          kind: "hit",
+          marginUsed: 0,
+          missMrad: 0,
+          fromChestMrad: angleMrad(muzzle, entry, CHEST),
+          rangeM: Math.hypot(entry[0] - muzzle[0], entry[1] - muzzle[1], entry[2] - muzzle[2]),
+          margin: marginMrad > 0,
+          covered: false,
+          wideM: 0,
+        };
+      } else if (dense.length >= 2) {
+        const a = closestApproach(dense, 2);
+        const rangeAt = (q: Vec3) => Math.hypot(q[0] - muzzle[0], q[1] - muzzle[1], q[2] - muzzle[2]);
+        const at = a?.at ?? nearestTo(dense, CHEST);
+        const rangeM = rangeAt(at);
+        const missMrad = a ? (a.missM / rangeM) * 1000 : (2 / rangeM) * 1000;
+        const fromChestMrad = angleMrad(muzzle, nearestTo(dense, CHEST), CHEST);
+        marginTest = { kind: "miss", marginUsed: 0, missMrad, fromChestMrad, rangeM, margin: marginMrad > 0, covered: false, wideM: a?.missM ?? 2 };
+        if (a && marginMrad > 0 && missMrad <= marginMrad) {
+          // The straight piece from the path to the torso must be clear: another mannequin, the boulder, a pane.
+          const covered = !!solid(toWorld(a.at), toWorld(a.touch), target);
+          marginTest.covered = covered;
+          const j = covered ? null : judgeShot({ missMrad, fromChestMrad, rangeM }, marginMrad, marginRng(n * 7919 + 17));
+          if (j && j.kind === "margin") {
+            // Redirected to the torso: the wound model on the entries in turn, preferring one that matches the draw.
+            // When it passed there: the recorded point nearest, and the fraction of the way to the next.
+            let atI = 0;
+            let bestD = Infinity;
+            for (let i = 0; i <= lastI; i++) {
+              const b = toBody(path.pos, i * 3);
+              const d = Math.hypot(b[0] - at[0], b[1] - at[1], b[2] - at[2]);
+              if (d < bestD) {
+                bestD = d;
+                atI = i;
+              }
+            }
+            const speed = path.speed[atI] ?? hit.speed;
+            const dirW = new THREE.Vector3(...a.dir).applyQuaternion(m.quaternion);
+            let best: { entry: Vec3; wound: Wound } | null = null;
+            for (const e of redirectEntries(a)) {
+              const w = assess({ entry: e, dir: a.dir, speed, round: rifle.round, seed: n });
+              if (!best) best = { entry: e, wound: w };
+              if (w.outcome === j.outcome) {
+                best = { entry: e, wound: w };
+                break;
+              }
+            }
+            if (best) {
+              wound = best.wound.outcome === j.outcome ? best.wound : { ...best.wound, outcome: j.outcome! };
+              kind = "plastic";
+              const b = toBody(path.pos, atI * 3);
+              const ahead = (at[0] - b[0]) * a.dir[0] + (at[1] - b[1]) * a.dir[1] + (at[2] - b[2]) * a.dir[2];
+              hit = {
+                ...hit,
+                t: Math.max(0, atI * path.dt + ahead / Math.max(1, speed)),
+                pos: toWorld(best.entry),
+                vel: [dirW.x * speed, dirW.y * speed, dirW.z * speed],
+                speed,
+                what: m.name || "mannequin",
+              };
+              marginTest = { ...marginTest, kind: "margin", marginUsed: j.used, outcome: wound.outcome, fromChestMrad: angleMrad(muzzle, best.entry, CHEST) };
+            }
+          }
+        }
+      }
+      if (marginTest && kind === "plastic" && marginTest.kind === "hit" && wound) marginTest.outcome = wound.outcome;
+    }
+    const shot: Shot = { n, rifle, exit, path, hit, kind, miss, target, what: hit.what, blast: rifle.blastDust, holed: false, wound, glass: passes, marginTest };
     shots.push(shot);
     if (shots.length > 12) shots.shift();
     if (delay !== null) {
@@ -823,6 +933,13 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
     busy: () => !!handling,
     /** The suppressor's heat, if there is one. */
     can: (): CanHeat | null => can,
+    /** Turns the safety margin round the mannequins on (mrad) or off (0), for practice. */
+    setMargin: (mrad: number) => (marginMrad = Math.max(0, mrad)),
+    /** The last landed shot's margin test, for the readout after the shot. */
+    marginAfter(now: number): MarginTest | null {
+      const l = shots[shots.length - 1];
+      return l && now >= l.exit + l.hit.t ? l.marginTest : null;
+    },
     /**
      * The last shot, for the spotter: its number, when it landed, whether it hit a mannequin, where it crossed the
      * nearest mannequin's plane against the chest (m right, m up; null if it never got that far), and that mannequin.

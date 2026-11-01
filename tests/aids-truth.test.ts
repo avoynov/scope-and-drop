@@ -14,6 +14,7 @@ import { BATTLE_ZERO_M, dialTiltLoaded, firstHit, fly, millerStability, type Rif
 import { ISSUED, ITEMS, ITEM_IDS, fits } from "../src/armoury/catalogue";
 import { decodeKit } from "../src/armoury/loadout";
 import { rigFor } from "../src/armoury/rig";
+import { Spotter } from "../src/armoury/spotter";
 import type { RifleId } from "../src/scope/shot";
 
 /** Every load each rifle can carry, as the rig loads it. */
@@ -141,6 +142,24 @@ describe("the aids tell the truth", () => {
             const slopeRad = -d * deg;
             const sol = solveFiring(rf, losM, slopeRad, { mph: 0, clock: 12 });
             expect(Math.abs(impact(rf, losM, sol.elevMil * MRAD, { slopeRad })[1]), `${rf.round} ${losM} m ${-d}°`).toBeLessThan(0.01);
+          }
+      }
+  });
+
+  it("a spotter's wind hold, fired in the wind they read, for every rifle and load and in the reticle's unit", () => {
+    for (const id of ["svd", "bolt", "vss"] as const)
+      for (const rf of loads(id)) {
+        const unit = id === "bolt" ? MRAD : THOUSANDTH;
+        const sub = ROUNDS[rf.round].mv < 330;
+        for (const rangeM of sub ? [150, 250] : [183, 412])
+          for (const read of [
+            { ms: 3, clock: 9 },
+            { ms: 6.5, clock: 2.25 },
+          ]) {
+            const hold = Spotter.windHold(rf, rangeM, read, unit);
+            const up = comeUps(rf, [rangeM])[0]!.mil * MRAD;
+            const [x] = impact(rf, rangeM, up, { rightRad: hold * unit, ms: read.ms, clock: read.clock, spin: true });
+            expect(Math.abs(x), `${rf.round} ${rangeM} m`).toBeLessThan(0.01);
           }
       }
   });

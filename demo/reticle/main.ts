@@ -14,6 +14,9 @@ import { compose, invert, qRot } from "../../src/scope/handling";
 import { BATTLE_ZERO_M, RIFLES, shotRandom, crossDriftPerMs, dialDetents, dialReading, dialTiltLoaded, type Dial, type RifleId } from "../../src/scope/shot";
 import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../src/scope/wind";
 import { createSound } from "./audio";
+import { createRadioVoice } from "../shared/radio-voice";
+import { Radio } from "../../src/scope/radio";
+import { Spotter, flagReading, parseSpotters } from "../../src/armoury/spotter";
 import { createComposite } from "./composite";
 import { GLAZING, type GlazingId } from "../../src/scope/glass";
 import { createGlass } from "./glass";
@@ -1146,6 +1149,55 @@ function kestrelText(): string {
   const side = hold >= 0.05 ? " right" : hold <= -0.05 ? " left" : "";
   return `${sp.toFixed(1)} m/s from ${Math.floor(c) || 12}${c % 1 ? ":30" : ""} · ${rangeM} m: hold ${Math.abs(hold).toFixed(1)} mil${side}`;
 }
+/**
+ * The spotters beside you (`spot=veteran`, `spot=rookie,seasoned`; src/armoury/spotter.ts) on one radio channel
+ * (src/scope/radio.ts), spoken in the earpiece (demo/shared/radio-voice.ts). They read the wind off the air at three
+ * points along the line of sight, watch each shot land, and a veteran calls the range.
+ */
+const spotters = parseSpotters(params.get("spot")).map((tier, i, all) => new Spotter(tier, `lab/${i}`, all.length > 1 ? `${tier} ${i + 1}` : tier));
+const radio = new Radio();
+const voice = createRadioVoice(() => sound.radioBus());
+let radioHeard = "";
+let shotCalled = -1;
+let rangeCalledFor = "";
+const flagTmp: [number, number, number][] = [
+  [0, 0, 0],
+  [0, 0, 0],
+  [0, 0, 0],
+];
+function stepSpotters(t: number): void {
+  if (!spotters.length) return;
+  const ret = currentReticle();
+  const home = range.targets[HOME[state.reticle]]!;
+  const los = toT.set(home.foot.x, home.foot.y + CHEST_M, home.foot.z).sub(eyePos);
+  const rangeM = los.length();
+  const cosE = Math.hypot(los.x, los.z) / rangeM;
+  // Each rifle shoots its own mannequin: a veteran calls its range once it is the one being shot at.
+  if (rangeCalledFor !== state.reticle) {
+    rangeCalledFor = state.reticle;
+    const call = spotters.map((s) => s.rangeCall(t, rangeM)).find(Boolean);
+    if (call) radio.push(call);
+  }
+  const flags = [1 / 6, 1 / 2, 5 / 6].map((f, i) => windAt(state.wind, eyePos.x + los.x * f, eyePos.y + los.y * f, eyePos.z + los.z * f, t, flagTmp[i]!));
+  const read = flagReading(flags, Math.atan2(-los.x, -los.z));
+  for (const s of spotters) {
+    const call = s.windCall(t, rig.rifle, rangeM, read, ret.unitRad);
+    if (call) radio.push(call);
+  }
+  const last = shooting.last();
+  if (last && last.n > shotCalled && t >= last.landAt) {
+    shotCalled = last.n;
+    // Whoever saw it land calls it; the other stays off the air.
+    const miss = last.miss ? ([last.miss[0], last.miss[1] * cosE] as const) : null;
+    const call = spotters.map((s) => s.shotCall(last.landAt, { hit: last.hit, miss, rangeM, ...(last.stopped ? { note: "Glass stopped it" } : {}) }, ret.unitRad)).find(Boolean);
+    if (call) radio.push(call);
+  }
+  for (const ev of radio.step(t)) {
+    if (ev.type !== "start") continue;
+    if (sound.enabled) voice.say(ev.call.text, ev.end - ev.start);
+    radioHeard = `${ev.call.from}: “${ev.call.text}”`;
+  }
+}
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
 /** The can's heat over the air, whether it is still cold enough to throw its first shot, and its sleeve. */
 function canText(t: number): string {
@@ -1261,6 +1313,7 @@ function frame(t: number, dt: number): void {
   // The rifle on its rest follows the hands, as the rest lets it; the wind buffets the hold.
   updateWindLoad(t);
   stepKestrel(t, dt);
+  stepSpotters(t);
   restNow = restDyn.step(state.yaw, state.pitch, t, dt);
   const eye = { ...state.eye };
   if (state.drift) {
@@ -1552,6 +1605,7 @@ function frame(t: number, dt: number): void {
       ...(rig.windMeter ? [["Kestrel", kestrelText()]] : []),
       ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
       ["Last shot", status.shot],
+      ...(spotters.length ? [["Radio", radioHeard || "–"]] : []),
       ["Aim point", fmt(D)],
       ["Parallax error", `${Math.abs(par).toFixed(2)} ${unit}`],
       ["Target 1.7 m", `${fig.toFixed(2)} ${unit}`],

@@ -37,6 +37,11 @@ export interface Sound {
   cues(list: readonly Cue[], rifle: RifleId): () => void;
   /** One detent of the elevation drum: a small, dry click, right at the ear. */
   drumClick(): void;
+  /**
+   * The radio's bus: the spotter's earpiece (demo/shared/radio-voice.ts) plays into it, under the same limiter as the
+   * rifle. Null until the audio is unlocked.
+   */
+  radioBus(): { ctx: AudioContext; out: AudioNode } | null;
 }
 
 /** Recordings dropped into sounds/, by file name without the extension. */
@@ -102,6 +107,7 @@ export function createSound(): Sound {
   const recorded = new Map<string, AudioBuffer[]>();
   const synthesised = new Map<string, AudioBuffer>();
   let takes = 0;
+  let radio: GainNode | null = null;
 
   function load(c: AudioContext): void {
     for (const [name, urls] of TAKES) {
@@ -242,6 +248,15 @@ export function createSound(): Sound {
           if (t0 + c.t > now) srcs[i]!.stop();
         });
       };
+    },
+    radioBus() {
+      if (!ctx) return null;
+      if (!radio) {
+        radio = ctx.createGain();
+        radio.connect(out);
+      }
+      radio.gain.value = s.enabled ? 1 : 0;
+      return { ctx, out: radio };
     },
     drumClick() {
       if (!s.enabled || !ctx) return;

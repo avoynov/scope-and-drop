@@ -653,6 +653,15 @@ The high perch is a telecom or TV mast near the estate, its platform 30–55° a
 - **The KILO's holds below the zero:** short and steep the hold falls below the 100 m zero (about −0.3 mil at 130 m and 55° down with the Sako). The KILO shows it with a down arrow; the turret stops at 0, so the shooter holds under with the reticle. `tests/aids-truth.test.ts` flies its solutions from 30° to 55° down at 130–400 m for every load, to a centimetre.
 - The mast itself, at the perch, comes with the joined mission.
 
+### The spotter beside you (`spot=`, `src/armoury/spotter.ts`, `src/scope/radio.ts`)
+`spot=veteran`, or two with `spot=rookie,seasoned`: a spotter lies beside you on the radio. What they say comes in the earpiece and as the panel's "Radio" line.
+- **Wind calls:** they read the wind off the air at three points along the line of sight (a sixth, half and five-sixths of the way), the near ones counting most (3 : 2 : 1), and look again every 6 s. When what they see moves the hold by a quarter, they call it: "Wind left, hold point seven five left", in the reticle's unit (mil, or thousandths on the PSO), rounded to a quarter. Their reading errs by tier (speed by σ 0.4 / 0.25 / 0.15 of itself, direction by σ 0.5 / 0.25 / 0 clock hours, drawn once per call). From that reading their arithmetic is the solver's (`windHoldMil`, spin drift and all), so it is exact for the load in the rifle; `tests/aids-truth.test.ts` fires it in the wind they read, to a centimetre.
+- **Shot calls:** when a bullet lands, each spotter sees it with the tier's chance (60%, 80%, 95%); the first who saw it calls "Hit", or the miss, elevation first, then windage, to a quarter: "Low one point five, right point five". A bullet stopped by glass is "Glass stopped it"; one that never reached the target "Miss, short".
+- **Range:** a veteran calls the range of the mannequin the rifle shoots, exact to the metre: "Range one eight three". Nobody else does.
+- **Delay:** each call starts after a delay uniform in the tier's range (3–5 s, 2–3 s, 1–2 s).
+- **The radio:** one channel, one voice. When it is free the most urgent ready call goes next: a shot call, then "target moving", a sighting, a range, the wind. About 2.5 words a second, a squelch tail after each call; a call that has waited more than 20 s is dropped, a shot call never. The party lab's observers use the same channel.
+- **The voice** (`demo/shared/radio-voice.ts`): the browser's speech synthesis, with a key click, a faint hiss in the 300–3,400 Hz band while the key is down and the squelch tail. Browsers can't route speech synthesis through Web Audio, so the band-pass can't touch that voice; recorded words dropped into `demo/shared/radio-words/` (one file per word, see the README there) are played through the band-pass instead, once every word of a call has one.
+
 ### The hide
 Cloth walls and a low window round the shooter. The window lets the rifle (and a rangefinder) turn 12° either side of the line between the two mannequins and 6° up or down; the barrel meets the frame there ("at the frame"), and at the ends of the arc the scope sees the frame's edge.
 

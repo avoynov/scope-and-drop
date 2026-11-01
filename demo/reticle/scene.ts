@@ -103,6 +103,23 @@ export const TARGET = new THREE.Vector3(18, 0, -RANGE_M);
 export const NEAR_M = 183;
 export const NEAR_TARGET = new THREE.Vector3(-3, 0, -NEAR_M);
 export const EYE_HEIGHT = 1.1;
+/** On a tower the eye is this far above the platform: a seated shooter (m). */
+export const TOWER_EYE_M = 1.2;
+/** The briefing puts the perch on a tower above this elevation (°, down); below it the perch stays on the ground. */
+export const TOWER_FROM_DEG = 15;
+
+/**
+ * The platform's height (m above the hide's ground) for `tower=`: a number is taken as it is; empty or `auto` puts
+ * the platform high enough that the steepest target below 15° down stands on the plain, not on a dug pit.
+ */
+export function towerHeight(param: string | null, spots: (TargetSpot | null)[]): number | null {
+  if (param === null) return null;
+  const asked = Number(param);
+  if (param !== "" && param !== "auto" && Number.isFinite(asked)) return Math.max(2, Math.min(300, asked));
+  let up = 0;
+  for (const sp of spots) if (sp && sp.elevDeg < -TOWER_FROM_DEG) up = Math.max(up, sp.rangeM * Math.sin((-sp.elevDeg * Math.PI) / 180) + CHEST_M - TOWER_EYE_M);
+  return Math.round(Math.max(30, up));
+}
 /** A mannequin's chest, the aim point, above its foot (m). */
 export const CHEST_M = 1.15;
 
@@ -120,7 +137,7 @@ export const targetRanges = [RANGE_M, NEAR_M];
  * sit lower. Call before anything reads the terrain. The boulder and the clear patch behind the far target move
  * with it.
  */
-export function configureTargets(spots: (TargetSpot | null)[]): void {
+export function configureTargets(spots: (TargetSpot | null)[], eyeUp = EYE_HEIGHT): void {
   const pins = [TARGET, NEAR_TARGET].map((v, i) => ({ v, i, spot: spots[i] ?? null, bearing: Math.atan2(v.x, -v.z), hill: { x: 0, z: 0, h: 0, s: 1 } as Mound })).filter((p) => p.spot);
   if (!pins.length) return;
   const lift: Mound = { x: 0, z: 5, h: 0, s: 1 };
@@ -137,7 +154,7 @@ export function configureTargets(spots: (TargetSpot | null)[]): void {
   lift.s = Math.max(30, Math.min(...downhill.map((p) => Math.hypot(p.v.x, p.v.z) / 3), 1e9));
   // Raise the hills until each chest sits where it is asked to; a target below the ground lifts the hide instead.
   for (let it = 0; it < 60; it++) {
-    const eye = heightAt(0, 0) + EYE_HEIGHT;
+    const eye = heightAt(0, 0) + eyeUp;
     let worst = 0;
     let need = 0;
     for (const p of pins) {

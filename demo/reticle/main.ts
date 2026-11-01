@@ -3,7 +3,7 @@ import { ROUNDS } from "../../src/scope/ballistics";
 import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
-import { RestDynamics, dynamicPressure, holdAt, type RestState } from "../../src/scope/hold";
+import { RestDynamics, dynamicPressure, holdAt, mastSwayAt, type RestState } from "../../src/scope/hold";
 import { rigFor, type Rig } from "../../src/armoury/rig";
 import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
 import { ACSS_RANGES, PSO_CHEVRON_RANGES, RETICLES, TREMOR_ROWS, VSS_CHEVRON_RANGES, acssReticle, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
@@ -21,7 +21,7 @@ import { DRUM_R_MM, TURN_LIFT_MM, createDrum, drumHome, drumStep } from "./drum"
 import { FLAG_DEG_PER_MS } from "./flags";
 import { buildRifle, createNearPasses } from "./near";
 import { KILO_DOWN_S, KILO_UP_S, kiloRig, paintOled, rasterOled, toQuat, type KiloRig } from "./kilo";
-import { CHEST_M, EYE_HEIGHT, buildRange, configureTargets, heightAt, targetRanges, terrainLift, type TargetSpot } from "./scene";
+import { CHEST_M, EYE_HEIGHT, TOWER_EYE_M, TOWER_FROM_DEG, buildRange, configureTargets, heightAt, targetRanges, terrainLift, towerHeight, type TargetSpot } from "./scene";
 import { createShooting, type Aim } from "./shooting";
 import { createWindGL } from "./wind-gl";
 import { buildHide } from "./hide";
@@ -40,10 +40,25 @@ const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d
  */
 const spotParam = (k: string): TargetSpot | null => {
   const [r, e = 0] = (params.get(k) ?? "").split(",").filter(Boolean).map(Number);
-  return r && Number.isFinite(r) && Number.isFinite(e) ? { rangeM: clampSpot(r, 50, 1500), elevDeg: clampSpot(e, -30, 30) } : null;
+  return r && Number.isFinite(r) && Number.isFinite(e) ? { rangeM: clampSpot(r, 50, 1500), elevDeg: clampSpot(e, ELEV_MIN_DEG, ELEV_MAX_DEG) } : null;
 };
 const clampSpot = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-configureTargets([spotParam("far"), spotParam("near")]);
+/** The mannequins stand from 60° down (the perch's steepest, PERCH_MAX_ELEVATION_DEG) to 30° up. */
+const ELEV_MIN_DEG = -60;
+const ELEV_MAX_DEG = 30;
+const spots = [spotParam("far"), spotParam("near")];
+/**
+ * `tower=<m>`: the shooter sits on a tower's platform that high above the hide's ground, the eye 1.2 m above it
+ * (`tower` or `tower=auto` picks a height that leaves a steep target standing on the plain). A bipod can't be laid
+ * there: the rifle goes on the tripod if the kit carries one, otherwise on the railing. The mast sways in the wind.
+ */
+const towerM = towerHeight(params.get("tower"), spots);
+const eyeUp = towerM === null ? EYE_HEIGHT : towerM + TOWER_EYE_M;
+configureTargets(spots, eyeUp);
+/** How far the bore may dip and rise (rad): a little past the steepest mannequin either way. */
+const PITCH_MIN = ((ELEV_MIN_DEG - 5) * Math.PI) / 180;
+const PITCH_MAX = ((ELEV_MAX_DEG + 5) * Math.PI) / 180;
+const clampPitch = (p: number) => Math.max(PITCH_MIN, Math.min(PITCH_MAX, p));
 
 /**
  * The rifle behind each reticle, and the mannequin it is meant for: the SVD and the bolt rifle shoot the one at
@@ -140,7 +155,7 @@ const bakeShelter = () => {
 };
 bakeShelter();
 let shelterDue = 0;
-const eyePos = new THREE.Vector3(0, heightAt(0, 0) + EYE_HEIGHT, 0);
+const eyePos = new THREE.Vector3(0, heightAt(0, 0) + eyeUp, 0);
 const scopeCam = new THREE.PerspectiveCamera(5, 1, 0.5, 12000);
 const wideCam = new THREE.PerspectiveCamera(30, W / H, 0.3, 12000);
 scopeCam.position.copy(eyePos);
@@ -213,7 +228,7 @@ function loadoutNow(): Loadout {
   return l;
 }
 /** The rifle as the kit has it: load, recoil, hold, rest, stock fit, magazine, aids (src/armoury/rig.ts). */
-let rig: Rig = rigFor(loadoutNow(), { lab: !kitMode });
+let rig: Rig = rigFor(loadoutNow(), { lab: !kitMode, tower: towerM !== null });
 let rigKey = "";
 /** How the rifle swings on its rest, and where that has it now (before the hold's own sway). */
 let restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
@@ -221,6 +236,9 @@ let restNow: RestState = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, 
 /** The wind's dynamic pressure on the rifle and the shooter now (Pa), for the buffeting in the hold, and its speed (m/s). */
 let windLoad = 0;
 let windAtMuzzle = 0;
+/** The wind's dynamic pressure at a tower's platform (Pa), which sways the mast; 0 off a tower. */
+let mastLoad = 0;
+const windAtPlatform: [number, number, number] = [0, 0, 0];
 /** How far a hot can's plume has risen (shader units), for its shimmer. */
 let hazeT = 0;
 /**
@@ -238,7 +256,7 @@ const [arcYaw, arcPitch] = (() => {
 const ARC_PITCH = (6 * Math.PI) / 180;
 const clampArc = (yaw: number) => (rig.arcRad === null ? yaw : arcYaw + Math.max(-rig.arcRad, Math.min(rig.arcRad, yaw - arcYaw)));
 const clampArcPitch = (pitch: number) => {
-  const p = Math.max(-0.3, Math.min(0.3, pitch));
+  const p = clampPitch(pitch);
   return rig.arcRad === null ? p : arcPitch + Math.max(-ARC_PITCH, Math.min(ARC_PITCH, p - arcPitch));
 };
 const hide = buildHide(range.scene, eyePos, arcYaw, arcPitch, (12 * Math.PI) / 180, ARC_PITCH);
@@ -248,7 +266,7 @@ function syncRig(): void {
   const key = kitMode ? id : `${id}|${state.aid}|${state.treeStyle}`;
   if (key === rigKey) return;
   rigKey = key;
-  rig = rigFor(loadoutNow(), { lab: !kitMode });
+  rig = rigFor(loadoutNow(), { lab: !kitMode, tower: towerM !== null });
   if (kitMode) {
     state.aid = rig.ranging === "kilo" ? "lrf" : "manual";
     state.treeStyle = rig.optic === "ebr" || rig.optic === "tremor" ? rig.optic : "pr2";
@@ -277,6 +295,7 @@ function updateWindLoad(t: number): void {
   const inside = rig.hide ? 0.2 : 1;
   windAtMuzzle = Math.hypot(w[0], w[1], w[2]) * inside;
   windLoad = state.sway ? dynamicPressure(w) * inside * inside : 0;
+  if (towerM !== null) mastLoad = state.sway ? dynamicPressure(windAt(state.wind, eyePos.x, eyePos.y - TOWER_EYE_M, eyePos.z, t, windAtPlatform)) : 0;
 }
 /** Glazes the frames afresh (or takes them away); their shadows change, so the shadow map is redrawn. */
 function glaze(): void {
@@ -692,8 +711,10 @@ function moveTarget(): void {
   const e = Number(tElev.value);
   if (!(r > 0) || !Number.isFinite(e)) return;
   const q = new URLSearchParams(location.search);
-  q.set(HOME[state.reticle] ? "near" : "far", `${Math.round(clampSpot(r, 50, 1500))},${clampSpot(e, -30, 30)}`);
+  q.set(HOME[state.reticle] ? "near" : "far", `${Math.round(clampSpot(r, 50, 1500))},${clampSpot(e, ELEV_MIN_DEG, ELEV_MAX_DEG)}`);
   q.set("reticle", state.reticle);
+  // Steeper than 15° down the perch is a tower, as the briefing has it.
+  if (e < -TOWER_FROM_DEG && !q.has("tower")) q.set("tower", "auto");
   // The parallax was set for the old range; let it follow the new one.
   q.delete("par");
   location.search = q.toString();
@@ -734,7 +755,7 @@ const REST: RecoilState = { pitch: 0, yaw: 0, tiltPitch: 0, tiltYaw: 0, eye: { x
 /** A frame stands for a 1/60 s exposure: recoil moves far enough within one to smear. */
 const EXPOSURE = 1 / 60;
 function foldRecoil(r: RecoilState): void {
-  const pitch = Math.max(-0.3, Math.min(0.3, state.pitch + r.pitch));
+  const pitch = clampPitch(state.pitch + r.pitch);
   // The head and the rest come along, so folding the rise into the aim is not a swing.
   panHead.pitch += pitch - state.pitch;
   panHead.yaw -= r.yaw;
@@ -747,7 +768,11 @@ function foldRecoil(r: RecoilState): void {
  * buffeting the rifle. Object-space radians: [yaw, pitch].
  */
 function swayAt(t: number): [number, number] {
-  return state.sway ? holdAt(rig.hold, t, windLoad) : [0, 0];
+  if (!state.sway) return [0, 0];
+  const h = holdAt(rig.hold, t, windLoad);
+  if (towerM === null) return h;
+  const m = mastSwayAt(t, mastLoad);
+  return [h[0] + m[0], h[1] + m[1]];
 }
 /** The hands working the action: offsets to the aim (see shooting.act). */
 let hand: { yaw: number; pitch: number } | null = null;
@@ -968,7 +993,7 @@ canvas.addEventListener("pointermove", (e) => {
       // Turning the rangefinder: one px moves its view one px (its field fills the same circle on screen).
       const kk = Math.tan((KILO8K.fovDeg * Math.PI) / 360) / (R / dpr);
       kiloState.yaw = clampArc(kiloState.yaw + (e.clientX - prev.x) * kk);
-      kiloState.pitch = rig.arcRad === null ? Math.max(-0.4, Math.min(0.4, kiloState.pitch + (e.clientY - prev.y) * kk)) : clampArcPitch(kiloState.pitch + (e.clientY - prev.y) * kk);
+      kiloState.pitch = rig.arcRad === null ? clampPitch(kiloState.pitch + (e.clientY - prev.y) * kk) : clampArcPitch(kiloState.pitch + (e.clientY - prev.y) * kk);
     } else {
       state.yaw = clampArc(state.yaw + (e.clientX - prev.x) * k);
       state.pitch = clampArcPitch(state.pitch + (e.clientY - prev.y) * k);
@@ -1130,7 +1155,7 @@ function canText(t: number): string {
   if (rig.sleeve) parts.push("sleeve");
   return parts.join(" · ");
 }
-const REST_NAMES = { lab: "bipod", pack: "pack", harris: "Harris bipod", atlas: "Atlas bipod", tripod: "tripod" } as const satisfies Record<Rig["restKind"], string>;
+const REST_NAMES = { lab: "bipod", pack: "pack", harris: "Harris bipod", atlas: "Atlas bipod", tripod: "tripod", towerTripod: "tower · seated, tripod", railing: "tower · railing" } as const satisfies Record<Rig["restKind"], string>;
 /** What the rifle rests on, and what the rest is doing: the legs re-set, the bag settling, the hide's frame reached. */
 function restText(): string {
   const parts: string[] = [REST_NAMES[rig.restKind]];

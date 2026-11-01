@@ -45,6 +45,14 @@ export const HOLD = {
   atlas: { breath: [1, 1], wander: [1, 1], pulse: 1, tremor: 0, buffet: 3.8e-6 },
   /** A tripod with a saddle, prone on the ground: taller and springier than a bipod. Its place is the tower. */
   tripod: { breath: [1.2, 1.2], wander: [1.2, 1.2], pulse: 1.1, tremor: 6e-6, buffet: 5e-6 },
+  /**
+   * The tower's platform, seated behind the tripod: a bipod can't be laid at 30–55° down, so the tripod is the steady
+   * way. Breathing, wander, heartbeat and tremor 0.9× the pack's (seated, braced, but higher off the ground than
+   * prone); the buffet as the pack's, since the shooter sits up in the wind.
+   */
+  towerTripod: { breath: [1.35, 1.35], wander: [1.35, 1.35], pulse: 1.17, tremor: 1.08e-5, buffet: 6e-6 },
+  /** The tower without a tripod: the handguard on the platform's railing. The same four 2.5× the pack's, buffet 1.5×. */
+  railing: { breath: [3.75, 3.75], wander: [3.75, 3.75], pulse: 3.25, tremor: 3e-5, buffet: 9e-6 },
 } as const satisfies Record<string, HoldSpec>;
 export type RestKind = keyof typeof HOLD;
 
@@ -76,6 +84,24 @@ export function holdAt(h: HoldSpec, t: number, q = 0): [number, number] {
   return [yaw, pitch];
 }
 
+/**
+ * The mast under a tower's platform sways with the wind. Tall lattice masts have their first bending mode at a few
+ * tenths of a hertz; the eye goes round at 0.25 Hz, in yaw and pitch, by 0.1 mrad at the dynamic pressure of an
+ * 8 m/s wind (39 Pa) and in proportion to the platform's dynamic pressure. No published measurement of a platform's
+ * angular sway was found, so the amplitude is a game value. It sits well inside what towers are built to: the
+ * EIA/TIA-222 twist-and-sway limits for microwave dishes on them are 0.7–3.5° in a design wind.
+ */
+export const MAST = { hz: 0.25, mrad: 0.1, refPa: 39 } as const;
+
+/** The mast's sway at the eye at `t` for the platform's dynamic pressure `q` (Pa): [yaw, pitch] (rad). */
+export function mastSwayAt(t: number, q: number): [number, number] {
+  if (q <= 0) return [0, 0];
+  const a = MAST.mrad * 1e-3 * (q / MAST.refPa);
+  const w = 2 * Math.PI * MAST.hz * t;
+  // An orbit rather than a line: the along-wind and the across-wind modes run a little out of step.
+  return [a * Math.sin(w), a * Math.sin(w + 1.3)];
+}
+
 /** How the rifle swings on its rest. */
 export interface RestSpec {
   /** A swing this far from where the legs stand makes them lift and re-settle (rad); Infinity for never. */
@@ -102,6 +128,10 @@ export const REST: Record<RestKind, RestSpec> = {
   atlas: { resetRad: 15 * DEG, panRate: Infinity, panLag: 0.7, bag: null, muzzleKg: 0 },
   /** The saddle turns smoothly but drags: about 12°/s at most. */
   tripod: { resetRad: Infinity, panRate: 12 * DEG, panLag: 0.9, bag: null, muzzleKg: 0 },
+  /** On the platform the saddle is the same saddle. */
+  towerTripod: { resetRad: Infinity, panRate: 12 * DEG, panLag: 0.9, bag: null, muzzleKg: 0 },
+  /** The handguard slides along the rail: nothing to re-set, but the head trails a swing as off a pack. */
+  railing: { resetRad: Infinity, panRate: Infinity, panLag: 1.1, bag: null, muzzleKg: 0 },
 };
 /** The squeeze bag: about a second to settle after a swing, and lifted past 6°. */
 export const BAG = { settleS: 1, liftRad: 6 * DEG } as const;

@@ -130,4 +130,18 @@ describe("the aids tell the truth", () => {
         }
       }
   });
+
+  it("the KILO's elevation from a tower, 30–55° down, for every rifle and load", () => {
+    const deg = Math.PI / 180;
+    for (const id of ["svd", "bolt", "vss"] as const)
+      for (const rf of loads(id)) {
+        const sub = ROUNDS[rf.round].mv < 330;
+        for (const losM of sub ? [130, 210] : [130, 210, 400])
+          for (const d of [30, 40, 47.5, 55]) {
+            const slopeRad = -d * deg;
+            const sol = solveFiring(rf, losM, slopeRad, { mph: 0, clock: 12 });
+            expect(Math.abs(impact(rf, losM, sol.elevMil * MRAD, { slopeRad })[1]), `${rf.round} ${losM} m ${-d}°`).toBeLessThan(0.01);
+          }
+      }
+  });
 });

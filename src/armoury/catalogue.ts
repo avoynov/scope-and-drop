@@ -37,7 +37,7 @@ export type OpticId = "pso1" | "pso11" | "acss" | "pr2" | "ebr" | "tremor";
 /** What an item does, read by rig.ts. */
 export interface ItemEffects {
   /** The front rest it puts under the rifle. */
-  rest?: Exclude<RestKind, "pack">;
+  rest?: Exclude<RestKind, "pack" | "towerTripod" | "railing">;
   /** A squeeze bag under the stock. */
   bag?: true;
   /** Cheek riser and soft butt pad. */

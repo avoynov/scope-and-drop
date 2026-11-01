@@ -4,6 +4,7 @@
  * the spotters' shares.
  */
 import type { RifleId } from "../scope/shot";
+import { wearFactor } from "./record";
 import { ITEMS, MAX_SPOTTERS, SPOTTERS, fits, isItemId, type ItemId, type Slot, type SpotterTier } from "./catalogue";
 
 export interface SpotterHire {
@@ -53,14 +54,17 @@ export function checkLoadout(l: Loadout, owned?: ReadonlySet<ItemId>): LoadoutPr
   return out;
 }
 
-/** Product of (1 − decay) over the carried items, before spotters. Items the dossier calls for decay at half rate. */
-export function kitFactor(l: Loadout, calledFor: ReadonlySet<ItemId> = new Set()): number {
+/** An item's decay on this loadout's rifle: halved when the dossier calls for it, and less with wear (`uses`, task 10). */
+export function itemDecay(l: Loadout, id: ItemId, calledFor: ReadonlySet<ItemId> = new Set(), uses: Partial<Record<ItemId, number>> = {}): number {
+  const d = ITEMS[id].decay[l.rifle];
+  if (d === null) return 0;
+  return d * (calledFor.has(id) ? 0.5 : 1) * wearFactor(uses[id] ?? 0);
+}
+
+/** Product of (1 − decay) over the carried items, before spotters. Items the dossier calls for decay at half rate; worn kit a little less. */
+export function kitFactor(l: Loadout, calledFor: ReadonlySet<ItemId> = new Set(), uses: Partial<Record<ItemId, number>> = {}): number {
   let f = 1;
-  for (const id of carried(l)) {
-    const d = ITEMS[id].decay[l.rifle];
-    if (d === null) continue;
-    f *= 1 - d * (calledFor.has(id) ? 0.5 : 1);
-  }
+  for (const id of carried(l)) f *= 1 - itemDecay(l, id, calledFor, uses);
   return f;
 }
 
@@ -68,7 +72,7 @@ export function kitFactor(l: Loadout, calledFor: ReadonlySet<ItemId> = new Set()
 export const spotterShare = (l: Loadout): number => l.spotters.reduce((s, h) => s + SPOTTERS[h.tier].share, 0);
 
 /** What the pay meter shows: the fee is multiplied by this (before the contract's result). */
-export const payFactor = (l: Loadout, calledFor?: ReadonlySet<ItemId>): number => kitFactor(l, calledFor) * Math.max(0, 1 - spotterShare(l));
+export const payFactor = (l: Loadout, calledFor?: ReadonlySet<ItemId>, uses?: Partial<Record<ItemId, number>>): number => kitFactor(l, calledFor, uses) * Math.max(0, 1 - spotterShare(l));
 
 /**
  * A loadout as a URL parameter, `kit=atlas,bag,kilo`, and back. Unknown ids, ones that don't fit the rifle and a

@@ -98,9 +98,9 @@ const ITEM_LIST = [
     id: "harris",
     slot: "front",
     name: "Harris bipod",
-    model: "Harris S-BRM 6–9\", 13 oz",
+    model: 'Harris S-BRM 6–9", 13 oz',
     streetUsd: 150,
-    decay: all(0.05),
+    decay: { vss: 0.05, svd: 0.05, bolt: 0.03 },
     does: "The lab's hold: breathing and tremor at two thirds of the pack's.",
     costs: "Past about 5° of swing the legs lift and re-settle: a jolt in the glass.",
     effects: { rest: "harris" },
@@ -112,7 +112,7 @@ const ITEM_LIST = [
     name: "Atlas bipod",
     model: "B&T Atlas BT46, pan and cant 15° each way",
     streetUsd: 350,
-    decay: all(0.07),
+    decay: { vss: 0.07, svd: 0.07, bolt: 0.03 },
     does: "Holds like the Harris and pans without lifting: smooth swings, a steadier head.",
     costs: "Price only.",
     effects: { rest: "atlas" },
@@ -136,7 +136,7 @@ const ITEM_LIST = [
     name: "Squeeze bag",
     model: "Rabbit-ear squeeze bag, Protektor #13 or Wiebad class",
     streetUsd: 100,
-    decay: all(0.05),
+    decay: { vss: 0.05, svd: 0.05, bolt: 0.025 },
     does: "Vertical breathing sway halved; squeezing it nudges the aim in fine steps.",
     costs: "The stock takes a second to settle after a swing; past 6° it must be lifted.",
     effects: { bag: true },
@@ -231,7 +231,7 @@ const ITEM_LIST = [
     name: "Laser rangefinder",
     model: "Plain laser rangefinder: range and angle",
     streetUsd: 300,
-    decay: only({ vss: 0.12, svd: 0.05, bolt: 0.1 }),
+    decay: only({ vss: 0.12, svd: 0.05, bolt: 0.03 }),
     does: "Range to about ±1 m in a third of a second.",
     costs: "Head off the scope and both hands on it; through a window the frame can answer first.",
     effects: { ranging: "plain" },
@@ -242,7 +242,7 @@ const ITEM_LIST = [
     name: "Sig KILO8K-ABS",
     model: "Sig Sauer KILO8K-ABS, Applied Ballistics Elite",
     streetUsd: 1499,
-    decay: only({ vss: 0.18, svd: 0.08, bolt: 0.14 }),
+    decay: only({ vss: 0.18, svd: 0.08, bolt: 0.06 }),
     does: "Range, slope, the elevation hold and the wind hold for the loaded round.",
     costs: "As the plain one, plus menus; its wind hold is only as good as the wind you give it.",
     effects: { ranging: "kilo" },
@@ -367,3 +367,17 @@ export const SPOTTERS: Record<SpotterTier, { share: number; notices: number; win
   veteran: { share: 0.35, notices: 0.95, windError: 0.15, delayS: [1, 2] },
 };
 export const MAX_SPOTTERS = 2;
+
+/** Money sinks for players who own it all (task 10; placeholder prices). Changing nothing in the simulation. */
+export const BROKER_PRICE = 2000;
+export const FIXER_PRICE = 5000;
+/** Finishes for owned kit: a refinish keeps an item's use count and its lower decay; the rest only change its look. */
+export const FINISHES = {
+  refinish: { name: "Refinished", price: 300 },
+  black: { name: "Matt black", price: 400 },
+  fde: { name: "Flat dark earth", price: 400 },
+  woodland: { name: "Woodland camouflage", price: 600 },
+  urban: { name: "Urban camouflage", price: 600 },
+} as const;
+export type FinishId = keyof typeof FINISHES;
+export const isFinishId = (s: string): s is FinishId => Object.hasOwn(FINISHES, s);

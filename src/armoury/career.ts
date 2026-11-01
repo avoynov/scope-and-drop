@@ -12,10 +12,12 @@
  * ln(1 − decay), which is fair whatever the order and sums to the total exactly.
  */
 import { PARTY_LENGTH } from "../party/clock";
-import { EARLY_BEND, EARLY_MAX, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isItemId, type ItemId, type SpotterTier } from "./catalogue";
-import { carried, checkLoadout, kitFactor, type Loadout } from "./loadout";
-import { afterContract, freshMargin, MARGIN, usedInWords, type MarginState } from "./margin";
-import type { ShotReport } from "./report";
+import { BROKER_PRICE, EARLY_BEND, EARLY_MAX, FINISHES, FIXER_PRICE, ITEMS, RETAINER, SPOTTERS, START_BALANCE, isFinishId, isItemId, type FinishId, type ItemId, type SpotterTier } from "./catalogue";
+import { GRADE_MULT, TERMS, gradeAbove, gradeFor, judgeTerms } from "./dossier";
+import { carried, checkLoadout, itemDecay, kitFactor, type Loadout } from "./loadout";
+import { afterContract, contractMarginUsed, freshMargin, MARGIN, usedInWords, type MarginState } from "./margin";
+import { MEDAL_IDS, isMedalId, medalLevel, medalMaterial, serviceMark, type Material, type MedalId } from "./record";
+import type { ClientTerm, Grade, HouseSize, MissionReport, ShotReport } from "./report";
 import type { RifleId } from "../scope/shot";
 
 export interface Contract {
@@ -24,6 +26,14 @@ export interface Contract {
   label?: string;
   /** The kit the dossier calls for: it decays at half rate on this contract. */
   calledFor?: readonly ItemId[];
+  /** The broker's grade (fee × its multiplier); routine when left out. */
+  grade?: Grade;
+  /** The client's terms (fee × (1 + Σ premiums)). */
+  terms?: readonly ClientTerm[];
+  /** Terms whose premium was lost (Before the deed, Confirmed: see `judgeTerms`). */
+  forfeited?: readonly ClientTerm[];
+  /** Quiet job: share of the fee taken off for the guests who heard (at most 0.5). */
+  quietCut?: number;
 }
 
 export interface ContractResult {
@@ -48,7 +58,10 @@ export interface ReceiptLine {
 export interface Receipt {
   contract: string;
   result: string;
+  /** The fee for a clean job: the base fee × grade × (1 + premiums) less a Quiet job's cut. */
   fee: number;
+  /** How the fee was made up (base, grade, each term, a Quiet job's cut); sums to `fee`. Absent when it is only the base fee. */
+  feeLines?: ReceiptLine[];
   /** Fee × result. */
   gross: number;
   /** The boost for finishing before the evening's end (never negative); kit and spotters come off the boosted pay. Absent on older receipts. */
@@ -60,15 +73,18 @@ export interface Receipt {
   spotters: ReceiptLine[];
   /** What was paid in (can be negative: a failure's retainers). */
   total: number;
+  /** What the same result would have paid with nothing carried and no spotters: the bet the kit was. */
+  bare?: number;
   /** Carried but never touched: what each cost tonight, to teach a leaner loadout. */
   unused: ReceiptLine[];
   balanceAfter: number;
 }
 
-/** The service record's medals (task 10). Each counts what earned it; the medal's material comes from its thresholds. */
-export const MEDAL_IDS = ["clean-hands", "unbroken", "first-look", "glass-roof", "nobody-heard", "second-bearing", "called-shot", "gale", "one-breath", "every-rifle"] as const;
-export type MedalId = (typeof MEDAL_IDS)[number];
-const isMedalId = (s: string): s is MedalId => (MEDAL_IDS as readonly string[]).includes(s);
+export { MEDAL_IDS, type MedalId } from "./record";
+
+/** A kill's rifle and house size, for Every Rifle. */
+export type KillKey = `${RifleId}:${HouseSize}`;
+const KILL_KEYS: KillKey[] = (["vss", "svd", "bolt"] as const).flatMap((r) => (["small", "grand", "palatial"] as const).map((h) => `${r}:${h}` as KillKey));
 
 /**
  * A career as stored (version 2). Everything v1 had (balance, kit owned, the last 50 receipts) plus counters that outlive
@@ -90,6 +106,27 @@ export interface CareerData {
   uses: Partial<Record<ItemId, number>>;
   /** The safety margin (task 11), mrad. */
   margin: MarginState;
+  /** Kills by rifle and house size (Every Rifle). */
+  kills: Partial<Record<KillKey, number>>;
+  /** The next contract was bought from the broker, one grade up (€2,000, lost on a failure). */
+  brokered: boolean;
+  /** The fixer is held: the next contract that would break the streak doesn't (€5,000, one at a time). */
+  fixer: boolean;
+  /** Finishes on owned kit (cosmetic). */
+  finishes: Partial<Record<ItemId, FinishId>>;
+}
+
+/** What settling a mission did to the career, beyond the receipt: for the screen that follows a contract. */
+export interface Settled {
+  receipt: Receipt;
+  /** Clean (the spy killed or downed, no margin used), a margin contract (holds the streak), or one that broke it. */
+  run: "clean" | "margin" | "broken" | "saved";
+  streak: number;
+  grade: Grade;
+  /** Medals newly struck or re-struck in better material. */
+  medals: { id: MedalId; material: Material }[];
+  /** A service mark reached on this contract, if any. */
+  serviceMark?: { mark: number; title: string | null };
 }
 
 const noMedals = (): Record<MedalId, number> => Object.fromEntries(MEDAL_IDS.map((m) => [m, 0])) as Record<MedalId, number>;
@@ -117,13 +154,22 @@ function earlyLabel(secondsLeft: number): string {
 }
 
 /** A contract settled: the receipt, with nothing changed yet (`Career.settle` books it). */
-export function settleContract(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>, balance = 0): Receipt {
-  // Task 10's grade and client terms: 1 until they land.
-  const gradeMult = 1;
-  const termPremiums = 0;
+export function settleContract(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>, balance = 0, uses: Partial<Record<ItemId, number>> = {}): Receipt {
+  const grade = contract.grade ?? "routine";
+  const paidTerms = (contract.terms ?? []).filter((t) => !contract.forfeited?.includes(t));
+  const graded = contract.fee * GRADE_MULT[grade];
+  const premiums = paidTerms.map((t) => ({ t, amount: round(graded * TERMS[t].premium) }));
+  const quietCut = Math.max(0, Math.min(0.5, contract.quietCut ?? 0));
+  const beforeQuiet = round(graded) + premiums.reduce((a, p) => a + p.amount, 0);
+  const quiet = round(beforeQuiet * quietCut);
+  const fee = beforeQuiet - quiet;
+  const feeLines: ReceiptLine[] = [{ label: "Fee", amount: contract.fee }];
+  if (grade !== "routine") feeLines.push({ label: `${grade[0]!.toUpperCase()}${grade.slice(1)} grade: ×${GRADE_MULT[grade]}`, amount: round(graded) - contract.fee });
+  for (const p of premiums) feeLines.push({ label: `${TERMS[p.t].name}: +${Math.round(TERMS[p.t].premium * 100)}%`, amount: p.amount });
+  for (const t of contract.forfeited ?? []) if (contract.terms?.includes(t)) feeLines.push({ label: `${TERMS[t].name}: not met, no premium`, amount: 0 });
+  if (quiet) feeLines.push({ label: `Quiet job: heard, −${Math.round(quietCut * 100)}%`, amount: -quiet });
   const used = result.margin ? Math.max(0, Math.min(1, result.margin.used)) : 0;
   const marginFactor = 1 - MARGIN.k * used;
-  const fee = contract.fee * gradeMult * (1 + termPremiums);
   const gross = fee * Math.max(0, result.factor);
   // A failed job earns no boost.
   const boost = gross > 0 ? earlyBoost(result.doneAt) : 0;
@@ -131,9 +177,10 @@ export function settleContract(contract: Contract, result: ContractResult, loado
   const boosted = round(gross) + bonus;
   const afterMargin = boosted * marginFactor;
   const items = carried(loadout);
-  const kf = kitFactor(loadout, new Set(contract.calledFor ?? []));
+  const called = new Set(contract.calledFor ?? []);
+  const kf = kitFactor(loadout, called, uses);
   const afterKit = afterMargin * kf;
-  const logs = items.map((id) => Math.log(1 - (ITEMS[id].decay[loadout.rifle] ?? 0)));
+  const logs = items.map((id) => Math.log(1 - itemDecay(loadout, id, called, uses)));
   const logSum = logs.reduce((a, b) => a + b, 0);
   const kitCost = afterMargin - afterKit;
   const kit = items.map((id, i) => ({ label: ITEMS[id].name, amount: -round(logSum < 0 ? (kitCost * logs[i]!) / logSum : 0) }));
@@ -150,7 +197,8 @@ export function settleContract(contract: Contract, result: ContractResult, loado
   return {
     contract: contract.label ?? "Contract",
     result: result.label,
-    fee: contract.fee,
+    fee,
+    ...(feeLines.length > 1 ? { feeLines } : {}),
     gross: round(gross),
     ...(early ? { early } : {}),
     ...(result.margin && gross > 0
@@ -165,6 +213,7 @@ export function settleContract(contract: Contract, result: ContractResult, loado
     spotters,
     total,
     unused,
+    ...(items.length || loadout.spotters.length ? { bare: failed ? 0 : boosted + marginCut } : {}),
     balanceAfter: balance + total,
   };
 }
@@ -179,6 +228,10 @@ export class Career {
   readonly medals: Record<MedalId, number>;
   readonly uses: Partial<Record<ItemId, number>>;
   margin: MarginState;
+  readonly kills: Partial<Record<KillKey, number>>;
+  brokered: boolean;
+  fixer: boolean;
+  readonly finishes: Partial<Record<ItemId, FinishId>>;
 
   constructor(data?: Partial<Omit<CareerData, "v">>) {
     this.balance = data?.balance ?? START_BALANCE;
@@ -191,6 +244,53 @@ export class Career {
     this.uses = { ...data?.uses };
     const m = data?.margin ?? freshMargin();
     this.margin = { ...m, rifle: { ...m.rifle } };
+    this.kills = { ...data?.kills };
+    this.brokered = data?.brokered ?? false;
+    this.fixer = data?.fixer ?? false;
+    this.finishes = { ...data?.finishes };
+  }
+
+  /** The grade the broker offers now: from the streak, one up for a contract bought from the broker. */
+  get grade(): Grade {
+    const g = gradeFor(this.streak);
+    return this.brokered ? gradeAbove(g) : g;
+  }
+
+  /** The broker sells the next contract one grade up (paid now, lost on a failure); one at a time, and not past named. */
+  canBroker(): { ok: boolean; why?: string } {
+    if (this.brokered) return { ok: false, why: "already bought" };
+    if (gradeFor(this.streak) === "named") return { ok: false, why: "nothing above named" };
+    if (this.balance < BROKER_PRICE) return { ok: false, why: `€${(BROKER_PRICE - this.balance).toLocaleString("en-GB")} short` };
+    return { ok: true };
+  }
+  buyBroker(): void {
+    const c = this.canBroker();
+    if (!c.ok) throw new Error(`Can't buy from the broker: ${c.why}`);
+    this.balance -= BROKER_PRICE;
+    this.brokered = true;
+  }
+
+  /** The fixer covers one failed contract so the streak survives; one held at a time. */
+  canFix(): { ok: boolean; why?: string } {
+    if (this.fixer) return { ok: false, why: "already held" };
+    if (this.balance < FIXER_PRICE) return { ok: false, why: `€${(FIXER_PRICE - this.balance).toLocaleString("en-GB")} short` };
+    return { ok: true };
+  }
+  buyFixer(): void {
+    const c = this.canFix();
+    if (!c.ok) throw new Error(`Can't hire the fixer: ${c.why}`);
+    this.balance -= FIXER_PRICE;
+    this.fixer = true;
+  }
+
+  /** A finish on owned kit: changes nothing in the simulation, keeps the item's uses (and so its wear). */
+  buyFinish(id: ItemId, finish: FinishId): void {
+    if (!this.owned.has(id)) throw new Error(`Can't finish ${id}: not owned`);
+    if (!isFinishId(finish)) throw new Error(`No such finish: ${String(finish)}`);
+    if (this.finishes[id] === finish && finish !== "refinish") throw new Error(`${ITEMS[id].name} already has that finish`);
+    if (this.balance < FINISHES[finish].price) throw new Error(`Can't finish ${id}: €${(FINISHES[finish].price - this.balance).toLocaleString("en-GB")} short`);
+    this.balance -= FINISHES[finish].price;
+    this.finishes[id] = finish;
   }
 
   /** Whether an item can be bought now, and why not. */
@@ -216,7 +316,7 @@ export class Career {
   settle(contract: Contract, result: ContractResult, loadout: Loadout, touched?: ReadonlySet<ItemId>): Receipt {
     const problems = checkLoadout(loadout, this.owned);
     if (problems.length) throw new Error(`Loadout can't be taken: ${problems.map((p) => p.why).join("; ")}`);
-    const r = settleContract(contract, result, loadout, touched, this.balance);
+    const r = settleContract(contract, result, loadout, touched, this.balance, this.uses);
     this.balance = r.balanceAfter;
     this.history.unshift(r);
     if (this.history.length > 50) this.history.length = 50;
@@ -233,6 +333,72 @@ export class Career {
     this.margin = afterContract(this.margin, rifle, firstShotAtSpy, endedAt);
   }
 
+  /**
+   * Settles a whole contract from its report (task 10 and 11): the client's terms, the grade, R, the early boost, the
+   * margin, worn and called-for kit, spotters; then the streak, the medals, wear and the safety margin. Throws if the
+   * loadout can't be taken.
+   */
+  settleReport(report: MissionReport): Settled {
+    const { contract, loadout, shots } = report;
+    const t = judgeTerms(report);
+    const used = contractMarginUsed(shots);
+    const widest = shots.filter((s) => s.at === "spy" && s.kind === "margin").sort((a, b) => b.marginUsed - a.marginUsed)[0];
+    const factor = t.factor;
+    const outcome = factor > 0 ? report.result.outcome : "failed";
+    const touched = new Set(report.usedItems);
+    const marksBefore = serviceMark(this.contracts).mark;
+    const receipt = this.settle(
+      { fee: contract.fee, label: contract.label, calledFor: contract.calledFor, grade: contract.grade, terms: contract.terms, forfeited: t.forfeited, quietCut: t.quietCut },
+      { factor, label: outcome, doneAt: report.doneAt, ...(widest ? { margin: { used, wideCm: (widest.missMrad * widest.rangeM) / 10 } } : {}) },
+      loadout,
+      touched,
+    );
+    this.brokered = false;
+
+    // The run: clean adds to both counts, a margin contract holds them, anything else breaks them (the fixer saves the streak).
+    const spyDown = factor > 0 && (outcome === "killed" || outcome === "downed");
+    let run: Settled["run"];
+    if (spyDown && used === 0) {
+      run = "clean";
+      this.streak++;
+      this.cleanInRow++;
+    } else if (factor > 0 && used > 0) run = "margin";
+    else {
+      this.cleanInRow = 0;
+      if (this.fixer) {
+        this.fixer = false;
+        run = "saved";
+      } else {
+        this.streak = 0;
+        run = "broken";
+      }
+    }
+
+    // Medals, counted here and never from the history. Glass Roof, Nobody Heard, Second Bearing and Called Shot wait for
+    // tasks 9, 8 and 7 to report what they need.
+    const before = { ...this.medals };
+    const killed = factor > 0 && outcome === "killed";
+    const lastAtSpy = [...shots].reverse().find((s) => s.at === "spy" && s.kind !== "miss");
+    if (killed && carried(loadout).length === 0 && used === 0) this.medals["clean-hands"]++;
+    this.medals.unbroken = Math.max(this.medals.unbroken, this.cleanInRow);
+    if (spyDown && !report.spyTriedGoal) this.medals["first-look"]++;
+    if (killed && lastAtSpy && lastAtSpy.windMs > 8) this.medals.gale++;
+    if (used === 0 && shots.some((s) => s.at === "spy" && s.kind === "hit" && s.sinceScopeInS <= 3)) this.medals["one-breath"]++;
+    if (killed) {
+      const key: KillKey = `${loadout.rifle}:${contract.house}`;
+      this.kills[key] = (this.kills[key] ?? 0) + 1;
+      if (KILL_KEYS.every((k) => (this.kills[k] ?? 0) > 0)) this.medals["every-rifle"] = 1;
+    }
+    const medals = MEDAL_IDS.filter((id) => medalLevel(id, this.medals[id]) > medalLevel(id, before[id])).map((id) => ({ id, material: medalMaterial(id, this.medals[id])! }));
+
+    // The safety margin, from the first shot at the spy.
+    const first = shots.find((s) => s.at === "spy") ?? null;
+    this.updateMargin(loadout.rifle, first, report.endedAt);
+
+    const sm = serviceMark(this.contracts);
+    return { receipt, run, streak: this.streak, grade: this.grade, medals, ...(sm.mark > marksBefore ? { serviceMark: sm } : {}) };
+  }
+
   toJSON(): CareerData {
     return {
       v: 2,
@@ -245,6 +411,10 @@ export class Career {
       medals: { ...this.medals },
       uses: { ...this.uses },
       margin: { ...this.margin, rifle: { ...this.margin.rifle } },
+      kills: { ...this.kills },
+      brokered: this.brokered,
+      fixer: this.fixer,
+      finishes: { ...this.finishes },
     };
   }
 
@@ -266,6 +436,10 @@ export class Career {
     for (const [k, n] of Object.entries(record(o.medals))) if (isMedalId(k)) medals[k] = count(n);
     const uses: Partial<Record<ItemId, number>> = {};
     for (const [k, n] of Object.entries(record(o.uses))) if (isItemId(k) && count(n)) uses[k] = count(n);
+    const kills: Partial<Record<KillKey, number>> = {};
+    for (const [k, n] of Object.entries(record(o.kills))) if ((KILL_KEYS as string[]).includes(k) && count(n)) kills[k as KillKey] = count(n);
+    const finishes: Partial<Record<ItemId, FinishId>> = {};
+    for (const [k, f] of Object.entries(record(o.finishes))) if (isItemId(k) && owned.includes(k) && typeof f === "string" && isFinishId(f)) finishes[k] = f;
     return new Career({
       balance,
       owned,
@@ -276,6 +450,10 @@ export class Career {
       medals,
       uses,
       margin: marginFromJSON(o.margin),
+      kills,
+      brokered: o.brokered === true,
+      fixer: o.fixer === true,
+      finishes,
     });
   }
 }

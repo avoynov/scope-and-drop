@@ -79,6 +79,13 @@ export const SOUNDS: Record<SoundKind, SoundSpec> = {
   thud: { db: 62, tension: 0.02, fact: "crash" },
 };
 
+/** A sound's level in each room (dB where it came in, at ex, ez), the terrace last; -Infinity where it never reached. */
+export interface RoomLevels {
+  level: Float32Array;
+  ex: Float32Array;
+  ez: Float32Array;
+}
+
 export interface Sound {
   kind: SoundKind;
   level: number;
@@ -454,18 +461,28 @@ export class Senses {
     }
   }
 
-  /** Level of a sound in every room it reaches (dB at the room's entry point), by the loudest way there. */
-  levels(s: Sound): { level: Float32Array; ex: Float32Array; ez: Float32Array } {
-    const h = this.host;
-    const R = h.sight.R;
+  /** Level of a sound in every room it reaches (dB at the room's entry point), by the loudest way there; `db` (at 1 m) overrides its kind's own. */
+  levels(s: Sound, db = SOUNDS[s.kind].db): RoomLevels {
+    const R = this.host.sight.R;
     const level = new Float32Array(R).fill(-Infinity);
     const ex = new Float32Array(R);
     const ez = new Float32Array(R);
-    const done = new Uint8Array(R);
     const src = s.room < 0 ? R - 1 : s.room;
-    level[src] = SOUNDS[s.kind].db;
+    level[src] = db;
     ex[src] = s.x;
     ez[src] = s.z;
+    return this.spread(level, ex, ez);
+  }
+
+  /**
+   * Carry levels already set in some rooms (dB where each room's sound comes in, at `ex`, `ez`; the terrace
+   * last; -Infinity none) on through the room graph, by the loudest way there: a sound coming in through the
+   * windows (the shot heard, shot.ts) as one made in a room.
+   */
+  spread(level: Float32Array, ex: Float32Array, ez: Float32Array): RoomLevels {
+    const h = this.host;
+    const R = h.sight.R;
+    const done = new Uint8Array(R);
     const graph = h.world.graph;
     for (;;) {
       let r = -1;
@@ -491,11 +508,21 @@ export class Senses {
 
   /** The level of a sound where a person stands, or -Infinity. */
   levelAt(s: Sound, p: Person, lv = this.levels(s)): number {
+    return this.levelIn(lv, p);
+  }
+
+  /** Where someone stands (a person, or a point in a room), the level of whatever `lv` carried (levels(), spread()), or -Infinity: less a little for each metre from where it came into the room. */
+  levelIn(lv: RoomLevels, p: { x: number; z: number; room: number }): number {
     const R = this.host.sight.R;
     const r = p.room < 0 ? R - 1 : p.room;
     const at = lv.level[r]!;
     if (at === -Infinity) return at;
     return at - LOSS_M * Math.max(0, Math.hypot(p.x - lv.ex[r]!, p.z - lv.ez[r]!) - 1);
+  }
+
+  /** A room's noise (dB), -2 the terrace. */
+  noiseIn(room: number): number {
+    return this.noise[room < 0 ? this.host.sight.R - 1 : room]!;
   }
 
   /** Whether a person hears a sound over their room's noise. */

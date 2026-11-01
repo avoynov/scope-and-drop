@@ -339,6 +339,8 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
   readonly people: Person[];
   readonly events: PartyEvent[] = [];
   readonly rng: Rng;
+  /** The evening's own stream for a shot from the treeline (shot.ts), forked by the shot's time: a shot heard draws nothing from the evening. */
+  readonly shots: Rng;
   t = 0;
   private phaseIdx = 0;
   private reserved = new Map<string, number>();
@@ -452,6 +454,7 @@ export class Party implements MindWorld, BodyHost, MemoryHost, SensesHost, Regis
       this.bonds.told(i, f, from);
     };
     this.senses = new Senses(this, root.fork("senses"));
+    this.shots = root.fork("shot");
     this.offers = resolveOffers(bp, this.pf, this.cells, this.places);
     this.circles = new Groups(this, root.fork("circles"));
     this.tasks = new Tasks(this, root.fork("tasks"));

@@ -219,7 +219,7 @@ export const TORSO_BASE = 0.86;
 const THIGHS = [cap([0.09, 0.86, 0], [0.08, 0.47, 0], 0.075), cap([-0.09, 0.86, 0], [-0.08, 0.47, 0], 0.075)];
 
 /** The torso at height y: half its width and its depth as a share of the width ([0, 0] outside it). */
-function torsoAt(y: number): [number, number] {
+export function torsoAt(y: number): [number, number] {
   const h = y - TORSO_BASE;
   const p = TORSO_PROFILE;
   if (h < 0 || h > p[p.length - 1]![1]) return [0, 0];
@@ -269,6 +269,19 @@ export function inBody(p: Vec3): boolean {
   if (r > 0 && Math.hypot(p[0], p[2] / f) < r) return true;
   if (sdf(HEAD, p) < 0) return true;
   return THIGHS.some((t) => sdf(t, p) < 0);
+}
+
+/** The top of the torso as the safety margin measures it: the base of the neck (C7/T1). */
+export const TORSO_TOP = 1.455;
+
+/**
+ * Whether p is inside the torso, shoulders to hips (the base of the neck down to the torso's base): the outline the
+ * safety margin is measured to (armoury task 11). The head, neck and thighs are left out.
+ */
+export function inTorso(p: Vec3): boolean {
+  if (p[1] > TORSO_TOP) return false;
+  const [r, f] = torsoAt(p[1]);
+  return r > 0 && Math.hypot(p[0], p[2] / f) < r;
 }
 
 const BRAIN_PARTS = PARTS.filter((p) => p.tissue === "brain" || p.tissue === "brainstem");

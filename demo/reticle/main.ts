@@ -16,6 +16,7 @@ import { WIND_REF_M, shelterWind, terrainWind, windAt, type Wind } from "../../s
 import { createSound } from "./audio";
 import { createRadioVoice } from "../shared/radio-voice";
 import { Radio } from "../../src/scope/radio";
+import { MARGIN, usedInWords } from "../../src/armoury/margin";
 import { Spotter, flagReading, parseSpotters } from "../../src/armoury/spotter";
 import { createComposite } from "./composite";
 import { GLAZING, type GlazingId } from "../../src/scope/glass";
@@ -103,6 +104,11 @@ const state = {
   /** Easy: a wind meter at the hide gives the wind in m/s. Otherwise only the range itself tells it. */
   easy: params.has("easy"),
   sound: !params.has("mute"),
+  /**
+   * Training: the new player's safety margin round the mannequins' torsos, for this practice only (never the
+   * career's): at its starting size, or `margin=<mrad>`. Nothing about it shows before a shot.
+   */
+  margin: params.has("margin"),
   /**
    * Where each rifle's elevation dial is set, as a detent: the range drums on 1, the 100 m zero, unless `zero=<m>`
    * says otherwise (the nearest mark); the bolt rifle's mil turret on 0 unless `mils=<mil>` dials it up.
@@ -654,6 +660,7 @@ function syncUi(): void {
   syncDrum();
   syncDope();
   sound.enabled = state.sound;
+  shooting.setMargin(state.margin ? MARGIN_MRAD : 0);
   windIn.value = String(state.wind.speed);
   windDirIn.value = String(state.wind.fromClock);
   glassAngleIn.value = String(state.glassAngle);
@@ -1198,6 +1205,21 @@ function stepSpotters(t: number): void {
     radioHeard = `${ev.call.from}: “${ev.call.text}”`;
   }
 }
+/** The training margin: `margin=<mrad>`, or its starting size (the career's part and a rifle's, 1.5 mrad). */
+const MARGIN_MRAD = (() => {
+  const v = Number(params.get("margin"));
+  return params.get("margin") && Number.isFinite(v) && v > 0 ? v : MARGIN.career0 + MARGIN.rifle0;
+})();
+/** After a shot with the margin on: what it made of the shot, as the receipt would say it. */
+function marginText(t: number): string | null {
+  const m = shooting.marginAfter(t);
+  if (!m || !m.margin) return null;
+  const cm = (x: number) => (x < 1 ? `${Math.max(1, Math.round(x * 100))} cm` : `${x.toFixed(1)} m`);
+  if (m.kind === "hit") return "not needed: a body hit";
+  if (m.kind === "margin") return `counted as a hit: ${cm(m.wideM)} wide, ${usedInWords(m.marginUsed)} used`;
+  if (m.covered) return `no: ${cm(m.wideM)} wide, but something stood in the way`;
+  return `a miss: ${cm(m.wideM)} wide`;
+}
 const fmt = (m: number) => (Number.isFinite(m) ? `${Math.round(m)} m` : "∞");
 /** The can's heat over the air, whether it is still cold enough to throw its first shot, and its sleeve. */
 function canText(t: number): string {
@@ -1605,6 +1627,7 @@ function frame(t: number, dt: number): void {
       ...(rig.windMeter ? [["Kestrel", kestrelText()]] : []),
       ...(state.glass !== "off" ? [["Glass", `${GLAZING[state.glass].name} · ${state.glassAngle ? `${Math.abs(state.glassAngle)}° ${state.glassAngle > 0 ? "right" : "left"}` : "square-on"}`]] : []),
       ["Last shot", status.shot],
+      ...((mt) => (mt ? [["Margin", mt]] : []))(marginText(t)),
       ...(spotters.length ? [["Radio", radioHeard || "–"]] : []),
       ["Aim point", fmt(D)],
       ["Parallax error", `${Math.abs(par).toFixed(2)} ${unit}`],

@@ -92,6 +92,30 @@ export const CURTAIN_TRANSMIT: Record<CurtainState, number> = { open: 0.92, shee
 
 export const MOVABLE_CURTAINS: ReadonlySet<RoomType> = new Set(["bedroom", "dressing-room", "sitting-room", "study", "cinema"]);
 
+/**
+ * A view's visibility at a spot with a room's curtains as they are now, from its visibility with the curtains as the
+ * house was generated (`baked`). Only the windows facing the eye count (`toward`, by curtain id; null: the perch's).
+ * Closing curtains scales the view down; opening one that started drawn needs the spot seen with the room's movable
+ * curtains open (`open()`, asked only then).
+ */
+export function curtained(baked: number, curtains: readonly Curtain[], ids: readonly number[], toward: ArrayLike<number> | null, open: () => number): number {
+  let cur = 0;
+  let base = 0;
+  let all = 0;
+  let moved = false;
+  for (const id of ids) {
+    const c = curtains[id]!;
+    if (!(toward ? toward[id] : c.towardPerch)) continue;
+    cur += CURTAIN_TRANSMIT[c.state];
+    base += CURTAIN_TRANSMIT[c.base];
+    all += c.movable ? CURTAIN_TRANSMIT.open : CURTAIN_TRANSMIT[c.base];
+    if (c.state !== c.base) moved = true;
+  }
+  if (!moved) return baked;
+  if (cur <= base) return base > 0 ? (baked * cur) / base : 0;
+  return all > 0 ? (open() * cur) / all : 0;
+}
+
 // ------------------------------------------------------------------ lights
 
 /** A room's light scale when switched off: the room still reads by spill from next door. */
@@ -632,21 +656,7 @@ export class World implements DoorGate {
     if (room < 0) return baked;
     const ids = this.roomCurtains[room];
     if (!ids?.length) return baked;
-    let cur = 0;
-    let base = 0;
-    let open = 0;
-    let moved = false;
-    for (const id of ids) {
-      const c = this.curtains[id]!;
-      if (!c.towardPerch) continue;
-      cur += CURTAIN_TRANSMIT[c.state];
-      base += CURTAIN_TRANSMIT[c.base];
-      open += c.movable ? CURTAIN_TRANSMIT.open : CURTAIN_TRANSMIT[c.base];
-      if (c.state !== c.base) moved = true;
-    }
-    if (!moved) return baked;
-    if (cur <= base) return base > 0 ? (baked * cur) / base : 0;
-    return open > 0 ? (this.openVis(room, level, k) * cur) / open : 0;
+    return curtained(baked, this.curtains, ids, null, () => this.openVis(room, level, k));
   }
 
   /** Perch visibility at a cell with every movable curtain open, traced on first need. */

@@ -14,7 +14,9 @@
  * line to its target, the bodies overlay marks every body with whose it is, a strip under the
  * programme shows its whole evening (from a look-ahead worker, ahead.ts), and the log's tells
  * filter lists its tells. fire= fires a shot from the perch at the picked person once at t= (fire.ts): who heard
- * it goes in the log, and the sound overlay draws its path and a ring round each who heard it.
+ * it goes in the log, and the sound overlay draws its path and a ring round each who heard it. obs= hires
+ * observers on other bearings (observe.ts): the radio wheel gives them orders, the radio log shows their calls,
+ * and at the real speed they are spoken.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -41,6 +43,7 @@ import type { TaskKind } from "../../src/party/tasks";
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
 import { labelForms } from "../briefing";
 import { FireLab, SHOT_RGB } from "./fire";
+import { ObserveLab } from "./observe";
 import { SpyLab } from "./spy";
 
 type View = "scope" | "wide" | "plan" | "orbit";
@@ -128,6 +131,24 @@ const spyLab = new SpyLab(
 
 // A shot from the perch: a query, so firing it changes nothing in the evening (fire.ts).
 const fireLab = new FireLab(params, { party: () => party, bp: () => bp, selected: () => selected, changed: () => refreshPanel() }, $("fire"));
+// Observers on other bearings and their radio (observe.ts): hiring them builds the evening afresh, back to the same time.
+const observeLab = new ObserveLab(
+  params,
+  {
+    party: () => party,
+    bp: () => bp,
+    selected: () => selected,
+    rebuild: () => {
+      const t = party.t;
+      newParty();
+      seekSoon(t);
+    },
+    changed: () => refreshPanel(),
+    realTime: () => speed > 0 && speed * TIME_SCALE <= 1,
+  },
+  $("observe"),
+  $("radiolog"),
+);
 
 const LEVEL_NAMES = ["ground", "first", "second", "third"];
 const PHASE_COLOR: Record<PhaseId, string> = {
@@ -418,7 +439,8 @@ interface Snap {
 let prev: Snap[] = [];
 /** In-game seconds banked toward the next sim step. */
 let acc = 0;
-const SPEEDS = [0, 1, 5, 20, 60];
+/** Speeds as multiples of TIME_SCALE; the first after pause is real time, at which the observers' radio speaks. */
+const SPEEDS = [0, 1 / TIME_SCALE, 1, 5, 20, 60];
 let speed = Number(params.get("speed") ?? (shot ? 0 : 1));
 let selected = params.has("sel") ? Number(params.get("sel")) : -1;
 /** Whoever was picked before: the other person in a spark or a grudge. */
@@ -512,6 +534,7 @@ function build(): void {
   built0 = false;
   goneRoom = [...planted].reverse().find((v) => v.kind === "gone")?.room ?? -1;
   nudges = urlNudges();
+  observeLab.newHouse();
   newParty();
   if (selected >= party.people.length) selected = -1;
   setView(view);
@@ -531,8 +554,10 @@ function newParty(): void {
     mood: nudges,
     profile: params.has("profile"),
     spy: spyLab.option(),
+    observers: observeLab.option(),
   });
   fireLab.reset();
+  observeLab.reset();
   if (crowd) {
     scene.remove(crowd.root);
     crowd.dispose();
@@ -1772,6 +1797,7 @@ function refreshPanel(): void {
   }
   while (shots.length && lines.length < 7) lines.push(`${clockLabel(shots[0]!.t)}  ${shots.shift()!.text}`);
   $("events").textContent = lines.join("\n");
+  observeLab.render(party);
 
   const count = (f: (p: Person) => boolean) => guests.filter((p) => p.present && f(p)).length;
   const st = party.stats;
@@ -1850,8 +1876,8 @@ function refreshPanel(): void {
 
 for (const s of SPEEDS) {
   const b = document.createElement("button");
-  b.textContent = s ? `${s}×` : "❚❚";
-  b.title = s ? `${s}× (1× plays the evening in one hour)` : "pause";
+  b.textContent = !s ? "❚❚" : s < 1 ? "real" : `${s}×`;
+  b.title = !s ? "pause" : s < 1 ? "real time (the observers' radio speaks)" : `${s}× (1× plays the evening in one hour)`;
   b.dataset.speed = String(s);
   b.onclick = () => {
     speed = s;
@@ -2110,6 +2136,7 @@ function loop(now: number): void {
       spyLab.stepped(party);
       acc -= STEP;
     }
+    observeLab.stepped(party);
     if (acc >= STEP || party.over) acc = 0;
   }
   animClock = shot ? party.t / TIME_SCALE : animClock + dt * Math.min(speed, 4);

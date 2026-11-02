@@ -154,6 +154,8 @@ export class FireLab {
     const shot = straightShot(party, bp.site.perch.eye, aim, { report: rig.report, round: rig.rifle.round, glazing: this.glass, open: this.openings() });
     const n = this.shots.filter((s) => s.t === party.t).length;
     const heard = hearShot(party, { ...shot, n });
+    // Observers who can see where it struck may call it (their own draws: the evening is as it was).
+    party.observers?.shot(shot.to, shot.room, shot.struck, shot.blocked, party.t, n);
     const label = `${RIFLES[this.rifle].label}, ${this.rifle === "vss" ? "its own can" : KIT_LABEL[this.kit]}`;
     this.shots.push({ t: party.t, label, at, shot, heard });
     this.host.changed();

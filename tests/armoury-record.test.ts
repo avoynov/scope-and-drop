@@ -220,6 +220,7 @@ describe("settling a mission report", () => {
     expect(first.medals).toEqual([
       { id: "clean-hands", material: "tin" },
       { id: "first-look", material: "tin" },
+      { id: "nobody-heard", material: "tin" },
     ]);
     // Kit carried: no Clean Hands. The spy had tried its goal: no First Look.
     c.settleReport(report({ items: ["bag"], tried: true }));
@@ -238,9 +239,44 @@ describe("settling a mission report", () => {
     // Every Rifle: a kill with each rifle in each house size.
     for (const rifle of ["vss", "svd", "bolt"] as const) for (const house of ["small", "grand", "palatial"] as const) c.settleReport(report({ rifle, house }));
     expect(c.medals["every-rifle"]).toBe(1);
-    // The ones that read the party wait for tasks 7, 8 and 9.
-    expect(c.medals["nobody-heard"] + c.medals["second-bearing"] + c.medals["called-shot"] + c.medals["glass-roof"]).toBe(0);
+    // None of these shots was heard, called or steep, and no observer named the spy.
+    expect(c.medals["nobody-heard"]).toBe(Object.values(c.kills).reduce((a, b) => a + b, 0));
+    expect(c.medals["second-bearing"] + c.medals["called-shot"] + c.medals["glass-roof"]).toBe(0);
     expect(c.history.length).toBe(23);
+  });
+
+  it("counts Nobody Heard, Second Bearing, Called Shot and Glass Roof from the report", () => {
+    const c = new Career({ balance: 100000 });
+    // Nobody Heard: every shot unheard, not only the killing one; and only for a kill.
+    c.settleReport(report({ shots: [shot({ kind: "miss", outcome: undefined, missMrad: 2, heardBy: 1 }), shot()] }));
+    c.settleReport(report({ outcome: "downed" }));
+    expect(c.medals["nobody-heard"]).toBe(0);
+    c.settleReport(report());
+    expect(c.medals["nobody-heard"]).toBe(1);
+
+    // Second Bearing: an observer named the spy first, and the spy went down.
+    c.settleReport({ ...report(), firstNamedBy: "sniper" });
+    c.settleReport({ ...report({ outcome: "failed" }), firstNamedBy: "observer" });
+    expect(c.medals["second-bearing"]).toBe(0);
+    c.settleReport({ ...report({ outcome: "downed" }), firstNamedBy: "observer" });
+    expect(c.medals["second-bearing"]).toBe(1);
+
+    // Called Shot: a miss at the spy, the correction finished, the next round a hit on the spy; once a contract.
+    const miss = shot({ kind: "miss", outcome: undefined, missMrad: 1.5 });
+    c.settleReport(report({ shots: [miss, shot({ outcome: "wounded" })] })); // fired before the correction finished
+    c.settleReport(report({ shots: [shot({ at: "guest", kind: "miss", outcome: undefined }), shot({ afterCall: true })] })); // the miss wasn't at the spy
+    c.settleReport(report({ shots: [miss, shot({ kind: "margin", marginUsed: 0.3, missMrad: 0.3, afterCall: true })] })); // a margin hit isn't a hit
+    expect(c.medals["called-shot"]).toBe(0);
+    c.settleReport(report({ shots: [miss, shot({ outcome: "wounded", afterCall: true }), miss, shot({ afterCall: true })] }));
+    expect(c.medals["called-shot"]).toBe(1);
+
+    // Glass Roof: the killing shot steeper than 45° and through glass.
+    c.settleReport(report({ shots: [shot({ elevationDeg: 50 })] }));
+    c.settleReport(report({ shots: [shot({ elevationDeg: 44, throughGlass: true })] }));
+    c.settleReport(report({ outcome: "downed", shots: [shot({ outcome: "downed", elevationDeg: 55, throughGlass: true })] }));
+    expect(c.medals["glass-roof"]).toBe(0);
+    c.settleReport(report({ shots: [shot({ elevationDeg: 52, throughGlass: true })] }));
+    expect(c.medals["glass-roof"]).toBe(1);
   });
 
   it("wears what was used, and keeps it through a refinish", () => {

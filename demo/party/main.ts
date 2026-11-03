@@ -39,6 +39,7 @@ import type { Provocation } from "../../src/party/sim";
 import { ringRadius } from "../../src/party/groups";
 import { Crowd, type Flash, type FrameState, type Litter, type LitterKind } from "../../src/party/render/crowd";
 import { Fixtures } from "../../src/party/render/fixtures";
+import { People, type ModelId } from "../../src/party/render/people";
 import type { TaskKind } from "../../src/party/tasks";
 import { DRINKS, NEED_IDS, type ActionId, type Held, type PartyEvent, type Person, type RoleId } from "../../src/party/types";
 import { labelForms } from "../briefing";
@@ -564,10 +565,37 @@ function newParty(): void {
   }
   crowd = new Crowd(party.people, { lighting: built!.lighting });
   scene.add(crowd.root);
+  makePeople();
   acc = 0;
   snapshot();
   buildTimeline();
   buildPeople();
+}
+
+/** Milestone 5 spike (?people=1): real 3D people for the outfits that have a model so far. */
+const PEOPLE_ON = params.has("people") && params.get("people") !== "0";
+const PEOPLE_URLS: Record<ModelId, string> = { "m-dinner": new URL("./people/m-dinner.glb", import.meta.url).href, "f-dress": new URL("./people/f-dress.glb", import.meta.url).href };
+let people: People | null = null;
+let peopleTemplates: Awaited<ReturnType<typeof People.load>> | null = null;
+let peopleReady = !PEOPLE_ON;
+function makePeople(): void {
+  if (!PEOPLE_ON || !built) return;
+  const lighting = built.lighting;
+  const make = () => {
+    if (people) {
+      scene.remove(people.root);
+      people.dispose();
+    }
+    people = new People(peopleTemplates!, party.people);
+    scene.add(people.root);
+    peopleReady = true;
+  };
+  if (peopleTemplates) make();
+  else
+    void People.load(PEOPLE_URLS, lighting).then((t) => {
+      peopleTemplates = t;
+      make();
+    });
 }
 
 function snapshot(): void {
@@ -814,7 +842,14 @@ function draw(): void {
   if (follow && s?.visible && (view === "scope" || view === "wide")) aimAt(s.x, s.y + 1.2, s.z);
   if (crowd) {
     crowd.selected = selected;
-    crowd.update(states, animClock);
+    if (people) {
+      // The people drawn in 3D are hidden from the block figures.
+      people.update(party.people, states, animClock, camera, viewSize().h);
+      crowd.update(
+        states.map((st, i) => (people!.covered.has(i) ? { ...st, visible: false } : st)),
+        animClock,
+      );
+    } else crowd.update(states, animClock);
     const now = party.t + acc;
     crowd.setFlashes(party.flashes.map((f): Flash => ({ x: f.x, y: (bp.levels[f.level]?.floorY ?? 0) + 1.65, z: f.z, age: (now - f.t) / TIME_SCALE })));
     crowd.setLitter(litter());
@@ -2149,7 +2184,7 @@ function loop(now: number): void {
   }
   frames++;
   // A headless render waits for the look-ahead too, so the spy's strip shows the whole evening.
-  if (shot && frames >= Number(params.get("frames") ?? 2) && spyLab.settled) {
+  if (shot && frames >= Number(params.get("frames") ?? 2) && spyLab.settled && peopleReady) {
     refreshPanel();
     (window as unknown as { __ready: boolean }).__ready = true;
     return;
@@ -2157,5 +2192,10 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-(window as unknown as { __stats: () => unknown }).__stats = () => ({ t: clockLabel(party.t), phase: party.phase.id, present: party.people.filter((p) => p.present).length });
+(window as unknown as { __stats: () => unknown }).__stats = () => ({
+  t: clockLabel(party.t),
+  phase: party.phase.id,
+  present: party.people.filter((p) => p.present).length,
+  people3d: people ? { covered: people.covered.size, drawn: people.drawn, ms: +people.ms.toFixed(2) } : null,
+});
 (window as unknown as { __party: () => Party }).__party = () => party;

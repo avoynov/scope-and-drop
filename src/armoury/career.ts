@@ -374,8 +374,7 @@ export class Career {
       }
     }
 
-    // Medals, counted here and never from the history. Glass Roof, Nobody Heard, Second Bearing and Called Shot wait for
-    // tasks 9, 8 and 7 to report what they need.
+    // Medals, counted here and never from the history: a few checks on the report, once per contract.
     const before = { ...this.medals };
     const killed = factor > 0 && outcome === "killed";
     const lastAtSpy = [...shots].reverse().find((s) => s.at === "spy" && s.kind !== "miss");
@@ -384,6 +383,11 @@ export class Career {
     if (spyDown && !report.spyTriedGoal) this.medals["first-look"]++;
     if (killed && lastAtSpy && lastAtSpy.windMs > 8) this.medals.gale++;
     if (used === 0 && shots.some((s) => s.at === "spy" && s.kind === "hit" && s.sinceScopeInS <= 3)) this.medals["one-breath"]++;
+    if (killed && shots.every((s) => s.heardBy === 0)) this.medals["nobody-heard"]++;
+    if (spyDown && report.firstNamedBy === "observer") this.medals["second-bearing"]++;
+    if (killed && lastAtSpy && lastAtSpy.elevationDeg > 45 && lastAtSpy.throughGlass) this.medals["glass-roof"]++;
+    // A miss at the spy, the spotter's correction heard out, the next round a hit on the spy: once a contract.
+    if (shots.some((s, i) => i > 0 && s.at === "spy" && s.kind === "hit" && s.afterCall === true && shots[i - 1]!.at === "spy" && shots[i - 1]!.kind === "miss")) this.medals["called-shot"]++;
     if (killed) {
       const key: KillKey = `${loadout.rifle}:${contract.house}`;
       this.kills[key] = (this.kills[key] ?? 0) + 1;

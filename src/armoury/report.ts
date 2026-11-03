@@ -48,6 +48,8 @@ export interface ShotReport {
   windMs: number;
   /** Guests who heard it (task 8). */
   heardBy: number;
+  /** The spotter's correction for the round before (a miss) had finished on the radio when this one was fired (Called Shot). */
+  afterCall?: boolean;
 }
 
 /** A whole contract, as handed to the career. */

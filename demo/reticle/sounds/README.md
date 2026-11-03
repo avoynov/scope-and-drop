@@ -4,11 +4,12 @@ Drop real recordings here and the reticle lab plays them in place of its synthes
 
 ## Names
 
-`<rifle>-<sound>.<ext>`, for example `vss-shot.wav` or `bolt-bolt-back.flac`.
+`<rifle>-<sound>.<ext>`, for example `vss-shot.wav` or `bolt-cycle.wav`.
 
-- `<rifle>` is `bolt` (the bolt rifle, M24 / Remington 700 class), `svd` or `vss`.
+- `<rifle>` is `bolt` (the bolt rifle, M24 / Remington 700 class), `svd` or `vss`, or `any`: a sound every rifle uses unless it has its own (`any-mag-in.wav`).
 - `<ext>` can be `wav`, `flac`, `ogg`, `mp3`, `m4a`, `opus` or `webm`.
 - A second or third take of the same sound adds `-2`, `-3`: `svd-charge-release-2.wav`. Takes are played in turn, so a few of each keeps repeats from sounding identical.
+- Recordings play as they are, never stretched. Where one holds several moments (a whole bolt cycle), those moments are read off it once and written into `src/scope/recorded.ts`, and the game follows them. A new take of such a sound needs its line there.
 
 ## The sounds
 
@@ -19,13 +20,14 @@ Each file is one sound, trimmed so it starts at its first transient (within 5 ms
 | `shot` | The report, heard from the shooter's own position (a microphone at the shooter's head, outdoors). Keep the first 2 s, with the echo. On the SVD and VSS the action cycling is part of it | ✓ | ✓ | ✓ |
 | `shot-can` | The report through a screw-on suppressor with the issued supersonic load: the muffled boom and the bullet's crack (kit `can`) | ✓ | ✓ | |
 | `shot-sub` | The report of the subsonic 200 gr load through a suppressor (kit `can,sub200`) | ✓ | | |
+| `cycle` | A whole bolt cycle in one file: up, back, forward, down. Replaces the four pieces below; its moments go in `src/scope/recorded.ts` | ✓ | | |
 | `bolt-up` | Bolt handle lifted 90°: the cocking cam's scrape and the cocking piece dropping into its notch | ✓ | | |
 | `bolt-back` | Bolt pulled fully back: the run along the raceways, the case ejected, the bolt stop | ✓ | | |
 | `bolt-forward` | Bolt pushed home: stripping the top round off the magazine, chambering it | ✓ | | |
 | `bolt-down` | Bolt handle turned down and seated | ✓ | | |
 | `case-land` | A fired case landing on dry ground about a metre away | ✓ | ✓ | ✓ |
 | `mag-release` | The magazine catch pressed | ✓ | ✓ | ✓ |
-| `mag-out` | The magazine coming out of the well (rocked forward off its lug on the SVD and VSS) | ✓ | ✓ | ✓ |
+| `mag-out` | The magazine coming out of the well (rocked forward off its lug on the SVD and VSS). `any-mag-out` starts with the catch pressed, so it stands in for `mag-release` too | ✓ | ✓ | ✓ |
 | `mag-in` | A full magazine going in until the catch clicks (front lug first and rocked back on the SVD and VSS) | ✓ | ✓ | ✓ |
 | `charge-back` | The charging handle pulled fully back against the spring | | ✓ | ✓ |
 | `charge-release` | The charging handle let go: the carrier slams home and chambers a round | | ✓ | ✓ |
@@ -34,7 +36,15 @@ Each file is one sound, trimmed so it starts at its first transient (within 5 ms
 | `safety` | The safety put on or off: the AK-type lever's clack on the SVD and VSS, the trigger-guard lever's tick on the bolt rifle | ✓ | ✓ | ✓ |
 | `safety-stop` | The action worked on safe: the charging handle meeting the lever's shield, or the bolt handle stopped dead | ✓ | ✓ | ✓ |
 
-That is 35 files for every sound on every rifle. Any subset works; the rest stay synthesised.
+Any subset works; the rest stay synthesised.
+
+## In the folder
+
+First Sako batch (2026-11-03). Cleaned once, offline: dual-mono folded to mono, a low cut (80 Hz on the handling sounds, 40 Hz on the shots), the hiss turned down about 10 dB on the handling and subsonic files, trimmed 5 ms before the first transient, and faded out. The open shots' reverb tails were cut short in the source: they are continued with noise matched to their own spectrum and decay. The suppressed shots keep the bullet's crack; the subsonic ones keep their echo.
+
+- `bolt-shot`, `bolt-shot-2`, `bolt-shot-can`, `bolt-shot-can-2` (stereo), `bolt-shot-sub`, `bolt-shot-sub-2`
+- `bolt-cycle`, `bolt-cycle-2`
+- `any-mag-out`, `any-mag-in`, `any-case-land`, `any-dry-fire`, `any-dry-fire-2`, `any-trigger` (the trigger let back out after a dry fire)
 
 A recording of a whole sequence (a full bolt cycle, a whole magazine change) is useful too: put it in this folder with any name and it can be cut into the pieces above.
 
@@ -44,3 +54,4 @@ Only recordings you made yourself or ones licensed for reuse (CC0, or CC-BY with
 
 | File | Author | Source | Licence |
 | --- | --- | --- | --- |
+| All files in this folder | YouTube uploaders (links to follow) | YouTube | Free to use for anything, as their videos state |

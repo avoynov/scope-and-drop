@@ -16,7 +16,8 @@ import type { SoundEvent } from "../../src/scope/handling";
 import type { RifleId } from "../../src/scope/shot";
 
 /** The report: open (or the VSS's own), through a can on a supersonic round, through a can on a subsonic one. */
-export type Synth = SoundEvent | "shot" | "shot-can" | "shot-sub";
+/** Every sound the synthesiser makes: all but a whole recorded bolt cycle, which only exists as a recording. */
+export type Synth = Exclude<SoundEvent, "cycle"> | "shot" | "shot-can" | "shot-sub";
 
 /** Mulberry32: a small seeded generator, so each variant is repeatable. */
 function rng(seed: number): () => number {

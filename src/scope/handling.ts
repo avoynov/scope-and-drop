@@ -1,16 +1,16 @@
 /**
  * Working the action by hand, prone: the bolt rifle's bolt, and magazine changes on all three rifles.
  *
- * A hand that leaves the grip takes the head off the scope with it: the shooter lifts the head (see ads.ts,
- * scope-out), glances down at the action, works it, looks back downrange and has to settle onto the cheek weld
- * again to aim. Everything here is a function of the time since the hands started, so stills are exact:
+ * The shooter works it by feel: the eye stays where it was, on the scope or over it downrange, and nothing of
+ * the rifle below the scope is drawn. What the player gets is the sound and the rifle jolting on its rest
+ * (shooting.ts). Everything here is a function of the time since the hands started, so stills are exact:
  *  - the rifle's moving parts: the bolt (lift, travel), the AK-type bolt carrier and its charging handle, the
  *    magazines (in the well, rocked or dropped, or in a hand), the spent case flying out of the port and the
  *    next round being stripped into the chamber;
  *  - the hands: each reaches for a point on the rifle (a minimum-jerk stroke, Flash & Hogan 1985) and then
  *    rides with it, so a hand on the bolt knob follows the knob as the bolt swings up and slides back;
- *  - where the eye looks and what it focuses on, and how far the head moves off its head-up spot;
- *  - sound cues at the moments the parts move and stop (audio.ts plays them).
+ *  - sound cues at the moments the parts move and stop (audio.ts plays them). Where a whole bolt cycle was
+ *    recorded (recorded.ts), the bolt follows that recording, played as it is, rather than the other way round.
  *
  * Two things the shooter does, each on its own key: work the action ('cycle') and change the magazine
  * ('reload'). Neither does the other's job, so a fresh magazine still needs the action worked to chamber a round.
@@ -29,8 +29,8 @@
  * Frame: the scope's, as in near.ts and ads.ts, in millimetres: x right, y up, z toward the shooter (−z is
  * downrange), origin at the exit pupil. Times in seconds from when the hands start. Angles in radians.
  */
-import { HEAD_UP } from "./ads";
 import type { RifleId } from "./shot";
+import { BOLT_TAKES } from "./recorded";
 
 export type V3 = [number, number, number];
 /** Unit quaternion [x, y, z, w]. */
@@ -352,7 +352,7 @@ export function magFrame(m: MagGeom, drop: number, rock: number): Frame {
 
 // ---- plans ----
 
-type Channel = "boltLift" | "boltTravel" | "carrier" | "oldDrop" | "oldRock" | "newDrop" | "newRock" | "headX" | "headY" | "headZ" | "gazeYaw" | "gazePitch" | "invF";
+type Channel = "boltLift" | "boltTravel" | "carrier" | "oldDrop" | "oldRock" | "newDrop" | "newRock";
 type Ease = "mj" | "push" | "spring" | "fall" | "lin";
 interface ChMove {
   t0: number;
@@ -382,6 +382,8 @@ export type SoundEvent =
   | "bolt-back"
   | "bolt-forward"
   | "bolt-down"
+  // A whole bolt cycle in one recording (recorded.ts), played instead of the four pieces above.
+  | "cycle"
   | "case-land"
   | "mag-release"
   | "mag-out"
@@ -397,6 +399,8 @@ export type SoundEvent =
 export interface Cue {
   t: number;
   ev: SoundEvent;
+  /** Which recording of it to play, when the plan was timed to one (a recorded bolt cycle). */
+  take?: number;
 }
 
 export interface Plan {
@@ -416,7 +420,23 @@ export interface Plan {
   /** A magazine change: when the old magazine comes off its catch, and when the new one latches. */
   swap: [number, number] | null;
   cues: Cue[];
+  /** Knocks the rifle takes from the hands, at `t`, of relative size `a` (1: the bolt hitting its stop). */
+  jolts: { t: number; a: number }[];
 }
+
+/** How hard each part moving knocks the rifle on its rest. */
+const JOLT: Partial<Record<SoundEvent, number>> = {
+  "bolt-up": 0.5,
+  "bolt-back": 1,
+  "bolt-forward": 0.8,
+  "bolt-down": 0.6,
+  "mag-release": 0.3,
+  "mag-out": 0.6,
+  "mag-in": 1,
+  "charge-back": 0.8,
+  "charge-release": 1,
+  "safety-stop": 0.5,
+};
 
 export const minJerk = (s: number) => s * s * s * (10 - 15 * s + 6 * s * s);
 const EASE: Record<Ease, (s: number) => number> = {
@@ -439,12 +459,6 @@ function rnd(seed: number, k: number): number {
 }
 
 const at = (p: V3, fwd: V3, palm: V3): Frame => ({ p, q: qBasis(fwd, palm) });
-/** Gaze angles (yaw right, pitch up) and focus (1/m) for looking at `target` from the head-up eye moved by `head`. */
-function look(target: V3, head: V3): { yaw: number; pitch: number; invF: number } {
-  const eye: V3 = [HEAD_UP.x + head[0], HEAD_UP.y + head[1], HEAD_UP.z + head[2]];
-  const d = sub(target, eye);
-  return { yaw: Math.atan2(d[0], -d[2]), pitch: Math.atan2(d[1], Math.hypot(d[0], d[2])), invF: 1000 / len(d) };
-}
 
 /** Hand frames at rest and the stations they visit off the rifle, shared by every rifle. */
 // The magazine pouches are on the belt under the chest; the elbow tucks back to reach them.
@@ -475,10 +489,13 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   const g = state.mag ? { ...ACTIONS[rifle], mag: state.mag } : ACTIONS[rifle];
   const r = (k: number) => rnd(seed, k);
   // A practised shooter's pace varies by some ±6 % from one time to the next.
-  const k = 0.94 + 0.12 * r(0);
+  // A recorded bolt cycle sets its own pace, and the variation comes from which take it is.
+  const takes = rifle === "bolt" && kind === "cycle" && !state.safe ? BOLT_TAKES[rifle] : undefined;
+  const k = takes?.length ? 1 : 0.94 + 0.12 * r(0);
   const ch = new Map<Channel, ChMove[]>();
-  const init: Record<Channel, number> = { boltLift: 0, boltTravel: 0, carrier: 0, oldDrop: 0, oldRock: 0, newDrop: 0, newRock: 0, headX: 0, headY: 0, headZ: 0, gazeYaw: 0, gazePitch: 0, invF: 0 };
+  const init: Record<Channel, number> = { boltLift: 0, boltTravel: 0, carrier: 0, oldDrop: 0, oldRock: 0, newDrop: 0, newRock: 0 };
   const cues: Cue[] = [];
+  const jolts: Plan["jolts"] = [];
   const ejects: number[] = [];
   const feeds: [number, number][] = [];
   const mv = (c: Channel, t0: number, T: number, to: number, ease: Ease = "mj") => {
@@ -491,20 +508,6 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     L: { init: () => REST_L, pose: "relaxed", moves: [] },
   };
   const hand = (s: Side, t0: number, T: number, anchor: Anchor, pose: HandPose, via: V3 = [0, 0, 0]) => hands[s].moves.push({ t0: t0 * k, T: T * k, anchor, pose, via });
-  let head: V3 = [0, 0, 0];
-  const headTo = (t0: number, T: number, to: V3) => {
-    mv("headX", t0, T, to[0]);
-    mv("headY", t0, T, to[1]);
-    mv("headZ", t0, T, to[2]);
-    head = to;
-  };
-  // The eyes jump (a saccade) and the head turns after them; focusing near takes a little longer.
-  const gaze = (t0: number, target: V3 | null) => {
-    const l = target ? look(target, head) : { yaw: 0, pitch: 0, invF: 0 };
-    mv("gazeYaw", t0, 0.26, l.yaw);
-    mv("gazePitch", t0, 0.26, l.pitch);
-    mv("invF", t0 + 0.04, 0.34, l.invF);
-  };
   const grip = hands.R.init;
   const mags: [MagTrack, MagTrack] = [
     { events: [{ t: 0, mode: "well" }], rounds: [{ t: 0, n: rounds }], grasp: { p: [0, 0, 0], q: qId } },
@@ -528,7 +531,6 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       const lift = c("boltLift");
       return { p: knobAt(b, lift, c("boltTravel")), q: qMul(qAxis([0, 0, 1], b.liftRad * lift * 0.25), knobQ) };
     };
-    const knobView: V3 = [44, -72, -175];
     const out = state.chamber ?? "spent";
     const open = (t: number) => {
       hand("R", t, 0.3, knob, "pinch", [18, 22, 0]);
@@ -556,31 +558,45 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     mags[0].grasp = mags[1].grasp = at([0, -64, 46], [0, 0.35, -0.94], [-1, 0, 0]);
     if (kind === "cycle" && state.safe) {
       // Safety ON locks the bolt closed: the handle gives a hair and stops dead.
-      headTo(0.1, 0.4, [38 + 8 * r(1), 30, 28]);
-      gaze(0.12, knobView);
       hand("R", 0, 0.3, knob, "pinch", [18, 22, 0]);
       mv("boltLift", 0.3, 0.04, 0.03, "push");
       cue(0.34, "safety-stop");
       mv("boltLift", 0.4, 0.06, 0);
       hand("R", 0.5, 0.32, grip, "grip", [10, 15, 0]);
-      gaze(0.52, null);
-      headTo(0.54, 0.4, [0, 0, 0]);
       return finish(0.96);
     }
+    if (kind === "cycle" && takes?.length) {
+      // The hand reaches the knob, then the bolt moves as the recording says it did.
+      const take = seed % takes.length;
+      const T = takes[take]!;
+      const s = 0.3;
+      hand("R", 0, s, knob, "pinch", [18, 22, 0]);
+      cues.push({ t: s, ev: "cycle", take });
+      jolts.push({ t: s + T.up, a: JOLT["bolt-up"]! }, { t: s + T.back, a: JOLT["bolt-back"]! }, { t: s + T.home, a: JOLT["bolt-forward"]! }, { t: s + T.down, a: JOLT["bolt-down"]! });
+      mv("boltLift", s + T.up, 0.1, 1);
+      const tBack = s + T.up + 0.1;
+      mv("boltTravel", tBack, Math.max(0.05, s + T.back - tBack), 1);
+      if (out !== "empty") {
+        ejects.push(s + T.back);
+        cue(s + T.back + 0.42 + 0.06 * r(3), "case-land");
+      }
+      const t0 = s + T.home - 0.18;
+      mv("boltTravel", t0, 0.18, 0, "push");
+      if (rounds > 0) {
+        feeds.push([t0, s + T.home]);
+        magRounds(0, t0 + 0.07, rounds - 1);
+      }
+      mv("boltLift", s + T.down - 0.08, 0.08, 0, "push");
+      hand("R", s + T.down + 0.05, 0.32, grip, "grip", [10, 15, 0]);
+      return finish(Math.max(s + T.dur, s + T.down + 0.4));
+    }
     if (kind === "cycle") {
-      headTo(0.1, 0.4, [38 + 8 * r(1), 30, 28]);
-      gaze(0.12, knobView);
       open(0);
       close(0.66, 0, rounds);
       hand("R", 0.96, 0.32, grip, "grip", [10, 15, 0]);
-      gaze(0.98, null);
-      headTo(1.0, 0.4, [0, 0, 0]);
       return finish(1.42);
     }
-    // The magazine catch: a paddle in front of the trigger guard, pressed with the index finger. The head comes
-    // over to the right to see under the stock.
-    headTo(0.05, 0.45, [105, -5, 30]);
-    gaze(0.1, [24, -130, -330]);
+    // The magazine catch: a paddle in front of the trigger guard, pressed with the index finger.
     hand("R", 0.1, 0.3, () => at(g.release, [-0.25, 0.45, -0.86], [-0.92, -0.3, 0.1]), "press", [30, -10, 0]);
     cue(0.4, "mag-release");
     mv("oldDrop", 0.41, 0.07, 22, "fall");
@@ -595,8 +611,6 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     cue(2.03, "mag-in");
     magEvent(1, 2.18, "well");
     hand("R", 2.22, 0.32, grip, "grip", [10, 15, 0]);
-    gaze(2.24, null);
-    headTo(2.27, 0.45, [0, 0, 0]);
     return finish(2.74);
   }
 
@@ -607,11 +621,8 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   if (held) init.carrier = 1;
   // Fingers hooked in front of the knob from the right, palm toward the receiver.
   const knobFrame: Anchor = (cc) => at([c.knob[0], c.knob[1], c.knob[2] + c.stroke * cc("carrier")], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
-  const knobView: V3 = [c.knob[0] + 5, c.knob[1] - 10, c.knob[2] + 50];
   if (kind === "cycle") {
     // The firing hand comes off the grip, hooks the knob and pulls it fully back against the spring.
-    headTo(0.05, 0.4, [55, 25, 20]);
-    gaze(0.1, knobView);
     hand("R", 0.05, 0.34, knobFrame, "hook", [30, 25, 0]);
     if (state.safe) {
       // On safe the lever's shield is in the handle's slot: it comes back a little way, and the spring takes it home.
@@ -636,15 +647,9 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     const off = at([c.knob[0] + 22, c.knob[1] + 8, c.knob[2] + c.stroke * (state.safe ? 0.1 : 1) + 18], [-0.3, -0.25, -0.92], [-0.95, -0.15, 0.28]);
     hand("R", 0.6, 0.12, () => off, "open");
     hand("R", 0.74, 0.34, grip, "grip", [10, 15, 0]);
-    gaze(0.76, null);
-    headTo(0.79, 0.45, [0, 0, 0]);
     return finish(1.26);
   }
   mags[0].grasp = mags[1].grasp = at([0, -72, m.size[2] / 2], [0.1, 0.3, -0.95], [1, 0, 0]);
-  const magView: V3 = [14, -150, m.pivot[2] + m.size[2] / 2];
-  // Rolled a little onto the left side, the head comes over to the right to see under the receiver.
-  headTo(0.05, 0.5, [105, -8, 30]);
-  gaze(0.14, magView);
   hand("L", 0, 0.42, onMag(0, 0, 0), "mag", [-30, -20, 0]);
   cue(0.42, "mag-release");
   // Rocked forward off the catch about its front lug, then down off the lug.
@@ -665,15 +670,15 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   hand("L", 2.19, 0.13, onMag(1, 0, 0), "mag");
   magEvent(1, 2.32, "well");
   hand("L", 2.36, 0.5, () => REST_L, "relaxed", [-20, -40, 0]);
-  gaze(2.36, null);
-  headTo(2.4, 0.45, [0, 0, 0]);
   return finish(2.9);
 
   function finish(dur: number): Plan {
     cues.sort((a, b) => a.t - b.t);
+    for (const c of cues) if (JOLT[c.ev]) jolts.push({ t: c.t, a: JOLT[c.ev]! });
+    jolts.sort((a, b) => a.t - b.t);
     // A magazine change: the old magazine off its catch when it is pressed, the new one on when it is home.
     const swap: Plan["swap"] = kind === "reload" ? [cues.find((c) => c.ev === "mag-release")!.t, mags[1].events.find((e) => e.mode === "well")!.t] : null;
-    return { rifle, geom: g, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap };
+    return { rifle, geom: g, kind, dur: dur * k, ch, init, hands, mags, ejects, feeds, cues, swap, jolts };
   }
 }
 
@@ -728,10 +733,6 @@ export interface MagState {
   rounds: number;
 }
 export interface HandlingPose {
-  /** Head offset from its head-up spot (mm), gaze (yaw right, pitch up) and the eye's focus (1/m; 0 = far). */
-  head: V3;
-  gaze: { yaw: number; pitch: number };
-  invF: number;
   bolt: { lift: number; travel: number };
   carrier: number;
   mags: [MagState, MagState];
@@ -836,9 +837,6 @@ export function poseAt(plan: Plan, t: number): HandlingPose {
     }
   }
   return {
-    head: [c("headX"), c("headY"), c("headZ")],
-    gaze: { yaw: c("gazeYaw"), pitch: c("gazePitch") },
-    invF: c("invF"),
     bolt: { lift: c("boltLift"), travel: c("boltTravel") },
     carrier: c("carrier"),
     mags,

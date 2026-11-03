@@ -129,6 +129,11 @@ const WOOD = new THREE.Color(0.55, 0.43, 0.3);
 const BULLET = new THREE.Color(0.55, 0.36, 0.24);
 
 /** Repeatable per-impact random numbers in [0, 1). */
+/** A part hitting its stop: the jolt's peak (rad, at a = 1), its ring (Hz) and how fast it dies (s). */
+const JOLT_RAD = 0.0006;
+const JOLT_HZ = 9;
+const JOLT_TAU = 0.06;
+
 function rnd(seed: number, i: number): number {
   let h = Math.imul(seed * 977 + i * 7919, 0x27d4eb2d) ^ 0x165667b1;
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
@@ -827,13 +832,19 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         handling = null;
       } else {
         const e = u * u * (3 - 2 * u);
-        const bump = Math.sin(Math.PI * u);
-        const shake = Math.sin(2 * Math.PI * (handling.kind === "reload" ? 2.5 : 3.2) * u) * bump;
-        const big = handling.kind === "reload" ? 1 : 0.35;
-        hand = {
-          yaw: handling.shift[0] * e + 0.0012 * big * shake,
-          pitch: handling.shift[1] * e + 0.0009 * big * shake * (rnd(handling.seed, 3) - 0.5) * 2,
-        };
+        // Each part hitting its stop knocks the rifle on its rest: a small ringing jolt, gone in a fifth of a
+        // second. The scope magnifies it; over the scope the naked eye barely sees it.
+        const el = now - handling.start;
+        let jy = 0;
+        let jp = 0;
+        handling.plan.jolts.forEach((j, i) => {
+          const d = el - j.t;
+          if (d < 0 || d > 0.4) return;
+          const ring = j.a * Math.exp(-d / JOLT_TAU) * Math.sin(2 * Math.PI * JOLT_HZ * d);
+          jy += ring * JOLT_RAD * (rnd(handling!.seed, 10 + 2 * i) - 0.5) * 2;
+          jp += ring * JOLT_RAD * 0.8 * (rnd(handling!.seed, 11 + 2 * i) - 0.5) * 2;
+        });
+        hand = { yaw: handling.shift[0] * e + jy, pitch: handling.shift[1] * e + jp };
         pose = poseAt(handling.plan, now - handling.start);
       }
     }

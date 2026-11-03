@@ -19,6 +19,7 @@ import {
   type V3,
 } from "../src/scope/handling";
 import type { RifleId } from "../src/scope/shot";
+import { BOLT_TAKES } from "../src/scope/recorded";
 import { render, type Synth } from "../demo/reticle/synth";
 
 const CASES: [RifleId, HandlingKind][] = [
@@ -40,7 +41,7 @@ const sample = (plan: Plan, f: (p: HandlingPose, t: number) => void) => {
 };
 
 describe("working the action", () => {
-  it("ends with the action shut (or the SVD's held open), magazine home, hands back, eyes downrange", () => {
+  it("ends with the action shut (or the SVD's held open), magazine home, hands back", () => {
     for (const [rifle, kind] of CASES) {
       for (let seed = 0; seed < 6; seed++) {
         const rounds = kind === "reload" ? 0 : 3;
@@ -51,8 +52,6 @@ describe("working the action", () => {
         expect(end.bolt.travel).toBe(0);
         // A magazine change leaves the SVD's carrier where its bolt stop holds it, back after the last round.
         expect(end.carrier).toBe(rifle === "svd" && kind === "reload" ? 1 : 0);
-        expect(Math.hypot(...end.head)).toBeLessThan(0.01);
-        expect(Math.abs(end.gaze.yaw) + Math.abs(end.gaze.pitch) + end.invF).toBeLessThan(1e-6);
         for (const s of ["R", "L"] as const) expect(dist(end.hands[s].wrist.p, rest.hands[s].wrist.p)).toBeLessThan(0.01);
         if (kind === "reload") {
           expect(end.mags[0].visible).toBe(false);
@@ -72,7 +71,8 @@ describe("working the action", () => {
   it("takes a practised shooter about as long as it does on the range", () => {
     const dur = (r: RifleId, k: HandlingKind) => planHandling(r, k, 3, 3).dur;
     expect(dur("bolt", "cycle")).toBeGreaterThan(1.2);
-    expect(dur("bolt", "cycle")).toBeLessThan(1.7);
+    // Timed to the recordings: the slower take is 1.42 s by itself.
+    expect(dur("bolt", "cycle")).toBeLessThan(1.8);
     for (const r of ["svd", "vss"] as const) {
       // Off the grip, rack, and back on: a second or so.
       expect(dur(r, "cycle")).toBeGreaterThan(0.9);
@@ -144,10 +144,7 @@ describe("working the action", () => {
       expect(t[0]).toBeGreaterThanOrEqual(0);
       expect(t.at(-1)!).toBeLessThan(plan.dur);
       const at = (ev: string) => plan.cues.find((c) => c.ev === ev)?.t;
-      if (rifle === "bolt" && kind === "cycle") {
-        expect(poseAt(plan, at("bolt-back")! - 0.01).bolt.lift).toBeCloseTo(1, 6);
-        expect(poseAt(plan, at("bolt-down")! - 0.01).bolt.travel).toBe(0);
-      }
+      if (rifle === "bolt" && kind === "cycle") expect(at("cycle")).toBeDefined();
       if (kind === "reload") expect(at("mag-release")!).toBeLessThan(at("mag-in")!);
     }
   });
@@ -194,6 +191,35 @@ describe("working the action", () => {
     const empty = planHandling("bolt", "cycle", 3, 0, { chamber: "empty" });
     expect(empty.ejects).toHaveLength(0);
     expect(empty.cues.some((c) => c.ev === "case-land")).toBe(false);
+  });
+});
+
+describe("a recorded bolt cycle", () => {
+  it("moves the bolt when the recording says it moved, take by take", () => {
+    const takes = BOLT_TAKES.bolt!;
+    for (let seed = 0; seed < takes.length * 2; seed++) {
+      const plan = planHandling("bolt", "cycle", 3, seed);
+      const c = plan.cues.find((q) => q.ev === "cycle")!;
+      expect(c.take).toBe(seed % takes.length);
+      const T = takes[c.take!]!;
+      const at = (x: number) => poseAt(plan, c.t + x).bolt;
+      // Lifting as it starts, fully back at the stop, home as the round chambers, down and locked at the end.
+      expect(at(T.up).lift).toBe(0);
+      expect(at(T.back)).toEqual({ lift: 1, travel: 1 });
+      expect(at(T.home).travel).toBe(0);
+      expect(at(T.home).lift).toBe(1);
+      expect(at(T.down)).toEqual({ lift: 0, travel: 0 });
+      expect(plan.ejects[0]).toBeCloseTo(c.t + T.back, 9);
+      expect(plan.feeds[0]![1]).toBeCloseTo(c.t + T.home, 9);
+      expect(plan.dur).toBeGreaterThanOrEqual(c.t + T.dur);
+      // The rifle jolts at each of those moments.
+      for (const x of [T.up, T.back, T.home, T.down]) expect(plan.jolts.some((j) => Math.abs(j.t - c.t - x) < 1e-9)).toBe(true);
+    }
+  });
+
+  it("is not used on safe: the handle stops dead", () => {
+    const plan = planHandling("bolt", "cycle", 3, 0, { safe: true });
+    expect(plan.cues.some((q) => q.ev === "cycle")).toBe(false);
   });
 });
 

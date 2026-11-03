@@ -12,8 +12,16 @@ export default defineConfig({
     outDir: "../dist",
     emptyOutDir: true,
     target: "es2022",
-    // Every page under demo/ ships: the mansion viewer at /demo/, the scope lab at /demo/reticle/, the party lab at /demo/party/ and the armoury at /demo/armoury/.
-    rollupOptions: { input: { main: page("demo/index.html"), reticle: page("demo/reticle/index.html"), party: page("demo/party/index.html"), armoury: page("demo/armoury/index.html") } },
+    // Every page under demo/ ships: the mansion viewer at /demo/, the scope lab at /demo/reticle/, the party lab at /demo/party/, the armoury at /demo/armoury/ and the people lab at /demo/people/.
+    rollupOptions: {
+      input: {
+        main: page("demo/index.html"),
+        reticle: page("demo/reticle/index.html"),
+        party: page("demo/party/index.html"),
+        armoury: page("demo/armoury/index.html"),
+        people: page("demo/people/index.html"),
+      },
+    },
   },
   // The party lab's look-ahead runs in a module worker (demo/party/ahead.ts).
   worker: { format: "es" },

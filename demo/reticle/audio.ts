@@ -313,7 +313,7 @@ export function createSound(): Sound {
         const first = covered && recording(c.ev, rifle) ? list.find((o) => o.ev === covered) : undefined;
         merged.push(first ? { ...c, t: first.t } : c);
       }
-      const started = merged.flatMap((c) => play(c.ev, rifle, t0 + c.t, 1, c.take));
+      const started = merged.flatMap((c) => play(c.ev, rifle, t0 + c.t, c.gain ?? 1, c.take));
       return () => {
         // Hushed: whatever has not started yet never does. What is already sounding plays out.
         const now = ctx!.currentTime;

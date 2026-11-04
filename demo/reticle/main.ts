@@ -1441,8 +1441,11 @@ function frame(t: number, dt: number): void {
   const panYaw = panHead.yaw - restNow.yaw;
   eye.x += SUPPORT_TO_EYE_MM * panYaw;
   eye.y += SUPPORT_TO_EYE_MM * panPitch;
-  const tiltPitch = rc.tiltPitch + panPitch;
-  const tiltYaw = rc.tiltYaw + panYaw;
+  // Working the action moves the head with the shoulders: all of it over the scope, a quarter of it pressed to the
+  // stock (where it shows as the eye slipping in the eyepiece).
+  const loose = 1 - 0.75 * adapt;
+  const tiltPitch = rc.tiltPitch + panPitch + (acted.head?.pitch ?? 0) * loose;
+  const tiltYaw = rc.tiltYaw + panYaw + (acted.head?.yaw ?? 0) * loose;
   // Head down onto the weld or up off it.
   let roll = 0;
   let adsA: Vec3 = headRest;
@@ -1457,6 +1460,7 @@ function frame(t: number, dt: number): void {
       adsB = adsEye(ads, t + EXPOSURE / 2);
     }
   }
+  roll += (acted.head?.roll ?? 0) * loose;
   const head = headAt(t);
   eye.x += head.x;
   eye.y += head.y;
@@ -1559,9 +1563,8 @@ function frame(t: number, dt: number): void {
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
   u.uTunnel!.value = state.sway ? bodyNow.hypoxia : 0;
-  // The eye focuses where it looks (accommodation takes a few tenths of a second): on the hands and the action
-  // while it works them (the plan's gaze carries its own focus), on the drum while the shooter looks at it with
-  // the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
+  // The eye focuses where it looks (accommodation takes a few tenths of a second): on the drum while the shooter
+  // looks at it with the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
   const lookMm = lookAt === "aci" ? rifle.aciMm : null;
   const drumDist = lookMm ? Math.hypot(eye.x - lookMm.x, eye.y - lookMm.y, eye.z - lookMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;

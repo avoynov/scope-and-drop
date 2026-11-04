@@ -20,6 +20,7 @@ import {
 } from "../src/scope/handling";
 import type { RifleId } from "../src/scope/shot";
 import { BOLT_TAKES } from "../src/scope/recorded";
+import { SET_DOWN_GAIN } from "../src/scope/handling";
 import { render, type Synth } from "../demo/reticle/synth";
 
 const CASES: [RifleId, HandlingKind][] = [
@@ -191,6 +192,21 @@ describe("working the action", () => {
     const empty = planHandling("bolt", "cycle", 3, 0, { chamber: "empty" });
     expect(empty.ejects).toHaveLength(0);
     expect(empty.cues.some((c) => c.ev === "case-land")).toBe(false);
+  });
+});
+
+describe("the case sound", () => {
+  it("is not played working the action, but softly when the old magazine is set down", () => {
+    for (const rifle of ["bolt", "svd", "vss"] as const) {
+      const cycle = planHandling(rifle, "cycle", 3, 0, { chamber: "live" });
+      expect(cycle.cues.some((c) => c.ev === "case-land")).toBe(false);
+      const reload = planHandling(rifle, "reload", 0, 0);
+      const at = (ev: string) => reload.cues.find((c) => c.ev === ev)!;
+      const down = at("case-land");
+      expect(down.gain).toBe(SET_DOWN_GAIN);
+      expect(down.t).toBeGreaterThan(at("mag-out").t);
+      expect(down.t).toBeLessThan(at("mag-in").t);
+    }
   });
 });
 

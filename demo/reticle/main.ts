@@ -3,7 +3,8 @@ import { ROUNDS } from "../../src/scope/ballistics";
 import { HEAD_UP, ON_WELD, adsEye, adsRoll, adsVelocity, planScopeIn, planScopeOut, type AdsMotion, type Vec3 } from "../../src/scope/ads";
 import { SCOPE, exitPupilMm, eyeboxTransmission, parallaxShiftRad, tanHalfApparent, trueFovRad, type Eye } from "../../src/scope/optics";
 import { followHead, recoilAt, shotVariation, type RecoilSpec, type RecoilState, type ShotVariation } from "../../src/scope/recoil";
-import { RestDynamics, dynamicPressure, holdAt, mastSwayAt, type RestState } from "../../src/scope/hold";
+import { RestDynamics, cloneHold, dynamicPressure, holdAt, mastSwayAt, type HoldSpec, type RestState } from "../../src/scope/hold";
+import { Body, mouseAngle, type BodyState } from "../../src/scope/body";
 import { rigFor, type Rig } from "../../src/armoury/rig";
 import { decodeKit, emptyLoadout, encodeKit, payFactor, type Loadout } from "../../src/armoury/loadout";
 import { ACSS_RANGES, PSO_CHEVRON_RANGES, RETICLES, TREMOR_ROWS, VSS_CHEVRON_RANGES, acssReticle, drawReticle, treeReticle, type Reticle, type TreeStyle } from "../../src/scope/reticles";
@@ -242,6 +243,20 @@ let rigKey = "";
 /** How the rifle swings on its rest, and where that has it now (before the hold's own sway). */
 let restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
 let restNow: RestState = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
+/**
+ * The shooter's body (src/scope/body.ts): breathing they control (Shift holds it), the heart, fatigue, the strain of
+ * aiming off where the body points, and the swing's lag. It takes over the hold's breathing and heartbeat.
+ */
+const bodyHold = (h: HoldSpec): HoldSpec => {
+  const c = cloneHold(h);
+  c.breath = [0, 0];
+  c.pulse = 0;
+  return c;
+};
+let restHold = bodyHold(rig.hold);
+const body = new Body(rig.hold);
+body.settle(state.yaw, state.pitch);
+let bodyNow: BodyState = body.state();
 /** The wind's dynamic pressure on the rifle and the shooter now (Pa), for the buffeting in the hold, and its speed (m/s). */
 let windLoad = 0;
 let windAtMuzzle = 0;
@@ -295,6 +310,9 @@ function syncRig(): void {
   state.pitch = clampArcPitch(state.pitch);
   restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
   restNow = { yaw: state.yaw, pitch: state.pitch, bagUnsettled: 0, resetting: false };
+  restHold = bodyHold(rig.hold);
+  body.setRest(rig.hold);
+  body.settle(state.yaw, state.pitch);
 }
 const windAtRifle: [number, number, number] = [0, 0, 0];
 /** The wind on the rifle and the shooter at `t`: in the hide a fifth of its speed gets in, a twenty-fifth of its push. */
@@ -768,6 +786,7 @@ function foldRecoil(r: RecoilState): void {
   panHead.pitch += pitch - state.pitch;
   panHead.yaw -= r.yaw;
   restDyn.shift(-r.yaw, pitch - state.pitch);
+  body.shift(-r.yaw, pitch - state.pitch);
   state.pitch = pitch;
   state.yaw -= r.yaw; // three.js yaw is positive to the left
 }
@@ -777,7 +796,10 @@ function foldRecoil(r: RecoilState): void {
  */
 function swayAt(t: number): [number, number] {
   if (!state.sway) return [0, 0];
-  const h = holdAt(rig.hold, t, windLoad);
+  const h = holdAt(restHold, t, windLoad);
+  const b = body.swayAt(t);
+  h[0] += b[0];
+  h[1] += b[1];
   if (towerM === null) return h;
   const m = mastSwayAt(t, mastLoad);
   return [h[0] + m[0], h[1] + m[1]];
@@ -838,6 +860,8 @@ function toggleScope(): void {
   const from = headAt(clock);
   const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
   adsIn = !adsIn;
+  if (adsIn) lockMouse();
+  else unlockMouse();
   // A stock that fits brings the eye down closer to the exit pupil, and sooner.
   ads = adsIn ? planScopeIn(clock, from, vel, adsMoves++, rig.fit) : planScopeOut(clock, from, vel, adsMoves++);
   syncUi();
@@ -935,9 +959,57 @@ const lookAway = () => {
   drumLook = false;
 };
 let drumDrag: { x: number; acc: number; moved: number; arcPx: number; side: number } | null = null;
+/**
+ * Mouse-look on the scope: with the head on the weld the mouse is pointer-locked and moves the rifle as the body
+ * does (src/scope/body.ts mouseAngle): slow, fine, by the same angle at any magnification; fast, the whole body turns,
+ * the rifle lags and overshoots and the hold is unsettled after. With the head up the cursor comes back, for the drum
+ * and the angle indicator, and dragging aims as before. Touch always drags. `sens=<x>` scales the mouse.
+ */
+const mouseSens = num("sens", 1);
+const locked = () => document.pointerLockElement === canvas;
+const lockMouse = () => {
+  if (shot || locked() || !adsIn) return;
+  try {
+    const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    p?.catch?.(() => {});
+  } catch {
+    // Not allowed here (no user gesture yet, or an iframe without it): dragging still aims.
+  }
+};
+const unlockMouse = () => {
+  if (locked()) document.exitPointerLock();
+};
+/** The hand's speed (px/s), smoothed over a few events. */
+let mouseSpeed = 0;
+let mouseAt = 0;
+function mouseLook(e: PointerEvent): void {
+  const dx = e.movementX;
+  const dy = e.movementY;
+  if (!dx && !dy) return;
+  const dtE = Math.max(1 / 1000, Math.min(0.1, (e.timeStamp - mouseAt) / 1000));
+  mouseAt = e.timeStamp;
+  const v = Math.hypot(dx, dy) / dtE;
+  mouseSpeed += (v - mouseSpeed) * Math.min(1, dtE / 0.03);
+  const a = mouseAngle(1, mouseSpeed, mouseSens);
+  if (kiloState.phase === "up") {
+    kiloState.yaw = clampArc(kiloState.yaw - dx * a);
+    kiloState.pitch = rig.arcRad === null ? clampPitch(kiloState.pitch - dy * a) : clampArcPitch(kiloState.pitch - dy * a);
+    return;
+  }
+  const y0 = state.yaw;
+  const p0 = state.pitch;
+  state.yaw = clampArc(state.yaw - dx * a);
+  state.pitch = clampArcPitch(state.pitch - dy * a);
+  body.push(state.yaw - y0, state.pitch - p0);
+}
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button === 2) {
     toggleScope();
+    return;
+  }
+  if (e.pointerType === "mouse" && adsIn) {
+    // On the scope the mouse looks, it doesn't drag: a click takes it.
+    lockMouse();
     return;
   }
   canvas.setPointerCapture(e.pointerId);
@@ -969,6 +1041,10 @@ canvas.addEventListener("pointercancel", (e) => {
   pinch = 0;
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (locked()) {
+    mouseLook(e);
+    return;
+  }
   if (drumDrag) {
     // Turning by its rim: the side facing the eye follows the finger, so dragging left brings higher numbers in.
     const dx = e.clientX - drumDrag.x;
@@ -1003,8 +1079,11 @@ canvas.addEventListener("pointermove", (e) => {
       kiloState.yaw = clampArc(kiloState.yaw + (e.clientX - prev.x) * kk);
       kiloState.pitch = rig.arcRad === null ? clampPitch(kiloState.pitch + (e.clientY - prev.y) * kk) : clampArcPitch(kiloState.pitch + (e.clientY - prev.y) * kk);
     } else {
+      const y0 = state.yaw;
+      const p0 = state.pitch;
       state.yaw = clampArc(state.yaw + (e.clientX - prev.x) * k);
       state.pitch = clampArcPitch(state.pitch + (e.clientY - prev.y) * k);
+      body.push(state.yaw - y0, state.pitch - p0);
     }
   }
   prev.x = e.clientX;
@@ -1313,6 +1392,7 @@ function frame(t: number, dt: number): void {
     panHead.yaw -= acted.fold[0];
     panHead.pitch += acted.fold[1];
     restDyn.shift(-acted.fold[0], acted.fold[1]);
+    body.shift(-acted.fold[0], acted.fold[1]);
     syncUi();
   }
   // Head keys: WASD slide the eye across the exit pupil, Q/E change eye relief.
@@ -1334,7 +1414,13 @@ function frame(t: number, dt: number): void {
   updateWindLoad(t);
   stepKestrel(t, dt);
   stepSpotters(t);
-  restNow = restDyn.step(state.yaw, state.pitch, t, dt);
+  // The body: breathing (Shift holds it), the heart, the strain and the swing's lag behind the hands.
+  bodyNow = body.step(t, dt, state.yaw, state.pitch, {
+    holdBreath: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+    onScope: adsIn && !ads,
+  });
+  const lagged = state.sway ? body.offset : { yaw: 0, pitch: 0 };
+  restNow = restDyn.step(state.yaw + lagged.yaw, state.pitch + lagged.pitch, t, dt);
   const eye = { ...state.eye };
   if (state.drift) {
     // Even with a solid cheek weld the head wanders a fraction of a millimetre; less on a riser set to the eye.
@@ -1476,6 +1562,7 @@ function frame(t: number, dt: number): void {
   u.uCA!.value = kr ? 0.009 : 0.006;
   u.uRoll!.value = roll;
   u.uExposure!.value = 1 / (1 + 0.7 * (1 - adapt));
+  u.uTunnel!.value = state.sway ? bodyNow.hypoxia : 0;
   // The eye focuses where it looks (accommodation takes a few tenths of a second): on the drum while the shooter
   // looks at it with the head up, far away otherwise. Focused near, the range blurs by pupil / distance.
   // The drum's rear face is 253 mm ahead of the exit pupil and 30 mm up, in the scope's frame.
@@ -1718,6 +1805,19 @@ if (shot) {
     kilo.release("range", r - 2.4);
     kilo.press("range", r);
     kilo.release("range", r + 0.1);
+  }
+  // held=<s>: the still is taken that long into a breath hold, from the natural pause after 10 s of breathing.
+  if (params.has("held")) {
+    const held = num("held", 0);
+    const step = (u: number, hold: boolean) =>
+      (bodyNow = body.step(u, 1 / 60, state.yaw, state.pitch, {
+        holdBreath: hold,
+        onScope: adsIn,
+      }));
+    let u = t - held - 10;
+    for (; u < t - held; u += 1 / 60) step(u, false);
+    while (bodyNow.lung > 0) step((u += 1 / 60), false);
+    for (const end = u + held; u < end; u += 1 / 60) step(u, true);
   }
   frame(t, 0);
   frame(t, 0);

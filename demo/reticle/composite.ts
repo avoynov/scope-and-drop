@@ -23,6 +23,8 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       tLens: { value: tLens },
       tBody: { value: tBody },
       uExposure: { value: 1 },
+      // Oxygen debt from a long breath hold: the view greys and closes in from its edge (0 … 1).
+      uTunnel: { value: 0 },
       uWorldBlur: { value: 9 },
       uRoll: { value: 0 },
       uWideLod: { value: 0 },
@@ -75,7 +77,7 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
       uniform vec2 uRes, uPar, uTilt, uSweep, uBlur, uMirFlow, uTrA, uTrB, uTrW;
       uniform float uBoil, uHaze, uHazeT, uTrS, uTrSeed, uDust, uDustDrift, uDustTop;
       uniform vec3 uEye, uEyeSweep, uRetCol, uTint;
-      uniform float uRetAdd, uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
+      uniform float uRetAdd, uR, uTanHalf, uMag, uExitR, uEyePupilR, uExposure, uTunnel, uWorldBlur, uRoll, uWideLod, uSaep, uTnorm, uFocus, uTime, uMirage, uCA, uDist, uEdge;
       const float PI = 3.14159265;
 
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
@@ -243,6 +245,12 @@ export function createComposite(tScope: THREE.Texture, tWide: THREE.Texture, tRe
           float edge = uDustTop + .18*(m - .5);
           float a = uDust*smoothstep(.12, .7, m)*smoothstep(edge, edge - .4, suv.y);
           col = mix(col, vec3(1.02, .86, .64), clamp(a, 0., .92));
+        }
+        if (uTunnel > 0.) {
+          vec2 tq = (gl_FragCoord.xy - .5*uRes)/(.5*uRes.y);
+          float l = dot(col, vec3(.2126, .7152, .0722));
+          col = mix(col, vec3(l), .3*uTunnel);
+          col *= 1. - uTunnel*(.1 + .45*smoothstep(.3, 1.2, length(tq)));
         }
         col = aces(col*1.05*uExposure);
         col = pow(col, vec3(1./2.2));

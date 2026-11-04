@@ -291,7 +291,6 @@ function syncRig(): void {
     wideDrawn = null;
   }
   shooting.setRifle(rig.rifle, rig.mag, rig.report);
-  rifle.setKit({ can: rig.can, sleeve: rig.sleeve, weight: rig.muzzleKg > 0 && !rig.can, mag: rig.mag });
   state.yaw = clampArc(state.yaw);
   state.pitch = clampArcPitch(state.pitch);
   restDyn = new RestDynamics(rig.rest, state.yaw, state.pitch);
@@ -684,8 +683,7 @@ function syncUi(): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-tree]")) b.classList.toggle("on", b.dataset.tree === state.treeStyle);
   for (const b of document.querySelectorAll<HTMLButtonElement>("[data-flag]")) b.classList.toggle("on", state[b.dataset.flag as "illum"] as boolean);
   syncWindCard();
-  $("scope").textContent = shooting.busy() ? "Hands on the action" : adsIn ? "Scope out · F" : "Scope in · F";
-  rifle.setRifle(RIFLE[state.reticle]);
+  $("scope").textContent = adsIn ? "Scope out · F" : "Scope in · F";
 }
 magIn.oninput = () => (state.mag = Number(magIn.value));
 parIn.oninput = () => (state.parallax = sliderToPar(Number(parIn.value)));
@@ -808,8 +806,7 @@ $("fire").onclick = () => fire();
  */
 function work(kind: "cycle" | "reload"): void {
   if (kiloState.phase !== "down" || !shooting.work(clock, kind)) return;
-  // The hands leave the grip, and the head comes up off the scope with them.
-  if (adsIn) toggleScope();
+  // Done by feel: the head stays where it is, on the scope or over it.
   syncUi();
 }
 $("bolt").onclick = () => work("cycle");
@@ -835,8 +832,9 @@ function headAt(t: number): Vec3 {
   return ads ? adsEye(ads, t) : headRest;
 }
 function toggleScope(): void {
-  // No settling back onto the scope while the hands are on the action or the rangefinder.
-  if (!adsIn && (shooting.busy() || kiloState.phase !== "down")) return;
+  // No settling back onto the scope while the hands are on the rangefinder. Working the action is done by feel,
+  // so the head goes where it is asked meanwhile.
+  if (!adsIn && kiloState.phase !== "down") return;
   const from = headAt(clock);
   const vel = ads ? adsVelocity(ads, clock) : { x: 0, y: 0, z: 0 };
   adsIn = !adsIn;
@@ -1357,9 +1355,8 @@ function frame(t: number, dt: number): void {
   const panYaw = panHead.yaw - restNow.yaw;
   eye.x += SUPPORT_TO_EYE_MM * panYaw;
   eye.y += SUPPORT_TO_EYE_MM * panPitch;
-  // Working the action the eyes leave the target for the hands: the head's view turns down and right.
-  const tiltPitch = rc.tiltPitch + panPitch - hp.gaze.pitch;
-  const tiltYaw = rc.tiltYaw + panYaw - hp.gaze.yaw;
+  const tiltPitch = rc.tiltPitch + panPitch;
+  const tiltYaw = rc.tiltYaw + panYaw;
   // Head down onto the weld or up off it.
   let roll = 0;
   let adsA: Vec3 = headRest;
@@ -1375,9 +1372,9 @@ function frame(t: number, dt: number): void {
     }
   }
   const head = headAt(t);
-  eye.x += head.x + hp.head[0];
-  eye.y += head.y + hp.head[1];
-  eye.z += head.z + hp.head[2];
+  eye.x += head.x;
+  eye.y += head.y;
+  eye.z += head.z;
   const scopeShare = imageShare(eye, { x: Math.tan(tiltYaw), y: Math.tan(tiltPitch) });
 
   // Wobble: breathing and heartbeat, and the hands on the action.
@@ -1482,9 +1479,8 @@ function frame(t: number, dt: number): void {
   const lookMm = lookAt === "aci" ? rifle.aciMm : null;
   const drumDist = lookMm ? Math.hypot(eye.x - lookMm.x, eye.y - lookMm.y, eye.z - lookMm.z) / 1000 : Math.hypot(eye.x, eye.y - 30, eye.z + 253) / 1000;
   const looking = drumLook || t < lookUntil;
-  const working = acted.busy;
-  const wantFocus = focusPinned ? 1 / focusPinned : working ? hp.invF : adsIn || !looking ? 0 : 1 / drumDist;
-  focusInv = shot || working ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
+  const wantFocus = focusPinned ? 1 / focusPinned : adsIn || !looking ? 0 : 1 / drumDist;
+  focusInv = shot ? wantFocus : focusInv + (wantFocus - focusInv) * (1 - Math.exp(-dt / 0.3));
   u.uWorldBlur!.value = Math.max(9 * dpr * adapt, ((0.5 * eye.pupilMm) / 1000 / th) * focusInv * R);
   // Mirage boil: ~25 µrad near the ground at midday, seen bigger the more you magnify.
   u.uMirage!.value = state.mirage ? 0.000025 * toUv * Math.min(1, D / 300) : 0;
@@ -1531,7 +1527,7 @@ function frame(t: number, dt: number): void {
   cam.position.set(eye.x / 1000, eye.y / 1000, eye.z / 1000);
   cam.quaternion.copy(headQ);
   cam.updateMatrixWorld();
-  rifle.pose(hp);
+  rifle.setHands(kr ? hp.hands : null);
   rifle.setLight(sunLocal.copy(toSun).applyQuaternion(rifleFrame.copy(rifleQ).invert()));
   drum.step(shot ? 1 : dt);
   {
@@ -1599,15 +1595,13 @@ function frame(t: number, dt: number): void {
             ? "up · bringing the rangefinder up"
             : kiloState.phase === "lowering"
               ? "up · putting the rangefinder down"
-              : acted.busy
-                ? "up · hands on the action"
-                : ads
-                  ? ads.dir === "in"
-                    ? "going down"
-                    : "coming up"
-                  : adsIn
-                    ? "on the weld"
-                    : "up",
+              : ads
+                ? ads.dir === "in"
+                  ? "going down"
+                  : "coming up"
+                : adsIn
+                  ? "on the weld"
+                  : "up",
       ],
       ["Magnification", `${state.mag.toFixed(1)}×`],
       ["True field", `${((tf * 180) / Math.PI).toFixed(2)}° · ${(tf * 1000).toFixed(0)} mil`],

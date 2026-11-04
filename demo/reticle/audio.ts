@@ -9,12 +9,15 @@
  *
  * The rifle's own sounds (the shot and every part of the bolt cycle and magazine change, see SoundEvent) play
  * a recording when there is one in demo/reticle/sounds/ named `<rifle>-<sound>.<ext>` (`vss-shot.wav`,
- * `bolt-bolt-back.flac`, `svd-charge-release-2.wav` for a second take; see sounds/README.md). Otherwise they
- * are synthesised (synth.ts). The bullet's impacts are synthesised here.
+ * `bolt-cycle.wav`, `svd-charge-release-2.wav` for a second take; see sounds/README.md), or else one named
+ * `any-<sound>` that serves every rifle. Otherwise they are synthesised (synth.ts). Recordings play as they are;
+ * where one holds a few moments (a whole bolt cycle), the game is timed to it (src/scope/recorded.ts). The
+ * bullet's impacts are synthesised here.
  */
 import type { Cue, SoundEvent } from "../../src/scope/handling";
 import type { Report } from "../../src/scope/can";
 import type { RifleId } from "../../src/scope/shot";
+import { BOLT_TAKES } from "../../src/scope/recorded";
 import { render, type Synth } from "./synth";
 
 export type ImpactSound = "plastic" | "dirt" | "rock" | "steel" | "wood" | "glass" | "tempered";
@@ -46,18 +49,32 @@ export interface Sound {
 
 /** Recordings dropped into sounds/, by file name without the extension. */
 const FILES = import.meta.glob("./sounds/*.{wav,flac,ogg,mp3,m4a,opus,webm}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
-/** `<rifle>-<sound>` → its takes. A trailing `-2`, `-3`… marks another take of the same sound. */
+/**
+ * `<rifle>-<sound>` (or `any-<sound>`) → its takes, in order: a trailing `-2`, `-3`… marks the second, third…
+ * take, which matters where the game is timed to one (recorded.ts).
+ */
 const TAKES = new Map<string, string[]>();
 for (const [path, url] of Object.entries(FILES)) {
-  const name = path
-    .replace(/^.*\//, "")
-    .replace(/\.[^.]+$/, "")
-    .replace(/-\d+$/, "");
-  TAKES.set(name, [...(TAKES.get(name) ?? []), url]);
+  const file = path.replace(/^.*\//, "").replace(/\.[^.]+$/, "");
+  const n = /-(\d+)$/.exec(file);
+  const name = n ? file.slice(0, -n[0].length) : file;
+  const list = TAKES.get(name) ?? [];
+  list[n ? Number(n[1]) - 1 : 0] = url;
+  TAKES.set(name, list);
 }
 
+/**
+ * Where a recording's moment falls in its file (s): it starts that long before its cue. The magazine catch
+ * clicks at 0.025 s into `any-mag-out`, and the catch snaps over 0.36 s into `any-mag-in`, which is when the
+ * magazine is home: 0.15 s after the plan's `mag-in` cue.
+ */
+const ANCHOR: Record<string, number> = { "any-mag-out": 0.025, "any-mag-in": 0.21 };
+/** A recording that holds another sound too: `any-mag-out` starts with the catch pressed, so it takes that cue's place. */
+const COVERS: Partial<Record<Synth, Synth>> = { "mag-out": "mag-release" };
+
 /** Where each sound comes from, left (−1) to right (1): the bolt and charging handle are on the right. */
-const PAN: Partial<Record<Synth, number>> = {
+const PAN: Partial<Record<Sfx, number>> = {
+  cycle: 0.3,
   "bolt-up": 0.3,
   "bolt-back": 0.35,
   "bolt-forward": 0.3,
@@ -76,8 +93,9 @@ const PAN: Partial<Record<Synth, number>> = {
  * wide a gap to play back, so it is narrowed: the action stays well under the shot but can still be heard.
  * The suppressed VSS's report is only about as loud as its own action.
  */
-const LEVEL: Record<Synth, number> = {
+const LEVEL: Record<Sfx, number> = {
   shot: 1,
+  cycle: 0.3,
   "shot-can": 0.62,
   "shot-sub": 0.4,
   "bolt-up": 0.22,
@@ -99,25 +117,32 @@ const VSS_SHOT = 0.55;
 /** First-round pop: the oxygen in a can that has stood a while burns with the first shot's gas, some 3 dB louder. */
 const POP_GAIN = 1.4;
 const VARIANTS = 4;
+/** Every sound: the synthesiser's, and a whole bolt cycle that only a recording has. */
+type Sfx = Synth | "cycle";
+/** A sound set going, and when it starts. */
+type Started = { src: AudioBufferSourceNode; at: number };
 
 export function createSound(): Sound {
   let ctx: AudioContext | null = null;
   let out: AudioNode;
   let noise: AudioBuffer;
-  const recorded = new Map<string, AudioBuffer[]>();
+  /** Takes by name, in take order; a slot is empty until its file has loaded. */
+  const recorded = new Map<string, (AudioBuffer | undefined)[]>();
   const synthesised = new Map<string, AudioBuffer>();
   let takes = 0;
   let radio: GainNode | null = null;
 
   function load(c: AudioContext): void {
     for (const [name, urls] of TAKES) {
-      for (const url of urls) {
+      const slots: (AudioBuffer | undefined)[] = [];
+      recorded.set(name, slots);
+      urls.forEach((url, i) => {
         void fetch(url)
           .then((r) => r.arrayBuffer())
           .then((a) => c.decodeAudioData(a))
-          .then((buf) => recorded.set(name, [...(recorded.get(name) ?? []), normalise(buf)]))
+          .then((buf) => (slots[i] = normalise(buf)))
           .catch(() => {});
-      }
+      });
     }
   }
 
@@ -133,12 +158,27 @@ export function createSound(): Sound {
     return buf;
   }
 
-  /** A take of a rifle sound: a recording if there is one, otherwise a synthesised variant. */
-  function take(ev: Synth, rifle: RifleId): AudioBuffer {
+  /** The loaded takes of a sound for `rifle`, and the name they go by: its own, or the one every rifle shares. */
+  function recording(ev: Sfx, rifle: RifleId): { name: string; bufs: (AudioBuffer | undefined)[] } | null {
+    for (const name of [`${rifle}-${ev}`, `any-${ev}`]) {
+      const bufs = recorded.get(name);
+      if (bufs?.some(Boolean)) return { name, bufs };
+    }
+    return null;
+  }
+
+  /**
+   * A take of a rifle sound: recording number `which` if asked for and loaded, else the next loaded one in turn,
+   * else a synthesised variant. With its anchor: how far into it its moment falls.
+   */
+  function take(ev: Synth, rifle: RifleId, which?: number): { buf: AudioBuffer; at: number } {
     const c = ctx!;
     const n = takes++;
-    const rec = recorded.get(`${rifle}-${ev}`);
-    if (rec?.length) return rec[n % rec.length]!;
+    const rec = recording(ev, rifle);
+    if (rec) {
+      const loaded = rec.bufs.filter((b): b is AudioBuffer => !!b);
+      return { buf: (which !== undefined && rec.bufs[which]) || loaded[n % loaded.length]!, at: ANCHOR[rec.name] ?? 0 };
+    }
     const key = `${rifle}|${ev}|${n % VARIANTS}`;
     let buf = synthesised.get(key);
     if (!buf) {
@@ -147,14 +187,35 @@ export function createSound(): Sound {
       buf.copyToChannel(d as Float32Array<ArrayBuffer>, 0);
       synthesised.set(key, buf);
     }
-    return buf;
+    return { buf, at: 0 };
   }
 
-  /** Plays a rifle sound at absolute context time `t`; returns its source so it can be stopped. */
-  function play(ev: Synth, rifle: RifleId, t: number, gain = 1): AudioBufferSourceNode {
+  /**
+   * Plays a rifle sound so its moment falls at absolute context time `t` (`which`: the take the plan was timed
+   * to); returns its sources so they can be stopped. A bolt cycle with no recording loaded plays the four
+   * synthesised pieces at the recorded take's moments.
+   */
+  function play(ev: Sfx, rifle: RifleId, t: number, gain = 1, which?: number): Started[] {
+    if (ev === "cycle") {
+      const rec = recording("cycle", rifle)?.bufs[which ?? 0];
+      if (rec) return [source(ev, rifle, rec, t, gain)];
+      const T = BOLT_TAKES[rifle]?.[which ?? 0];
+      if (!T) return [];
+      return [
+        ...play("bolt-up", rifle, t + T.up, gain),
+        ...play("bolt-back", rifle, t + T.back - 0.12, gain),
+        ...play("bolt-forward", rifle, t + T.home - 0.18, gain),
+        ...play("bolt-down", rifle, t + T.down, gain),
+      ];
+    }
+    const { buf, at } = take(ev, rifle, which);
+    return [source(ev, rifle, buf, t - at, gain)];
+  }
+
+  function source(ev: Sfx, rifle: RifleId, buf: AudioBuffer, t: number, gain: number): Started {
     const c = ctx!;
     const src = c.createBufferSource();
-    src.buffer = take(ev, rifle);
+    src.buffer = buf;
     const v = c.createGain();
     v.gain.value = (ev === "shot" && rifle === "vss" ? VSS_SHOT : LEVEL[ev]) * gain;
     let node: AudioNode = src.connect(v);
@@ -165,8 +226,10 @@ export function createSound(): Sound {
       node = node.connect(p);
     }
     node.connect(out);
-    src.start(Math.max(t, c.currentTime));
-    return src;
+    // Already under way (its anchor is before now): start it partway in, where it would have got to.
+    const now = c.currentTime;
+    src.start(Math.max(t, now), Math.max(0, now - t));
+    return { src, at: Math.max(t, now) };
   }
 
   const s: Sound = {
@@ -241,12 +304,20 @@ export function createSound(): Sound {
     cues(list, rifle) {
       if (!s.enabled || !ctx) return () => {};
       const t0 = ctx.currentTime;
-      const srcs = list.map((c) => play(c.ev, rifle, t0 + c.t));
+      // A recording that holds another cue's sound too plays from that cue, in its place.
+      const merged: Cue[] = [];
+      for (const c of list) {
+        const by = (Object.keys(COVERS) as Synth[]).find((k) => COVERS[k] === c.ev && list.some((o) => o.ev === k) && recording(k, rifle));
+        if (by) continue;
+        const covered = c.ev !== "cycle" ? COVERS[c.ev] : undefined;
+        const first = covered && recording(c.ev, rifle) ? list.find((o) => o.ev === covered) : undefined;
+        merged.push(first ? { ...c, t: first.t } : c);
+      }
+      const started = merged.flatMap((c) => play(c.ev, rifle, t0 + c.t, 1, c.take));
       return () => {
+        // Hushed: whatever has not started yet never does. What is already sounding plays out.
         const now = ctx!.currentTime;
-        list.forEach((c, i) => {
-          if (t0 + c.t > now) srcs[i]!.stop();
-        });
+        for (const { src, at } of started) if (at > now) src.stop();
       };
     },
     radioBus() {

@@ -1,10 +1,10 @@
 /**
- * The rifle and scope as the eye sees them from a few centimetres away: a 4–20×50 tactical scope on whichever
- * rifle is chosen, with the hands that work its action (actions.ts), modelled to scale in the scope's own frame
+ * The scope as the eye sees it from a few centimetres away: a 4–20×50 tactical scope, its turrets and the angle
+ * indicator, and the hands while they hold the rangefinder (hands.ts), modelled to scale in the scope's own frame
  * (metres; origin at the exit pupil, −Z down the bore, +Y up). It is rendered from the eye with the naked-eye
  * mapping, then defocused: the eye is focused on the target, so a point d metres away spreads into a disc
  * pupil/d radians wide. Near the eyepiece that is tens of pixels, at the muzzle a few. When the eye looks down
- * at the elevation drum or at the hands it focuses there instead, at distance f, and the disc is
+ * at the elevation drum or at the rangefinder it focuses there instead, at distance f, and the disc is
  * pupil·|1/d − 1/f|.
  *
  * Passes, all at half resolution:
@@ -15,10 +15,10 @@
  *     light is conserved whatever its size. Head motion adds a smear along the ocular's screen velocity.
  */
 import * as THREE from "three";
-import type { HandlingPose } from "../../src/scope/handling";
+import type { HandState, Side } from "../../src/scope/handling";
 import { SCOPE } from "../../src/scope/optics";
-import type { Dial, RifleId } from "../../src/scope/shot";
-import { buildActions, type RifleKit } from "./actions";
+import type { Dial } from "../../src/scope/shot";
+import { buildHand } from "./hands";
 import { DRUM_R_MM, paintDrum } from "./drum";
 import { buildKilo, type KiloModel } from "./kilo";
 
@@ -98,12 +98,11 @@ export interface NearLayer {
   aciMm: THREE.Vector3;
   /** The handheld rangefinder, posed in the scope's frame. */
   kilo: KiloModel;
-  /** Which rifle is under the scope. */
-  setRifle(id: RifleId): void;
-  /** What the kit puts on it that shows: a can, its sleeve or a weight on the muzzle, the magazine. */
-  setKit(k: RifleKit): void;
-  /** Where its moving parts and the hands are. */
-  pose(p: HandlingPose): void;
+  /**
+   * The hands, while they hold the rangefinder; null hides them. The rifle below the scope is never drawn: the
+   * shooter works it by feel, eyes on the scope or downrange.
+   */
+  setHands(h: Record<Side, HandState> | null): void;
 }
 
 export function buildRifle(): NearLayer {
@@ -274,15 +273,15 @@ export function buildRifle(): NearLayer {
   kilo.group.visible = false;
   scene.add(kilo.group);
 
-  // The rifle under the scope, its moving parts and the hands, in millimetres.
+  // The hands, in millimetres: gloves and sleeves.
   const below = new THREE.Group();
   below.scale.setScalar(0.001);
+  below.visible = false;
   scene.add(below);
-  const actions = buildActions(
-    below,
-    (b, g, s) => mat(b, g, s),
-    (o) => o.layers.set(BODY),
-  );
+  const glove = mat(0x3a3125, 6, 0.06);
+  const sleeve = mat(0x4c4a3b, 4, 0.03);
+  const hands = { R: buildHand("R", glove, sleeve, (o) => o.layers.set(BODY)), L: buildHand("L", glove, sleeve, (o) => o.layers.set(BODY)) };
+  below.add(hands.R.group, hands.L.group);
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.004, 5);
   return {
@@ -306,9 +305,12 @@ export function buildRifle(): NearLayer {
     aci,
     aciMm,
     kilo,
-    setRifle: (id) => actions.setRifle(id),
-    setKit: (k) => actions.setKit(k),
-    pose: (p) => actions.apply(p),
+    setHands(h) {
+      below.visible = !!h;
+      if (!h) return;
+      hands.R.apply(h.R);
+      hands.L.apply(h.L);
+    },
   };
 }
 

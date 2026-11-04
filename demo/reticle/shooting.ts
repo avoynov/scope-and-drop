@@ -129,10 +129,17 @@ const WOOD = new THREE.Color(0.55, 0.43, 0.3);
 const BULLET = new THREE.Color(0.55, 0.36, 0.24);
 
 /** Repeatable per-impact random numbers in [0, 1). */
-/** A part hitting its stop: the jolt's peak (rad, at a = 1), its ring (Hz) and how fast it dies (s). */
-const JOLT_RAD = 0.0006;
-const JOLT_HZ = 9;
-const JOLT_TAU = 0.06;
+/**
+ * How working the action shakes things, prone on a bipod or bag, per kind of handling. `jolt`: a part hitting its
+ * stop knocks the rifle (rad at a = 1), ringing at `hz` and dying in `tau` s. `sway`: the body shifting under it
+ * pushes the rifle about (rad). `head`: the head, off the stock or loosely on it, moves with the shoulders: yaw,
+ * pitch and a roll toward the hand that is working (rad), plus `headJolt` at each knock. A magazine change reaches
+ * down to a pouch and back, so it moves everything far more than a bolt cycle.
+ */
+const SHAKE = {
+  cycle: { jolt: 0.0025, hz: 7, tau: 0.08, sway: 0.001, head: [0.005, 0.004, 0.008], headJolt: 0.004 },
+  reload: { jolt: 0.006, hz: 5, tau: 0.12, sway: 0.004, head: [0.025, 0.018, 0.035], headJolt: 0.008 },
+} as const;
 
 function rnd(seed: number, i: number): number {
   let h = Math.imul(seed * 977 + i * 7919, 0x27d4eb2d) ^ 0x165667b1;
@@ -821,6 +828,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
 
   function act(now: number) {
     let hand: { yaw: number; pitch: number } | null = null;
+    let head: { yaw: number; pitch: number; roll: number } | null = null;
     let fold: [number, number] | null = null;
     let pose: HandlingPose | null = null;
     if (handling) {
@@ -832,19 +840,34 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
         handling = null;
       } else {
         const e = u * u * (3 - 2 * u);
-        // Each part hitting its stop knocks the rifle on its rest: a small ringing jolt, gone in a fifth of a
-        // second. The scope magnifies it; over the scope the naked eye barely sees it.
-        const el = now - handling.start;
+        const k = SHAKE[handling.kind];
+        const h = handling;
+        const r = (i: number) => (rnd(h.seed, i) - 0.5) * 2;
+        // Each part hitting its stop knocks the rifle on its rest and jerks the shoulders: a ringing jolt.
+        const el = now - h.start;
         let jy = 0;
         let jp = 0;
-        handling.plan.jolts.forEach((j, i) => {
+        let hy = 0;
+        let hp = 0;
+        h.plan.jolts.forEach((j, i) => {
           const d = el - j.t;
-          if (d < 0 || d > 0.4) return;
-          const ring = j.a * Math.exp(-d / JOLT_TAU) * Math.sin(2 * Math.PI * JOLT_HZ * d);
-          jy += ring * JOLT_RAD * (rnd(handling!.seed, 10 + 2 * i) - 0.5) * 2;
-          jp += ring * JOLT_RAD * 0.8 * (rnd(handling!.seed, 11 + 2 * i) - 0.5) * 2;
+          if (d < 0 || d > 6 * k.tau) return;
+          const ring = j.a * Math.exp(-d / k.tau) * Math.sin(2 * Math.PI * k.hz * d);
+          jy += ring * k.jolt * r(10 + 4 * i);
+          jp += ring * k.jolt * 0.8 * r(11 + 4 * i);
+          hy += ring * k.headJolt * r(12 + 4 * i);
+          hp += ring * k.headJolt * r(13 + 4 * i);
         });
-        hand = { yaw: handling.shift[0] * e + jy, pitch: handling.shift[1] * e + jp };
+        // The body shifting under it all: slow, uneven swings that start and end at rest.
+        const env = Math.sin(Math.PI * u);
+        const wave = (i: number) => env * (0.65 * Math.sin(2 * Math.PI * (0.7 + 0.2 * r(i)) * el + 3 * r(i + 1)) + 0.35 * Math.sin(2 * Math.PI * (1.6 + 0.4 * r(i + 2)) * el + 3 * r(i + 3)));
+        hand = { yaw: h.shift[0] * e + jy + k.sway * wave(40), pitch: h.shift[1] * e + jp + 0.7 * k.sway * wave(44) };
+        // The head goes with the shoulders, leaning toward the working hand and back.
+        head = {
+          yaw: k.head[0] * wave(48) + hy,
+          pitch: k.head[1] * wave(52) + hp,
+          roll: k.head[2] * (env * env * (0.6 + 0.4 * r(56)) + 0.3 * wave(57)),
+        };
         pose = poseAt(handling.plan, now - handling.start);
       }
     }
@@ -854,7 +877,7 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
       if (rest?.key !== key) rest = { key, pose: restPose(rifle.id, gun.mag, gun.held, mag) };
       pose = rest.pose;
     }
-    return { hand, fold, pose, busy: !!handling };
+    return { hand, head, fold, pose, busy: !!handling };
   }
 
   /** For stills: the rifle `s` seconds into working its action (a magazine change if `reload`). */

@@ -858,9 +858,14 @@ export function createShooting(range: Range, sound: Sound, glass: GlassScreens) 
           hy += ring * k.headJolt * r(12 + 4 * i);
           hp += ring * k.headJolt * r(13 + 4 * i);
         });
-        // The body shifting under it all: slow, uneven swings that start and end at rest.
+        // The body shifting under it all, starting and ending at rest. Working the bolt rocks it in slow, uneven
+        // swings. A magazine change leans one way while the hand goes to the pouch and back and drifts slightly:
+        // only the knocks of the magazine coming out and going in move it sharply.
         const env = Math.sin(Math.PI * u);
-        const wave = (i: number) => env * (0.65 * Math.sin(2 * Math.PI * (0.7 + 0.2 * r(i)) * el + 3 * r(i + 1)) + 0.35 * Math.sin(2 * Math.PI * (1.6 + 0.4 * r(i + 2)) * el + 3 * r(i + 3)));
+        const wave =
+          h.kind === "reload"
+            ? (i: number) => env * (0.85 * r(i) + 0.15 * Math.sin(2 * Math.PI * 0.25 * el + 3 * r(i + 1)))
+            : (i: number) => env * (0.65 * Math.sin(2 * Math.PI * (0.7 + 0.2 * r(i)) * el + 3 * r(i + 1)) + 0.35 * Math.sin(2 * Math.PI * (1.6 + 0.4 * r(i + 2)) * el + 3 * r(i + 3)));
         hand = { yaw: h.shift[0] * e + jy + k.sway * wave(40), pitch: h.shift[1] * e + jp + 0.7 * k.sway * wave(44) };
         // The head goes with the shoulders, leaning toward the working hand and back.
         head = {

@@ -401,7 +401,12 @@ export interface Cue {
   ev: SoundEvent;
   /** Which recording of it to play, when the plan was timed to one (a recorded bolt cycle). */
   take?: number;
+  /** Louder or softer than the sound's usual level (1). */
+  gain?: number;
 }
+
+/** The old magazine set down beside the prone shooter: a quarter of a case landing a metre away. */
+export const SET_DOWN_GAIN = 0.25;
 
 export interface Plan {
   rifle: RifleId;
@@ -502,7 +507,9 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     if (!ch.has(c)) ch.set(c, []);
     ch.get(c)!.push({ t0: t0 * k, T: T * k, to, ease });
   };
-  const cue = (t: number, ev: SoundEvent) => cues.push({ t: t * k, ev });
+  const cue = (t: number, ev: SoundEvent, gain?: number) => cues.push(gain === undefined ? { t: t * k, ev } : { t: t * k, ev, gain });
+  /** The old magazine set down in the dirt beside the shooter, lying prone: a faint knock (the user's choice of sound). */
+  const setDown = (t: number) => cue(t, "case-land", SET_DOWN_GAIN);
   const hands: Plan["hands"] = {
     R: { init: () => at(g.grip, [-0.3, -0.12, -0.95], [-0.95, -0.05, 0.3]), pose: "grip", moves: [] },
     L: { init: () => REST_L, pose: "relaxed", moves: [] },
@@ -539,9 +546,8 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       mv("boltTravel", t + 0.42, 0.17, 1);
       cue(t + 0.42, "bolt-back");
       if (out === "empty") return;
+      // The case (or an unfired round) tumbles out to the right. Its landing goes unheard under the bolt.
       ejects.push((t + 0.56) * k);
-      // The case (or an unfired round) tumbles out to the right and lands in the dirt a metre away.
-      cue(t + 0.56 + 0.42 + 0.06 * r(3), "case-land");
     };
     const close = (t: number, mag: 0 | 1, n: number) => {
       mv("boltTravel", t, 0.18, 0, "push");
@@ -576,10 +582,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
       mv("boltLift", s + T.up, 0.1, 1);
       const tBack = s + T.up + 0.1;
       mv("boltTravel", tBack, Math.max(0.05, s + T.back - tBack), 1);
-      if (out !== "empty") {
-        ejects.push(s + T.back);
-        cue(s + T.back + 0.42 + 0.06 * r(3), "case-land");
-      }
+      if (out !== "empty") ejects.push(s + T.back);
       const t0 = s + T.home - 0.18;
       mv("boltTravel", t0, 0.18, 0, "push");
       if (rounds > 0) {
@@ -604,6 +607,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     hand("R", 0.48, 0.16, onMag(0, 22, 0), "mag", [12, -8, 0]);
     magEvent(0, 0.64, "R");
     hand("R", 0.66, 0.5, () => POUCH_R, "mag", [30, -40, 0]);
+    setDown(1.1);
     magEvent(0, 1.16, "gone");
     magEvent(1, 1.43, "R");
     hand("R", 1.46, 0.55, onMag(1, 42, 0), "mag", [40, -50, 0]);
@@ -632,8 +636,6 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
     } else {
       mv("carrier", 0.42, 0.16, 1);
       if (!held) cue(0.42, "charge-back");
-      // Whatever was chambered comes out of the port and lands in the dirt to the right.
-      if (state.chamber === "live") cue(0.58 + 0.4 + 0.06 * r(3), "case-land");
       if (c.holdOpen && rounds === 0) {
         // Let go over an empty magazine: its follower has the bolt stop up, and that catches the carrier.
         if (!held) cue(0.62, "mag-release");
@@ -661,6 +663,7 @@ export function planHandling(rifle: RifleId, kind: HandlingKind, rounds: number,
   hand("L", 0.6, 0.14, onMag(0, "oldDrop", 0.42), "mag");
   magEvent(0, 0.74, "L");
   hand("L", 0.76, 0.5, () => POUCH_L, "mag", [-30, -40, 0]);
+  setDown(1.2);
   magEvent(0, 1.26, "gone");
   magEvent(1, 1.5, "L");
   // Front lug first, tilted forward, then rocked back until the catch snaps over.

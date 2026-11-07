@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace ScopeAndDrop.Sim.Core
@@ -96,6 +97,52 @@ namespace ScopeAndDrop.Sim.Core
             int e = n - 1;
             string exp = (e < 0 ? "e-" : "e+") + Math.Abs(e).ToString(CultureInfo.InvariantCulture);
             return k == 1 ? digits + exp : digits.Substring(0, 1) + "." + digits.Substring(1) + exp;
+        }
+
+        /// <summary>
+        /// Fixed-point text with the given number of decimals, as the TypeScript's toFixed: exact value, ties away from zero,
+        /// a small negative that rounds to zero keeps its sign ("-0.000"), but negative zero itself prints as "0.000".
+        /// </summary>
+        public static string ToFixed(double x, int digits)
+        {
+            if (double.IsNaN(x))
+                return "NaN";
+            if (Math.Abs(x) >= 1e21)
+                return ToText(x);
+            if (x == 0)
+                x = 0; // -0 to +0: JavaScript tests x < 0 for the sign, which is false for -0.
+            return x.ToString("F" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>The TypeScript's `x || fallback` on a number: the fallback when x is 0 or NaN.</summary>
+        public static double Or(double x, double fallback) => x == 0 || double.IsNaN(x) ? fallback : x;
+
+        /// <summary>Smallest of several numbers (NaN if any is NaN); +infinity when there are none, as Math.min() with no arguments.</summary>
+        public static double Min(IEnumerable<double> values)
+        {
+            double m = double.PositiveInfinity;
+            foreach (double v in values)
+            {
+                if (double.IsNaN(v))
+                    return double.NaN;
+                if (v < m)
+                    m = v;
+            }
+            return m;
+        }
+
+        /// <summary>Largest of several numbers (NaN if any is NaN); -infinity when there are none, as Math.max() with no arguments.</summary>
+        public static double Max(IEnumerable<double> values)
+        {
+            double m = double.NegativeInfinity;
+            foreach (double v in values)
+            {
+                if (double.IsNaN(v))
+                    return double.NaN;
+                if (v > m)
+                    m = v;
+            }
+            return m;
         }
 
         /// <summary>An integer as text, invariant culture.</summary>

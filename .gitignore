@@ -4,3 +4,7 @@ renders/
 *.log
 .DS_Store
 dist-artifact/
+
+# C# sim build output
+dotnet/**/bin/
+dotnet/**/obj/

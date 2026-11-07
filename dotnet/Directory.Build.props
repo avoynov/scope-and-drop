@@ -1,0 +1,9 @@
+<Project>
+  <!-- Shared by the sim library and its tests. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Features>strict</Features>
+  </PropertyGroup>
+</Project>

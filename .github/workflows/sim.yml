@@ -1,0 +1,33 @@
+# Tests the C# sim (sim/ and dotnet/) on every pull request and push to main that touches it.
+# Kept short on purpose: the repo's Actions minutes are limited.
+name: Sim (C#)
+
+on:
+  push:
+    branches: [main]
+    paths: ["sim/**", "dotnet/**", ".config/dotnet-tools.json", ".csharpierrc.json", ".github/workflows/sim.yml"]
+  pull_request:
+    paths: ["sim/**", "dotnet/**", ".config/dotnet-tools.json", ".csharpierrc.json", ".github/workflows/sim.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: sim-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Formatting (CSharpier)
+        run: dotnet csharpier check sim dotnet
+      - name: Test
+        run: dotnet test dotnet/ScopeAndDrop.sln -c Release

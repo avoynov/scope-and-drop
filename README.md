@@ -8,6 +8,8 @@ Every house is built to be seen into: a mostly glazed garden front, party rooms 
 
 **Live viewer:** https://claude.ai/artifact/6H4rPLDQAAUj5CUFkrxm6c. The link is private; the owner shares it from the page's Share menu.
 
+> **Moving to Unity.** The game is migrating to Unity as a PC game ([plan](https://claude.ai/artifact/4TMswySfEc4THUNEmeSGFw)). The TypeScript in `src/` and the web labs in `demo/` are frozen to bug fixes and stay in the repository as the reference the new version is checked against. The C# sim grows in [`sim/`](sim/README.md), a Unity package, with its tests in `dotnet/`.
+
 | Sniper scope | Inside at full zoom |
 |---|---|
 | ![scope](docs/images/scope-palladian.jpg) | ![interior](docs/images/zoom-interior.jpg) |
@@ -330,6 +332,8 @@ artifact/               published viewer page (field-dossier UI, mil-dot scope)
 scripts/                gen, batch, stress, debug, render, texsheet, png, reticle (scope lab stills)
 tests/                  generator.test.ts, builder.test.ts, scope.test.ts, shot.test.ts, ads.test.ts, wound.test.ts, handling.test.ts, glass.test.ts, party.test.ts
 docs/                   mansion-generation.md (design doc), reticle-demo.md, party.md, armoury.md, images/
+sim/                    the C# sim for the Unity version (a Unity package; porting rules in sim/README.md)
+dotnet/                 C# solution: builds sim/ outside Unity, NUnit tests, vectors/ (test data written by the TypeScript)
 ```
 
 ---
@@ -345,6 +349,7 @@ docs/                   mansion-generation.md (design doc), reticle-demo.md, par
 | `npx tsx scripts/debug.ts <seed> <attempt>` | Issues, POI and prop counts, nav components per storey |
 | `npm run render -- --seed a,b --views scope,wide,orbit,iso,plan [--params "sight=1"] [--format jpeg] [--name file] [--page party/]` | Headless Chromium (SwiftShader) screenshots; `--page party/` captures the party lab |
 | `npx tsx scripts/texsheet.ts out.png` | Contact sheet of all procedural textures |
+| `dotnet test dotnet/ScopeAndDrop.sln` | The C# sim's NUnit tests (.NET 8); `dotnet tool restore` then `dotnet csharpier format sim dotnet` formats it |
 
 ---
 

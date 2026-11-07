@@ -1,0 +1,8 @@
+{
+  "name": "com.scopeanddrop.sim",
+  "version": "0.1.0",
+  "displayName": "Scope And Drop Sim",
+  "description": "The game's simulation as a plain C# library: RNG, mansion generator, body and wounds, scope logic, armoury, party and spy. No Unity types; tested with NUnit on .NET 8.",
+  "unity": "6000.3",
+  "author": { "name": "Scope And Drop" }
+}

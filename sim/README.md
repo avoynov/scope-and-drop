@@ -12,6 +12,8 @@ dotnet test dotnet/ScopeAndDrop.sln          # build the sim as Unity will and r
 dotnet tool restore                          # once: installs CSharpier
 dotnet csharpier format sim dotnet           # format (width 200, like the TypeScript's Prettier)
 npx tsx dotnet/vectors/core.ts               # rewrite the test data from today's TypeScript
+npx tsx dotnet/vectors/mansion.ts [dir]      # rewrite the mansion digests (and dump each house's canonical text to dir)
+SIM_MANSION_DUMP=dir dotnet test dotnet/ScopeAndDrop.sln   # dump the C# houses the same way, to diff
 ```
 
 ## Porting rules
@@ -38,7 +40,7 @@ C# uses its own native maths; the port does not copy the browser. Tiny last-digi
 A test (`PortRulesTests`) refuses the worst of these in sim sources.
 
 **Shapes.**
-- One TypeScript file becomes one C# file: `src/mansion/layout/rooms.ts` becomes `sim/Runtime/Mansion/Layout/Rooms.cs`. Exported functions become static methods on a class named after the file, in PascalCase. Types keep their names.
+- One TypeScript file becomes one C# file: `src/mansion/layout/rooms.ts` becomes `sim/Runtime/Mansion/Layout/Rooms.cs`. Exported functions become static methods on a class named after the file, in PascalCase. Types keep their names. Where that class name would clash with a type, the class takes a fuller name: `generate.ts` is `MansionGenerator`, `analysis/nav.ts` is `NavGrid`, `analysis/validate.ts` is `Validation`.
 - String-literal unions become enums; their text names (for JSON and digests) are the original kebab-case strings.
 - Plain-data interfaces become classes, so sharing and mutation work as in the TypeScript. Only small values are structs (`Vec2`, `Vec3`, `Rect`): copying one copies the numbers.
 - `number` becomes `double`, or `int` where it is always an index or a count.
@@ -53,9 +55,9 @@ A test (`PortRulesTests`) refuses the worst of these in sim sources.
 | Module | TypeScript | C# | Status |
 |---|---|---|---|
 | Core: RNG, rounding, number text, ordered map and set, stable sort, rectangles | `src/mansion/core/rng.ts`, `geom.ts` | `Runtime/Core/` | done |
-| Mansion generator and analysis | `src/mansion/` except `build/` | `Runtime/Mansion/` | next |
+| Mansion generator and analysis | `src/mansion/` except `build/` and `site/wind.ts` | `Runtime/Mansion/` | done: 34 houses match the TypeScript to 1e-6 |
 | Body and wounds | `src/body/` | `Runtime/Body/` | |
-| Scope logic: ballistics, shot, wind, glass, optics, handling, rangefinder, radio | `src/scope/` | `Runtime/Scope/` | |
+| Scope logic: ballistics, shot, wind, glass, optics, handling, rangefinder, radio | `src/scope/`, `src/mansion/site/wind.ts` | `Runtime/Scope/` | |
 | Armoury | `src/armoury/` | `Runtime/Armoury/` | |
 | Party | `src/party/` except `render/` | `Runtime/Party/` | |
 | Spy | `src/party/spy/` | `Runtime/Party/Spy/` | |
